@@ -147,7 +147,7 @@ final class Workspace: Identifiable, Hashable, Codable {
     // MARK: - Command Management
 
     @discardableResult
-    func addCommand(title: String = "Claude", runScript: String? = nil) -> Terminal {
+    func addCommand(title: String = "Terminal", runScript: String? = nil) -> Terminal {
         let entry = Terminal(workspace: self, title: title, currentDirectory: directory, runScript: runScript)
         commands.append(entry)
         store?.scheduleSave()

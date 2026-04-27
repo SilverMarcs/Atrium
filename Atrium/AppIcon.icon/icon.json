@@ -2,6 +2,8 @@
   "fill" : "automatic",
   "groups" : [
     {
+      "blur-material" : null,
+      "hidden" : false,
       "layers" : [
         {
           "fill" : {
@@ -20,7 +22,37 @@
               }
             }
           },
+          "hidden" : true,
+          "image-name" : "code.png",
+          "name" : "code",
+          "position" : {
+            "scale" : 1.5,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : {
+            "linear-gradient" : [
+              "extended-srgb:1.00000,0.55294,0.15686,1.00000",
+              "display-p3:0.96783,0.42166,0.29550,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
+          },
           "glass" : false,
+          "hidden" : false,
           "image-name" : "cmux-icon-chevron 2.png",
           "name" : "cmux-icon-chevron 2",
           "position" : {
@@ -32,12 +64,21 @@
           }
         }
       ],
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 1,
+        "translation-in-points" : [
+          0,
+          0
+        ]
+      },
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : true,
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     }

@@ -27,6 +27,17 @@ struct AppCommands: Commands {
             InspectorCommands()
             
             CommandGroup(after: .newItem) {
+                Button {
+                    guard let workspace = appState.selectedChat?.workspace else { return }
+                    let chat = workspace.addChat(provider: defaultChatMode, permissionMode: defaultPermissionMode)
+                    appState.expandedWorkspaceIDs.insert("w:\(workspace.id.uuidString)")
+                    appState.selectedChat = chat
+                } label: {
+                    Label("New Chat", systemImage: "plus.bubble")
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(appState.selectedChat?.workspace == nil)
+
                 Menu {
                     ForEach(AgentProvider.allCases, id: \.self) { provider in
                         Button {
@@ -39,14 +50,8 @@ struct AppCommands: Commands {
                         }
                     }
                 } label: {
-                    Label("New Chat", systemImage: "plus.bubble")
-                } primaryAction: {
-                    guard let workspace = appState.selectedChat?.workspace else { return }
-                    let chat = workspace.addChat(provider: defaultChatMode, permissionMode: defaultPermissionMode)
-                    appState.expandedWorkspaceIDs.insert("w:\(workspace.id.uuidString)")
-                    appState.selectedChat = chat
+                    Label("New Chat With…", systemImage: "plus.bubble")
                 }
-                .keyboardShortcut("n", modifiers: .command)
                 .disabled(appState.selectedChat?.workspace == nil)
             }
 

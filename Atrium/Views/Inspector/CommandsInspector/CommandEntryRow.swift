@@ -110,7 +110,7 @@ struct CommandEntryRow: View {
         Button {
             terminal.workspace?.setDefaultCommand(terminal)
         } label: {
-            Label("Set as Run Command", systemImage: terminal.isDefault ? "checkmark" : "play.circle")
+            Label("Set Default Command", systemImage: terminal.isDefault ? "checkmark" : "play.circle")
         }
         .disabled(terminal.isDefault || !hasScript)
 

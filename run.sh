@@ -105,8 +105,6 @@ build_ios() {
 }
 
 run_macos() {
-  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-
   xcodebuild \
     -project "$PROJECT" \
     -scheme "$APP_NAME" \

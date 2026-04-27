@@ -26,7 +26,7 @@ final class DiffOverlayView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 12
+        // layer?.cornerRadius = 12
         // layer?.borderWidth = 1
 
         setupHeader()
