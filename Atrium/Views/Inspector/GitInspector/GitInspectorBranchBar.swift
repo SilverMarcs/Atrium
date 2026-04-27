@@ -112,6 +112,15 @@ struct GitInspectorBranchBar: View {
             Divider()
 
             Button {
+                state.showCommitLogSheet = true
+            } label: {
+                Label("Commit Log", systemImage: "clock.arrow.circlepath")
+            }
+            .disabled(snapshot == nil)
+
+            Divider()
+
+            Button {
                 state.fetch(directoryURL: directoryURL)
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")

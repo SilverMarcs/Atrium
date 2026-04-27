@@ -256,6 +256,10 @@ actor GitRepository {
         try await self.executor.execute(GitFetchCommand(), at: repositoryRootURL)
     }
 
+    func commitLog(at repositoryRootURL: URL, limit: Int = 200) async throws -> [GitLogEntry] {
+        try await self.executor.execute(GitLogCommand(limit: limit), at: repositoryRootURL)
+    }
+
     func switchBranch(to branch: String, at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitSwitchCommand(branch: branch), at: repositoryRootURL)
     }
@@ -485,6 +489,15 @@ struct GitUnpushedCommit: Equatable, Identifiable {
     var hash: String
     var message: String
     var files: [GitChangedFile]
+}
+
+struct GitLogEntry: Equatable, Identifiable, Sendable {
+    var id: String { hash }
+    var hash: String
+    var shortHash: String
+    var author: String
+    var date: Date?
+    var subject: String
 }
 
 struct GitChangedFile: Equatable, Hashable {
@@ -803,6 +816,41 @@ private struct GitLocalOnlyCommitListCommand: GitCommand {
             let parts = line.split(separator: "\0", maxSplits: 1)
             guard parts.count == 2 else { return nil }
             return (hash: String(parts[0]), message: String(parts[1]))
+        }
+    }
+}
+
+private struct GitLogCommand: GitCommand {
+    let limit: Int
+
+    var arguments: [String] {
+        [
+            "log",
+            "-n", String(limit),
+            "--pretty=format:%H%x1f%h%x1f%an%x1f%aI%x1f%s",
+        ]
+    }
+
+    func parse(output: String) throws -> [GitLogEntry] {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fallbackFormatter = ISO8601DateFormatter()
+        fallbackFormatter.formatOptions = [.withInternetDateTime]
+
+        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+            let parts = line.split(separator: "\u{1f}", maxSplits: 4, omittingEmptySubsequences: false)
+            guard parts.count == 5 else { return nil }
+            let dateString = String(parts[3])
+            let date = formatter.date(from: dateString) ?? fallbackFormatter.date(from: dateString)
+            return GitLogEntry(
+                hash: String(parts[0]),
+                shortHash: String(parts[1]),
+                author: String(parts[2]),
+                date: date,
+                subject: String(parts[4])
+            )
         }
     }
 }

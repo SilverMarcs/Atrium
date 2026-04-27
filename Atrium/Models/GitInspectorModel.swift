@@ -130,6 +130,15 @@ final class GitInspectorModel {
         }
     }
 
+    func commitLog(snapshot: GitRepositoryStatusSnapshot, limit: Int = 200) async -> [GitLogEntry] {
+        do {
+            return try await GitRepository.shared.commitLog(at: snapshot.repositoryRootURL, limit: limit)
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
+
     func switchBranch(to branch: String, snapshot: GitRepositoryStatusSnapshot) async {
         await perform(successLabel: "Switched to \(branch)") {
             try await GitRepository.shared.switchBranch(to: branch, at: snapshot.repositoryRootURL)
