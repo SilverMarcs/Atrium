@@ -30,10 +30,6 @@ struct ChatRow: View {
 
             if chat.isProcessing {
                 ProgressView().controlSize(.small)
-            } else if chat.isActive {
-                Circle()
-                    .fill(.green)
-                    .frame(width: 6, height: 6)
             }
         }
         .badge(chat.hasNotification ? Text("") : nil)

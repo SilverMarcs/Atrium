@@ -19,6 +19,8 @@ struct ToolCallListSheet: View {
                     Image(systemName: tool.toolSymbolName ?? "wrench.and.screwdriver")
                         .foregroundStyle(.secondary)
                 }
+                .listRowSeparator(.hidden, edges: .top)
+                .listRowSeparator(.visible, edges: .bottom)
             }
             .listStyle(.inset)
             .navigationTitle(tools.count == 1 ? "Tool call" : "\(tools.count) tool calls")

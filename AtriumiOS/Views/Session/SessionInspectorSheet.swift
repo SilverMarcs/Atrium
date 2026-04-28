@@ -7,6 +7,9 @@ struct SessionInspectorSheet: View {
 
     @State private var scratchpadDraft: String = ""
     @State private var hasLoadedScratchpad = false
+    /// Last text we successfully pushed to the host. Used to dedupe pushes
+    /// (the seed value and unchanged dismissals shouldn't re-send).
+    @State private var lastPushedText: String?
     /// Coalesces typing in the scratchpad field. Avoids hitting the wire
     /// on every keystroke — pushes 400 ms after the last edit.
     @State private var pushTask: Task<Void, Never>?
@@ -59,11 +62,19 @@ struct SessionInspectorSheet: View {
             // pushing back the seeded value.
             if let workspace = client.workspaces.first(where: { $0.id == workspaceId }) {
                 scratchpadDraft = workspace.scratchpad
+                lastPushedText = workspace.scratchpad
             }
             hasLoadedScratchpad = true
         }
         .onDisappear {
             pushTask?.cancel()
+            pushTask = nil
+            // Cancellation alone would drop a pending edit on the floor —
+            // flush whatever the user typed so the Mac always gets the
+            // final value when they close the sheet.
+            if hasLoadedScratchpad {
+                flushScratchpad(scratchpadDraft)
+            }
         }
     }
 
@@ -93,7 +104,13 @@ struct SessionInspectorSheet: View {
         pushTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
             if Task.isCancelled { return }
-            client.updateScratchpad(workspaceId: workspaceId, text: text)
+            flushScratchpad(text)
         }
+    }
+
+    private func flushScratchpad(_ text: String) {
+        guard lastPushedText != text else { return }
+        client.updateScratchpad(workspaceId: workspaceId, text: text)
+        lastPushedText = text
     }
 }

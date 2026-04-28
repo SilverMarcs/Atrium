@@ -37,7 +37,7 @@ struct SessionDetailScreen: View {
                 }
             }
             .contentMargins(.top, 10)
-            .contentMargins([.horizontal, .bottom], 15)
+            .contentMargins([.horizontal, .bottom], 20)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: client.activeSession?.messages.last?.id) { _, _ in
                 // withAnimation {
