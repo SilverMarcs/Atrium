@@ -16,9 +16,10 @@ struct WorkspaceListView: View {
     }
 
     private var visibleWorkspaces: [Workspace] {
-        let base = store.workspaces.filter { appState.showArchivedWorkspaces || !$0.isArchived }
-        guard !searchText.isEmpty else { return base }
-        return base.filter { $0.name.localizedStandardContains(searchText) }
+        guard !searchText.isEmpty else {
+            return store.workspaces.filter { appState.showArchivedWorkspaces || !$0.isArchived }
+        }
+        return store.workspaces.filter { $0.name.localizedStandardContains(searchText) }
     }
 
     var body: some View {
