@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct GitInspectorView: View {
@@ -125,6 +126,14 @@ struct GitInspectorView: View {
         } message: {
             Text("The branch \"\(snapshot?.branchName ?? "")\" does not exist on the remote. This will create a new branch on the remote and push your commits.")
         }
+        .alert("Branches Diverged", isPresented: $state.showPullRebaseAlert) {
+            Button("Rebase") {
+                state.syncWithRemote(directoryURL: directoryURL)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your local branch and the remote have both moved forward. Rebase your local commits onto the remote to sync.")
+        }
         .sheet(isPresented: $state.showSyncWithBranchSheet) {
             SyncWithBranchSheet(directoryURL: directoryURL, state: state)
         }
@@ -221,6 +230,12 @@ struct GitInspectorView: View {
         .padding(8)
         .padding(.horizontal, 2)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard case .error(let msg) = banner else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(msg, forType: .string)
+        }
         .task(id: banner) {
             let seconds: Int = if case .success = banner { 3 } else { 5 }
             try? await Task.sleep(for: .seconds(seconds))

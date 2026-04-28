@@ -62,6 +62,7 @@ final class GitInspectorState {
     var stagedExpanded = true
     var unstagedExpanded = true
     var showPushUpstreamAlert = false
+    var showPullRebaseAlert = false
     var showStashConflictAlert = false
     var showRenameCommitAlert = false
     var renameCommitMessage = ""

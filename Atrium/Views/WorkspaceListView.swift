@@ -54,6 +54,7 @@ struct WorkspaceListView: View {
                     }
                 } label: {
                     WorkspaceRow(workspace: workspace)
+                    // .listRowSeparator(.hidden)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .background(DoubleClickRecognizer {
@@ -93,6 +94,8 @@ struct WorkspaceListView: View {
                 }
             }
         }
+        // .listStyle(.inset)
+        // .scrollContentBackground(.hidden)
         .environment(\.sidebarRowSize, sidebarRowSize.sidebarRowSize)
         .safeAreaBar(edge: .bottom) {
             HStack(spacing: 0) {
@@ -129,6 +132,18 @@ struct WorkspaceListView: View {
         panel.prompt = "Select"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        if let existing = store.workspaces.first(where: { $0.directory == url.path }) {
+            existing.isArchived = false
+            appState.expandedWorkspaceIDs.insert("w:\(existing.id.uuidString)")
+            if let chat = existing.chats.sorted(by: { $0.date > $1.date }).first {
+                chat.isArchived = false
+                appState.selectedChat = chat
+            }
+            store.scheduleSave()
+            return
+        }
+
         let name = URL(fileURLWithPath: url.path).lastPathComponent
         let workspace = Workspace(name: name, directory: url.path)
         workspace.detectProjectType()

@@ -55,8 +55,16 @@ struct GitInspectorCommitArea: View {
                 state.showPushUpstreamAlert = true
                 return
             }
+            if snapshot.remoteAheadCount > 0 {
+                state.showPullRebaseAlert = true
+                return
+            }
             state.perform(.push(snapshot), directoryURL: directoryURL)
         case .pull:
+            if !snapshot.unpushedCommits.isEmpty {
+                state.showPullRebaseAlert = true
+                return
+            }
             Task {
                 await state.model.pull(snapshot: snapshot)
                 await state.refresh(directoryURL: directoryURL)
