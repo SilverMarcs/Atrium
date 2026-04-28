@@ -5,6 +5,7 @@ struct SessionDetailScreen: View {
     let sessionId: UUID
 
     @State private var draft: String = ""
+    @State private var showingInspector = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -46,6 +47,21 @@ struct SessionDetailScreen: View {
         }
         .navigationTitle(client.activeSession?.meta.title ?? "Session")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingInspector = true
+                } label: {
+                    Label("Info", systemImage: "info")
+                }
+                .disabled(client.activeSession == nil)
+            }
+        }
+        .sheet(isPresented: $showingInspector) {
+            if let workspaceId = client.activeSession?.meta.workspaceId {
+                SessionInspectorSheet(workspaceId: workspaceId)
+            }
+        }
         .task(id: sessionId) {
             client.subscribe(to: sessionId)
         }

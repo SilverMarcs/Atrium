@@ -4,29 +4,46 @@ struct ChatsScreen: View {
     let workspace: WireWorkspace
     @Environment(CompanionClient.self) private var client
     @State private var showingArchived = false
+    @State private var searchText = ""
+    @State private var pendingDelete: WireSessionMeta?
 
     var body: some View {
         List {
             Section("Active") {
-                if activeChats.isEmpty {
-                    Text("No active chats")
+                if filteredActive.isEmpty {
+                    Text(searchText.isEmpty ? "No active chats" : "No matches")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(activeChats) { chat in
+                ForEach(filteredActive) { chat in
                     NavigationLink(value: chat.id) {
                         ChatRow(chat: chat)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        archiveButton(for: chat)
+                        if chat.isActive {
+                            disconnectButton(for: chat)
+                        }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        deleteButton(for: chat)
                     }
                 }
             }
             if showingArchived {
                 Section("Archived") {
-                    if archivedChats.isEmpty {
-                        Text("No archived chats")
+                    if filteredArchived.isEmpty {
+                        Text(searchText.isEmpty ? "No archived chats" : "No matches")
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(archivedChats) { chat in
+                    ForEach(filteredArchived) { chat in
                         NavigationLink(value: chat.id) {
                             ChatRow(chat: chat)
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            archiveButton(for: chat)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            deleteButton(for: chat)
                         }
                     }
                 }
@@ -34,30 +51,87 @@ struct ChatsScreen: View {
         }
         .listStyle(.insetGrouped)
         .refreshable { client.requestSessionsList() }
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search chats")
         .navigationTitle(workspace.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 ArchiveFilterButton(showingArchived: $showingArchived)
             }
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                NewChatMenu(workspaceId: workspace.id)
+            }
         }
         .navigationDestination(for: UUID.self) { sessionId in
             SessionDetailScreen(sessionId: sessionId)
         }
+        .confirmationDialog(
+            "Delete chat?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            presenting: pendingDelete
+        ) { chat in
+            Button("Delete", role: .destructive) {
+                client.deleteChat(sessionId: chat.id)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { chat in
+            Text("\"\(chat.title.isEmpty ? "New Chat" : chat.title)\" will be removed.")
+        }
     }
 
-    /// Chats are read from the live `client.workspaces` list rather than the
-    /// snapshot passed in at navigation time so list updates from the host
-    /// (new turns, title changes) reflect immediately.
+    @ViewBuilder
+    private func archiveButton(for chat: WireSessionMeta) -> some View {
+        Button {
+            client.toggleArchive(sessionId: chat.id)
+        } label: {
+            Label(
+                chat.isArchived ? "Unarchive" : "Archive",
+                systemImage: chat.isArchived ? "tray.and.arrow.up" : "archivebox"
+            )
+        }
+        .tint(.orange)
+    }
+
+    @ViewBuilder
+    private func disconnectButton(for chat: WireSessionMeta) -> some View {
+        Button {
+            client.disconnectChat(sessionId: chat.id)
+        } label: {
+            Label("Disconnect", systemImage: "bolt.slash")
+        }
+        .tint(.gray)
+    }
+
+    @ViewBuilder
+    private func deleteButton(for chat: WireSessionMeta) -> some View {
+        Button(role: .destructive) {
+            pendingDelete = chat
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
     private var liveChats: [WireSessionMeta] {
         client.workspaces.first { $0.id == workspace.id }?.sessions ?? workspace.sessions
     }
 
-    private var activeChats: [WireSessionMeta] {
-        liveChats.filter { !$0.isArchived }
+    private var filteredActive: [WireSessionMeta] {
+        applySearch(liveChats.filter { !$0.isArchived })
     }
 
-    private var archivedChats: [WireSessionMeta] {
-        liveChats.filter { $0.isArchived }
+    private var filteredArchived: [WireSessionMeta] {
+        applySearch(liveChats.filter { $0.isArchived })
+    }
+
+    private func applySearch(_ chats: [WireSessionMeta]) -> [WireSessionMeta] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return chats }
+        return chats.filter { $0.title.localizedStandardContains(query) }
     }
 }

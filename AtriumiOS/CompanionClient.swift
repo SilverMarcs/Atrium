@@ -265,6 +265,13 @@ final class CompanionClient {
             if let turnCount = patch.turnCount { current.meta.turnCount = turnCount }
             if let isProcessing = patch.isProcessing { current.meta.isProcessing = isProcessing }
             if let messages = patch.messages { current.messages = messages }
+            if let modelLabel = patch.modelLabel { current.modelLabel = modelLabel }
+            if let permissionLabel = patch.permissionLabel { current.permissionLabel = permissionLabel }
+            if let permissionImage = patch.permissionSystemImage {
+                current.permissionSystemImage = permissionImage
+            }
+            if let usedTokens = patch.usedTokens { current.usedTokens = usedTokens }
+            if let contextSize = patch.contextSize { current.contextSize = contextSize }
             activeSession = current
         case .error:
             lastError = message.error
@@ -308,6 +315,38 @@ final class CompanionClient {
         var msg = CompanionMessage(kind: .sendPrompt)
         msg.sessionId = id
         msg.promptText = text
+        send(msg)
+    }
+
+    func toggleArchive(sessionId: UUID) {
+        var msg = CompanionMessage(kind: .archiveChat)
+        msg.sessionId = sessionId
+        send(msg)
+    }
+
+    func disconnectChat(sessionId: UUID) {
+        var msg = CompanionMessage(kind: .disconnectChat)
+        msg.sessionId = sessionId
+        send(msg)
+    }
+
+    func deleteChat(sessionId: UUID) {
+        var msg = CompanionMessage(kind: .deleteChat)
+        msg.sessionId = sessionId
+        send(msg)
+    }
+
+    func createChat(workspaceId: UUID, providerName: String) {
+        var msg = CompanionMessage(kind: .createChat)
+        msg.workspaceId = workspaceId
+        msg.providerName = providerName
+        send(msg)
+    }
+
+    func updateScratchpad(workspaceId: UUID, text: String) {
+        var msg = CompanionMessage(kind: .updateScratchpad)
+        msg.workspaceId = workspaceId
+        msg.scratchpadText = text
         send(msg)
     }
 }

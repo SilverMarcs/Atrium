@@ -254,6 +254,25 @@ private final class ClientHandler {
             if let id = message.sessionId, let text = message.promptText {
                 sendPrompt(sessionId: id, text: text)
             }
+        case .archiveChat:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId { toggleArchive(sessionId: id) }
+        case .disconnectChat:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId { disconnectChat(sessionId: id) }
+        case .deleteChat:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId { deleteChat(sessionId: id) }
+        case .createChat:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                createChat(workspaceId: wsId, providerName: message.providerName)
+            }
+        case .updateScratchpad:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let text = message.scratchpadText {
+                updateScratchpad(workspaceId: wsId, text: text)
+            }
         default:
             // Server-direction messages received from a client are ignored.
             break
@@ -285,6 +304,7 @@ private final class ClientHandler {
                 name: ws.name,
                 customIconData: WireSnapshotter.customIconBytes(for: ws),
                 isArchived: ws.isArchived,
+                scratchpad: ws.scratchPad,
                 sessions: ws.chats.map { chat in
                     WireSnapshotter.meta(for: chat, in: ws)
                 }
@@ -328,6 +348,46 @@ private final class ClientHandler {
         guard !trimmed.isEmpty else { return }
         chat.sendMessage(trimmed)
     }
+
+    private func toggleArchive(sessionId: UUID) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        if !chat.isArchived {
+            chat.disconnect()
+        }
+        chat.isArchived.toggle()
+        chat.workspace?.store?.scheduleSave()
+    }
+
+    private func disconnectChat(sessionId: UUID) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        chat.disconnect()
+    }
+
+    private func deleteChat(sessionId: UUID) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        // If this client was subscribed to the chat, drop the subscription
+        // before the underlying object is removed.
+        if subscription != nil { subscription?.invalidate(); subscription = nil }
+        chat.workspace?.removeChat(chat)
+    }
+
+    private func createChat(workspaceId: UUID, providerName: String?) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        let provider = providerName.flatMap { name in
+            AgentProvider.allCases.first { $0.rawValue == name }
+        } ?? .claude
+        let permissionMode = UserDefaults.standard.string(forKey: "defaultPermissionMode")
+            .flatMap { PermissionMode(rawValue: $0) } ?? .bypassPermissions
+        _ = workspace.addChat(provider: provider, permissionMode: permissionMode)
+    }
+
+    private func updateScratchpad(workspaceId: UUID, text: String) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else { return }
+        workspace.scratchPad = text
+    }
 }
 
 // MARK: - Subscription
@@ -367,6 +427,8 @@ private final class ChatSubscription {
             _ = chat.date
             _ = chat.usedTokens
             _ = chat.contextSize
+            _ = chat.model
+            _ = chat.permissionMode
             _ = chat.session.isProcessing
             for msg in chat.messages {
                 _ = msg.blocksData
@@ -391,12 +453,22 @@ private final class ChatSubscription {
         if now.meta.turnCount != lastSnapshot?.meta.turnCount { patch.turnCount = now.meta.turnCount }
         if now.meta.isProcessing != lastSnapshot?.meta.isProcessing { patch.isProcessing = now.meta.isProcessing }
         if now.messages != lastSnapshot?.messages { patch.messages = now.messages }
+        if now.modelLabel != lastSnapshot?.modelLabel { patch.modelLabel = now.modelLabel }
+        if now.permissionLabel != lastSnapshot?.permissionLabel { patch.permissionLabel = now.permissionLabel }
+        if now.permissionSystemImage != lastSnapshot?.permissionSystemImage {
+            patch.permissionSystemImage = now.permissionSystemImage
+        }
+        if now.usedTokens != lastSnapshot?.usedTokens { patch.usedTokens = now.usedTokens }
+        if now.contextSize != lastSnapshot?.contextSize { patch.contextSize = now.contextSize }
         lastSnapshot = now
         // Skip empty patches — the observation tracker can fire for fields
         // that produce identical wire output (e.g. ignored properties touched
         // mid-update), and we don't want to spam the iOS client.
         if patch.title == nil && patch.date == nil && patch.turnCount == nil
-            && patch.isProcessing == nil && patch.messages == nil {
+            && patch.isProcessing == nil && patch.messages == nil
+            && patch.modelLabel == nil && patch.permissionLabel == nil
+            && patch.permissionSystemImage == nil
+            && patch.usedTokens == nil && patch.contextSize == nil {
             return
         }
         send(patch)
@@ -440,6 +512,7 @@ private final class WorkspaceListObserver {
                 _ = ws.name
                 _ = ws.isArchived
                 _ = ws.customIconFilename
+                _ = ws.scratchPad
                 for chat in ws.chats {
                     _ = chat.title
                     _ = chat.turnCount
@@ -518,7 +591,15 @@ private enum WireSnapshotter {
             isActive: chat.session.isConnected,
             hasNotification: chat.hasNotification
         )
-        return WireSession(meta: meta, messages: chat.messages.map(wireMessage(_:)))
+        return WireSession(
+            meta: meta,
+            messages: chat.messages.map(wireMessage(_:)),
+            modelLabel: chat.model.name,
+            permissionLabel: chat.permissionMode.label,
+            permissionSystemImage: chat.permissionMode.systemImage,
+            usedTokens: chat.usedTokens,
+            contextSize: chat.contextSize
+        )
     }
 
     private static func wireMessage(_ m: Message) -> WireMessage {

@@ -22,6 +22,11 @@ public enum CompanionKind: String, Codable, Sendable {
     case subscribe
     case unsubscribe
     case sendPrompt
+    case createChat
+    case archiveChat
+    case disconnectChat
+    case deleteChat
+    case updateScratchpad
 
     // Server → Client
     case hello
@@ -52,6 +57,13 @@ public struct CompanionMessage: Codable, Sendable {
 
     // sendPrompt
     public var promptText: String?
+
+    // createChat
+    public var workspaceId: UUID?
+    public var providerName: String?
+
+    // updateScratchpad
+    public var scratchpadText: String?
 
     // authResult
     public var ok: Bool?
@@ -87,13 +99,17 @@ public struct WireWorkspace: Codable, Sendable, Identifiable, Hashable {
     /// inline without a separate asset request.
     public var customIconData: Data?
     public var isArchived: Bool
+    /// Workspace-level scratchpad text. Carried in the workspace list so the
+    /// iOS inspector can display + edit it without a separate fetch.
+    public var scratchpad: String
     public var sessions: [WireSessionMeta]
 
-    public init(id: UUID, name: String, customIconData: Data?, isArchived: Bool, sessions: [WireSessionMeta]) {
+    public init(id: UUID, name: String, customIconData: Data?, isArchived: Bool, scratchpad: String, sessions: [WireSessionMeta]) {
         self.id = id
         self.name = name
         self.customIconData = customIconData
         self.isArchived = isArchived
+        self.scratchpad = scratchpad
         self.sessions = sessions
     }
 }
@@ -132,10 +148,22 @@ public struct WireSessionMeta: Codable, Sendable, Identifiable, Hashable {
 public struct WireSession: Codable, Sendable {
     public var meta: WireSessionMeta
     public var messages: [WireMessage]
+    /// Inspector-only fields. Cheap to ship as part of the session
+    /// snapshot since the iOS inspector reads them directly.
+    public var modelLabel: String
+    public var permissionLabel: String
+    public var permissionSystemImage: String
+    public var usedTokens: Int
+    public var contextSize: Int
 
-    public init(meta: WireSessionMeta, messages: [WireMessage]) {
+    public init(meta: WireSessionMeta, messages: [WireMessage], modelLabel: String, permissionLabel: String, permissionSystemImage: String, usedTokens: Int, contextSize: Int) {
         self.meta = meta
         self.messages = messages
+        self.modelLabel = modelLabel
+        self.permissionLabel = permissionLabel
+        self.permissionSystemImage = permissionSystemImage
+        self.usedTokens = usedTokens
+        self.contextSize = contextSize
     }
 }
 
@@ -169,13 +197,23 @@ public struct WireSessionPatch: Codable, Sendable {
     public var turnCount: Int?
     public var isProcessing: Bool?
     public var messages: [WireMessage]?
+    public var modelLabel: String?
+    public var permissionLabel: String?
+    public var permissionSystemImage: String?
+    public var usedTokens: Int?
+    public var contextSize: Int?
 
-    public init(title: String? = nil, date: Date? = nil, turnCount: Int? = nil, isProcessing: Bool? = nil, messages: [WireMessage]? = nil) {
+    public init(title: String? = nil, date: Date? = nil, turnCount: Int? = nil, isProcessing: Bool? = nil, messages: [WireMessage]? = nil, modelLabel: String? = nil, permissionLabel: String? = nil, permissionSystemImage: String? = nil, usedTokens: Int? = nil, contextSize: Int? = nil) {
         self.title = title
         self.date = date
         self.turnCount = turnCount
         self.isProcessing = isProcessing
         self.messages = messages
+        self.modelLabel = modelLabel
+        self.permissionLabel = permissionLabel
+        self.permissionSystemImage = permissionSystemImage
+        self.usedTokens = usedTokens
+        self.contextSize = contextSize
     }
 }
 
