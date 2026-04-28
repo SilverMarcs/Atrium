@@ -57,7 +57,7 @@ struct WorkspaceRow: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 22, height: 22)
                         .clipShape(.rect(cornerRadius: 8))
                 } else if workspace.projectType != .unknown {
                     Image(workspace.projectType.iconName)
