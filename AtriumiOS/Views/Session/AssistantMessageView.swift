@@ -13,8 +13,8 @@ struct AssistantMessageView: View {
                 switch group {
                 case .text(let text):
                     NativeMarkdownView(text: text)
-                case .tools(let symbols):
-                    ToolGroupBadge(symbols: symbols)
+                case .tools(let blocks):
+                    ToolGroupBadge(tools: blocks)
                 }
             }
         }
@@ -36,12 +36,11 @@ struct AssistantMessageView: View {
                     result.append(.text(block.text))
                 }
             case .toolCall:
-                let symbol = block.toolSymbolName ?? "wrench.and.screwdriver"
                 if case .tools(var prior) = result.last {
-                    prior.append(symbol)
+                    prior.append(block)
                     result[result.count - 1] = .tools(prior)
                 } else {
-                    result.append(.tools([symbol]))
+                    result.append(.tools([block]))
                 }
             }
         }
@@ -50,6 +49,6 @@ struct AssistantMessageView: View {
 
     private enum Group {
         case text(String)
-        case tools([String])
+        case tools([WireBlock])
     }
 }

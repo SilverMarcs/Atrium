@@ -1,18 +1,25 @@
 import SwiftUI
 
-/// Compact summary of a contiguous run of tool calls in an assistant
-/// message: distinct tool icons (deduped, capped) plus a count. No
-/// per-call detail — the iOS view stays a viewer, not a control surface.
+/// Capsule pill summarising a contiguous run of tool calls. Tap opens a
+/// sheet listing each call. Built as a plain `HStack` with `onTapGesture`
+/// rather than a `Button` because the `.bordered`/`.borderless` button
+/// styles tint the content with accent and don't expose a clean knob to
+/// override per-state.
 struct ToolGroupBadge: View {
-    let symbols: [String]
+    let tools: [WireBlock]
+    @State private var showingList = false
 
     private var distinctSymbols: [String] {
         var seen = Set<String>()
         var ordered: [String] = []
-        for symbol in symbols where seen.insert(symbol).inserted {
+        for symbol in tools.compactMap(\.toolSymbolName) where seen.insert(symbol).inserted {
             ordered.append(symbol)
         }
         return ordered
+    }
+
+    private var countLabel: String {
+        tools.count == 1 ? "1 tool" : "\(tools.count) tools"
     }
 
     var body: some View {
@@ -23,15 +30,16 @@ struct ToolGroupBadge: View {
             }
             Text(countLabel)
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                // .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.background.secondary)
         .clipShape(.capsule)
-    }
-
-    private var countLabel: String {
-        symbols.count == 1 ? "1 tool" : "\(symbols.count) tools"
+        .contentShape(.capsule)
+        .onTapGesture { showingList = true }
+        .sheet(isPresented: $showingList) {
+            ToolCallListSheet(tools: tools)
+        }
     }
 }

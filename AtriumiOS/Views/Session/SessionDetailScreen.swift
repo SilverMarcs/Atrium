@@ -36,10 +36,13 @@ struct SessionDetailScreen: View {
                         .id(Self.bottomID)
                 }
             }
-            .contentMargins([.top, .horizontal], 10)
+            .contentMargins(.top, 10)
+            .contentMargins([.horizontal, .bottom], 15)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: client.activeSession?.messages.last?.id) { _, _ in
-                withAnimation { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                // withAnimation {
+                     proxy.scrollTo(Self.bottomID, anchor: .bottom) 
+                // }
             }
             .onChange(of: isInputFocused) { _, focused in
                 if focused {
@@ -105,6 +108,7 @@ struct SessionDetailScreen: View {
             UserMessageView(text: plainText(of: message))
         case .assistant:
             AssistantMessageView(blocks: message.blocks)
+                .opacity(0.85)
         }
     }
 

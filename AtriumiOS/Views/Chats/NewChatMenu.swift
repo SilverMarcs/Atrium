@@ -16,14 +16,17 @@ struct NewChatMenu: View {
                 Button {
                     client.createChat(workspaceId: workspaceId, providerName: name)
                 } label: {
-                    Label(name, systemImage: providerSymbol(for: name))
+                    Label(name, image: providerSymbol(for: name))
                 }
             }
         } label: {
-            Label("New Chat", systemImage: "plus.bubble")
+            Label("New Chat", systemImage: "square.and.pencil")
         }
     }
 
+    /// Asset names of the provider symbol set bundled in
+    /// `AtriumiOS/Assets.xcassets/SFSymbols/`. Passed via `image:` (not
+    /// `systemImage:`) since they're custom symbols, not SF Symbols.
     private func providerSymbol(for name: String) -> String {
         switch name {
         case "Claude": return "claude.symbols"
