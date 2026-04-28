@@ -40,6 +40,12 @@ public struct CompanionMessage: Codable, Sendable {
 
     // auth
     public var token: String?
+    /// Stable per-device identifier sent during `auth`. The server uses it
+    /// to evict any prior connection from the same client (e.g. after the
+    /// iPhone backgrounds, the OS kills the old socket but the server
+    /// hasn't noticed yet) so the connected-clients count reflects unique
+    /// devices instead of accumulated zombies.
+    public var clientId: UUID?
 
     // subscribe / unsubscribe / sendPrompt / sessionUpdate / sessionSnapshot
     public var sessionId: UUID?
@@ -74,11 +80,20 @@ public struct CompanionMessage: Codable, Sendable {
 public struct WireWorkspace: Codable, Sendable, Identifiable, Hashable {
     public var id: UUID
     public var name: String
+    /// Raw image bytes of the user's custom workspace icon (PNG/JPEG/ICNS).
+    /// nil when the workspace has no custom icon — iOS shows a folder
+    /// fallback in that case. Sized once per `listSessions`, refreshed on
+    /// pull-to-refresh; small enough at typical icon sizes (<200 KB) to ship
+    /// inline without a separate asset request.
+    public var customIconData: Data?
+    public var isArchived: Bool
     public var sessions: [WireSessionMeta]
 
-    public init(id: UUID, name: String, sessions: [WireSessionMeta]) {
+    public init(id: UUID, name: String, customIconData: Data?, isArchived: Bool, sessions: [WireSessionMeta]) {
         self.id = id
         self.name = name
+        self.customIconData = customIconData
+        self.isArchived = isArchived
         self.sessions = sessions
     }
 }
@@ -92,8 +107,15 @@ public struct WireSessionMeta: Codable, Sendable, Identifiable, Hashable {
     public var isProcessing: Bool
     public var isArchived: Bool
     public var providerName: String
+    /// Whether the chat has a live ACP session attached on the host. iOS
+    /// tints the provider icon when true, neutral when not — same idea as
+    /// the macOS sidebar.
+    public var isActive: Bool
+    /// Mirror of `Chat.hasNotification`. iOS uses this to flag the row with
+    /// a badge so the user can spot updates at a glance.
+    public var hasNotification: Bool
 
-    public init(id: UUID, workspaceId: UUID, title: String, date: Date, turnCount: Int, isProcessing: Bool, isArchived: Bool, providerName: String) {
+    public init(id: UUID, workspaceId: UUID, title: String, date: Date, turnCount: Int, isProcessing: Bool, isArchived: Bool, providerName: String, isActive: Bool, hasNotification: Bool) {
         self.id = id
         self.workspaceId = workspaceId
         self.title = title
@@ -102,6 +124,8 @@ public struct WireSessionMeta: Codable, Sendable, Identifiable, Hashable {
         self.isProcessing = isProcessing
         self.isArchived = isArchived
         self.providerName = providerName
+        self.isActive = isActive
+        self.hasNotification = hasNotification
     }
 }
 

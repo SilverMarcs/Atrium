@@ -23,6 +23,7 @@ final class CompanionServer {
     private var listener: NWListener?
     private var clients: [ObjectIdentifier: ClientHandler] = [:]
     private weak var workspaceStore: WorkspaceStore?
+    private var listObserver: WorkspaceListObserver?
 
     private init() {}
 
@@ -48,6 +49,12 @@ final class CompanionServer {
             self.listener = listener
             isRunning = true
             lastError = nil
+
+            let observer = WorkspaceListObserver(store: workspaceStore) { [weak self] in
+                self?.broadcastSessionsList()
+            }
+            observer.start()
+            self.listObserver = observer
         } catch {
             lastError = error.localizedDescription
             print("[Companion] failed to start listener: \(error)")
@@ -57,11 +64,19 @@ final class CompanionServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        listObserver?.invalidate()
+        listObserver = nil
         for (_, client) in clients { client.close() }
         clients.removeAll()
         clientCount = 0
         isRunning = false
         port = 0
+    }
+
+    fileprivate func broadcastSessionsList() {
+        for handler in clients.values where handler.isAuthenticated {
+            handler.sendSessionsList()
+        }
     }
 
     private func handleListenerState(_ state: NWListener.State) {
@@ -80,12 +95,32 @@ final class CompanionServer {
 
     private func accept(_ connection: NWConnection) {
         guard let workspaceStore else { connection.cancel(); return }
-        let client = ClientHandler(connection: connection, store: workspaceStore) { [weak self] handler in
-            Task { @MainActor in self?.remove(handler) }
-        }
+        let client = ClientHandler(
+            connection: connection,
+            store: workspaceStore,
+            onAuth: { [weak self] handler, clientId in
+                Task { @MainActor in self?.evictDuplicates(of: handler, clientId: clientId) }
+            },
+            onClose: { [weak self] handler in
+                Task { @MainActor in self?.remove(handler) }
+            }
+        )
         clients[ObjectIdentifier(client)] = client
         clientCount = clients.count
         client.start()
+    }
+
+    /// When a client successfully authenticates with a known `clientId`, drop
+    /// any other handler advertising the same id. This is what keeps the
+    /// "connected clients" count accurate when the same iPhone reconnects
+    /// after the OS dropped its socket on backgrounding.
+    private func evictDuplicates(of newHandler: ClientHandler, clientId: UUID) {
+        let stale = clients.values.filter { $0 !== newHandler && $0.clientId == clientId }
+        for handler in stale {
+            handler.close()
+            clients.removeValue(forKey: ObjectIdentifier(handler))
+        }
+        clientCount = clients.count
     }
 
     private func remove(_ handler: ClientHandler) {
@@ -107,15 +142,23 @@ final class CompanionServer {
 private final class ClientHandler {
     private let connection: NWConnection
     private weak var store: WorkspaceStore?
+    private let onAuth: (ClientHandler, UUID) -> Void
     private let onClose: (ClientHandler) -> Void
 
     private let frameBuffer = CompanionFrameBuffer()
-    private var authenticated = false
+    private(set) var isAuthenticated = false
+    private(set) var clientId: UUID?
     private var subscription: ChatSubscription?
 
-    init(connection: NWConnection, store: WorkspaceStore, onClose: @escaping (ClientHandler) -> Void) {
+    init(
+        connection: NWConnection,
+        store: WorkspaceStore,
+        onAuth: @escaping (ClientHandler, UUID) -> Void,
+        onClose: @escaping (ClientHandler) -> Void
+    ) {
         self.connection = connection
         self.store = store
+        self.onAuth = onAuth
         self.onClose = onClose
     }
 
@@ -196,18 +239,18 @@ private final class ClientHandler {
     private func handle(_ message: CompanionMessage) {
         switch message.kind {
         case .auth:
-            handleAuth(token: message.token ?? "")
+            handleAuth(token: message.token ?? "", clientId: message.clientId)
         case .listSessions:
-            guard authenticated else { sendError("not authenticated"); return }
+            guard isAuthenticated else { sendError("not authenticated"); return }
             sendSessionsList()
         case .subscribe:
-            guard authenticated else { sendError("not authenticated"); return }
+            guard isAuthenticated else { sendError("not authenticated"); return }
             if let id = message.sessionId { subscribe(to: id) }
         case .unsubscribe:
             subscription?.invalidate()
             subscription = nil
         case .sendPrompt:
-            guard authenticated else { sendError("not authenticated"); return }
+            guard isAuthenticated else { sendError("not authenticated"); return }
             if let id = message.sessionId, let text = message.promptText {
                 sendPrompt(sessionId: id, text: text)
             }
@@ -217,10 +260,14 @@ private final class ClientHandler {
         }
     }
 
-    private func handleAuth(token: String) {
+    private func handleAuth(token: String, clientId: UUID?) {
         let expected = CompanionPairing.displayCode(for: CompanionPairing.token)
         let ok = !token.isEmpty && token == expected
-        authenticated = ok
+        isAuthenticated = ok
+        if ok, let clientId {
+            self.clientId = clientId
+            onAuth(self, clientId)
+        }
         var reply = CompanionMessage(kind: .authResult)
         reply.ok = ok
         if !ok { reply.error = "Invalid pairing code" }
@@ -230,12 +277,14 @@ private final class ClientHandler {
         }
     }
 
-    private func sendSessionsList() {
+    fileprivate func sendSessionsList() {
         guard let store else { return }
         let workspaces = store.workspaces.map { ws in
             WireWorkspace(
                 id: ws.id,
                 name: ws.name,
+                customIconData: WireSnapshotter.customIconBytes(for: ws),
+                isArchived: ws.isArchived,
                 sessions: ws.chats.map { chat in
                     WireSnapshotter.meta(for: chat, in: ws)
                 }
@@ -354,15 +403,90 @@ private final class ChatSubscription {
     }
 }
 
+// MARK: - Workspace list observer
+
+/// Watches the entire `WorkspaceStore` for changes that affect the iOS
+/// workspaces/chats list (titles, archived flags, connection state,
+/// notifications, etc.) and fires `notify` so the server can broadcast a
+/// fresh `sessionsList` to all authenticated clients. Debounced so a burst
+/// of mutations during a single tick collapses into one push.
+@MainActor
+private final class WorkspaceListObserver {
+    private weak var store: WorkspaceStore?
+    private let notify: () -> Void
+    private var debounceTask: Task<Void, Never>?
+    private var invalidated = false
+
+    init(store: WorkspaceStore, notify: @escaping () -> Void) {
+        self.store = store
+        self.notify = notify
+    }
+
+    func start() {
+        arm()
+    }
+
+    func invalidate() {
+        invalidated = true
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
+
+    private func arm() {
+        guard !invalidated, let store else { return }
+        withObservationTracking { [weak self] in
+            guard let store = self?.store else { return }
+            for ws in store.workspaces {
+                _ = ws.name
+                _ = ws.isArchived
+                _ = ws.customIconFilename
+                for chat in ws.chats {
+                    _ = chat.title
+                    _ = chat.turnCount
+                    _ = chat.date
+                    _ = chat.isArchived
+                    _ = chat.hasNotification
+                    _ = chat.session.isConnected
+                    _ = chat.session.isProcessing
+                }
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, !self.invalidated else { return }
+                self.debounceTask?.cancel()
+                self.debounceTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    if Task.isCancelled { return }
+                    guard let self, !self.invalidated else { return }
+                    self.notify()
+                    self.arm()
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Snapshotting
 
 @MainActor
 private enum WireSnapshotter {
+    /// Workspace icons large enough to be sketchy as inline JSON payloads
+    /// are skipped — iOS renders the folder fallback for those. Typical
+    /// .icns / .png icons are well under this cap.
+    private static let maxIconBytes = 512 * 1024
+
     static func findChat(id: UUID, in store: WorkspaceStore) -> Chat? {
         for ws in store.workspaces {
             if let chat = ws.chats.first(where: { $0.id == id }) { return chat }
         }
         return nil
+    }
+
+    static func customIconBytes(for workspace: Workspace) -> Data? {
+        guard let url = workspace.customIconURL else { return nil }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard data.count <= maxIconBytes else { return nil }
+        return data
     }
 
     static func meta(for chat: Chat, in workspace: Workspace) -> WireSessionMeta {
@@ -374,7 +498,9 @@ private enum WireSnapshotter {
             turnCount: chat.turnCount,
             isProcessing: chat.session.isProcessing,
             isArchived: chat.isArchived,
-            providerName: chat.provider.rawValue
+            providerName: chat.provider.rawValue,
+            isActive: chat.session.isConnected,
+            hasNotification: chat.hasNotification
         )
     }
 
@@ -388,7 +514,9 @@ private enum WireSnapshotter {
             turnCount: chat.turnCount,
             isProcessing: chat.session.isProcessing,
             isArchived: chat.isArchived,
-            providerName: chat.provider.rawValue
+            providerName: chat.provider.rawValue,
+            isActive: chat.session.isConnected,
+            hasNotification: chat.hasNotification
         )
         return WireSession(meta: meta, messages: chat.messages.map(wireMessage(_:)))
     }
