@@ -358,14 +358,10 @@ final class Chat: Identifiable, Hashable, Codable {
 
     func revert(toBeforeTurn turn: Int) async {
         guard turn >= 1, turn <= turnCount else { return }
-
-        let revertedUserPrompts = messages
-            .filter { $0.turnIndex >= turn && $0.role == .user }
-            .map(\.text)
-            .filter { !$0.isEmpty }
-
-        let revertedMsg = messages.first { $0.turnIndex == turn && $0.role == .user }
-        prompt = revertedMsg?.text ?? ""
+        let restoreToTurn = turn - 1
+        let oldTurnCount = turnCount
+        let workspaceURL = (workspace?.directory).map { URL(fileURLWithPath: $0) }
+        let snapshotsToRestore = checkpoints.first { $0.turnIndex == restoreToTurn }?.repoSnapshots
 
         // Cancel any in-flight turn without tearing down the agent session,
         // so the agent retains conversation context. The hidden note injected
@@ -375,39 +371,42 @@ final class Chat: Identifiable, Hashable, Codable {
             session.stopStreaming()
         }
 
-        messages.removeAll { $0.turnIndex >= turn }
-
-        let restoreToTurn = turn - 1
-        if let checkpoint = checkpoints.first(where: { $0.turnIndex == restoreToTurn }),
-           let dir = workspace?.directory {
+        if let workspaceURL, let snapshots = snapshotsToRestore {
             do {
-                try await CheckpointService.restoreCheckpoint(
-                    workspace: URL(fileURLWithPath: dir),
-                    snapshots: checkpoint.repoSnapshots
-                )
+                try await CheckpointService.restoreCheckpoint(workspace: workspaceURL, snapshots: snapshots)
             } catch {
                 print("[Revert] filesystem restore failed: \(error.localizedDescription)")
             }
         }
 
-        checkpoints.removeAll { $0.turnIndex >= turn }
-
-        if let dir = workspace?.directory {
+        if let workspaceURL {
             await CheckpointService.deleteCheckpoints(
-                workspace: URL(fileURLWithPath: dir),
+                workspace: workspaceURL,
                 chatId: checkpointNamespace,
                 afterTurn: restoreToTurn,
-                throughTurn: turnCount
+                throughTurn: oldTurnCount
             )
         }
 
-        turnCount = restoreToTurn
+        applyReverted(toBeforeTurn: turn)
+        scheduleSave()
+    }
+
+    // Sole place revert mutates Chat state. Keep all trimming here so
+    // `revert` only orchestrates async I/O around this single reducer.
+    private func applyReverted(toBeforeTurn turn: Int) {
+        let revertedUserPrompts = messages
+            .filter { $0.turnIndex >= turn && $0.role == .user }
+            .map(\.text)
+            .filter { !$0.isEmpty }
+
+        prompt = messages.first { $0.turnIndex == turn && $0.role == .user }?.text ?? ""
+        messages.removeAll { $0.turnIndex >= turn }
+        checkpoints.removeAll { $0.turnIndex >= turn }
+        turnCount = turn - 1
         date = Date()
         currentTurnMessage = nil
-
         pendingRevertedPrompts.append(contentsOf: revertedUserPrompts)
-
-        scheduleSave()
     }
 
     private func buildRevertNote() -> String? {

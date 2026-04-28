@@ -23,6 +23,7 @@ struct ChatSidebarRow: View {
             } else {
                 Text(chat.displayTitle)
                     .lineLimit(1)
+                    .shimmerWithoutRedact(when: chat.session.isProcessing)
             }
         } icon: {
             Image(chat.provider.imageName)
