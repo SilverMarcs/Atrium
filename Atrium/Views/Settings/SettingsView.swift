@@ -15,11 +15,15 @@ struct SettingsView: View {
                 ShortcutsSettingsView()
             }
 
+            Tab("Companion", systemImage: "iphone.gen3") {
+                CompanionSettingsView()
+            }
+
             Tab("Credits", systemImage: "heart") {
                 CreditsSettingsView()
             }
         }
-        .frame(width: 480, height: 400)
+        .frame(width: 480, height: 440)
     }
 }
 

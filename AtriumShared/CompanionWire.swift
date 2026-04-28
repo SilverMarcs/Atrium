@@ -1,0 +1,213 @@
+import Foundation
+
+/// Wire protocol for the Atrium companion connection. Both the macOS server
+/// (host) and the iOS client compile this file. Keep it dependency-free —
+/// Foundation only — so the iOS target stays minimal.
+///
+/// Transport: a single TCP connection per client. Each frame is a 4-byte
+/// big-endian length prefix followed by JSON-encoded `CompanionMessage` bytes.
+
+public enum CompanionWire {
+    public static let bonjourServiceType = "_atrium._tcp"
+    public static let protocolVersion = 1
+    /// Maximum frame size we'll accept. Generous for `sessionSnapshot`
+    /// payloads but bounded so a malformed length prefix can't OOM us.
+    public static let maxFrameBytes = 16 * 1024 * 1024
+}
+
+public enum CompanionKind: String, Codable, Sendable {
+    // Client → Server
+    case auth
+    case listSessions
+    case subscribe
+    case unsubscribe
+    case sendPrompt
+
+    // Server → Client
+    case hello
+    case authResult
+    case sessionsList
+    case sessionSnapshot
+    case sessionUpdate
+    case error
+}
+
+/// Single envelope type for both directions. Optional fields are populated
+/// based on `kind`; everything else stays `nil`. This is verbose but keeps
+/// JSON round-tripping trivial on both sides without custom Codable.
+public struct CompanionMessage: Codable, Sendable {
+    public var kind: CompanionKind
+
+    // auth
+    public var token: String?
+
+    // subscribe / unsubscribe / sendPrompt / sessionUpdate / sessionSnapshot
+    public var sessionId: UUID?
+
+    // sendPrompt
+    public var promptText: String?
+
+    // authResult
+    public var ok: Bool?
+
+    // authResult / error
+    public var error: String?
+
+    // hello
+    public var serverName: String?
+    public var version: Int?
+
+    // sessionsList
+    public var workspaces: [WireWorkspace]?
+
+    // sessionSnapshot
+    public var session: WireSession?
+
+    // sessionUpdate
+    public var patch: WireSessionPatch?
+
+    public init(kind: CompanionKind) {
+        self.kind = kind
+    }
+}
+
+public struct WireWorkspace: Codable, Sendable, Identifiable, Hashable {
+    public var id: UUID
+    public var name: String
+    public var sessions: [WireSessionMeta]
+
+    public init(id: UUID, name: String, sessions: [WireSessionMeta]) {
+        self.id = id
+        self.name = name
+        self.sessions = sessions
+    }
+}
+
+public struct WireSessionMeta: Codable, Sendable, Identifiable, Hashable {
+    public var id: UUID
+    public var workspaceId: UUID
+    public var title: String
+    public var date: Date
+    public var turnCount: Int
+    public var isProcessing: Bool
+    public var isArchived: Bool
+    public var providerName: String
+
+    public init(id: UUID, workspaceId: UUID, title: String, date: Date, turnCount: Int, isProcessing: Bool, isArchived: Bool, providerName: String) {
+        self.id = id
+        self.workspaceId = workspaceId
+        self.title = title
+        self.date = date
+        self.turnCount = turnCount
+        self.isProcessing = isProcessing
+        self.isArchived = isArchived
+        self.providerName = providerName
+    }
+}
+
+public struct WireSession: Codable, Sendable {
+    public var meta: WireSessionMeta
+    public var messages: [WireMessage]
+
+    public init(meta: WireSessionMeta, messages: [WireMessage]) {
+        self.meta = meta
+        self.messages = messages
+    }
+}
+
+public struct WireMessage: Codable, Sendable, Identifiable, Hashable {
+    public enum Role: String, Codable, Sendable { case user, assistant }
+
+    public var id: UUID
+    public var role: Role
+    public var turnIndex: Int
+    public var text: String
+    /// Brief tool-call summaries flattened to single lines so the iOS UI can
+    /// show them without re-implementing the assistant block renderer.
+    public var toolSummaries: [String]
+
+    public init(id: UUID, role: Role, turnIndex: Int, text: String, toolSummaries: [String]) {
+        self.id = id
+        self.role = role
+        self.turnIndex = turnIndex
+        self.text = text
+        self.toolSummaries = toolSummaries
+    }
+}
+
+/// Sent on every change in a subscribed session. Fields that didn't change
+/// are nil. The simplest correct patch is "full message list replacement",
+/// which we use for MVP — chats are small enough that bandwidth doesn't
+/// matter.
+public struct WireSessionPatch: Codable, Sendable {
+    public var title: String?
+    public var date: Date?
+    public var turnCount: Int?
+    public var isProcessing: Bool?
+    public var messages: [WireMessage]?
+
+    public init(title: String? = nil, date: Date? = nil, turnCount: Int? = nil, isProcessing: Bool? = nil, messages: [WireMessage]? = nil) {
+        self.title = title
+        self.date = date
+        self.turnCount = turnCount
+        self.isProcessing = isProcessing
+        self.messages = messages
+    }
+}
+
+// MARK: - Framing
+
+/// Reads/writes 4-byte big-endian length prefixes around JSON payloads.
+public enum CompanionFraming {
+    public static func encode(_ message: CompanionMessage) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let body = try encoder.encode(message)
+        precondition(body.count <= CompanionWire.maxFrameBytes, "frame too large")
+        var prefix = UInt32(body.count).bigEndian
+        var out = Data(capacity: 4 + body.count)
+        withUnsafeBytes(of: &prefix) { out.append(contentsOf: $0) }
+        out.append(body)
+        return out
+    }
+
+    public static func decode(_ data: Data) throws -> CompanionMessage {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(CompanionMessage.self, from: data)
+    }
+}
+
+/// Accumulates bytes from an `NWConnection` receive callback and pops
+/// complete frames as they arrive. Not thread-safe — confine to one actor.
+public final class CompanionFrameBuffer {
+    private var buffer = Data()
+
+    public init() {}
+
+    public func append(_ data: Data) {
+        buffer.append(data)
+    }
+
+    /// Returns the next complete frame body (JSON bytes only — length prefix
+    /// already stripped) or nil if not enough bytes have arrived. Throws on
+    /// oversized frames so a corrupt prefix tears the connection down rather
+    /// than buffering forever.
+    public func nextFrame() throws -> Data? {
+        guard buffer.count >= 4 else { return nil }
+        let length = buffer.prefix(4).withUnsafeBytes { raw -> UInt32 in
+            raw.load(as: UInt32.self).bigEndian
+        }
+        if Int(length) > CompanionWire.maxFrameBytes {
+            throw CompanionFramingError.oversizedFrame(Int(length))
+        }
+        guard buffer.count >= 4 + Int(length) else { return nil }
+        let body = buffer.subdata(in: 4 ..< 4 + Int(length))
+        buffer.removeSubrange(0 ..< 4 + Int(length))
+        return body
+    }
+}
+
+public enum CompanionFramingError: Error {
+    case oversizedFrame(Int)
+}
