@@ -27,6 +27,7 @@ public enum CompanionKind: String, Codable, Sendable {
     case disconnectChat
     case deleteChat
     case updateScratchpad
+    case stopChat
 
     // Server → Client
     case hello
@@ -173,17 +174,38 @@ public struct WireMessage: Codable, Sendable, Identifiable, Hashable {
     public var id: UUID
     public var role: Role
     public var turnIndex: Int
-    public var text: String
-    /// Brief tool-call summaries flattened to single lines so the iOS UI can
-    /// show them without re-implementing the assistant block renderer.
-    public var toolSummaries: [String]
+    /// Ordered content blocks. Text and tool-calls preserve the order the
+    /// host saw them in, so the iOS view can collapse contiguous tool-call
+    /// runs into a single badge while still rendering markdown text in
+    /// between.
+    public var blocks: [WireBlock]
 
-    public init(id: UUID, role: Role, turnIndex: Int, text: String, toolSummaries: [String]) {
+    public init(id: UUID, role: Role, turnIndex: Int, blocks: [WireBlock]) {
         self.id = id
         self.role = role
         self.turnIndex = turnIndex
+        self.blocks = blocks
+    }
+}
+
+public struct WireBlock: Codable, Sendable, Hashable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+        case text
+        case toolCall
+    }
+
+    public var id: UUID
+    public var kind: Kind
+    public var text: String
+    /// SF Symbol name for tool-call blocks. Lets iOS render a small badge
+    /// per call without needing to re-derive symbols from kind strings.
+    public var toolSymbolName: String?
+
+    public init(id: UUID, kind: Kind, text: String = "", toolSymbolName: String? = nil) {
+        self.id = id
+        self.kind = kind
         self.text = text
-        self.toolSummaries = toolSummaries
+        self.toolSymbolName = toolSymbolName
     }
 }
 

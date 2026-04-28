@@ -273,6 +273,9 @@ private final class ClientHandler {
             if let wsId = message.workspaceId, let text = message.scratchpadText {
                 updateScratchpad(workspaceId: wsId, text: text)
             }
+        case .stopChat:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId { stopChat(sessionId: id) }
         default:
             // Server-direction messages received from a client are ignored.
             break
@@ -361,6 +364,11 @@ private final class ClientHandler {
     private func disconnectChat(sessionId: UUID) {
         guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
         chat.disconnect()
+    }
+
+    private func stopChat(sessionId: UUID) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        chat.session.stopStreaming()
     }
 
     private func deleteChat(sessionId: UUID) {
@@ -604,44 +612,48 @@ private enum WireSnapshotter {
 
     private static func wireMessage(_ m: Message) -> WireMessage {
         let role: WireMessage.Role = (m.role == .user) ? .user : .assistant
-        var text = ""
-        var tools: [String] = []
+        var blocks: [WireBlock] = []
+        // Coalesce consecutive text/thought runs into one text block. Tool
+        // calls and images each get their own block so iOS preserves the
+        // order between text and tools within a turn.
+        var pendingText: String = ""
+        func flushText() {
+            if !pendingText.isEmpty {
+                blocks.append(WireBlock(id: UUID(), kind: .text, text: pendingText))
+                pendingText = ""
+            }
+        }
         for block in m.blocks {
             switch block.type {
             case .text:
-                text += block.text
+                pendingText += block.text
             case .thought:
-                // Skip thoughts in the iOS view — the user can read them on
-                // the Mac if they care. Keeps the phone view focused.
+                // Thoughts skipped on iOS — the Mac is the place to read them.
                 break
             case .toolCall:
-                tools.append(toolSummary(block))
+                flushText()
+                blocks.append(WireBlock(
+                    id: block.id,
+                    kind: .toolCall,
+                    text: block.toolTitle ?? block.toolKind?.rawValue.capitalized ?? "Tool",
+                    toolSymbolName: block.toolKind?.symbolName ?? "wrench.and.screwdriver"
+                ))
             case .image:
-                tools.append("📎 image attachment")
+                flushText()
+                blocks.append(WireBlock(
+                    id: block.id,
+                    kind: .toolCall,
+                    text: "Image",
+                    toolSymbolName: "photo"
+                ))
             }
         }
+        flushText()
         return WireMessage(
             id: m.id,
             role: role,
             turnIndex: m.turnIndex,
-            text: text,
-            toolSummaries: tools
+            blocks: blocks
         )
-    }
-
-    private static func toolSummary(_ block: MessageBlock) -> String {
-        let title = block.toolTitle ?? block.toolKind?.rawValue.capitalized ?? "Tool"
-        let status: String
-        switch block.toolStatus {
-        case .completed: status = "✓"
-        case .failed: status = "✗"
-        case .inProgress: status = "…"
-        case .pending, .none: status = "•"
-        @unknown default: status = "•"
-        }
-        if let path = block.diffPath, !path.isEmpty {
-            return "\(status) \(title) — \(path)"
-        }
-        return "\(status) \(title)"
     }
 }

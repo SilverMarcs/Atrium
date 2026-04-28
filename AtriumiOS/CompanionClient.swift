@@ -330,6 +330,12 @@ final class CompanionClient {
         send(msg)
     }
 
+    func stopChat(sessionId: UUID) {
+        var msg = CompanionMessage(kind: .stopChat)
+        msg.sessionId = sessionId
+        send(msg)
+    }
+
     func deleteChat(sessionId: UUID) {
         var msg = CompanionMessage(kind: .deleteChat)
         msg.sessionId = sessionId
