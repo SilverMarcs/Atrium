@@ -308,7 +308,7 @@ private final class ClientHandler {
                 customIconData: WireSnapshotter.customIconBytes(for: ws),
                 isArchived: ws.isArchived,
                 scratchpad: ws.scratchPad,
-                sessions: ws.chats.map { chat in
+                sessions: ws.chats.sorted { $0.sortOrder < $1.sortOrder }.map { chat in
                     WireSnapshotter.meta(for: chat, in: ws)
                 }
             )
@@ -325,6 +325,11 @@ private final class ClientHandler {
             sendError("session not found")
             return
         }
+        // Opening a chat from the iOS client counts as "seen" — same
+        // semantics as `AppState.selectedChat` clearing it on the Mac.
+        // The list observer picks up the change and broadcasts a fresh
+        // sessionsList to all clients (including the Mac sidebar).
+        if chat.hasNotification { chat.hasNotification = false }
         // Snapshot first so the client has a baseline, then start watching.
         var snap = CompanionMessage(kind: .sessionSnapshot)
         snap.sessionId = chat.id
@@ -384,12 +389,29 @@ private final class ClientHandler {
             sendError("workspace not found")
             return
         }
-        let provider = providerName.flatMap { name in
-            AgentProvider.allCases.first { $0.rawValue == name }
-        } ?? .claude
+        // No explicit provider from iOS = "primary action": fall back to
+        // whatever the user picked as `defaultChatMode` on the Mac. Same
+        // appstorage key the Mac sidebar's New Chat button reads.
+        let provider: AgentProvider = {
+            if let name = providerName,
+               let p = AgentProvider.allCases.first(where: { $0.rawValue == name }) {
+                return p
+            }
+            if let raw = UserDefaults.standard.string(forKey: "defaultChatMode"),
+               let p = AgentProvider(rawValue: raw) {
+                return p
+            }
+            return .claude
+        }()
         let permissionMode = UserDefaults.standard.string(forKey: "defaultPermissionMode")
             .flatMap { PermissionMode(rawValue: $0) } ?? .bypassPermissions
-        _ = workspace.addChat(provider: provider, permissionMode: permissionMode)
+        let chat = workspace.addChat(provider: provider, permissionMode: permissionMode)
+        // Echo back the new chat id so the iOS client can push it onto its
+        // nav stack without having to diff the next sessionsList.
+        var reply = CompanionMessage(kind: .chatCreated)
+        reply.workspaceId = workspaceId
+        reply.sessionId = chat.id
+        send(reply)
     }
 
     private func updateScratchpad(workspaceId: UUID, text: String) {

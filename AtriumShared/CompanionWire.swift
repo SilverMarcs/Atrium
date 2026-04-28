@@ -35,6 +35,7 @@ public enum CompanionKind: String, Codable, Sendable {
     case sessionsList
     case sessionSnapshot
     case sessionUpdate
+    case chatCreated
     case error
 }
 

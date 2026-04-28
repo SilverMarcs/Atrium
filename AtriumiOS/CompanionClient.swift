@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Observation
+import UserNotifications
 
 /// Browses for `_atrium._tcp` Bonjour services, manages a single connection
 /// to the chosen host, authenticates with the 6-digit pairing code, and
@@ -28,6 +29,8 @@ final class CompanionClient {
     private static let pairingCodeKey = "companion.pairingCode"
     private static let lastHostNameKey = "companion.lastHostName"
     private static let clientIdKey = "companion.clientId"
+    private static let hasConnectedKey = "companion.hasConnectedBefore"
+    private static let notifPermAskedKey = "companion.notifPermAsked"
     /// Per-install identifier the iOS client sends to the Mac on every
     /// auth. The server uses this to evict prior connections from this
     /// same device, so reconnects don't accumulate as separate sessions.
@@ -50,6 +53,28 @@ final class CompanionClient {
     private(set) var activeSession: WireSession?
     private(set) var subscribedSessionId: UUID?
     private(set) var lastError: String?
+    /// Persists across app launches. Drives the root view: while true, the
+    /// app stays on the workspaces flow even if the socket is currently
+    /// disconnected, so backgrounding doesn't visibly bounce the user back
+    /// to the pairing screen. Reset only on user-initiated disconnect or a
+    /// rejected auth handshake.
+    private(set) var hasConnectedBefore: Bool
+    /// Workspace + session pair to navigate to. Drives both notification
+    /// taps and the post-`createChat` push — the root view either appends
+    /// `.chat(...)` (when the user is already on the matching workspace)
+    /// or rebuilds the path with both stops.
+    var pendingDeepLink: PendingDeepLink?
+
+    var isConnectedNow: Bool {
+        if case .connected = state { return true }
+        return false
+    }
+
+    /// True when we've authenticated at least once but the current socket
+    /// isn't live — i.e. we're showing stale data while reconnecting.
+    var isReconnecting: Bool {
+        hasConnectedBefore && !isConnectedNow
+    }
 
     var savedPairingCode: String {
         UserDefaults.standard.string(forKey: Self.pairingCodeKey) ?? ""
@@ -65,7 +90,17 @@ final class CompanionClient {
     /// next time the user hits Connect.
     private var userInitiatedDisconnect = false
 
-    init() {}
+    init() {
+        // Optimistic seed: if we paired successfully on a previous launch
+        // we want the workspaces UI to come up immediately, then auth
+        // either confirms (no flicker) or flips this off (drop to pairing).
+        self.hasConnectedBefore = UserDefaults.standard.bool(forKey: Self.hasConnectedKey)
+    }
+
+    private func setHasConnectedBefore(_ value: Bool) {
+        hasConnectedBefore = value
+        UserDefaults.standard.set(value, forKey: Self.hasConnectedKey)
+    }
 
     var savedHostName: String { UserDefaults.standard.string(forKey: Self.lastHostNameKey) ?? "" }
 
@@ -145,9 +180,12 @@ final class CompanionClient {
     func connect(to host: DiscoveredHost, pairingCode: String) {
         connection?.cancel()
         connection = nil
-        workspaces = []
-        activeSession = nil
-        subscribedSessionId = nil
+        // Intentionally not clearing `workspaces`, `activeSession`, or
+        // `subscribedSessionId` here — when this is a transparent
+        // reconnect (foregrounding from background), we want the UI to
+        // keep showing the last-known data while we re-auth. The host's
+        // `sessionsList` and re-issued `sessionSnapshot` overwrite this
+        // shortly after auth completes.
         pendingPairingCode = pairingCode
         userInitiatedDisconnect = false
         UserDefaults.standard.set(pairingCode, forKey: Self.pairingCodeKey)
@@ -173,6 +211,7 @@ final class CompanionClient {
         workspaces = []
         activeSession = nil
         subscribedSessionId = nil
+        setHasConnectedBefore(false)
     }
 
     private func handleConnectionState(_ cstate: NWConnection.State) {
@@ -245,14 +284,28 @@ final class CompanionClient {
             break
         case .authResult:
             if message.ok == true {
+                setHasConnectedBefore(true)
                 state = .connected(serverName: message.serverName ?? "Atrium")
                 pendingPairingCode = nil
+                requestNotificationsIfNeeded()
                 requestSessionsList()
+                // If the user was viewing a chat when the connection
+                // dropped (e.g. iOS killed the socket on background),
+                // re-subscribe so they get a fresh snapshot without
+                // having to navigate away and back.
+                if let id = subscribedSessionId {
+                    var sub = CompanionMessage(kind: .subscribe)
+                    sub.sessionId = id
+                    send(sub)
+                }
             } else {
+                setHasConnectedBefore(false)
                 state = .failed(message.error ?? "Pairing failed")
             }
         case .sessionsList:
-            workspaces = message.workspaces ?? []
+            let newWorkspaces = message.workspaces ?? []
+            notifyForFinishedSessions(old: workspaces, new: newWorkspaces)
+            workspaces = newWorkspaces
         case .sessionSnapshot:
             if let session = message.session, message.sessionId == subscribedSessionId {
                 activeSession = session
@@ -273,6 +326,13 @@ final class CompanionClient {
             if let usedTokens = patch.usedTokens { current.usedTokens = usedTokens }
             if let contextSize = patch.contextSize { current.contextSize = contextSize }
             activeSession = current
+        case .chatCreated:
+            if let workspaceId = message.workspaceId, let sessionId = message.sessionId {
+                pendingDeepLink = PendingDeepLink(
+                    workspaceId: workspaceId,
+                    sessionId: sessionId
+                )
+            }
         case .error:
             lastError = message.error
         default:
@@ -295,9 +355,23 @@ final class CompanionClient {
         }
         subscribedSessionId = sessionId
         activeSession = nil
+        // Optimistically clear the notification badge locally so the row
+        // updates immediately; the host will broadcast the same change
+        // when it processes the subscribe.
+        clearLocalNotification(sessionId: sessionId)
         var sub = CompanionMessage(kind: .subscribe)
         sub.sessionId = sessionId
         send(sub)
+    }
+
+    private func clearLocalNotification(sessionId: UUID) {
+        for wsIdx in workspaces.indices {
+            guard let chatIdx = workspaces[wsIdx].sessions.firstIndex(where: { $0.id == sessionId }) else { continue }
+            if workspaces[wsIdx].sessions[chatIdx].hasNotification {
+                workspaces[wsIdx].sessions[chatIdx].hasNotification = false
+            }
+            return
+        }
     }
 
     func unsubscribe() {
@@ -342,7 +416,9 @@ final class CompanionClient {
         send(msg)
     }
 
-    func createChat(workspaceId: UUID, providerName: String) {
+    /// `providerName == nil` is the "primary action" — Mac falls back to
+    /// its `defaultChatMode` AppStorage to pick the provider.
+    func createChat(workspaceId: UUID, providerName: String?) {
         var msg = CompanionMessage(kind: .createChat)
         msg.workspaceId = workspaceId
         msg.providerName = providerName
@@ -354,5 +430,58 @@ final class CompanionClient {
         msg.workspaceId = workspaceId
         msg.scratchpadText = text
         send(msg)
+    }
+
+    // MARK: - Notifications
+
+    private func requestNotificationsIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.notifPermAskedKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.notifPermAskedKey)
+        Task { @MainActor in
+            _ = try? await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])
+        }
+    }
+
+    /// Compares the previous and incoming workspace lists; for any chat
+    /// that just transitioned from `isProcessing == true` to `false`
+    /// while the user is *not* on its detail screen, posts a local
+    /// notification. Skips the very first list (no baseline to diff).
+    private func notifyForFinishedSessions(old: [WireWorkspace], new: [WireWorkspace]) {
+        guard !old.isEmpty else { return }
+        var oldProcessing: [UUID: Bool] = [:]
+        for ws in old {
+            for s in ws.sessions {
+                oldProcessing[s.id] = s.isProcessing
+            }
+        }
+        for ws in new {
+            for s in ws.sessions {
+                guard let was = oldProcessing[s.id], was, !s.isProcessing else { continue }
+                if subscribedSessionId == s.id { continue }
+                postFinishedNotification(workspaceName: ws.name, session: s)
+            }
+        }
+    }
+
+    private func postFinishedNotification(workspaceName: String, session: WireSessionMeta) {
+        let content = UNMutableNotificationContent()
+        content.title = workspaceName
+        let title = session.title.isEmpty ? "Chat" : session.title
+        content.body = "\(title) finished responding"
+        content.sound = .default
+        // Stash IDs so a tap can deep-link directly to this chat.
+        content.userInfo = [
+            "workspaceId": session.workspaceId.uuidString,
+            "sessionId": session.id.uuidString
+        ]
+        // Per-session identifier so a fresh "finished" replaces any
+        // already-pending alert for that chat instead of stacking.
+        let request = UNNotificationRequest(
+            identifier: "companion.finished.\(session.id.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 }

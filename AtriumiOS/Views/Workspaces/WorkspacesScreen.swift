@@ -13,7 +13,7 @@ struct WorkspacesScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(filteredActive) { workspace in
-                    NavigationLink(value: workspace) {
+                    NavigationLink(value: Route.workspace(workspace)) {
                         WorkspaceRow(workspace: workspace)
                     }
                 }
@@ -25,7 +25,7 @@ struct WorkspacesScreen: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(filteredArchived) { workspace in
-                        NavigationLink(value: workspace) {
+                        NavigationLink(value: Route.workspace(workspace)) {
                             WorkspaceRow(workspace: workspace)
                         }
                     }
@@ -45,14 +45,16 @@ struct WorkspacesScreen: View {
                     Label("Disconnect", systemImage: "power")
                 }
             }
+            if client.isReconnecting {
+                ToolbarItem(placement: .principal) {
+                    Text("Reconnecting…")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 ArchiveFilterButton(showingArchived: $showingArchived)
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.fixed, placement: .bottomBar)
-        }
-        .navigationDestination(for: WireWorkspace.self) { workspace in
-            ChatsScreen(workspace: workspace)
         }
     }
 

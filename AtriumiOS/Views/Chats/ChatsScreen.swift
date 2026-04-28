@@ -15,7 +15,7 @@ struct ChatsScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(filteredActive) { chat in
-                    NavigationLink(value: chat.id) {
+                    NavigationLink(value: Route.chat(chat.id)) {
                         ChatRow(chat: chat)
                     }
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -36,7 +36,7 @@ struct ChatsScreen: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(filteredArchived) { chat in
-                        NavigationLink(value: chat.id) {
+                        NavigationLink(value: Route.chat(chat.id)) {
                             ChatRow(chat: chat)
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -63,9 +63,6 @@ struct ChatsScreen: View {
             ToolbarItem(placement: .bottomBar) {
                 NewChatMenu(workspaceId: workspace.id)
             }
-        }
-        .navigationDestination(for: UUID.self) { sessionId in
-            SessionDetailScreen(sessionId: sessionId)
         }
         .confirmationDialog(
             "Delete chat?",

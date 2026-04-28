@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// "New chat" toolbar control that fans out to a provider picker. Hooks
-/// straight into `client.createChat(workspaceId:providerName:)` — the Mac
-/// adds the chat to the workspace and the broadcast loop pushes the
-/// updated list back.
+/// Mirrors the macOS sidebar's "New Chat" Menu: tap fires the primary
+/// action (creates a chat with whatever provider is set as the user's
+/// default in the Mac app), long-press opens the submenu to pick a
+/// specific provider. The Mac echoes back a `chatCreated` reply with the
+/// new session id, and the root view auto-pushes it onto the nav stack.
 struct NewChatMenu: View {
     @Environment(CompanionClient.self) private var client
     let workspaceId: UUID
@@ -21,12 +22,12 @@ struct NewChatMenu: View {
             }
         } label: {
             Label("New Chat", systemImage: "square.and.pencil")
+        } primaryAction: {
+            // nil provider tells the Mac "use the user's defaultChatMode".
+            client.createChat(workspaceId: workspaceId, providerName: nil)
         }
     }
 
-    /// Asset names of the provider symbol set bundled in
-    /// `AtriumiOS/Assets.xcassets/SFSymbols/`. Passed via `image:` (not
-    /// `systemImage:`) since they're custom symbols, not SF Symbols.
     private func providerSymbol(for name: String) -> String {
         switch name {
         case "Claude": return "claude.symbols"
