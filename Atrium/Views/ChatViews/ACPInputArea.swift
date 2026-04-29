@@ -7,6 +7,11 @@ struct ACPInputArea: View {
     @FocusState private var isFocused: Bool
     @Environment(AppState.self) var state
     @AppStorage("enterToSendChat") private var enterToSendChat: Bool = false
+    /// Set when the popover dismisses via Escape or an outside click, so we
+    /// stay closed even though the user's "/foo" prefix would otherwise
+    /// trigger us again. Cleared once the slash sequence ends (whitespace
+    /// or the leading "/" gone), letting the next "/" reopen the menu.
+    @State private var slashMenuSuppressed = false
 
     private var session: ACPSession { chat.session }
 
@@ -19,8 +24,11 @@ struct ACPInputArea: View {
         let prompt = chat.prompt
         guard prompt.hasPrefix("/") else { return nil }
         let afterSlash = prompt.dropFirst()
-        if let end = afterSlash.firstIndex(where: { $0.isWhitespace || $0.isNewline }) {
-            return String(afterSlash[..<end])
+        // Once whitespace appears after the slash, the user has finished
+        // typing the command name — drop the popover instead of keeping it
+        // open while they type the rest of the line.
+        if afterSlash.contains(where: { $0.isWhitespace || $0.isNewline }) {
+            return nil
         }
         return String(afterSlash)
     }
@@ -33,16 +41,17 @@ struct ACPInputArea: View {
     }
 
     private var showSlashMenu: Bool {
-        slashQuery != nil && !filteredCommands.isEmpty
+        slashQuery != nil && !filteredCommands.isEmpty && !slashMenuSuppressed
     }
 
     private var slashMenuBinding: Binding<Bool> {
         Binding(
             get: { showSlashMenu },
             set: { newValue in
-                if !newValue && showSlashMenu {
-                    chat.prompt = ""
-                }
+                // Escape / outside-click. Suppress until the slash sequence
+                // ends — don't touch `chat.prompt`, the user can still send
+                // "/foo" as literal text.
+                if !newValue { slashMenuSuppressed = true }
             }
         )
     }
@@ -109,6 +118,12 @@ struct ACPInputArea: View {
             .padding(12)
         }
         .imagePasteHandler(chat: chat)
+        .onChange(of: slashQuery) { _, newValue in
+            // Once the user backs out of the slash sequence (cleared the
+            // "/" or typed past it), drop the suppression flag so the next
+            // "/" they type reopens the menu.
+            if newValue == nil { slashMenuSuppressed = false }
+        }
         .toolbar {
             ToolbarItem(placement: .keyboard) {
                Button("Focus") {
