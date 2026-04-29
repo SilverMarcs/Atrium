@@ -11,16 +11,7 @@ struct InspectorView: View {
             .toolbar {
                 if let defaultCommand = workspace.defaultCommand {
                     ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            if defaultCommand.hasChildProcess {
-                                defaultCommand.interrupt()
-                            } else {
-                                workspace.runCommand(defaultCommand)
-                            }
-                        } label: {
-                            Image(systemName: defaultCommand.hasChildProcess ? "stop.fill" : "play.fill")
-                                .contentTransition(.symbolEffect(.replace))
-                        }
+                        runCommandControl(for: defaultCommand)
                     }
                 }
 
@@ -48,6 +39,49 @@ struct InspectorView: View {
                 .labelsHidden()
                 .padding(.horizontal, 10)
             }
+    }
+
+    @ViewBuilder
+    private func runCommandControl(for defaultCommand: Terminal) -> some View {
+        let others = workspace.commands.filter { cmd in
+            cmd.id != defaultCommand.id
+                && !(cmd.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+        }
+
+        if others.isEmpty {
+            Button {
+                trigger(defaultCommand)
+            } label: {
+                runIcon(for: defaultCommand)
+            }
+        } else {
+            Menu {
+                ForEach(others) { cmd in
+                    Button {
+                        trigger(cmd)
+                    } label: {
+                        Label(cmd.title, systemImage: cmd.hasChildProcess ? "stop.fill" : "play.fill")
+                    }
+                }
+            } label: {
+                runIcon(for: defaultCommand)
+            } primaryAction: {
+                trigger(defaultCommand)
+            }
+        }
+    }
+
+    private func trigger(_ cmd: Terminal) {
+        if cmd.hasChildProcess {
+            cmd.interrupt()
+        } else {
+            workspace.runCommand(cmd)
+        }
+    }
+
+    private func runIcon(for cmd: Terminal) -> some View {
+        Image(systemName: cmd.hasChildProcess ? "stop.fill" : "play.fill")
+            .contentTransition(.symbolEffect(.replace))
     }
 
     private func iconName(for tab: InspectorTab) -> String {
