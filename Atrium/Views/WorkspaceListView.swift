@@ -42,7 +42,6 @@ struct WorkspaceListView: View {
                         .sorted { $0.sortOrder < $1.sortOrder }
                     ForEach(chats) { chat in
                         ChatSidebarRow(chat: chat)
-                            .padding(.leading, -5)
                             .tag(chat)
                     }
                     .onMove { source, destination in
@@ -54,7 +53,9 @@ struct WorkspaceListView: View {
                     }
                 } label: {
                     WorkspaceRow(workspace: workspace)
-                    // .listRowSeparator(.hidden)
+                    .padding(.vertical, 5)
+                    .padding(.leading, 17)
+                    .scaleEffect(1.2) 
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .background(DoubleClickRecognizer {
@@ -96,7 +97,7 @@ struct WorkspaceListView: View {
         }
         // .listStyle(.inset)
         // .scrollContentBackground(.hidden)
-        .environment(\.sidebarRowSize, sidebarRowSize.sidebarRowSize)
+        .environment(\.sidebarRowSize, .medium)
         .safeAreaBar(edge: .bottom) {
             HStack(spacing: 0) {
                 Button {

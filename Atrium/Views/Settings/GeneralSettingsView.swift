@@ -13,11 +13,11 @@ struct GeneralSettingsView: View {
         Form {
             Section("Appearance") {
                 Toggle("Hide settings button from sidebar", isOn: $hideSettingsButton)
-                Picker("Sidebar row size", selection: $sidebarRowSize) {
-                    ForEach(SidebarRowSizePreference.allCases) { size in
-                        Text(size.displayName).tag(size)
-                    }
-                }
+                // Picker("Sidebar row size", selection: $sidebarRowSize) {
+                    // ForEach(SidebarRowSizePreference.allCases) { size in
+                        // Text(size.displayName).tag(size)
+                    // }
+                // }
             }
 
             Section {
