@@ -5,7 +5,6 @@ struct ChatsScreen: View {
     @Environment(CompanionClient.self) private var client
     @State private var showingArchived = false
     @State private var searchText = ""
-    @State private var pendingDelete: WireSessionMeta?
 
     var body: some View {
         List {
@@ -64,22 +63,6 @@ struct ChatsScreen: View {
                 NewChatMenu(workspaceId: workspace.id)
             }
         }
-        .confirmationDialog(
-            "Delete chat?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            presenting: pendingDelete
-        ) { chat in
-            Button("Delete", role: .destructive) {
-                client.deleteChat(sessionId: chat.id)
-                pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: { chat in
-            Text("\"\(chat.title.isEmpty ? "New Chat" : chat.title)\" will be removed.")
-        }
     }
 
     @ViewBuilder
@@ -108,7 +91,7 @@ struct ChatsScreen: View {
     @ViewBuilder
     private func deleteButton(for chat: WireSessionMeta) -> some View {
         Button(role: .destructive) {
-            pendingDelete = chat
+            client.deleteChat(sessionId: chat.id)
         } label: {
             Label("Delete", systemImage: "trash")
         }
