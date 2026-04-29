@@ -327,6 +327,7 @@ final class CompanionClient {
             if let contextSize = patch.contextSize { current.contextSize = contextSize }
             if let modelRaw = patch.modelRawValue { current.modelRawValue = modelRaw }
             if let modeRaw = patch.permissionModeRawValue { current.permissionModeRawValue = modeRaw }
+            if patch.errorChanged == true { current.error = patch.error }
             activeSession = current
         case .chatCreated:
             if let workspaceId = message.workspaceId, let sessionId = message.sessionId {

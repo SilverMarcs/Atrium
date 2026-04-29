@@ -22,6 +22,12 @@ struct SessionDetailScreen: View {
                                 .id(message.id)
                                 .padding(.vertical, 2)
                         }
+                        if let error = session.error {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .frame(maxWidth: .infinity)
+                                .foregroundStyle(.red)
+                                .padding(.vertical)
+                        }
                         if session.meta.isProcessing {
                             ProgressView()
                                 .controlSize(.small)

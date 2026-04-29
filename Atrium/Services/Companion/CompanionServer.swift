@@ -490,6 +490,7 @@ private final class ChatSubscription {
             _ = chat.model
             _ = chat.permissionMode
             _ = chat.session.isProcessing
+            _ = chat.session.error
             for msg in chat.messages {
                 _ = msg.blocksData
                 _ = msg.role
@@ -524,6 +525,10 @@ private final class ChatSubscription {
         if now.permissionModeRawValue != lastSnapshot?.permissionModeRawValue {
             patch.permissionModeRawValue = now.permissionModeRawValue
         }
+        if now.error != lastSnapshot?.error {
+            patch.error = now.error
+            patch.errorChanged = true
+        }
         lastSnapshot = now
         // Skip empty patches — the observation tracker can fire for fields
         // that produce identical wire output (e.g. ignored properties touched
@@ -533,7 +538,8 @@ private final class ChatSubscription {
             && patch.modelLabel == nil && patch.permissionLabel == nil
             && patch.permissionSystemImage == nil
             && patch.usedTokens == nil && patch.contextSize == nil
-            && patch.modelRawValue == nil && patch.permissionModeRawValue == nil {
+            && patch.modelRawValue == nil && patch.permissionModeRawValue == nil
+            && patch.errorChanged == nil {
             return
         }
         send(patch)
@@ -678,7 +684,8 @@ private enum WireSnapshotter {
             availableModels: availableModels,
             modelRawValue: chat.model.rawValue,
             availableModes: availableModes,
-            permissionModeRawValue: chat.permissionMode.rawValue
+            permissionModeRawValue: chat.permissionMode.rawValue,
+            error: chat.session.error
         )
     }
 

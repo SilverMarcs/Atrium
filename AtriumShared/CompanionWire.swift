@@ -171,6 +171,10 @@ public struct WireSession: Codable, Sendable {
     public var modelRawValue: String
     public var availableModes: [WirePermissionMode]
     public var permissionModeRawValue: String
+    /// Latest session-level error from the host (e.g. agent send failure).
+    /// nil means the chat has no active error. iOS renders a red banner when
+    /// set, mirroring the Mac's `ACPView` error label.
+    public var error: String?
 
     public init(
         meta: WireSessionMeta,
@@ -183,7 +187,8 @@ public struct WireSession: Codable, Sendable {
         availableModels: [WireAgentModel],
         modelRawValue: String,
         availableModes: [WirePermissionMode],
-        permissionModeRawValue: String
+        permissionModeRawValue: String,
+        error: String? = nil
     ) {
         self.meta = meta
         self.messages = messages
@@ -196,6 +201,7 @@ public struct WireSession: Codable, Sendable {
         self.modelRawValue = modelRawValue
         self.availableModes = availableModes
         self.permissionModeRawValue = permissionModeRawValue
+        self.error = error
     }
 }
 
@@ -294,6 +300,12 @@ public struct WireSessionPatch: Codable, Sendable {
     /// so they're not patched.
     public var modelRawValue: String?
     public var permissionModeRawValue: String?
+    /// New error value when the session's error state changed. nil here is
+    /// ambiguous between "no change" and "cleared", so `errorChanged` carries
+    /// the disambiguation: when true, apply `error` (which may itself be nil
+    /// to clear).
+    public var error: String?
+    public var errorChanged: Bool?
 
     public init(
         title: String? = nil,
@@ -307,7 +319,9 @@ public struct WireSessionPatch: Codable, Sendable {
         usedTokens: Int? = nil,
         contextSize: Int? = nil,
         modelRawValue: String? = nil,
-        permissionModeRawValue: String? = nil
+        permissionModeRawValue: String? = nil,
+        error: String? = nil,
+        errorChanged: Bool? = nil
     ) {
         self.title = title
         self.date = date
@@ -321,6 +335,8 @@ public struct WireSessionPatch: Codable, Sendable {
         self.contextSize = contextSize
         self.modelRawValue = modelRawValue
         self.permissionModeRawValue = permissionModeRawValue
+        self.error = error
+        self.errorChanged = errorChanged
     }
 }
 

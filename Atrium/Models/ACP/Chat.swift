@@ -143,6 +143,10 @@ final class Chat: Identifiable, Hashable, Codable {
         }
         guard !msgBlocks.isEmpty else { return }
 
+        // A fresh prompt supersedes any error left over from the prior turn —
+        // clear it so the red banner doesn't linger above the new exchange.
+        session.error = nil
+
         let pm = Message(role: .user, turnIndex: turnCount + 1)
         pm.blocks = msgBlocks
         pm.chat = self
