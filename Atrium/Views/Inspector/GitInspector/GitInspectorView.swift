@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct GitInspectorView: View {
@@ -134,6 +133,16 @@ struct GitInspectorView: View {
         } message: {
             Text("Your local branch and the remote have both moved forward. Rebase your local commits onto the remote to sync.")
         }
+        .alert("Cannot Pull Cleanly", isPresented: $state.showPullConflictAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Pulling would create merge conflicts with your uncommitted changes. Your working directory has been left untouched. Commit or stash your changes manually, resolve the conflict, and try again.")
+        }
+        .alert("Source Control", isPresented: errorAlertBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(state.model.errorMessage ?? "")
+        }
         .sheet(isPresented: $state.showSyncWithBranchSheet) {
             SyncWithBranchSheet(directoryURL: directoryURL, state: state)
         }
@@ -198,24 +207,21 @@ struct GitInspectorView: View {
 
     private enum BannerKind: Equatable {
         case success(String)
-        case error(String)
     }
 
     private var activeBanner: BannerKind? {
-        if let error = state.model.errorMessage { return .error(error) }
         if let success = state.model.successMessage { return .success(success) }
         return nil
     }
 
     @ViewBuilder
     private func bannerView(_ banner: BannerKind) -> some View {
-        let (icon, iconColor, message): (String, Color, String) = switch banner {
-        case .error(let msg): ("exclamationmark.triangle.fill", .yellow, msg)
-        case .success(let msg): ("checkmark.circle.fill", .green, msg)
+        let message: String = switch banner {
+        case .success(let msg): msg
         }
         HStack(spacing: 6) {
-            Image(systemName: icon)
-                .foregroundStyle(iconColor)
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
             Text(message)
                 .lineLimit(3)
             Spacer()
@@ -230,23 +236,14 @@ struct GitInspectorView: View {
         .padding(8)
         .padding(.horizontal, 2)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard case .error(let msg) = banner else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(msg, forType: .string)
-        }
         .task(id: banner) {
-            let seconds: Int = if case .success = banner { 3 } else { 5 }
-            try? await Task.sleep(for: .seconds(seconds))
+            try? await Task.sleep(for: .seconds(3))
             dismissBanner(banner)
         }
     }
 
     private func dismissBanner(_ banner: BannerKind) {
         switch banner {
-        case .error(let msg):
-            if state.model.errorMessage == msg { state.model.errorMessage = nil }
         case .success(let msg):
             if state.model.successMessage == msg { state.model.successMessage = nil }
         }
@@ -265,6 +262,13 @@ struct GitInspectorView: View {
         Binding(
             get: { state.pendingBranchSwitch != nil },
             set: { if !$0 { state.pendingBranchSwitch = nil } }
+        )
+    }
+
+    private var errorAlertBinding: Binding<Bool> {
+        Binding(
+            get: { state.model.errorMessage != nil },
+            set: { if !$0 { state.model.errorMessage = nil } }
         )
     }
 

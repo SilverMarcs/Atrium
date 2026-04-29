@@ -124,6 +124,17 @@ extension GitInspectorState {
         }
     }
 
+    func pullPreservingChanges(directoryURL: URL) {
+        guard let snapshot = currentSnapshot else { return }
+        Task {
+            let result = await model.pullPreservingChanges(snapshot: snapshot)
+            if result == .wouldConflict {
+                showPullConflictAlert = true
+            }
+            await refresh(directoryURL: directoryURL)
+        }
+    }
+
     func syncWithRemote(directoryURL: URL) {
         guard let snapshot = currentSnapshot else { return }
         Task {

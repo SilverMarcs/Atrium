@@ -244,6 +244,39 @@ actor GitRepository {
         try await self.executor.execute(GitPullCommand(), at: repositoryRootURL)
     }
 
+    /// Pulls while preserving any staged/unstaged/untracked changes in the working tree.
+    /// Stashes first, pulls, then re-applies. If re-apply would conflict, the working
+    /// tree is rolled back exactly to its pre-pull state and `.wouldConflict` is returned.
+    func pullPreservingChanges(at repositoryRootURL: URL) async throws -> PullPreservingResult {
+        let originalHEAD = try await self.executor.execute(GitRevParseHeadCommand(), at: repositoryRootURL)
+
+        try await self.executor.execute(GitStashCommand(), at: repositoryRootURL)
+
+        do {
+            try await self.executor.execute(GitPullCommand(), at: repositoryRootURL)
+        } catch {
+            try? await self.executor.execute(GitStashPopCommand(), at: repositoryRootURL)
+            throw error
+        }
+
+        let applyResult = try await self.executor.runWithExitCode(
+            arguments: ["stash", "apply", "--index"],
+            at: repositoryRootURL
+        )
+        if applyResult.exitCode == 0 {
+            try await self.executor.execute(GitStashDropCommand(), at: repositoryRootURL)
+            return .clean
+        }
+
+        // Conflict: undo the pull and the partial apply, then restore the original tree.
+        _ = try await self.executor.runWithExitCode(
+            arguments: ["reset", "--hard", originalHEAD],
+            at: repositoryRootURL
+        )
+        try await self.executor.execute(GitStashPopCommand(), at: repositoryRootURL)
+        return .wouldConflict
+    }
+
     func pullRebase(at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitPullRebaseCommand(), at: repositoryRootURL)
     }
@@ -769,6 +802,23 @@ private struct GitStashWithMessageCommand: GitCommand {
 private struct GitStashPopCommand: GitCommand {
     var arguments: [String] { ["stash", "pop", "--index"] }
     func parse(output: String) throws { }
+}
+
+private struct GitStashDropCommand: GitCommand {
+    var arguments: [String] { ["stash", "drop"] }
+    func parse(output: String) throws { }
+}
+
+private struct GitRevParseHeadCommand: GitCommand {
+    var arguments: [String] { ["rev-parse", "HEAD"] }
+    func parse(output: String) throws -> String {
+        output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+enum PullPreservingResult: Equatable, Sendable {
+    case clean
+    case wouldConflict
 }
 
 private struct GitRemoteAheadCountCommand: GitCommand {

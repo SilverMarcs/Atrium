@@ -65,6 +65,10 @@ struct GitInspectorCommitArea: View {
                 state.showPullRebaseAlert = true
                 return
             }
+            if snapshot.isDirty {
+                state.pullPreservingChanges(directoryURL: directoryURL)
+                return
+            }
             Task {
                 await state.model.pull(snapshot: snapshot)
                 await state.refresh(directoryURL: directoryURL)

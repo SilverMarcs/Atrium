@@ -110,6 +110,23 @@ final class GitInspectorModel {
         }
     }
 
+    func pullPreservingChanges(snapshot: GitRepositoryStatusSnapshot) async -> PullPreservingResult? {
+        activeTaskCount += 1
+        defer { activeTaskCount -= 1 }
+        errorMessage = nil
+        successMessage = nil
+        do {
+            let result = try await GitRepository.shared.pullPreservingChanges(at: snapshot.repositoryRootURL)
+            if result == .clean {
+                successMessage = "Pulled with local changes preserved"
+            }
+            return result
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func syncWithBranch(_ branch: String, snapshot: GitRepositoryStatusSnapshot) async {
         // Fetch first to ensure we have latest remote state
         try? await GitRepository.shared.fetch(at: snapshot.repositoryRootURL)

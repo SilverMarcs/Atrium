@@ -34,6 +34,12 @@ struct GitExecutor: Sendable {
         return (result.terminationStatus, stderr)
     }
 
+    func runWithExitCode(arguments: [String], at directoryURL: URL) async throws -> (exitCode: Int32, stderr: String) {
+        let result = try await self.run(arguments: arguments, at: directoryURL, stdinData: nil)
+        let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (result.terminationStatus, stderr)
+    }
+
     func runRawData(arguments: [String], at directoryURL: URL) async throws -> Data {
         let result = try await runBinary(arguments: arguments, at: directoryURL)
         guard result.terminationStatus == 0 else {
