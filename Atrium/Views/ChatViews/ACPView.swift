@@ -4,6 +4,8 @@ struct ACPView: View {
     let chat: Chat
 
     @State private var isPreparingInitialScroll = true
+    @State private var isAtBottom = true
+    @Environment(EditorPanel.self) private var panel
 
     private var session: ACPSession { chat.session }
     private var messages: [Message] { chat.messages }
@@ -48,6 +50,19 @@ struct ACPView: View {
                     .frame(height: 1)
                     .id("bottom")
                     .listRowSeparator(.hidden)
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                let maxOffset = geometry.contentSize.height - geometry.containerSize.height
+                return geometry.contentOffset.y >= maxOffset - 2
+            } action: { _, atBottom in
+                isAtBottom = atBottom
+            }
+            .onChange(of: panel.isOpen) {
+                guard !isPreparingInitialScroll, isAtBottom else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
