@@ -12,6 +12,10 @@ final class AppState {
     // Sidebar expansion state
     var expandedWorkspaceIDs: Set<String> = []
 
+    // Drives NavigationSplitView column visibility so we can toggle the
+    // sidebar programmatically (e.g. when the bottom editor panel expands).
+    var sidebarVisibility: NavigationSplitViewVisibility = .automatic
+
     // Inspector state
     var showingInspector = true
 
