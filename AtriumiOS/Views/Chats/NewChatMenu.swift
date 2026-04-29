@@ -9,15 +9,13 @@ struct NewChatMenu: View {
     @Environment(CompanionClient.self) private var client
     let workspaceId: UUID
 
-    private static let providers = ["Claude", "Codex", "Gemini"]
-
     var body: some View {
         Menu {
-            ForEach(Self.providers, id: \.self) { name in
+            ForEach(client.availableProviders, id: \.self) { name in
                 Button {
                     client.createChat(workspaceId: workspaceId, providerName: name)
                 } label: {
-                    Label(name, image: providerSymbol(for: name))
+                    Label(name, image: ProviderStyle.symbolName(forProviderName: name))
                 }
             }
         } label: {
@@ -25,15 +23,6 @@ struct NewChatMenu: View {
         } primaryAction: {
             // nil provider tells the Mac "use the user's defaultChatMode".
             client.createChat(workspaceId: workspaceId, providerName: nil)
-        }
-    }
-
-    private func providerSymbol(for name: String) -> String {
-        switch name {
-        case "Claude": return "claude.symbols"
-        case "Codex": return "openai.symbols"
-        case "Gemini": return "gemini.symbols"
-        default: return "sparkles"
         }
     }
 }

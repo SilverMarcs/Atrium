@@ -47,7 +47,7 @@ struct SessionInspectorSheet: View {
                                     Text(model.name)
                                 } icon: {
                                     Image(model.imageName)
-                                        .foregroundStyle(providerColor(for: session.meta.providerName))
+                                        .foregroundStyle(ProviderStyle.color(forProviderName: session.meta.providerName))
                                 }
                                 .tag(model.rawValue)
                             }
@@ -55,8 +55,8 @@ struct SessionInspectorSheet: View {
                             Label {
                                 Text(session.meta.providerName)
                             } icon: {
-                                // Image(providerSymbol(for: session.meta.providerName))
-                                    // .foregroundStyle(providerColor(for: session.meta.providerName))
+                                // Image(ProviderStyle.symbolName(forProviderName: session.meta.providerName))
+                                    // .foregroundStyle(ProviderStyle.color(forProviderName: session.meta.providerName))
                             }
                         }
                         .pickerStyle(.menu)
@@ -130,27 +130,6 @@ struct SessionInspectorSheet: View {
             if hasLoadedScratchpad {
                 flushScratchpad(scratchpadDraft)
             }
-        }
-    }
-
-    /// Same provider-symbol mapping used elsewhere in the iOS app —
-    /// matches the `model.imageName` value the macOS toolbar uses.
-    private func providerSymbol(for providerName: String) -> String {
-        switch providerName {
-        case "Claude": return "claude.symbols"
-        case "Codex": return "openai.symbols"
-        case "Gemini": return "gemini.symbols"
-        default: return "sparkles"
-        }
-    }
-
-    /// Provider tint — same RGB values as `AgentProvider.color` on macOS.
-    private func providerColor(for providerName: String) -> Color {
-        switch providerName {
-        case "Claude": return Color(red: 0.84, green: 0.41, blue: 0.23)
-        case "Codex": return Color(red: 0.0, green: 0.58, blue: 0.48)
-        case "Gemini": return Color(red: 0.26, green: 0.52, blue: 0.96)
-        default: return .accentColor
         }
     }
 

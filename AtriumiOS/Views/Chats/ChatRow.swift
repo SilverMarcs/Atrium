@@ -17,7 +17,7 @@ struct ChatRow: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        Text(ShortRelativeDate.string(from: chat.date))
+                        Text(RelativeTimeFormatter.shortRelative(from: chat.date))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }

@@ -11,18 +11,7 @@ struct WorkspaceDetailView: View {
 
     private var navigationSubtitle: String {
         guard chat.usedTokens > 0 else { return directorySubtitle }
-        return "\(formatTokens(chat.usedTokens)) / \(formatTokens(chat.contextSize))"
-    }
-
-    private func formatTokens(_ count: Int) -> String {
-        if count >= 1_000_000 {
-            let m = Double(count) / 1_000_000
-            return String(format: "%.1fM", m)
-        } else if count >= 1_000 {
-            let k = Double(count) / 1_000
-            return String(format: "%.1fK", k)
-        }
-        return "\(count)"
+        return "\(TokenFormatter.format(chat.usedTokens)) / \(TokenFormatter.format(chat.contextSize))"
     }
 
     var body: some View {

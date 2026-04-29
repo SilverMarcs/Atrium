@@ -50,6 +50,10 @@ final class CompanionClient {
     private(set) var state: ConnectionState = .idle
     private(set) var hosts: [DiscoveredHost] = []
     private(set) var workspaces: [WireWorkspace] = []
+    /// Provider names the host advertises on `sessionsList`. Empty until
+    /// the first list arrives; `NewChatMenu` reads it directly so the
+    /// available choices track whatever the Mac currently supports.
+    private(set) var availableProviders: [String] = []
     private(set) var activeSession: WireSession?
     private(set) var subscribedSessionId: UUID?
     private(set) var lastError: String?
@@ -209,6 +213,7 @@ final class CompanionClient {
         connection = nil
         state = .idle
         workspaces = []
+        availableProviders = []
         activeSession = nil
         subscribedSessionId = nil
         setHasConnectedBefore(false)
@@ -306,6 +311,9 @@ final class CompanionClient {
             let newWorkspaces = message.workspaces ?? []
             notifyForFinishedSessions(old: workspaces, new: newWorkspaces)
             workspaces = newWorkspaces
+            if let providers = message.availableProviders {
+                availableProviders = providers
+            }
         case .sessionSnapshot:
             if let session = message.session, message.sessionId == subscribedSessionId {
                 activeSession = session

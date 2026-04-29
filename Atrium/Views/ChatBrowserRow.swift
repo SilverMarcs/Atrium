@@ -25,7 +25,7 @@ struct ChatBrowserRow: View {
                                     .foregroundStyle(.secondary)
                             }
 
-                            Text(ChatBrowserView.shortRelative(from: chat.date))
+                            Text(RelativeTimeFormatter.shortRelative(from: chat.date))
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }

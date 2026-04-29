@@ -325,6 +325,7 @@ private final class ClientHandler {
         }
         var msg = CompanionMessage(kind: .sessionsList)
         msg.workspaces = workspaces
+        msg.availableProviders = AgentProvider.allCases.map(\.rawValue)
         send(msg)
     }
 

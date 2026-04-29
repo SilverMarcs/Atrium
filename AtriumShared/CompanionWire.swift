@@ -86,6 +86,12 @@ public struct CompanionMessage: Codable, Sendable {
 
     // sessionsList
     public var workspaces: [WireWorkspace]?
+    /// Provider names (e.g. "Claude", "Codex", "Gemini") the host supports
+    /// for new chats. Sent on `sessionsList` so iOS doesn't need to bake the
+    /// list into its binary — adding a provider on the Mac shows up in the
+    /// iOS "New Chat" menu after the next list refresh. Symbol/color come
+    /// from the shared `ProviderStyle` lookup keyed on the same name.
+    public var availableProviders: [String]?
 
     // sessionSnapshot
     public var session: WireSession?

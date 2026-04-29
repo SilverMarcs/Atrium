@@ -21,18 +21,10 @@ enum AgentProvider: String, Codable, CaseIterable {
     }
 
     var imageName: String {
-        switch self {
-        case .claude: return "claude.symbols"
-        case .codex: return "openai.symbols"
-        case .gemini: return "gemini.symbols"
-        }
+        ProviderStyle.symbolName(forProviderName: rawValue)
     }
 
     var color: Color {
-        switch self {
-        case .claude: return Color(red: 0.84, green: 0.41, blue: 0.23)
-        case .codex: return Color(red: 0.0, green: 0.58, blue: 0.48)
-        case .gemini: return Color(red: 0.26, green: 0.52, blue: 0.96)
-        }
+        ProviderStyle.color(forProviderName: rawValue)
     }
 }
