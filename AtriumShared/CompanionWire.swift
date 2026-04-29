@@ -155,16 +155,21 @@ public struct WireWorkspace: Codable, Sendable, Identifiable, Hashable {
     /// inline without a separate asset request.
     public var customIconData: Data?
     public var isArchived: Bool
+    /// True when any of the workspace's saved commands has a running child
+    /// process. Lets iOS promote an archived workspace into the Active list,
+    /// matching the Mac sidebar behaviour.
+    public var hasActiveChildProcess: Bool
     /// Workspace-level scratchpad text. Carried in the workspace list so the
     /// iOS inspector can display + edit it without a separate fetch.
     public var scratchpad: String
     public var sessions: [WireSessionMeta]
 
-    public init(id: UUID, name: String, customIconData: Data?, isArchived: Bool, scratchpad: String, sessions: [WireSessionMeta]) {
+    public init(id: UUID, name: String, customIconData: Data?, isArchived: Bool, hasActiveChildProcess: Bool, scratchpad: String, sessions: [WireSessionMeta]) {
         self.id = id
         self.name = name
         self.customIconData = customIconData
         self.isArchived = isArchived
+        self.hasActiveChildProcess = hasActiveChildProcess
         self.scratchpad = scratchpad
         self.sessions = sessions
     }

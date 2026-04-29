@@ -106,11 +106,11 @@ struct ChatsScreen: View {
     }
 
     private var filteredActive: [WireSessionMeta] {
-        applySearch(liveChats.filter { !$0.isArchived })
+        applySearch(liveChats.filter { !$0.isArchived || $0.isActive })
     }
 
     private var filteredArchived: [WireSessionMeta] {
-        applySearch(liveChats.filter { $0.isArchived })
+        applySearch(liveChats.filter { $0.isArchived && !$0.isActive })
     }
 
     private var isSearching: Bool {

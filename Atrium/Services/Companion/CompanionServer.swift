@@ -461,6 +461,7 @@ private final class ClientHandler {
                 name: ws.name,
                 customIconData: WireSnapshotter.customIconBytes(for: ws),
                 isArchived: ws.isArchived,
+                hasActiveChildProcess: ws.hasActiveChildProcess,
                 scratchpad: ws.scratchPad,
                 sessions: ws.chats.sorted { $0.sortOrder < $1.sortOrder }.map { chat in
                     WireSnapshotter.meta(for: chat, in: ws)

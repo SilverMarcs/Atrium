@@ -59,11 +59,15 @@ struct WorkspacesScreen: View {
     }
 
     private var filteredActive: [WireWorkspace] {
-        applySearch(client.workspaces.filter { !$0.isArchived })
+        applySearch(client.workspaces.filter { ws in
+            !ws.isArchived || ws.hasActiveChildProcess || ws.sessions.contains(where: { $0.isActive })
+        })
     }
 
     private var filteredArchived: [WireWorkspace] {
-        applySearch(client.workspaces.filter { $0.isArchived })
+        applySearch(client.workspaces.filter { ws in
+            ws.isArchived && !ws.hasActiveChildProcess && !ws.sessions.contains(where: { $0.isActive })
+        })
     }
 
     private var isSearching: Bool {
