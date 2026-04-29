@@ -14,33 +14,88 @@ struct SessionInspectorSheet: View {
     /// on every keystroke — pushes 400 ms after the last edit.
     @State private var pushTask: Task<Void, Never>?
 
+    /// Selection drives the host via `setSessionModel`; `CompanionClient`
+    /// optimistically updates `activeSession` so the picker doesn't lag.
+    private var modelBinding: Binding<String> {
+        Binding(
+            get: { client.activeSession?.modelRawValue ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                client.setSessionModel(newValue)
+            }
+        )
+    }
+
+    private var permissionBinding: Binding<String> {
+        Binding(
+            get: { client.activeSession?.permissionModeRawValue ?? "" },
+            set: { newValue in
+                guard !newValue.isEmpty else { return }
+                client.setSessionPermissionMode(newValue)
+            }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 if let session = client.activeSession {
                     Section("Model") {
-                        Label {
-                            Text(session.modelLabel.isEmpty ? "—" : session.modelLabel)
-                        } icon: {
-                            Image(providerSymbol(for: session.meta.providerName))
-                                .foregroundStyle(providerColor(for: session.meta.providerName))
+                        Picker(selection: modelBinding) {
+                            ForEach(session.availableModels) { model in
+                                Label {
+                                    Text(model.name)
+                                } icon: {
+                                    Image(model.imageName)
+                                        .foregroundStyle(providerColor(for: session.meta.providerName))
+                                }
+                                .tag(model.rawValue)
+                            }
+                        } label: {
+                            Label {
+                                Text(session.meta.providerName)
+                            } icon: {
+                                // Image(providerSymbol(for: session.meta.providerName))
+                                    // .foregroundStyle(providerColor(for: session.meta.providerName))
+                            }
                         }
+                        .pickerStyle(.menu)
                     }
+                    
                     Section("Permission") {
-                        Label(
-                            session.permissionLabel.isEmpty ? "—" : session.permissionLabel,
-                            systemImage: session.permissionSystemImage.isEmpty
-                                ? "lock"
-                                : session.permissionSystemImage
-                        )
+                        Picker(selection: permissionBinding) {
+                            ForEach(session.availableModes) { mode in
+                                Label(mode.label, systemImage: mode.systemImage)
+                                    .tag(mode.rawValue)
+                                    .labelStyle(.iconOnly)
+                            }
+                        } label: {
+                            Label(
+                                session.permissionLabel.isEmpty ? "—" : session.permissionLabel,
+                                systemImage: session.permissionSystemImage.isEmpty
+                                    ? "lock"
+                                    : session.permissionSystemImage
+                            )
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, -16)
+                        .padding(.top, -13)
                     }
+                    .controlSize(.large)
+                    // .listSectionMargins(.horizontal, 0)
+                    .listSectionSpacing(.compact)
+                    .listSectionSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
+                    
                     Section("Context") {
                         ContextUsageRow(used: session.usedTokens, total: session.contextSize)
                     }
                 }
                 Section("Scratchpad") {
-                    TextEditor(text: $scratchpadDraft)
-                        .frame(minHeight: 180)
+                    TextField("Enter your thoughts", text: $scratchpadDraft, axis: .vertical)
+                        .lineLimit(8, reservesSpace: true)
+                        .labelsHidden()
                         .onChange(of: scratchpadDraft) { _, newValue in
                             guard hasLoadedScratchpad else { return }
                             scheduleScratchpadPush(newValue)

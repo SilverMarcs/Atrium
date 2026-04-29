@@ -276,6 +276,16 @@ private final class ClientHandler {
         case .stopChat:
             guard isAuthenticated else { sendError("not authenticated"); return }
             if let id = message.sessionId { stopChat(sessionId: id) }
+        case .setSessionModel:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId, let raw = message.modelRawValue {
+                setSessionModel(sessionId: id, modelRawValue: raw)
+            }
+        case .setSessionPermissionMode:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let id = message.sessionId, let raw = message.permissionModeRawValue {
+                setSessionPermissionMode(sessionId: id, modeRawValue: raw)
+            }
         default:
             // Server-direction messages received from a client are ignored.
             break
@@ -418,6 +428,26 @@ private final class ClientHandler {
         guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else { return }
         workspace.scratchPad = text
     }
+
+    private func setSessionModel(sessionId: UUID, modelRawValue: String) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        guard let model = AgentModel(rawValue: modelRawValue), model.provider == chat.provider else {
+            sendError("invalid model")
+            return
+        }
+        chat.model = model
+        chat.session.applyModel(model)
+    }
+
+    private func setSessionPermissionMode(sessionId: UUID, modeRawValue: String) {
+        guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
+        guard let mode = PermissionMode(rawValue: modeRawValue) else {
+            sendError("invalid permission mode")
+            return
+        }
+        chat.permissionMode = mode
+        chat.session.applyPermissionMode(mode)
+    }
 }
 
 // MARK: - Subscription
@@ -490,6 +520,10 @@ private final class ChatSubscription {
         }
         if now.usedTokens != lastSnapshot?.usedTokens { patch.usedTokens = now.usedTokens }
         if now.contextSize != lastSnapshot?.contextSize { patch.contextSize = now.contextSize }
+        if now.modelRawValue != lastSnapshot?.modelRawValue { patch.modelRawValue = now.modelRawValue }
+        if now.permissionModeRawValue != lastSnapshot?.permissionModeRawValue {
+            patch.permissionModeRawValue = now.permissionModeRawValue
+        }
         lastSnapshot = now
         // Skip empty patches — the observation tracker can fire for fields
         // that produce identical wire output (e.g. ignored properties touched
@@ -498,7 +532,8 @@ private final class ChatSubscription {
             && patch.isProcessing == nil && patch.messages == nil
             && patch.modelLabel == nil && patch.permissionLabel == nil
             && patch.permissionSystemImage == nil
-            && patch.usedTokens == nil && patch.contextSize == nil {
+            && patch.usedTokens == nil && patch.contextSize == nil
+            && patch.modelRawValue == nil && patch.permissionModeRawValue == nil {
             return
         }
         send(patch)
@@ -621,6 +656,17 @@ private enum WireSnapshotter {
             isActive: chat.session.isConnected,
             hasNotification: chat.hasNotification
         )
+        let availableModels = AgentModel.models(for: chat.provider).map {
+            WireAgentModel(rawValue: $0.rawValue, name: $0.name, imageName: $0.imageName)
+        }
+        let availableModes = PermissionMode.allCases.map {
+            WirePermissionMode(
+                rawValue: $0.rawValue,
+                label: $0.label,
+                systemImage: $0.systemImage,
+                description: $0.description
+            )
+        }
         return WireSession(
             meta: meta,
             messages: chat.messages.map(wireMessage(_:)),
@@ -628,7 +674,11 @@ private enum WireSnapshotter {
             permissionLabel: chat.permissionMode.label,
             permissionSystemImage: chat.permissionMode.systemImage,
             usedTokens: chat.usedTokens,
-            contextSize: chat.contextSize
+            contextSize: chat.contextSize,
+            availableModels: availableModels,
+            modelRawValue: chat.model.rawValue,
+            availableModes: availableModes,
+            permissionModeRawValue: chat.permissionMode.rawValue
         )
     }
 

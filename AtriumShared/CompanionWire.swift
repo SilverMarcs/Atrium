@@ -28,6 +28,8 @@ public enum CompanionKind: String, Codable, Sendable {
     case deleteChat
     case updateScratchpad
     case stopChat
+    case setSessionModel
+    case setSessionPermissionMode
 
     // Server → Client
     case hello
@@ -66,6 +68,11 @@ public struct CompanionMessage: Codable, Sendable {
 
     // updateScratchpad
     public var scratchpadText: String?
+
+    // setSessionModel / setSessionPermissionMode — also patched in
+    // sessionUpdate when the host changes selection on the Mac side.
+    public var modelRawValue: String?
+    public var permissionModeRawValue: String?
 
     // authResult
     public var ok: Bool?
@@ -157,8 +164,27 @@ public struct WireSession: Codable, Sendable {
     public var permissionSystemImage: String
     public var usedTokens: Int
     public var contextSize: Int
+    /// Drives the iOS model picker. Available models are filtered by the
+    /// session's provider on the host side, so iOS never has to know which
+    /// models belong to which provider.
+    public var availableModels: [WireAgentModel]
+    public var modelRawValue: String
+    public var availableModes: [WirePermissionMode]
+    public var permissionModeRawValue: String
 
-    public init(meta: WireSessionMeta, messages: [WireMessage], modelLabel: String, permissionLabel: String, permissionSystemImage: String, usedTokens: Int, contextSize: Int) {
+    public init(
+        meta: WireSessionMeta,
+        messages: [WireMessage],
+        modelLabel: String,
+        permissionLabel: String,
+        permissionSystemImage: String,
+        usedTokens: Int,
+        contextSize: Int,
+        availableModels: [WireAgentModel],
+        modelRawValue: String,
+        availableModes: [WirePermissionMode],
+        permissionModeRawValue: String
+    ) {
         self.meta = meta
         self.messages = messages
         self.modelLabel = modelLabel
@@ -166,6 +192,43 @@ public struct WireSession: Codable, Sendable {
         self.permissionSystemImage = permissionSystemImage
         self.usedTokens = usedTokens
         self.contextSize = contextSize
+        self.availableModels = availableModels
+        self.modelRawValue = modelRawValue
+        self.availableModes = availableModes
+        self.permissionModeRawValue = permissionModeRawValue
+    }
+}
+
+/// Snapshot of one selectable model. Pure data — both sides read these as
+/// opaque options without needing to know about the host's `AgentModel`
+/// enum, so adding/removing models on the Mac doesn't require an iOS update.
+public struct WireAgentModel: Codable, Sendable, Hashable, Identifiable {
+    public var rawValue: String
+    public var name: String
+    public var imageName: String
+
+    public var id: String { rawValue }
+
+    public init(rawValue: String, name: String, imageName: String) {
+        self.rawValue = rawValue
+        self.name = name
+        self.imageName = imageName
+    }
+}
+
+public struct WirePermissionMode: Codable, Sendable, Hashable, Identifiable {
+    public var rawValue: String
+    public var label: String
+    public var systemImage: String
+    public var description: String
+
+    public var id: String { rawValue }
+
+    public init(rawValue: String, label: String, systemImage: String, description: String) {
+        self.rawValue = rawValue
+        self.label = label
+        self.systemImage = systemImage
+        self.description = description
     }
 }
 
@@ -225,8 +288,27 @@ public struct WireSessionPatch: Codable, Sendable {
     public var permissionSystemImage: String?
     public var usedTokens: Int?
     public var contextSize: Int?
+    /// Carried so the iOS picker reflects model/permission changes the user
+    /// makes on the Mac toolbar in real time. The available-options arrays
+    /// don't change for a given session (provider is fixed once created),
+    /// so they're not patched.
+    public var modelRawValue: String?
+    public var permissionModeRawValue: String?
 
-    public init(title: String? = nil, date: Date? = nil, turnCount: Int? = nil, isProcessing: Bool? = nil, messages: [WireMessage]? = nil, modelLabel: String? = nil, permissionLabel: String? = nil, permissionSystemImage: String? = nil, usedTokens: Int? = nil, contextSize: Int? = nil) {
+    public init(
+        title: String? = nil,
+        date: Date? = nil,
+        turnCount: Int? = nil,
+        isProcessing: Bool? = nil,
+        messages: [WireMessage]? = nil,
+        modelLabel: String? = nil,
+        permissionLabel: String? = nil,
+        permissionSystemImage: String? = nil,
+        usedTokens: Int? = nil,
+        contextSize: Int? = nil,
+        modelRawValue: String? = nil,
+        permissionModeRawValue: String? = nil
+    ) {
         self.title = title
         self.date = date
         self.turnCount = turnCount
@@ -237,6 +319,8 @@ public struct WireSessionPatch: Codable, Sendable {
         self.permissionSystemImage = permissionSystemImage
         self.usedTokens = usedTokens
         self.contextSize = contextSize
+        self.modelRawValue = modelRawValue
+        self.permissionModeRawValue = permissionModeRawValue
     }
 }
 

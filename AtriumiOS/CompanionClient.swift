@@ -325,6 +325,8 @@ final class CompanionClient {
             }
             if let usedTokens = patch.usedTokens { current.usedTokens = usedTokens }
             if let contextSize = patch.contextSize { current.contextSize = contextSize }
+            if let modelRaw = patch.modelRawValue { current.modelRawValue = modelRaw }
+            if let modeRaw = patch.permissionModeRawValue { current.permissionModeRawValue = modeRaw }
             activeSession = current
         case .chatCreated:
             if let workspaceId = message.workspaceId, let sessionId = message.sessionId {
@@ -429,6 +431,41 @@ final class CompanionClient {
         var msg = CompanionMessage(kind: .updateScratchpad)
         msg.workspaceId = workspaceId
         msg.scratchpadText = text
+        send(msg)
+    }
+
+    /// Optimistically updates the local snapshot so the picker reflects the
+    /// new selection immediately, then asks the host to apply it. The host
+    /// echoes the same value back via `sessionUpdate` shortly after, which
+    /// is a no-op if it matches.
+    func setSessionModel(_ rawValue: String) {
+        guard let id = subscribedSessionId else { return }
+        if var session = activeSession, session.meta.id == id {
+            session.modelRawValue = rawValue
+            if let model = session.availableModels.first(where: { $0.rawValue == rawValue }) {
+                session.modelLabel = model.name
+            }
+            activeSession = session
+        }
+        var msg = CompanionMessage(kind: .setSessionModel)
+        msg.sessionId = id
+        msg.modelRawValue = rawValue
+        send(msg)
+    }
+
+    func setSessionPermissionMode(_ rawValue: String) {
+        guard let id = subscribedSessionId else { return }
+        if var session = activeSession, session.meta.id == id {
+            session.permissionModeRawValue = rawValue
+            if let mode = session.availableModes.first(where: { $0.rawValue == rawValue }) {
+                session.permissionLabel = mode.label
+                session.permissionSystemImage = mode.systemImage
+            }
+            activeSession = session
+        }
+        var msg = CompanionMessage(kind: .setSessionPermissionMode)
+        msg.sessionId = id
+        msg.permissionModeRawValue = rawValue
         send(msg)
     }
 

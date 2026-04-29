@@ -29,7 +29,7 @@ struct ChatsScreen: View {
                     }
                 }
             }
-            if showingArchived {
+            if showingArchived || (isSearching && !filteredArchived.isEmpty) {
                 Section("Archived") {
                     if filteredArchived.isEmpty {
                         Text(searchText.isEmpty ? "No archived chats" : "No matches")
@@ -124,6 +124,10 @@ struct ChatsScreen: View {
 
     private var filteredArchived: [WireSessionMeta] {
         applySearch(liveChats.filter { $0.isArchived })
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func applySearch(_ chats: [WireSessionMeta]) -> [WireSessionMeta] {

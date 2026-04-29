@@ -5,14 +5,14 @@ struct ContextUsageRow: View {
     let total: Int
 
     var body: some View {
-        HStack {
-            Text(usageString)
-                .font(.body.monospacedDigit())
-            Spacer()
+        LabeledContent {
             if total > 0 {
                 CircularProgressDial(progress: progress)
                     .frame(width: 22, height: 22)
             }
+        } label: {
+            Text(usageString)
+                .font(.body.monospacedDigit())
         }
     }
 

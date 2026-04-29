@@ -18,7 +18,7 @@ struct WorkspacesScreen: View {
                     }
                 }
             }
-            if showingArchived {
+            if showingArchived || (isSearching && !filteredArchived.isEmpty) {
                 Section("Archived") {
                     if filteredArchived.isEmpty {
                         Text(searchText.isEmpty ? "No archived workspaces" : "No matches")
@@ -64,6 +64,10 @@ struct WorkspacesScreen: View {
 
     private var filteredArchived: [WireWorkspace] {
         applySearch(client.workspaces.filter { $0.isArchived })
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func applySearch(_ workspaces: [WireWorkspace]) -> [WireWorkspace] {
