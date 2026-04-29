@@ -57,6 +57,19 @@ final class CompanionClient {
     private(set) var activeSession: WireSession?
     private(set) var subscribedSessionId: UUID?
     private(set) var lastError: String?
+    /// Most recent source-control snapshot for the workspace iOS is currently
+    /// viewing. Populated by the Mac on `gitSubscribe` and after every git
+    /// action; cleared when the iOS user leaves the source control screen.
+    private(set) var gitStatus: WireGitStatus?
+    private(set) var gitWorkspaceId: UUID?
+    /// Most recent raw `git diff` text keyed by `<path>|<stage>`. Populated
+    /// by the Mac on `gitFileDiffResult`; views read out of this dictionary
+    /// rather than holding their own state so navigating back into a diff
+    /// shows the prior result instantly.
+    private(set) var gitFileDiffs: [String: String] = [:]
+    /// Latest commands list for the workspace iOS is currently viewing.
+    private(set) var commands: [WireCommand] = []
+    private(set) var commandsWorkspaceId: UUID?
     /// Persists across app launches. Drives the root view: while true, the
     /// app stays on the workspaces flow even if the socket is currently
     /// disconnected, so backgrounding doesn't visibly bounce the user back
@@ -344,11 +357,27 @@ final class CompanionClient {
                     sessionId: sessionId
                 )
             }
+        case .gitStatus:
+            if let wsId = message.workspaceId, wsId == gitWorkspaceId, let status = message.gitStatus {
+                gitStatus = status
+            }
+        case .gitFileDiffResult:
+            if let path = message.gitFilePath, let stage = message.gitDiffStage {
+                gitFileDiffs[Self.diffKey(path: path, stage: stage)] = message.gitDiffText ?? ""
+            }
+        case .commandsList:
+            if let wsId = message.workspaceId, wsId == commandsWorkspaceId, let cmds = message.commands {
+                commands = cmds
+            }
         case .error:
             lastError = message.error
         default:
             break
         }
+    }
+
+    private static func diffKey(path: String, stage: String) -> String {
+        "\(stage)|\(path)"
     }
 
     // MARK: - Actions
@@ -459,6 +488,154 @@ final class CompanionClient {
         var msg = CompanionMessage(kind: .setSessionModel)
         msg.sessionId = id
         msg.modelRawValue = rawValue
+        send(msg)
+    }
+
+    // MARK: - Source control
+
+    func gitSubscribe(workspaceId: UUID) {
+        if gitWorkspaceId != workspaceId {
+            gitStatus = nil
+            gitFileDiffs = [:]
+        }
+        gitWorkspaceId = workspaceId
+        var msg = CompanionMessage(kind: .gitSubscribe)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitUnsubscribe() {
+        gitWorkspaceId = nil
+        gitStatus = nil
+        gitFileDiffs = [:]
+        send(CompanionMessage(kind: .gitUnsubscribe))
+    }
+
+    func gitRefresh(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitRefresh)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitStage(workspaceId: UUID, files: [WireGitFile]) {
+        var msg = CompanionMessage(kind: .gitStage)
+        msg.workspaceId = workspaceId
+        msg.gitFiles = files
+        send(msg)
+    }
+
+    func gitUnstage(workspaceId: UUID, files: [WireGitFile]) {
+        var msg = CompanionMessage(kind: .gitUnstage)
+        msg.workspaceId = workspaceId
+        msg.gitFiles = files
+        send(msg)
+    }
+
+    func gitDiscard(workspaceId: UUID, files: [WireGitFile]) {
+        var msg = CompanionMessage(kind: .gitDiscard)
+        msg.workspaceId = workspaceId
+        msg.gitFiles = files
+        send(msg)
+    }
+
+    func gitStageAll(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitStageAll)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitUnstageAll(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitUnstageAll)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitDiscardAll(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitDiscardAll)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitCommit(workspaceId: UUID, message commitMessage: String) {
+        var msg = CompanionMessage(kind: .gitCommit)
+        msg.workspaceId = workspaceId
+        msg.gitCommitMessage = commitMessage
+        send(msg)
+    }
+
+    func gitPush(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitPush)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitPull(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitPull)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitFetch(workspaceId: UUID) {
+        var msg = CompanionMessage(kind: .gitFetch)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func gitSwitchBranch(workspaceId: UUID, branch: String) {
+        var msg = CompanionMessage(kind: .gitSwitchBranch)
+        msg.workspaceId = workspaceId
+        msg.gitBranch = branch
+        send(msg)
+    }
+
+    func gitCreateBranch(workspaceId: UUID, name: String) {
+        var msg = CompanionMessage(kind: .gitCreateBranch)
+        msg.workspaceId = workspaceId
+        msg.gitBranch = name
+        send(msg)
+    }
+
+    func gitRequestFileDiff(workspaceId: UUID, path: String, stage: String) {
+        var msg = CompanionMessage(kind: .gitFileDiff)
+        msg.workspaceId = workspaceId
+        msg.gitFilePath = path
+        msg.gitDiffStage = stage
+        send(msg)
+    }
+
+    func gitFileDiff(path: String, stage: String) -> String? {
+        gitFileDiffs[Self.diffKey(path: path, stage: stage)]
+    }
+
+    // MARK: - Commands
+
+    func commandsSubscribe(workspaceId: UUID) {
+        if commandsWorkspaceId != workspaceId {
+            commands = []
+        }
+        commandsWorkspaceId = workspaceId
+        var msg = CompanionMessage(kind: .commandsSubscribe)
+        msg.workspaceId = workspaceId
+        send(msg)
+    }
+
+    func commandsUnsubscribe() {
+        commandsWorkspaceId = nil
+        commands = []
+        send(CompanionMessage(kind: .commandsUnsubscribe))
+    }
+
+    func runCommand(workspaceId: UUID, commandId: UUID) {
+        var msg = CompanionMessage(kind: .runCommand)
+        msg.workspaceId = workspaceId
+        msg.commandId = commandId
+        send(msg)
+    }
+
+    func stopCommand(workspaceId: UUID, commandId: UUID) {
+        var msg = CompanionMessage(kind: .stopCommand)
+        msg.workspaceId = workspaceId
+        msg.commandId = commandId
         send(msg)
     }
 

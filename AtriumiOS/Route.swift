@@ -6,6 +6,9 @@ import Foundation
 enum Route: Hashable {
     case workspace(WireWorkspace)
     case chat(UUID)
+    case sourceControl(UUID)
+    case fileDiff(workspaceId: UUID, path: String, stage: String, name: String)
+    case commands(UUID)
 }
 
 /// Single-shot deeplink target — workspace + session pair to land on.

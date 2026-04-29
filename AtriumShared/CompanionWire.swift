@@ -30,6 +30,28 @@ public enum CompanionKind: String, Codable, Sendable {
     case stopChat
     case setSessionModel
     case setSessionPermissionMode
+    // Source control (per workspace)
+    case gitSubscribe
+    case gitUnsubscribe
+    case gitRefresh
+    case gitStage
+    case gitUnstage
+    case gitDiscard
+    case gitStageAll
+    case gitUnstageAll
+    case gitDiscardAll
+    case gitCommit
+    case gitPush
+    case gitPull
+    case gitFetch
+    case gitSwitchBranch
+    case gitCreateBranch
+    case gitFileDiff
+    // Commands (per workspace)
+    case commandsSubscribe
+    case commandsUnsubscribe
+    case runCommand
+    case stopCommand
 
     // Server → Client
     case hello
@@ -39,6 +61,9 @@ public enum CompanionKind: String, Codable, Sendable {
     case sessionUpdate
     case chatCreated
     case error
+    case gitStatus
+    case gitFileDiffResult
+    case commandsList
 }
 
 /// Single envelope type for both directions. Optional fields are populated
@@ -98,6 +123,22 @@ public struct CompanionMessage: Codable, Sendable {
 
     // sessionUpdate
     public var patch: WireSessionPatch?
+
+    // gitStatus / gitRefresh / gitSubscribe / git* actions
+    public var gitStatus: WireGitStatus?
+    public var gitFiles: [WireGitFile]?
+    public var gitBranch: String?
+    public var gitCommitMessage: String?
+    public var gitFilePath: String?
+    /// Stage qualifier for `gitFileDiff`: "staged" or "unstaged".
+    public var gitDiffStage: String?
+    /// Raw `git diff` output for `gitFileDiffResult`. iOS parses hunks
+    /// itself (`@@` headers, `+`/`-`/space prefixes) and renders them.
+    public var gitDiffText: String?
+
+    // commandsList / runCommand / stopCommand
+    public var commands: [WireCommand]?
+    public var commandId: UUID?
 
     public init(kind: CompanionKind) {
         self.kind = kind
@@ -343,6 +384,93 @@ public struct WireSessionPatch: Codable, Sendable {
         self.permissionModeRawValue = permissionModeRawValue
         self.error = error
         self.errorChanged = errorChanged
+    }
+}
+
+// MARK: - Source control payloads
+
+public struct WireGitFile: Codable, Sendable, Hashable, Identifiable {
+    /// Repository-relative path. Used as the stable identity within a section.
+    public var path: String
+    /// Last path component for display.
+    public var name: String
+    /// Raw `GitChangeKind` value (e.g. "modified", "added", "untracked").
+    public var status: String
+
+    public var id: String { path }
+
+    public init(path: String, name: String, status: String) {
+        self.path = path
+        self.name = name
+        self.status = status
+    }
+}
+
+public struct WireGitCommit: Codable, Sendable, Hashable, Identifiable {
+    public var hash: String
+    public var shortHash: String
+    public var message: String
+
+    public var id: String { hash }
+
+    public init(hash: String, shortHash: String, message: String) {
+        self.hash = hash
+        self.shortHash = shortHash
+        self.message = message
+    }
+}
+
+/// One repo's status for a workspace. The workspace-level `gitStatus` reply
+/// carries a single snapshot (the first / primary repo for the workspace
+/// directory) — the iOS client doesn't surface the multi-repo picker.
+public struct WireGitStatus: Codable, Sendable {
+    /// False when the workspace directory has no git repo at all.
+    public var hasRepository: Bool
+    public var branchName: String?
+    public var localBranches: [String]
+    public var stagedFiles: [WireGitFile]
+    public var unstagedFiles: [WireGitFile]
+    public var unpushedCommits: [WireGitCommit]
+    public var hasTrackingBranch: Bool
+    public var remoteAheadCount: Int
+
+    public init(
+        hasRepository: Bool,
+        branchName: String?,
+        localBranches: [String],
+        stagedFiles: [WireGitFile],
+        unstagedFiles: [WireGitFile],
+        unpushedCommits: [WireGitCommit],
+        hasTrackingBranch: Bool,
+        remoteAheadCount: Int
+    ) {
+        self.hasRepository = hasRepository
+        self.branchName = branchName
+        self.localBranches = localBranches
+        self.stagedFiles = stagedFiles
+        self.unstagedFiles = unstagedFiles
+        self.unpushedCommits = unpushedCommits
+        self.hasTrackingBranch = hasTrackingBranch
+        self.remoteAheadCount = remoteAheadCount
+    }
+}
+
+// MARK: - Commands payloads
+
+public struct WireCommand: Codable, Sendable, Hashable, Identifiable {
+    public var id: UUID
+    public var title: String
+    /// nil when the command has no run script (just a saved terminal slot).
+    public var script: String?
+    public var isRunning: Bool
+    public var isDefault: Bool
+
+    public init(id: UUID, title: String, script: String?, isRunning: Bool, isDefault: Bool) {
+        self.id = id
+        self.title = title
+        self.script = script
+        self.isRunning = isRunning
+        self.isDefault = isDefault
     }
 }
 

@@ -57,6 +57,10 @@ struct ChatsScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 ArchiveFilterButton(showingArchived: $showingArchived)
             }
+            ToolbarItem(placement: .bottomBar) {
+                WorkspaceToolsMenu(workspaceId: workspace.id)
+            }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.fixed, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {

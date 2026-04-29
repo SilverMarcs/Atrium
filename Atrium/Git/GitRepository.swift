@@ -176,6 +176,17 @@ actor GitRepository {
         return GitDiffPresentation(raw: raw)
     }
 
+    /// Raw `git diff` output with `@@` hunk headers and `+`/`-` prefixes
+    /// intact. The iOS companion needs the unparsed text so it can split
+    /// hunks and color lines itself; the macOS view's `presentation.string`
+    /// strips those markers because the editor renders them visually.
+    func rawDiffText(for reference: GitDiffReference) async throws -> String {
+        if reference.kind == .untracked {
+            return try self.untrackedRawDiff(for: reference)
+        }
+        return try await self.executor.execute(GitDiffCommand(reference: reference), at: reference.repositoryRootURL)
+    }
+
     func fullContextDiffPresentation(for reference: GitDiffReference) async throws -> GitDiffPresentation {
         if reference.kind == .untracked {
             return try self.presentationForUntrackedFile(reference)
@@ -446,15 +457,20 @@ actor GitRepository {
     }
 
     private func presentationForUntrackedFile(_ reference: GitDiffReference) throws -> GitDiffPresentation {
+        let raw = try self.untrackedRawDiff(for: reference)
+        return GitDiffPresentation(raw: raw)
+    }
+
+    private func untrackedRawDiff(for reference: GitDiffReference) throws -> String {
         let data = try Data(contentsOf: reference.fileURL)
         guard let string = String(data: data, encoding: .utf8) else {
-            return GitDiffPresentation(message: "Binary diff preview is unavailable.")
+            return "Binary diff preview is unavailable."
         }
 
         let lines = string.split(separator: "\n", omittingEmptySubsequences: false)
         let lineCount = max(lines.count, 1)
         let hunkLines = lines.map { "+" + $0 }
-        let raw = """
+        return """
         diff --git a/\(reference.repositoryRelativePath) b/\(reference.repositoryRelativePath)
         new file mode 100644
         --- /dev/null
@@ -462,7 +478,6 @@ actor GitRepository {
         @@ -0,0 +1,\(lineCount) @@
         \(hunkLines.joined(separator: "\n"))
         """
-        return GitDiffPresentation(raw: raw)
     }
 
     private nonisolated static func fileURL(for path: String, in repositoryRootURL: URL, scopedTo directoryURL: URL) -> URL? {

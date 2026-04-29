@@ -30,6 +30,12 @@ struct CompanionRootView: View {
                     ChatsScreen(workspace: workspace)
                 case .chat(let sessionId):
                     SessionDetailScreen(sessionId: sessionId)
+                case .sourceControl(let workspaceId):
+                    SourceControlScreen(workspaceId: workspaceId)
+                case .fileDiff(let workspaceId, let path, let stage, let name):
+                    FileDiffScreen(workspaceId: workspaceId, path: path, stage: stage, name: name)
+                case .commands(let workspaceId):
+                    CommandsScreen(workspaceId: workspaceId)
                 }
             }
         }

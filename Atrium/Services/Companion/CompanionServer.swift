@@ -149,6 +149,8 @@ private final class ClientHandler {
     private(set) var isAuthenticated = false
     private(set) var clientId: UUID?
     private var subscription: ChatSubscription?
+    private var gitSubscription: GitSubscription?
+    private var commandsSubscription: CommandsSubscription?
 
     init(
         connection: NWConnection,
@@ -174,6 +176,10 @@ private final class ClientHandler {
     func close() {
         subscription?.invalidate()
         subscription = nil
+        gitSubscription?.invalidate()
+        gitSubscription = nil
+        commandsSubscription?.invalidate()
+        commandsSubscription = nil
         connection.cancel()
     }
 
@@ -182,6 +188,10 @@ private final class ClientHandler {
         case .failed, .cancelled:
             subscription?.invalidate()
             subscription = nil
+            gitSubscription?.invalidate()
+            gitSubscription = nil
+            commandsSubscription?.invalidate()
+            commandsSubscription = nil
             onClose(self)
         default:
             break
@@ -285,6 +295,140 @@ private final class ClientHandler {
             guard isAuthenticated else { sendError("not authenticated"); return }
             if let id = message.sessionId, let raw = message.permissionModeRawValue {
                 setSessionPermissionMode(sessionId: id, modeRawValue: raw)
+            }
+        case .gitSubscribe:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId { gitSubscribe(workspaceId: wsId) }
+        case .gitUnsubscribe:
+            gitSubscription?.invalidate()
+            gitSubscription = nil
+        case .gitRefresh:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId { sendGitStatus(workspaceId: wsId) }
+        case .gitStage:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let files = message.gitFiles {
+                performGitAction(workspaceId: wsId) { snap in
+                    try await GitRepository.shared.stage(paths: files.map(\.path), at: snap.repositoryRootURL)
+                }
+            }
+        case .gitUnstage:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let files = message.gitFiles {
+                performGitAction(workspaceId: wsId) { snap in
+                    try await GitRepository.shared.unstage(paths: files.map(\.path), at: snap.repositoryRootURL)
+                }
+            }
+        case .gitDiscard:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let files = message.gitFiles {
+                performGitAction(workspaceId: wsId) { snap in
+                    let tracked = files.filter { $0.status != GitChangeKind.untracked.rawValue }.map(\.path)
+                    let untracked = files.filter { $0.status == GitChangeKind.untracked.rawValue }.map(\.path)
+                    try await GitRepository.shared.discardChanges(
+                        trackedPaths: tracked,
+                        untrackedPaths: untracked,
+                        at: snap.repositoryRootURL
+                    )
+                }
+            }
+        case .gitStageAll:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    let paths = snap.unstagedFiles.map(\.repositoryRelativePath)
+                    guard !paths.isEmpty else { return }
+                    try await GitRepository.shared.stage(paths: paths, at: snap.repositoryRootURL)
+                }
+            }
+        case .gitUnstageAll:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    let paths = snap.stagedFiles.map(\.repositoryRelativePath)
+                    guard !paths.isEmpty else { return }
+                    try await GitRepository.shared.unstage(paths: paths, at: snap.repositoryRootURL)
+                }
+            }
+        case .gitDiscardAll:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    try await GitRepository.shared.discardAllChanges(at: snap.repositoryRootURL)
+                }
+            }
+        case .gitCommit:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let msg = message.gitCommitMessage {
+                performGitAction(workspaceId: wsId) { snap in
+                    let text = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return }
+                    try await GitRepository.shared.commit(message: text, at: snap.repositoryRootURL)
+                }
+            }
+        case .gitPush:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    if snap.hasTrackingBranch {
+                        try await GitRepository.shared.push(at: snap.repositoryRootURL)
+                    } else if let branch = snap.branchName {
+                        try await GitRepository.shared.pushSetUpstream(branch: branch, at: snap.repositoryRootURL)
+                    }
+                }
+            }
+        case .gitPull:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    _ = try await GitRepository.shared.pullPreservingChanges(at: snap.repositoryRootURL)
+                }
+            }
+        case .gitFetch:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId {
+                performGitAction(workspaceId: wsId) { snap in
+                    try await GitRepository.shared.fetch(at: snap.repositoryRootURL)
+                }
+            }
+        case .gitSwitchBranch:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let branch = message.gitBranch {
+                performGitAction(workspaceId: wsId) { snap in
+                    try await GitRepository.shared.switchBranch(to: branch, at: snap.repositoryRootURL)
+                }
+            }
+        case .gitCreateBranch:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let name = message.gitBranch {
+                performGitAction(workspaceId: wsId) { snap in
+                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    try await GitRepository.shared.createBranch(named: trimmed, at: snap.repositoryRootURL)
+                }
+            }
+        case .gitFileDiff:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId,
+               let path = message.gitFilePath,
+               let stage = message.gitDiffStage {
+                sendFileDiff(workspaceId: wsId, path: path, stage: stage)
+            }
+        case .commandsSubscribe:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId { commandsSubscribe(workspaceId: wsId) }
+        case .commandsUnsubscribe:
+            commandsSubscription?.invalidate()
+            commandsSubscription = nil
+        case .runCommand:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let cmdId = message.commandId {
+                runCommand(workspaceId: wsId, commandId: cmdId)
+            }
+        case .stopCommand:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let cmdId = message.commandId {
+                stopCommand(workspaceId: wsId, commandId: cmdId)
             }
         default:
             // Server-direction messages received from a client are ignored.
@@ -449,6 +593,218 @@ private final class ClientHandler {
         chat.permissionMode = mode
         chat.session.applyPermissionMode(mode)
     }
+
+    // MARK: - Git
+
+    private func gitSubscribe(workspaceId: UUID) {
+        gitSubscription?.invalidate()
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        sendGitStatus(workspaceId: workspaceId)
+        let sub = GitSubscription(workspace: workspace) { [weak self] in
+            self?.sendGitStatus(workspaceId: workspaceId)
+        }
+        sub.start()
+        gitSubscription = sub
+    }
+
+    private func sendGitStatus(workspaceId: UUID) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else { return }
+        let directoryURL = workspace.url
+        Task { [weak self] in
+            let status = await Self.fetchGitStatus(directoryURL: directoryURL)
+            await MainActor.run {
+                guard let self else { return }
+                var msg = CompanionMessage(kind: .gitStatus)
+                msg.workspaceId = workspaceId
+                msg.gitStatus = status
+                self.send(msg)
+            }
+        }
+    }
+
+    private static func fetchGitStatus(directoryURL: URL) async -> WireGitStatus {
+        do {
+            let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
+            guard let snap = snapshots.first else {
+                return WireGitStatus(
+                    hasRepository: false,
+                    branchName: nil,
+                    localBranches: [],
+                    stagedFiles: [],
+                    unstagedFiles: [],
+                    unpushedCommits: [],
+                    hasTrackingBranch: false,
+                    remoteAheadCount: 0
+                )
+            }
+            return WireGitStatus(
+                hasRepository: true,
+                branchName: snap.branchName,
+                localBranches: snap.localBranches,
+                stagedFiles: snap.stagedFiles.map { wireGitFile($0) },
+                unstagedFiles: snap.unstagedFiles.map { wireGitFile($0) },
+                unpushedCommits: snap.unpushedCommits.map {
+                    WireGitCommit(
+                        hash: $0.hash,
+                        shortHash: String($0.hash.prefix(7)),
+                        message: $0.message
+                    )
+                },
+                hasTrackingBranch: snap.hasTrackingBranch,
+                remoteAheadCount: snap.remoteAheadCount
+            )
+        } catch {
+            return WireGitStatus(
+                hasRepository: false,
+                branchName: nil,
+                localBranches: [],
+                stagedFiles: [],
+                unstagedFiles: [],
+                unpushedCommits: [],
+                hasTrackingBranch: false,
+                remoteAheadCount: 0
+            )
+        }
+    }
+
+    private static func wireGitFile(_ file: GitChangedFile) -> WireGitFile {
+        WireGitFile(
+            path: file.repositoryRelativePath,
+            name: file.fileURL.lastPathComponent,
+            status: file.kind.rawValue
+        )
+    }
+
+    /// Runs a git operation against the workspace's first repo, then refreshes
+    /// the subscriber. Action errors surface as a one-off `error` message and
+    /// do not prevent the refresh — the iOS UI should always reflect the new
+    /// truth after an attempt.
+    private func performGitAction(
+        workspaceId: UUID,
+        _ action: @escaping (GitRepositoryStatusSnapshot) async throws -> Void
+    ) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        let directoryURL = workspace.url
+        Task { [weak self] in
+            do {
+                let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
+                guard let snap = snapshots.first else {
+                    await MainActor.run { self?.sendError("no repository") }
+                    return
+                }
+                try await action(snap)
+            } catch {
+                await MainActor.run { self?.sendError(error.localizedDescription) }
+            }
+            await MainActor.run { self?.sendGitStatus(workspaceId: workspaceId) }
+        }
+    }
+
+    private func sendFileDiff(workspaceId: UUID, path: String, stage: String) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        let directoryURL = workspace.url
+        Task { [weak self] in
+            let text = await Self.fileDiffText(directoryURL: directoryURL, path: path, stage: stage)
+            await MainActor.run {
+                guard let self else { return }
+                var msg = CompanionMessage(kind: .gitFileDiffResult)
+                msg.workspaceId = workspaceId
+                msg.gitFilePath = path
+                msg.gitDiffStage = stage
+                msg.gitDiffText = text
+                self.send(msg)
+            }
+        }
+    }
+
+    private static func fileDiffText(directoryURL: URL, path: String, stage: String) async -> String {
+        do {
+            let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
+            guard let snap = snapshots.first else { return "No repository." }
+            let staged = (stage == "staged")
+            let pool = staged ? snap.stagedFiles : snap.unstagedFiles
+            guard let file = pool.first(where: { $0.repositoryRelativePath == path }) else {
+                return "File not found in current changes."
+            }
+            let diffStage: GitDiffStage = staged ? .staged : .unstaged
+            let reference = GitDiffReference(
+                repositoryRootURL: snap.repositoryRootURL,
+                fileURL: file.fileURL,
+                repositoryRelativePath: file.repositoryRelativePath,
+                stage: diffStage,
+                kind: file.kind
+            )
+            return try await GitRepository.shared.rawDiffText(for: reference)
+        } catch {
+            return "Failed to load diff: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Commands
+
+    private func commandsSubscribe(workspaceId: UUID) {
+        commandsSubscription?.invalidate()
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        sendCommandsList(workspace: workspace)
+        let sub = CommandsSubscription(workspace: workspace) { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.sendCommandsList(workspace: workspace)
+        }
+        sub.start()
+        commandsSubscription = sub
+    }
+
+    private func sendCommandsList(workspace: Workspace) {
+        let cmds = workspace.commands.map {
+            WireCommand(
+                id: $0.id,
+                title: $0.title,
+                script: $0.runScript,
+                isRunning: $0.hasChildProcess,
+                isDefault: $0.isDefault
+            )
+        }
+        var msg = CompanionMessage(kind: .commandsList)
+        msg.workspaceId = workspace.id
+        msg.commands = cmds
+        send(msg)
+    }
+
+    private func runCommand(workspaceId: UUID, commandId: UUID) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        guard let command = workspace.commands.first(where: { $0.id == commandId }) else {
+            sendError("command not found")
+            return
+        }
+        workspace.runCommand(command)
+    }
+
+    private func stopCommand(workspaceId: UUID, commandId: UUID) {
+        guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else {
+            sendError("workspace not found")
+            return
+        }
+        guard let command = workspace.commands.first(where: { $0.id == commandId }) else {
+            sendError("command not found")
+            return
+        }
+        command.interrupt()
+    }
 }
 
 // MARK: - Subscription
@@ -601,6 +957,112 @@ private final class WorkspaceListObserver {
                 self.debounceTask?.cancel()
                 self.debounceTask = Task { @MainActor [weak self] in
                     try? await Task.sleep(for: .milliseconds(150))
+                    if Task.isCancelled { return }
+                    guard let self, !self.invalidated else { return }
+                    self.notify()
+                    self.arm()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Git subscription
+
+/// Watches the host's `EditorPanel.changedFileStatuses` reload signal so the
+/// iOS source-control screen reflects external edits. The host already
+/// refreshes its own git inspector via a file-system watcher, but iOS doesn't
+/// share that — so we just re-broadcast on each refresh tick the workspace
+/// initiates. As a fallback, refreshes are also forced after every git
+/// action by the action handler, so this subscription is purely for
+/// "external editor wrote a file" cases.
+@MainActor
+private final class GitSubscription {
+    private weak var workspace: Workspace?
+    private let notify: () -> Void
+    private var debounceTask: Task<Void, Never>?
+    private var invalidated = false
+
+    init(workspace: Workspace, notify: @escaping () -> Void) {
+        self.workspace = workspace
+        self.notify = notify
+    }
+
+    func start() {
+        arm()
+    }
+
+    func invalidate() {
+        invalidated = true
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
+
+    private func arm() {
+        guard !invalidated, let workspace else { return }
+        withObservationTracking { [weak self] in
+            guard let workspace = self?.workspace else { return }
+            // Picks up refreshes the macOS git inspector triggers via its own
+            // file-system watcher. iOS-only sessions still get fresh data
+            // because every git RPC ends with a forced `sendGitStatus`.
+            _ = workspace.inspectorState.git.model.snapshots
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, !self.invalidated else { return }
+                self.debounceTask?.cancel()
+                self.debounceTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    if Task.isCancelled { return }
+                    guard let self, !self.invalidated else { return }
+                    self.notify()
+                    self.arm()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Commands subscription
+
+/// Watches a workspace's commands array and each command's running state so
+/// the iOS commands screen can flip play/stop affordances live.
+@MainActor
+private final class CommandsSubscription {
+    private weak var workspace: Workspace?
+    private let notify: () -> Void
+    private var debounceTask: Task<Void, Never>?
+    private var invalidated = false
+
+    init(workspace: Workspace, notify: @escaping () -> Void) {
+        self.workspace = workspace
+        self.notify = notify
+    }
+
+    func start() { arm() }
+
+    func invalidate() {
+        invalidated = true
+        debounceTask?.cancel()
+        debounceTask = nil
+    }
+
+    private func arm() {
+        guard !invalidated, let workspace else { return }
+        withObservationTracking { [weak self] in
+            guard let workspace = self?.workspace else { return }
+            _ = workspace.commands.count
+            for cmd in workspace.commands {
+                _ = cmd.title
+                _ = cmd.runScript
+                _ = cmd.isDefault
+                _ = cmd.foregroundProcessName
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, !self.invalidated else { return }
+                self.debounceTask?.cancel()
+                self.debounceTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(120))
                     if Task.isCancelled { return }
                     guard let self, !self.invalidated else { return }
                     self.notify()

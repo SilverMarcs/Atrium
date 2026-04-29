@@ -77,6 +77,12 @@ struct SessionDetailScreen: View {
                 }
                 .disabled(client.activeSession == nil)
             }
+            if let workspaceId = client.activeSession?.meta.workspaceId {
+                ToolbarItem(placement: .bottomBar) {
+                    WorkspaceToolsMenu(workspaceId: workspaceId)
+                }
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+            }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.fixed, placement: .bottomBar)
             if isProcessing {
