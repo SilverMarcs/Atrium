@@ -5,6 +5,11 @@ enum MarkdownPart: Equatable {
     case codeBlock(String)
     case heading(level: Int, text: String)
     case list(items: [ListItem])
+    case table(headers: [String], alignments: [TableColumnAlignment], rows: [[String]])
+}
+
+enum TableColumnAlignment: Equatable {
+    case left, center, right
 }
 
 struct ListItem: Equatable, Identifiable {
@@ -52,6 +57,9 @@ struct NativeMarkdownView: View {
 
                 case .list(let items):
                     listView(items: items)
+
+                case .table(let headers, let alignments, let rows):
+                    tableView(headers: headers, alignments: alignments, rows: rows)
                 }
             }
         }
@@ -108,6 +116,81 @@ struct NativeMarkdownView: View {
         }
     }
 
+    // MARK: - Table Rendering
+
+    @ViewBuilder
+    private func tableView(headers: [String], alignments: [TableColumnAlignment], rows: [[String]]) -> some View {
+        let columnCount = max(headers.count, rows.map(\.count).max() ?? 0)
+
+        let styledGrid = Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+            GridRow {
+                ForEach(0..<columnCount, id: \.self) { idx in
+                    tableCellView(
+                        text: idx < headers.count ? headers[idx] : "",
+                        alignment: idx < alignments.count ? alignments[idx] : .left,
+                        isHeader: true
+                    )
+                }
+            }
+            .background(.secondary.opacity(0.18))
+
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, row in
+                Divider().gridCellUnsizedAxes(.horizontal)
+                GridRow {
+                    ForEach(0..<columnCount, id: \.self) { idx in
+                        tableCellView(
+                            text: idx < row.count ? row[idx] : "",
+                            alignment: idx < alignments.count ? alignments[idx] : .left,
+                            isHeader: false
+                        )
+                    }
+                }
+                .background(rowIdx.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.06))
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .background(.background.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5)
+        )
+
+        ViewThatFits(in: .horizontal) {
+            styledGrid
+            ScrollView(.horizontal, showsIndicators: true) {
+                styledGrid
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func tableCellView(text: String, alignment: TableColumnAlignment, isHeader: Bool) -> some View {
+        let frameAlignment: Alignment = {
+            switch alignment {
+            case .left: return .leading
+            case .center: return .center
+            case .right: return .trailing
+            }
+        }()
+        let textAlignment: TextAlignment = {
+            switch alignment {
+            case .left: return .leading
+            case .center: return .center
+            case .right: return .trailing
+            }
+        }()
+
+        Text(LocalizedStringKey(text))
+            .font(isHeader ? .body.weight(.semibold) : .body)
+            .multilineTextAlignment(textAlignment)
+            .lineSpacing(2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
+    }
+
     // MARK: - Parser
 
     private static func parseMarkdown(_ text: String) -> [MarkdownPart] {
@@ -150,6 +233,13 @@ struct NativeMarkdownView: View {
                 continue
             }
 
+            // Handle table block (header row + separator + body rows)
+            if let (table, nextIndex) = parseTableBlock(from: i, lines: lines) {
+                parts.append(table)
+                i = nextIndex
+                continue
+            }
+
             // Collect consecutive non-special lines as regular text
             var textLines: [String] = []
             while i < lines.count {
@@ -159,6 +249,7 @@ struct NativeMarkdownView: View {
                 if trimmed.hasPrefix("```")
                     || isListLine(currentLine)
                     || parseHeading(line: currentLine) != nil
+                    || isTableStart(at: i, lines: lines)
                 {
                     break
                 }
@@ -255,6 +346,74 @@ struct NativeMarkdownView: View {
     }
 
     // Removed complex tree building; using flat list rendering for simplicity
+
+    // MARK: - Helpers: Tables
+
+    private static func isTableStart(at index: Int, lines: [String]) -> Bool {
+        guard index + 1 < lines.count else { return false }
+        let header = lines[index]
+        guard header.contains("|") else { return false }
+        return parseTableSeparator(lines[index + 1]) != nil
+    }
+
+    private static func parseTableBlock(from start: Int, lines: [String]) -> (MarkdownPart, Int)? {
+        guard isTableStart(at: start, lines: lines) else { return nil }
+        guard let alignments = parseTableSeparator(lines[start + 1]) else { return nil }
+
+        let headers = parseTableRow(lines[start])
+        var rows: [[String]] = []
+        var i = start + 2
+        while i < lines.count {
+            let row = lines[i]
+            let trimmed = row.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { break }
+            if !trimmed.contains("|") { break }
+            // Stop if we've hit another structural element
+            if parseHeading(line: row) != nil { break }
+            if trimmed.hasPrefix("```") { break }
+            rows.append(parseTableRow(row))
+            i += 1
+        }
+
+        return (.table(headers: headers, alignments: alignments, rows: rows), i)
+    }
+
+    private static func parseTableSeparator(_ line: String) -> [TableColumnAlignment]? {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        guard s.contains("|") || s.contains("-") else { return nil }
+        if s.hasPrefix("|") { s.removeFirst() }
+        if s.hasSuffix("|") { s.removeLast() }
+        let cells = s.split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !cells.isEmpty else { return nil }
+
+        var alignments: [TableColumnAlignment] = []
+        for cell in cells {
+            guard cell.range(of: #"^:?-+:?$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            let starts = cell.hasPrefix(":")
+            let ends = cell.hasSuffix(":")
+            if starts && ends { alignments.append(.center) }
+            else if ends { alignments.append(.right) }
+            else { alignments.append(.left) }
+        }
+        return alignments
+    }
+
+    private static func parseTableRow(_ line: String) -> [String] {
+        var s = line.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("|") { s.removeFirst() }
+        if s.hasSuffix("|") { s.removeLast() }
+        // Preserve escaped pipes (\|) so they don't split cells.
+        let placeholder = "\u{FFFC}"
+        s = s.replacingOccurrences(of: "\\|", with: placeholder)
+        return s.split(separator: "|", omittingEmptySubsequences: false)
+            .map {
+                $0.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: placeholder, with: "|")
+            }
+    }
 }
  
 
