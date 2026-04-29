@@ -126,12 +126,16 @@ struct AppCommands: Commands {
                     guard let workspace = appState.selectedChat?.workspace,
                           let command = workspace.defaultCommand else { return }
                     appState.showingInspector = true
-                    workspace.runCommand(command)
+                    if command.hasChildProcess {
+                        appState.pendingRunReplacement = command
+                    } else {
+                        workspace.runCommand(command)
+                    }
                 } label: {
                     Label("Run", systemImage: "play.fill")
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(appState.selectedChat?.workspace?.defaultCommand == nil || appState.selectedChat?.workspace?.defaultCommand?.hasChildProcess == true)
+                .disabled(appState.selectedChat?.workspace?.defaultCommand == nil)
 
                 Button {
                     guard let command = appState.selectedChat?.workspace?.defaultCommand else { return }

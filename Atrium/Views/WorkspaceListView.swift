@@ -17,7 +17,12 @@ struct WorkspaceListView: View {
 
     private var visibleWorkspaces: [Workspace] {
         guard !searchText.isEmpty else {
-            return store.workspaces.filter { appState.showArchivedWorkspaces || !$0.isArchived }
+            return store.workspaces.filter { ws in
+                appState.showArchivedWorkspaces
+                    || !ws.isArchived
+                    || ws.hasActiveChildProcess
+                    || ws.hasActiveChats
+            }
         }
         return store.workspaces.filter { $0.name.localizedStandardContains(searchText) }
     }
@@ -38,7 +43,7 @@ struct WorkspaceListView: View {
                     }
                 )) {
                     let chats = workspace.chats
-                        .filter { !$0.isArchived }
+                        .filter { !$0.isArchived || $0.isActive }
                         .sorted { $0.sortOrder < $1.sortOrder }
                     ForEach(chats) { chat in
                         ChatSidebarRow(chat: chat)
@@ -54,7 +59,7 @@ struct WorkspaceListView: View {
                 } label: {
                     WorkspaceRow(workspace: workspace)
                     .padding(.vertical, 5)
-                    .padding(.leading, 17)
+                    .padding(.horizontal, 16)
                     .scaleEffect(1.2) 
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())

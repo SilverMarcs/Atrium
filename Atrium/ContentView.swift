@@ -48,6 +48,25 @@ struct ContentView: View {
                 showingOnboarding = true
             }
         }
+        .alert(
+            "Replace running command?",
+            isPresented: Binding(
+                get: { appState.pendingRunReplacement != nil },
+                set: { if !$0 { appState.pendingRunReplacement = nil } }
+            ),
+            presenting: appState.pendingRunReplacement
+        ) { command in
+            Button("Replace", role: .confirm) {
+                command.interrupt()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    command.workspace?.runCommand(command)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { command in
+            Text("\"\(command.title)\" is currently running. Replacing will stop it and start a new instance.")
+        }
         .onChange(of: appState.selectedChat?.workspace?.editorPanel.isOpen ?? false) { _, isOpen in
             let behavior = editorPanelSidebarBehavior
             guard behavior != .default else { return }

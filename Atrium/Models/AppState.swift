@@ -21,4 +21,8 @@ final class AppState {
 
     // Whether archived workspaces are temporarily revealed in the sidebar.
     var showArchivedWorkspaces = false
+
+    // Pending replacement when Cmd+R is invoked while the default command is
+    // already running. ContentView observes this to present a confirm alert.
+    var pendingRunReplacement: Terminal?
 }
