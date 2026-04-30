@@ -7,7 +7,7 @@ struct SettingsView: View {
                 GeneralSettingsView()
             }
 
-            Tab("Chat", systemImage: "bubble.left.and.bubble.right") {
+            Tab("Agents", systemImage: "cpu") {
                 ChatSettingsView()
             }
 
