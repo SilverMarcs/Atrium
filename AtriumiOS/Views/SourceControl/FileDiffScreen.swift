@@ -70,7 +70,7 @@ struct FileDiffScreen: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(hunk.lines) { line in
                         Text(DiffSyntaxHighlighter.highlight(line.content))
-                            .font(.system(.subheadline, design: .monospaced))
+                            .font(.system(.footnote, design: .monospaced))
                             .lineLimit(1)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 1)

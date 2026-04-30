@@ -4,7 +4,8 @@ import SwiftUI
 /// sections (unpushed commits, staged changes, working changes) but skips
 /// any section that's empty so the screen never shows an empty stub. Branch
 /// picker lives in the title menu; advanced operations (push/pull/fetch,
-/// new branch) are tucked under the trailing toolbar menu.
+/// new branch) sit on the bottom toolbar alongside search and the
+/// workspace tools menu, mirroring the chat detail screen's shape.
 struct SourceControlScreen: View {
     @Environment(CompanionClient.self) private var client
     let workspaceId: UUID
@@ -13,6 +14,7 @@ struct SourceControlScreen: View {
     @State private var isCommitFocused = false
     @State private var showingNewBranch = false
     @State private var newBranchName = ""
+    @State private var showingInfo = false
     @State private var pendingDiscard: PendingDiscard?
 
     private struct PendingDiscard: Identifiable {
@@ -60,11 +62,6 @@ struct SourceControlScreen: View {
                         }
                     }
                 }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                trailingMenu
             }
         }
         .alert("New Branch", isPresented: $showingNewBranch) {
@@ -118,7 +115,30 @@ struct SourceControlScreen: View {
         .searchPresentationToolbarBehavior(.avoidHidingContent)
         .onSubmit(of: .search) { commit() }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingInfo = true
+                } label: {
+                    Label("Info", systemImage: "info")
+                }
+                .disabled(!(status?.hasRepository ?? false))
+            }
+            ToolbarItem(placement: .bottomBar) {
+                NavigationLink(value: Route.commands(workspaceId)) {
+                    Label("Commands", systemImage: "terminal")
+                }
+            }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            if status?.hasRepository == true {
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    actionsMenu
+                }
+            }
+        }
+        .sheet(isPresented: $showingInfo) {
+            SourceControlInfoSheet(workspaceId: workspaceId)
         }
     }
 
@@ -218,7 +238,7 @@ struct SourceControlScreen: View {
     }
 
     @ViewBuilder
-    private var trailingMenu: some View {
+    private var actionsMenu: some View {
         Menu {
             Button {
                 client.gitPush(workspaceId: workspaceId)
@@ -250,6 +270,5 @@ struct SourceControlScreen: View {
         } label: {
             Image(systemName: "point.topleft.down.curvedto.point.bottomright.up.fill")
         }
-        .disabled(!(status?.hasRepository ?? false))
     }
 }

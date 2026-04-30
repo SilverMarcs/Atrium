@@ -79,7 +79,9 @@ struct SessionDetailScreen: View {
             }
             if let workspaceId = client.activeSession?.meta.workspaceId {
                 ToolbarItem(placement: .bottomBar) {
-                    WorkspaceToolsMenu(workspaceId: workspaceId)
+                    NavigationLink(value: Route.sourceControl(workspaceId)) {
+                        Label("Source Control", systemImage: "arrow.triangle.branch")
+                    }
                 }
                 ToolbarSpacer(.fixed, placement: .bottomBar)
             }

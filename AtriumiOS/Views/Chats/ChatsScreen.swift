@@ -58,7 +58,9 @@ struct ChatsScreen: View {
                 ArchiveFilterButton(showingArchived: $showingArchived)
             }
             ToolbarItem(placement: .bottomBar) {
-                WorkspaceToolsMenu(workspaceId: workspace.id)
+                NavigationLink(value: Route.sourceControl(workspace.id)) {
+                    Label("Source Control", systemImage: "arrow.triangle.branch")
+                }
             }
             ToolbarSpacer(.fixed, placement: .bottomBar)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
