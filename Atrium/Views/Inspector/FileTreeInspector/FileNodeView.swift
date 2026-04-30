@@ -22,9 +22,19 @@ struct FileNodeView: View {
                 }
             } label: {
                 FileRowView(item: item)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation {
+                            if state.expandedIDs.contains(item.id) {
+                                state.expandedIDs.remove(item.id)
+                            } else {
+                                state.expandedIDs.insert(item.id)
+                            }
+                        }
+                    }
                     .contextMenu { FileTreeContextMenu(item: item) }
             }
-            .tag(item.id)
             .listRowSeparator(.hidden)
         } else {
             FileRowView(item: item)
