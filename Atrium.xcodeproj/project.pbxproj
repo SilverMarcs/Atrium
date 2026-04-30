@@ -14,8 +14,6 @@
 
 /* Begin PBXFileReference section */
 		00AA00000000000000000A08 /* AtriumiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AtriumiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		089B54EE2FA27C780000C418 /* AtriumiOS copy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AtriumiOS copy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		089B54EF2FA27C780000C418 /* AtriumiOS copy-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "AtriumiOS copy-Info.plist"; path = "/Users/Zabir/Developer/Xcode/Atrium/AtriumiOS copy-Info.plist"; sourceTree = "<absolute>"; };
 		08D10C4A2F64897100754649 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -27,63 +25,11 @@
 			);
 			target = 00AA00000000000000000A01 /* AtriumiOS */;
 		};
-		089B54F02FA27C790000C418 /* Exceptions for "AtriumShared" folder in "AtriumiOS copy" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				AppIcon.icon,
-				CompanionWire.swift,
-				ProviderStyle.swift,
-				RelativeTimeFormatter.swift,
-				TokenFormatter.swift,
-			);
-			target = 089B54E72FA27C780000C418 /* AtriumiOS copy */;
-		};
-		089B54F12FA27C790000C418 /* Exceptions for "AtriumiOS" folder in "AtriumiOS copy" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Assets.xcassets,
-				AtriumiOSApp.swift,
-				CompanionClient.swift,
-				CompanionRootView.swift,
-				Info.plist,
-				NotificationCoordinator.swift,
-				Route.swift,
-				Views/Chats/ChatRow.swift,
-				Views/Chats/ChatsScreen.swift,
-				Views/Chats/NewChatMenu.swift,
-				Views/Commands/CommandsScreen.swift,
-				Views/Components/ArchiveFilterButton.swift,
-				Views/Components/CircularProgressDial.swift,
-				Views/Components/ProviderIconView.swift,
-				Views/Components/WorkspaceIconView.swift,
-				Views/Markdown/NativeMarkdownView.swift,
-				Views/Pairing/HostRow.swift,
-				Views/Pairing/PairingScreen.swift,
-				Views/Pairing/PairingStatusSection.swift,
-				Views/Session/AssistantMessageView.swift,
-				Views/Session/ContextUsageRow.swift,
-				Views/Session/SessionDetailScreen.swift,
-				Views/Session/SessionInspectorSheet.swift,
-				Views/Session/ToolCallListSheet.swift,
-				Views/Session/ToolGroupBadge.swift,
-				Views/Session/UserMessageView.swift,
-				Views/SourceControl/FileDiffScreen.swift,
-				Views/SourceControl/SourceControlFileRow.swift,
-				Views/SourceControl/SourceControlScreen.swift,
-				Views/SourceControl/SourceControlSectionHeader.swift,
-				Views/Workspaces/WorkspaceRow.swift,
-				Views/Workspaces/WorkspacesScreen.swift,
-			);
-			target = 089B54E72FA27C780000C418 /* AtriumiOS copy */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		00AA00000000000000000B01 /* AtriumShared */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				089B54F02FA27C790000C418 /* Exceptions for "AtriumShared" folder in "AtriumiOS copy" target */,
-			);
 			path = AtriumShared;
 			sourceTree = "<group>";
 		};
@@ -91,7 +37,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				00AA00000000000000000C02 /* Exceptions for "AtriumiOS" folder in "AtriumiOS" target */,
-				089B54F12FA27C790000C418 /* Exceptions for "AtriumiOS" folder in "AtriumiOS copy" target */,
 			);
 			path = AtriumiOS;
 			sourceTree = "<group>";
@@ -105,13 +50,6 @@
 
 /* Begin PBXFrameworksBuildPhase section */
 		00AA00000000000000000A06 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		089B54E92FA27C780000C418 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -137,7 +75,6 @@
 				08D10C4C2F64897100754649 /* Atrium */,
 				00AA00000000000000000B01 /* AtriumShared */,
 				00AA00000000000000000C01 /* AtriumiOS */,
-				089B54EF2FA27C780000C418 /* AtriumiOS copy-Info.plist */,
 				08D10C4B2F64897100754649 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -147,7 +84,6 @@
 			children = (
 				08D10C4A2F64897100754649 /* Atrium.app */,
 				00AA00000000000000000A08 /* AtriumiOS.app */,
-				089B54EE2FA27C780000C418 /* AtriumiOS copy.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -176,29 +112,6 @@
 			);
 			productName = AtriumiOS;
 			productReference = 00AA00000000000000000A08 /* AtriumiOS.app */;
-			productType = "com.apple.product-type.application";
-		};
-		089B54E72FA27C780000C418 /* AtriumiOS copy */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 089B54EB2FA27C780000C418 /* Build configuration list for PBXNativeTarget "AtriumiOS copy" */;
-			buildPhases = (
-				089B54E82FA27C780000C418 /* Sources */,
-				089B54E92FA27C780000C418 /* Frameworks */,
-				089B54EA2FA27C780000C418 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				00AA00000000000000000B01 /* AtriumShared */,
-				00AA00000000000000000C01 /* AtriumiOS */,
-			);
-			name = "AtriumiOS copy";
-			packageProductDependencies = (
-			);
-			productName = AtriumiOS;
-			productReference = 089B54EE2FA27C780000C418 /* AtriumiOS copy.app */;
 			productType = "com.apple.product-type.application";
 		};
 		08D10C492F64897100754649 /* Atrium */ = {
@@ -266,20 +179,12 @@
 			targets = (
 				08D10C492F64897100754649 /* Atrium */,
 				00AA00000000000000000A01 /* AtriumiOS */,
-				089B54E72FA27C780000C418 /* AtriumiOS copy */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		00AA00000000000000000A07 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		089B54EA2FA27C780000C418 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -297,13 +202,6 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		00AA00000000000000000A05 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		089B54E82FA27C780000C418 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -363,70 +261,6 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AtriumiOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		089B54EC2FA27C780000C418 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = "AtriumiOS copy-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		089B54ED2FA27C780000C418 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = "AtriumiOS copy-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -694,15 +528,6 @@
 			buildConfigurations = (
 				00AA00000000000000000A02 /* Debug */,
 				00AA00000000000000000A03 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		089B54EB2FA27C780000C418 /* Build configuration list for PBXNativeTarget "AtriumiOS copy" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				089B54EC2FA27C780000C418 /* Debug */,
-				089B54ED2FA27C780000C418 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
