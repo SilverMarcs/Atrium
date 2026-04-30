@@ -124,15 +124,16 @@ struct CodeTextEditor: NSViewRepresentable {
             object: scrollView.contentView
         )
 
-        configureMode(textView: textView, minimap: minimap, coordinator: context.coordinator)
-
-        Task { @MainActor in
-            scrollView.contentView.setBoundsOrigin(
-                NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y)
-            )
-            minimap.updateViewport(from: scrollView)
-        }
-
+        // Don't call configureMode here. Loading the file's text in makeNSView
+        // means setAttributedString runs against a textContainer that hasn't
+        // been sized yet (scrollView.frame is still .zero until updateNSView
+        // runs), so the initial layout passes use an unbounded container width.
+        // Once updateNSView later runs applyWrapping, invalidateLayout marks
+        // the glyphs dirty but the wide cached layout sticks until something
+        // forces a fresh setAttributedString — which is why typing any
+        // character (the rehighlight path) made the gutter cut-off go away.
+        // Defer configureMode to updateNSView so text is laid out exactly once,
+        // in the correctly sized container.
         return container
     }
 
@@ -158,8 +159,19 @@ struct CodeTextEditor: NSViewRepresentable {
         )
 
         updateSharedTextView(textView)
+
+        // Until SwiftUI gives us a real width there's nothing useful to lay
+        // out. Skip — we'll be called again once the parent is sized.
+        guard scrollViewFrame.width > 0, let minimap = context.coordinator.minimap else { return }
+
         applyWrapping(textView: textView, contentWidth: scrollViewFrame.width, coordinator: context.coordinator)
-        updateMode(textView: textView, coordinator: context.coordinator)
+
+        if context.coordinator.didConfigureMode {
+            updateMode(textView: textView, coordinator: context.coordinator)
+        } else {
+            context.coordinator.didConfigureMode = true
+            configureMode(textView: textView, minimap: minimap, coordinator: context.coordinator)
+        }
         textView.needsDisplay = true
     }
 
@@ -242,6 +254,20 @@ struct CodeTextEditor: NSViewRepresentable {
             height: CGFloat.greatestFiniteMagnitude
         )
         textView.autoresizingMask = []
+
+        // Set the gutter inset up front so the very first applyWrapping pass
+        // (in updateNSView, before configureMode runs) computes the correct
+        // container width = contentWidth - 2 * gutterInset. Otherwise the
+        // first paint wraps at the full content width and lines extend past
+        // the visible area until something forces a fresh setAttributedString
+        // (e.g. the rehighlight after typing a character) — which is the
+        // first-time-bottom-sheet-expansion gutter cut-off.
+        let gutterInset: CGFloat
+        switch mode {
+        case .editable: gutterInset = EditorTextViewConstants.gutterWidth
+        case .diff: gutterInset = EditorTextViewConstants.diffGutterWidth
+        }
+        textView.textContainerInset = NSSize(width: gutterInset, height: 4)
     }
 
     private func updateSharedTextView(_ textView: EditorTextView) {
@@ -547,6 +573,7 @@ struct CodeTextEditor: NSViewRepresentable {
         weak var scrollView: NSScrollView?
         weak var minimap: EditorMinimap?
         var isEditing = false
+        var didConfigureMode = false
         var lastAppliedHighlight: HighlightRequest?
         var lastDocumentID: AnyHashable?
         var lastWrapLines: Bool?
