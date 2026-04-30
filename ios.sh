@@ -9,6 +9,7 @@ Builds and runs the AtriumiOS companion app.
 
 Options:
   --device     Install and run on a connected iPhone
+  --ipad       Run on iPad Pro 11-inch simulator
   --build      Archive Release build and copy .ipa to ~/Downloads
   (default)    Run on iPhone Pro simulator
   -h, --help   Show this help
@@ -41,11 +42,13 @@ if [[ -z "${BUNDLE_ID:-}" ]]; then
 fi
 
 USE_DEVICE=0
+USE_IPAD=0
 DO_BUILD=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --device) USE_DEVICE=1 ;;
+    --ipad)   USE_IPAD=1 ;;
     --build)  DO_BUILD=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage >&2; exit 2 ;;
@@ -113,13 +116,15 @@ run_on_device() {
 }
 
 run_on_simulator() {
+  local DEVICE_PATTERN="${1:-iPhone.* Pro \(}"
+  local DEVICE_LABEL="${2:-iPhone Pro}"
   local SIM_ID
   SIM_ID=$(xcrun simctl list devices available \
-    | grep -E "iPhone.* Pro \(" \
+    | grep -E "$DEVICE_PATTERN" \
     | head -1 \
     | grep -oE "$UUID_RE")
   if [[ -z "${SIM_ID:-}" ]]; then
-    echo "error: no iPhone Pro simulator found" >&2
+    echo "error: no $DEVICE_LABEL simulator found" >&2
     exit 1
   fi
   echo "Using simulator: $SIM_ID"
@@ -151,6 +156,8 @@ if [[ "$DO_BUILD" == "1" ]]; then
   build_ipa
 elif [[ "$USE_DEVICE" == "1" ]]; then
   run_on_device
+elif [[ "$USE_IPAD" == "1" ]]; then
+  run_on_simulator "iPad Pro 11-inch.*\(" "iPad Pro 11-inch"
 else
   run_on_simulator
 fi
