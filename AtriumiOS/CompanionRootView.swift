@@ -53,6 +53,13 @@ struct CompanionRootView: View {
                 applyDeepLink(link)
             }
         }
+        .overlay {
+            if client.isReconnecting {
+                ReconnectingOverlay(onDisconnect: client.disconnect)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.default, value: client.isReconnecting)
     }
 
     /// Navigates to `[workspace, chat]`. If the user is already on the

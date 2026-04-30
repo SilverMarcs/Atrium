@@ -8,8 +8,8 @@ struct WorkspacesScreen: View {
     var body: some View {
         List {
             Section("Active") {
-                if filteredActive.isEmpty {
-                    Text(searchText.isEmpty ? "No active workspaces" : "No matches")
+                if filteredActive.isEmpty && !searchText.isEmpty {
+                    Text("No matches")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(filteredActive) { workspace in
@@ -45,16 +45,17 @@ struct WorkspacesScreen: View {
                     Label("Disconnect", systemImage: "power")
                 }
             }
-            if client.isReconnecting {
-                ToolbarItem(placement: .principal) {
-                    Text("Reconnecting…")
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 ArchiveFilterButton(showingArchived: $showingArchived)
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.fixed, placement: .bottomBar)
+        }
+        .overlay {
+            if filteredActive.isEmpty && searchText.isEmpty {
+                ProgressView()
+                    .controlSize(.large)
+            }
         }
     }
 
