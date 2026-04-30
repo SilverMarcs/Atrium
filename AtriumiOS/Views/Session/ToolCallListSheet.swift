@@ -32,5 +32,6 @@ struct ToolCallListSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.hidden)
     }
 }
