@@ -18,7 +18,7 @@ struct DiffHunkHeaderView: View {
 
             switch reference.stage {
             case .unstaged:
-                Button("Discard", role: .destructive) {
+                Button("Discard", role: .confirm) {
                     showDiscardAlert = true
                 }
                 .controlSize(.small)
@@ -40,7 +40,7 @@ struct DiffHunkHeaderView: View {
         .padding(.vertical, 4)
         .background(.regularMaterial)
         .alert("Discard Changes", isPresented: $showDiscardAlert) {
-            Button("Discard", role: .destructive) {
+            Button("Discard", role: .confirm) {
                 Task { await applyHunk(reverse: true, cached: false) }
             }
             Button("Cancel", role: .cancel) {}

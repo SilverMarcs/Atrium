@@ -17,7 +17,7 @@ struct DiffPopoverHeaderView: View {
                         .controlSize(.small)
                 }
                 if let onDiscard {
-                    Button("Discard", role: .destructive, action: onDiscard)
+                    Button("Discard", role: .confirm, action: onDiscard)
                         .controlSize(.small)
                 }
             case .staged:

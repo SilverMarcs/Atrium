@@ -53,7 +53,7 @@ struct SourceControlFileRow: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if !isStaged, let onDiscardConfirm {
-                Button(role: .destructive) {
+                Button(role: .confirm) {
                     onDiscardConfirm([file])
                 } label: {
                     Label("Discard", systemImage: "arrow.uturn.backward")

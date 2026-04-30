@@ -136,7 +136,7 @@ struct FileEditorPanel: View {
                 saveFile()
                 panel.confirmDiscard()
             }
-            Button("Discard", role: .destructive) {
+            Button("Discard", role: .confirm) {
                 panel.confirmDiscard()
             }
             Button("Cancel", role: .cancel) {

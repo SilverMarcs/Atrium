@@ -84,7 +84,7 @@ struct SourceControlScreen: View {
             ),
             presenting: pendingDiscard
         ) { target in
-            Button("Discard", role: .destructive) {
+            Button("Discard", role: .confirm) {
                 if target.all {
                     client.gitDiscardAll(workspaceId: workspaceId)
                 } else if let files = target.files {
