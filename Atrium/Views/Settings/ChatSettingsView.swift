@@ -7,6 +7,7 @@ struct ChatSettingsView: View {
 
     @Environment(WorkspaceStore.self) private var store
     @State private var showDeleteArchivedConfirm = false
+    private let catalog = ModelCatalog.shared
 
     private var archivedChatCount: Int {
         store.workspaces.reduce(0) { $0 + $1.chats.lazy.filter(\.isArchived).count }
@@ -34,6 +35,29 @@ struct ChatSettingsView: View {
                     Text("Default Permission Mode")
                     Text(defaultPermissionMode.description)
                 }
+            }
+
+            Section {
+                ForEach(AgentProvider.allCases, id: \.self) { provider in
+                    LabeledContent {
+                        Text(modelSummary(for: provider))
+                            .foregroundStyle(.secondary)
+                    } label: {
+                        Label(provider.rawValue, image: provider.imageName)
+                    }
+                }
+            }
+            .sectionActions {
+                Button {
+                    catalog.refreshAll()
+                } label: {
+                    if catalog.isRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Refresh")
+                    }
+                }
+                .disabled(catalog.isRefreshing)
             }
 
             Section {
@@ -66,6 +90,15 @@ struct ChatSettingsView: View {
         } message: {
             Text("This permanently removes all archived chats across every workspace. This action cannot be undone.")
         }
+    }
+
+    private func modelSummary(for provider: AgentProvider) -> String {
+        let count = catalog.models(for: provider).count
+        if catalog.isRefreshing(provider: provider) && count == 0 {
+            return "Loading…"
+        }
+        if count == 0 { return "Not loaded" }
+        return count == 1 ? "1 model" : "\(count) models"
     }
 
     private func deleteArchivedChats() {

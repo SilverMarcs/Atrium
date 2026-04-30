@@ -577,12 +577,13 @@ private final class ClientHandler {
 
     private func setSessionModel(sessionId: UUID, modelRawValue: String) {
         guard let store, let chat = WireSnapshotter.findChat(id: sessionId, in: store) else { return }
-        guard let model = AgentModel(rawValue: modelRawValue), model.provider == chat.provider else {
+        let known = ModelCatalog.shared.models(for: chat.provider)
+        guard known.contains(where: { $0.rawValue == modelRawValue }) else {
             sendError("invalid model")
             return
         }
-        chat.model = model
-        chat.session.applyModel(model)
+        chat.model = modelRawValue
+        chat.session.applyModel(modelRawValue)
     }
 
     private func setSessionPermissionMode(sessionId: UUID, modeRawValue: String) {
@@ -1126,7 +1127,7 @@ private enum WireSnapshotter {
             isActive: chat.session.isConnected,
             hasNotification: chat.hasNotification
         )
-        let availableModels = AgentModel.models(for: chat.provider).map {
+        let availableModels = ModelCatalog.shared.models(for: chat.provider).map {
             WireAgentModel(rawValue: $0.rawValue, name: $0.name, imageName: $0.imageName)
         }
         let availableModes = PermissionMode.allCases.map {
@@ -1140,13 +1141,13 @@ private enum WireSnapshotter {
         return WireSession(
             meta: meta,
             messages: chat.messages.map(wireMessage(_:)),
-            modelLabel: chat.model.name,
+            modelLabel: availableModels.first(where: { $0.rawValue == chat.model })?.name ?? chat.model,
             permissionLabel: chat.permissionMode.label,
             permissionSystemImage: chat.permissionMode.systemImage,
             usedTokens: chat.usedTokens,
             contextSize: chat.contextSize,
             availableModels: availableModels,
-            modelRawValue: chat.model.rawValue,
+            modelRawValue: chat.model,
             availableModes: availableModes,
             permissionModeRawValue: chat.permissionMode.rawValue,
             error: chat.session.error

@@ -144,10 +144,12 @@ extension ACPSession {
             configId: SessionConfigId("mode"),
             value: SessionConfigValueId(permissionMode.configValue(for: provider))
         )
-        _ = try await client.setConfigOption(
-            sessionId: sessionId,
-            configId: SessionConfigId("model"),
-            value: SessionConfigValueId(model.rawValue)
-        )
+        if !model.isEmpty {
+            _ = try await client.setConfigOption(
+                sessionId: sessionId,
+                configId: SessionConfigId("model"),
+                value: SessionConfigValueId(model)
+            )
+        }
     }
 }

@@ -10,7 +10,7 @@ final class ACPSession {
     var error: String?
     var provider: AgentProvider = .codex
     var permissionMode: PermissionMode = .bypassPermissions
-    var model: AgentModel = .claudeOpus
+    var model: String = ""
     var usedTokens: Int = 0
     var contextSize: Int = 0
     var plan: [PlanEntry] = []
@@ -99,14 +99,14 @@ final class ACPSession {
         }
     }
 
-    func applyModel(_ newModel: AgentModel) {
+    func applyModel(_ newModel: String) {
         model = newModel
-        guard let client, let sessionId else { return }
+        guard let client, let sessionId, !newModel.isEmpty else { return }
         Task {
             try? await client.setConfigOption(
                 sessionId: sessionId,
                 configId: SessionConfigId("model"),
-                value: SessionConfigValueId(newModel.rawValue)
+                value: SessionConfigValueId(newModel)
             )
         }
     }

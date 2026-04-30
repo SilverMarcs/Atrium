@@ -10,7 +10,7 @@ struct ACPView: View {
     private var session: ACPSession { chat.session }
     private var messages: [Message] { chat.messages }
 
-    private var modelBinding: Binding<AgentModel> {
+    private var modelBinding: Binding<String> {
         Binding(
             get: { chat.model },
             set: { newModel in
@@ -18,6 +18,22 @@ struct ACPView: View {
                 session.applyModel(newModel)
             }
         )
+    }
+
+    private var availableModels: [AgentModel] {
+        ModelCatalog.shared.models(for: chat.provider)
+    }
+
+    private var currentModelName: String {
+        if let match = availableModels.first(where: { $0.rawValue == chat.model }) {
+            return match.name
+        }
+        return chat.model.isEmpty ? "Model" : chat.model
+    }
+
+    private var currentModelImage: String {
+        availableModels.first(where: { $0.rawValue == chat.model })?.imageName
+            ?? chat.provider.imageName
     }
 
     private var permissionModeBinding: Binding<PermissionMode> {
@@ -81,13 +97,13 @@ struct ACPView: View {
 
                 ToolbarItem(placement: .automatic) {
                     Picker(selection: modelBinding) {
-                        ForEach(AgentModel.models(for: chat.provider)) { model in
+                        ForEach(availableModels) { model in
                             Label(model.name, image: model.imageName)
                                 .labelStyle(.titleAndIcon)
-                                .tag(model)
+                                .tag(model.rawValue)
                         }
                     } label: {
-                        Label(chat.model.name, image: chat.model.imageName)
+                        Label(currentModelName, image: currentModelImage)
                             .labelStyle(.titleAndIcon)
                     }
                     .pickerStyle(.menu)

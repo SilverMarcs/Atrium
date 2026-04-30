@@ -9,7 +9,11 @@ final class Chat: Identifiable, Hashable, Codable {
     var acpSessionId: String?
     var provider: AgentProvider = .codex
     var permissionMode: PermissionMode = .bypassPermissions
-    var model: AgentModel = .claudeOpus
+    /// Raw model id as exposed by the agent (e.g. "claude-sonnet-4-7"). Empty
+    /// string means "no specific model selected" — picker resolves the
+    /// default lazily from `ModelCatalog`. Kept as a String so adding/removing
+    /// models on the agent side doesn't require an enum migration.
+    var model: String = ""
     var date: Date = Date()
     var sortOrder: Int = 0
     var turnCount: Int = 0
@@ -46,11 +50,11 @@ final class Chat: Identifiable, Hashable, Codable {
 
     private var checkpointNamespace: String { id.uuidString }
 
-    init(title: String = "New Chat", provider: AgentProvider = .codex, permissionMode: PermissionMode = .bypassPermissions, model: AgentModel? = nil, sortOrder: Int = 0) {
+    init(title: String = "New Chat", provider: AgentProvider = .codex, permissionMode: PermissionMode = .bypassPermissions, model: String? = nil, sortOrder: Int = 0) {
         self.title = title
         self.provider = provider
         self.permissionMode = permissionMode
-        self.model = model ?? AgentModel.defaultModel(for: provider)
+        self.model = model ?? ModelCatalog.shared.defaultModel(for: provider)?.rawValue ?? ""
         self.sortOrder = sortOrder
     }
 
@@ -68,7 +72,7 @@ final class Chat: Identifiable, Hashable, Codable {
         self.acpSessionId = try c.decodeIfPresent(String.self, forKey: .acpSessionId)
         self.provider = try c.decodeIfPresent(AgentProvider.self, forKey: .provider) ?? .codex
         self.permissionMode = try c.decodeIfPresent(PermissionMode.self, forKey: .permissionMode) ?? .bypassPermissions
-        self.model = try c.decodeIfPresent(AgentModel.self, forKey: .model) ?? AgentModel.defaultModel(for: self.provider)
+        self.model = try c.decodeIfPresent(String.self, forKey: .model) ?? ""
         self.date = try c.decodeIfPresent(Date.self, forKey: .date) ?? Date()
         self.sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         self.turnCount = try c.decodeIfPresent(Int.self, forKey: .turnCount) ?? 0
@@ -340,10 +344,10 @@ final class Chat: Identifiable, Hashable, Codable {
                 guard case .select(let select) = option.kind else { continue }
                 switch option.id.value {
                 case "model":
-                    if let agentModel = AgentModel(rawValue: select.currentValue.value) {
-                        model = agentModel
-                        session.model = agentModel
-                    }
+                    let value = select.currentValue.value
+                    model = value
+                    session.model = value
+                    ModelCatalog.shared.ingestSelect(select.options, provider: provider)
                 case "mode":
                     if let mode = PermissionMode.allCases.first(where: { $0.configValue(for: provider) == select.currentValue.value }) {
                         permissionMode = mode
