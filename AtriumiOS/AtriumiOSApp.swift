@@ -8,6 +8,10 @@ struct AtriumiOSApp: App {
 
     init() {
         UNUserNotificationCenter.current().delegate = NotificationCoordinator.shared
+        // Must register before applicationDidFinishLaunching returns. Drives
+        // the Dynamic Island Live Activity that mirrors a running chat
+        // across backgrounding.
+        LiveSessionTracker.registerHandler()
     }
 
     var body: some Scene {

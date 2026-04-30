@@ -230,6 +230,7 @@ final class CompanionClient {
         activeSession = nil
         subscribedSessionId = nil
         setHasConnectedBefore(false)
+        LiveSessionTracker.shared.cancelAll()
     }
 
     private func handleConnectionState(_ cstate: NWConnection.State) {
@@ -239,6 +240,10 @@ final class CompanionClient {
         case .failed(let error):
             state = .failed(error.localizedDescription)
             lastError = error.localizedDescription
+            // No more updates will arrive on this socket — surrender BG
+            // runtime so iOS can throttle Wi-Fi rather than holding it
+            // awake on a dead connection.
+            LiveSessionTracker.shared.cancelAll()
         case .cancelled:
             if case .failed = state { } else { state = .idle }
         default:
@@ -268,6 +273,7 @@ final class CompanionClient {
                         self.state = .failed(error?.localizedDescription ?? "Disconnected")
                     }
                     self.connection?.cancel()
+                    LiveSessionTracker.shared.cancelAll()
                     return
                 }
                 self.receive()
@@ -319,6 +325,7 @@ final class CompanionClient {
             } else {
                 setHasConnectedBefore(false)
                 state = .failed(message.error ?? "Pairing failed")
+                LiveSessionTracker.shared.cancelAll()
             }
         case .sessionsList:
             let newWorkspaces = message.workspaces ?? []
@@ -327,6 +334,12 @@ final class CompanionClient {
             if let providers = message.availableProviders {
                 availableProviders = providers
             }
+            // Pump the BG task even when the user has navigated away from
+            // the tracked chat (so we no longer get sessionUpdate patches
+            // for it). Same heartbeat that drives the local "finished"
+            // notification — extending its window also extends the
+            // notification's window.
+            LiveSessionTracker.shared.observeSessionList(newWorkspaces)
         case .sessionSnapshot:
             if let session = message.session, message.sessionId == subscribedSessionId {
                 activeSession = session
@@ -350,6 +363,14 @@ final class CompanionClient {
             if let modeRaw = patch.permissionModeRawValue { current.permissionModeRawValue = modeRaw }
             if patch.errorChanged == true { current.error = patch.error }
             activeSession = current
+            // Bump BG task progress so iOS keeps us alive across the
+            // backgrounded portion of the response. Each patch — even one
+            // that didn't visibly change anything — counts as a heartbeat.
+            LiveSessionTracker.shared.observe(
+                sessionId: current.meta.id,
+                isProcessing: current.meta.isProcessing,
+                subtitle: liveActivitySubtitle(for: current)
+            )
         case .chatCreated:
             if let workspaceId = message.workspaceId, let sessionId = message.sessionId {
                 pendingDeepLink = PendingDeepLink(
@@ -430,6 +451,51 @@ final class CompanionClient {
         msg.sessionId = id
         msg.promptText = text
         send(msg)
+        // Tap is the user-initiated action Apple requires for
+        // BGContinuedProcessingTask. The system Live Activity comes up in
+        // the Dynamic Island and the process stays alive long enough to
+        // keep mirroring the response if the user backgrounds the app.
+        // workspaceId rides along so an expiration-time follow-up
+        // notification can deep-link the user back into this chat.
+        if let workspaceId = activeSession?.meta.workspaceId {
+            LiveSessionTracker.shared.begin(
+                sessionId: id,
+                workspaceId: workspaceId,
+                title: liveActivityTitle(for: id),
+                subtitle: liveActivitySubtitle(for: activeSession) ?? "Working…"
+            )
+        }
+    }
+
+    private func liveActivityTitle(for sessionId: UUID) -> String {
+        guard let session = activeSession, session.meta.id == sessionId else {
+            return "Atrium"
+        }
+        let chatTitle = session.meta.title.isEmpty ? "Chat" : session.meta.title
+        if let workspace = workspaces.first(where: { $0.id == session.meta.workspaceId })?.name,
+           !workspace.isEmpty {
+            return "\(workspace) · \(chatTitle)"
+        }
+        return chatTitle
+    }
+
+    /// Latest assistant-side hint for the Live Activity subtitle: a tool
+    /// name when the agent is invoking one, otherwise a short text snippet.
+    /// Keeps the Dynamic Island label feeling live without leaking long
+    /// strings that exceed Apple's 4 KB Live Activity payload budget.
+    private func liveActivitySubtitle(for session: WireSession?) -> String? {
+        guard let session,
+              let lastBlock = session.messages.last(where: { $0.role == .assistant })?.blocks.last
+        else { return nil }
+        switch lastBlock.kind {
+        case .toolCall:
+            let tool = lastBlock.text.isEmpty ? "Tool" : lastBlock.text
+            return "Running \(tool)…"
+        case .text:
+            let trimmed = lastBlock.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return String(trimmed.prefix(60))
+        }
     }
 
     func toggleArchive(sessionId: UUID) {
@@ -442,18 +508,21 @@ final class CompanionClient {
         var msg = CompanionMessage(kind: .disconnectChat)
         msg.sessionId = sessionId
         send(msg)
+        LiveSessionTracker.shared.cancel(sessionId: sessionId)
     }
 
     func stopChat(sessionId: UUID) {
         var msg = CompanionMessage(kind: .stopChat)
         msg.sessionId = sessionId
         send(msg)
+        LiveSessionTracker.shared.cancel(sessionId: sessionId)
     }
 
     func deleteChat(sessionId: UUID) {
         var msg = CompanionMessage(kind: .deleteChat)
         msg.sessionId = sessionId
         send(msg)
+        LiveSessionTracker.shared.cancel(sessionId: sessionId)
     }
 
     /// `providerName == nil` is the "primary action" — Mac falls back to
@@ -682,6 +751,9 @@ final class CompanionClient {
             for s in ws.sessions {
                 guard let was = oldProcessing[s.id], was, !s.isProcessing else { continue }
                 if subscribedSessionId == s.id { continue }
+                // The Live Activity dismissing already told the user the
+                // chat is done; no need to also fire a local notification.
+                if LiveSessionTracker.shared.consumeRecentCompletion(sessionId: s.id) { continue }
                 postFinishedNotification(workspaceName: ws.name, session: s)
             }
         }

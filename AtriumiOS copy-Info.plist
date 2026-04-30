@@ -24,6 +24,10 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.SilverMarcs.Atrium.session.live</string>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_atrium._tcp</string>
