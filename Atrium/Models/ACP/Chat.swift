@@ -115,7 +115,8 @@ final class Chat: Identifiable, Hashable, Codable {
 
     func connectIfNeeded() {
         guard !session.isConnected && !session.isConnecting else { return }
-        guard let directory = workspace?.directory else { return }
+        // Workspace-less chats (Quick Panel) run against the user's home dir.
+        let directory = workspace?.directory ?? FileManager.default.homeDirectoryForCurrentUser.path
 
         session.provider = provider
         session.permissionMode = permissionMode

@@ -15,6 +15,7 @@ struct AtriumApp: App {
                 .frame(minWidth: 600, minHeight: 400)
                 .task { CompanionServer.shared.start(workspaceStore: workspaceStore) }
                 .task { ModelCatalog.shared.bootstrapIfNeeded() }
+                .task { QuickPanelController.shared.bootstrap() }
         }
         .defaultSize(width: 900, height: 600)
         .commands {

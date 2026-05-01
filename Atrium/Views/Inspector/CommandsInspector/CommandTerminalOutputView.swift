@@ -36,7 +36,7 @@ struct CommandTerminalOutputView: View {
                     .background(.secondary.opacity(0.15), in: Capsule())
 
                     Button { terminal.clearTerminal() } label: {
-                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "delete.left")
                             .font(.caption2)
                     }
                     .help("Reset terminal")

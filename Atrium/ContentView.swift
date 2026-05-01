@@ -17,11 +17,14 @@ struct ContentView: View {
             if let chat = appState.selectedChat, let workspace = chat.workspace {
                 WorkspaceDetailView(chat: chat, workspace: workspace)
             } else {
+                ScrollView {
                 ContentUnavailableView(
                     "No Chat Selected",
                     systemImage: "sidebar.left",
                     description: Text("Select a chat to get started.")
                 )
+                }
+                .defaultScrollAnchor(.center)
             }
         }
         .inspector(isPresented: Bindable(appState).showingInspector) {

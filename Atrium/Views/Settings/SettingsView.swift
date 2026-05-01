@@ -11,6 +11,10 @@ struct SettingsView: View {
                 ChatSettingsView()
             }
 
+            Tab("Quick Panel", systemImage: "bolt.fill") {
+                QuickPanelSettingsView()
+            }
+
             Tab("Shortcuts", systemImage: "keyboard") {
                 ShortcutsSettingsView()
             }
@@ -23,7 +27,7 @@ struct SettingsView: View {
                 CreditsSettingsView()
             }
         }
-        .frame(width: 480, height: 440)
+        .frame(width: 540, height: 500)
     }
 }
 
