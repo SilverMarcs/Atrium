@@ -56,14 +56,14 @@ struct WorkspaceRow: View {
                 if let nsImage = customIconImage {
                     Image(nsImage: nsImage)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 22, height: 22)
-                        .clipShape(.rect(cornerRadius: 8))
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 20, height: 20)
+                        .clipShape(.rect(cornerRadius: 6))
                 } else if workspace.projectType != .unknown {
                     Image(workspace.projectType.iconName)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                 } else {
                     Image(systemName: "folder")
                 }

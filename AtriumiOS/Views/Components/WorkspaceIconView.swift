@@ -8,20 +8,18 @@ import UIKit
 struct WorkspaceIconView: View {
     let customIconData: Data?
 
-    private static let iconSize: CGFloat = 32
+    private static let iconSize: CGFloat = 25
 
     var body: some View {
         if let data = customIconData, let uiImage = UIImage(data: data) {
             Image(uiImage: uiImage)
                 .resizable()
-                .aspectRatio(contentMode: .fill)
+                .aspectRatio(contentMode: .fit)
                 .frame(width: Self.iconSize, height: Self.iconSize)
                 .clipShape(.rect(cornerRadius: 8))
         } else {
             Image(systemName: "folder")
-                .font(.title2)
                 .foregroundStyle(.secondary)
-                .frame(width: Self.iconSize, height: Self.iconSize)
         }
     }
 }
