@@ -148,6 +148,12 @@ struct WorkspaceRow: View {
             }
 
             Button {
+                NSWorkspace.shared.activateFileViewerSelecting([workspace.url])
+            } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+
+            Button {
                 chooseCustomIcon()
             } label: {
                 Label("Choose Icon…", systemImage: "photo")

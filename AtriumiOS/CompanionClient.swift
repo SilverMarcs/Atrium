@@ -583,10 +583,10 @@ final class CompanionClient {
         send(msg)
     }
 
-    func gitSwitchBranch(workspaceId: UUID, branch: String) {
-        var msg = CompanionMessage(kind: .gitSwitchBranch)
+    func gitSelectRepository(workspaceId: UUID, path: String) {
+        var msg = CompanionMessage(kind: .gitSelectRepository)
         msg.workspaceId = workspaceId
-        msg.gitBranch = branch
+        msg.gitRepositoryPath = path
         send(msg)
     }
 

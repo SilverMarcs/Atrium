@@ -47,6 +47,10 @@ public enum CompanionKind: String, Codable, Sendable {
     case gitSwitchBranch
     case gitCreateBranch
     case gitFileDiff
+    /// Picks which discovered nested repository the iOS client wants to act
+    /// on. The Mac persists the choice on the client connection and replies
+    /// with a fresh `gitStatus` reflecting the new selection.
+    case gitSelectRepository
     // Commands (per workspace)
     case commandsSubscribe
     case commandsUnsubscribe
@@ -135,6 +139,10 @@ public struct CompanionMessage: Codable, Sendable {
     /// Raw `git diff` output for `gitFileDiffResult`. iOS parses hunks
     /// itself (`@@` headers, `+`/`-`/space prefixes) and renders them.
     public var gitDiffText: String?
+    /// Filesystem path to a discovered nested repository within the
+    /// workspace, used by `gitSelectRepository` to pick which one acts as
+    /// the target for follow-up status / actions.
+    public var gitRepositoryPath: String?
 
     // commandsList / runCommand / stopCommand
     public var commands: [WireCommand]?
@@ -425,9 +433,27 @@ public struct WireGitCommit: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// One repo's status for a workspace. The workspace-level `gitStatus` reply
-/// carries a single snapshot (the first / primary repo for the workspace
-/// directory) — the iOS client doesn't surface the multi-repo picker.
+/// A nested repository discovered inside a workspace folder. Identified by
+/// its on-disk root path so the Mac can resolve it back to a snapshot.
+public struct WireGitRepository: Codable, Sendable, Hashable, Identifiable {
+    public var id: String { path }
+    public var path: String
+    public var displayName: String
+    /// Current branch checked out in this repo. nil for detached HEAD or
+    /// brand-new repos with no commits — iOS groups those under a "—"
+    /// header in the picker.
+    public var branchName: String?
+
+    public init(path: String, displayName: String, branchName: String?) {
+        self.path = path
+        self.displayName = displayName
+        self.branchName = branchName
+    }
+}
+
+/// Status for a workspace's currently-selected nested repository, plus the
+/// list of all repositories discovered under the workspace folder so the
+/// iOS client can surface a picker.
 public struct WireGitStatus: Codable, Sendable {
     /// False when the workspace directory has no git repo at all.
     public var hasRepository: Bool
@@ -438,6 +464,14 @@ public struct WireGitStatus: Codable, Sendable {
     public var unpushedCommits: [WireGitCommit]
     public var hasTrackingBranch: Bool
     public var remoteAheadCount: Int
+    /// Every repository discovered under the workspace folder. Empty when
+    /// the folder has no repositories. iOS uses this to drive the title
+    /// menu — even with one entry we still show the menu (just no other
+    /// option to switch to).
+    public var repositories: [WireGitRepository]
+    /// Path of the repository this status is for. nil iff `repositories`
+    /// is empty. Drives which menu item is checked on iOS.
+    public var selectedRepositoryPath: String?
 
     public init(
         hasRepository: Bool,
@@ -447,7 +481,9 @@ public struct WireGitStatus: Codable, Sendable {
         unstagedFiles: [WireGitFile],
         unpushedCommits: [WireGitCommit],
         hasTrackingBranch: Bool,
-        remoteAheadCount: Int
+        remoteAheadCount: Int,
+        repositories: [WireGitRepository] = [],
+        selectedRepositoryPath: String? = nil
     ) {
         self.hasRepository = hasRepository
         self.branchName = branchName
@@ -457,6 +493,8 @@ public struct WireGitStatus: Codable, Sendable {
         self.unpushedCommits = unpushedCommits
         self.hasTrackingBranch = hasTrackingBranch
         self.remoteAheadCount = remoteAheadCount
+        self.repositories = repositories
+        self.selectedRepositoryPath = selectedRepositoryPath
     }
 }
 

@@ -2,10 +2,13 @@ import SwiftUI
 
 /// iOS source control surface for one workspace. Mirrors the host's three
 /// sections (unpushed commits, staged changes, working changes) but skips
-/// any section that's empty so the screen never shows an empty stub. Branch
-/// picker lives in the title menu; advanced operations (push/pull/fetch,
-/// new branch) sit on the bottom toolbar alongside search and the
-/// workspace tools menu, mirroring the chat detail screen's shape.
+/// any section that's empty so the screen never shows an empty stub. The
+/// title menu picks which discovered nested repository this workspace is
+/// acting on (always shown, even when only one repo exists, so the user
+/// always knows which repo they're looking at). Advanced operations
+/// (push/pull/fetch, new branch) sit on the bottom toolbar alongside
+/// search and the workspace tools menu, mirroring the chat detail
+/// screen's shape.
 struct SourceControlScreen: View {
     @Environment(CompanionClient.self) private var client
     let workspaceId: UUID
@@ -50,15 +53,22 @@ struct SourceControlScreen: View {
         }
         .navigationTitle(status?.branchName ?? "Source Control")
         .toolbarTitleMenu {
-            if let status {
-                ForEach(status.localBranches, id: \.self) { branch in
-                    Button {
-                        client.gitSwitchBranch(workspaceId: workspaceId, branch: branch)
-                    } label: {
-                        if branch == status.branchName {
-                            Label(branch, systemImage: "checkmark")
-                        } else {
-                            Text(branch)
+            if let status, !status.repositories.isEmpty {
+                Picker(
+                    "Repository",
+                    selection: Binding(
+                        get: { status.selectedRepositoryPath ?? "" },
+                        set: { newPath in
+                            guard !newPath.isEmpty, newPath != status.selectedRepositoryPath else { return }
+                            client.gitSelectRepository(workspaceId: workspaceId, path: newPath)
+                        }
+                    )
+                ) {
+                    ForEach(repositoryGroups(in: status), id: \.branch) { group in
+                        Section(group.branch) {
+                            ForEach(group.repos) { repo in
+                                Text(repo.displayName).tag(repo.path)
+                            }
                         }
                     }
                 }
@@ -226,6 +236,21 @@ struct SourceControlScreen: View {
             }
 
         }
+    }
+
+    /// Groups repositories by their current branch so the title menu can
+    /// show one section per branch with the repos checked out on it
+    /// inside. Branches appear in first-seen order so the layout stays
+    /// stable across refreshes (snapshots already arrive sorted by path).
+    private func repositoryGroups(in status: WireGitStatus) -> [(branch: String, repos: [WireGitRepository])] {
+        var order: [String] = []
+        var buckets: [String: [WireGitRepository]] = [:]
+        for repo in status.repositories {
+            let key = repo.branchName ?? "—"
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(repo)
+        }
+        return order.map { (branch: $0, repos: buckets[$0] ?? []) }
     }
 
     private func commit() {

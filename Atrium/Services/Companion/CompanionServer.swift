@@ -151,6 +151,10 @@ private final class ClientHandler {
     private var subscription: ChatSubscription?
     private var gitSubscription: GitSubscription?
     private var commandsSubscription: CommandsSubscription?
+    /// Which discovered nested repository this client picked for each
+    /// workspace it's looking at. Cleared when the connection closes.
+    /// Missing entry = use the first discovered repo (sorted by path).
+    private var selectedGitRepoPaths: [UUID: URL] = [:]
 
     init(
         connection: NWConnection,
@@ -407,6 +411,12 @@ private final class ClientHandler {
                     try await GitRepository.shared.createBranch(named: trimmed, at: snap.repositoryRootURL)
                 }
             }
+        case .gitSelectRepository:
+            guard isAuthenticated else { sendError("not authenticated"); return }
+            if let wsId = message.workspaceId, let path = message.gitRepositoryPath {
+                selectedGitRepoPaths[wsId] = URL(fileURLWithPath: path)
+                sendGitStatus(workspaceId: wsId)
+            }
         case .gitFileDiff:
             guard isAuthenticated else { sendError("not authenticated"); return }
             if let wsId = message.workspaceId,
@@ -615,10 +625,21 @@ private final class ClientHandler {
     private func sendGitStatus(workspaceId: UUID) {
         guard let store, let workspace = store.workspaces.first(where: { $0.id == workspaceId }) else { return }
         let directoryURL = workspace.url
+        let selectedPath = selectedGitRepoPaths[workspaceId]
         Task { [weak self] in
-            let status = await Self.fetchGitStatus(directoryURL: directoryURL)
+            let (status, resolvedPath) = await Self.fetchGitStatus(
+                directoryURL: directoryURL,
+                selectedPath: selectedPath
+            )
             await MainActor.run {
                 guard let self else { return }
+                // Persist whichever repo we ended up using so action handlers
+                // pick the same one — first call after connect has no entry,
+                // and the user may have asked for a path that no longer
+                // exists (we silently fall back to the first repo).
+                if let resolvedPath {
+                    self.selectedGitRepoPaths[workspaceId] = resolvedPath
+                }
                 var msg = CompanionMessage(kind: .gitStatus)
                 msg.workspaceId = workspaceId
                 msg.gitStatus = status
@@ -627,22 +648,47 @@ private final class ClientHandler {
         }
     }
 
-    private static func fetchGitStatus(directoryURL: URL) async -> WireGitStatus {
+    /// Picks the snapshot the client is currently looking at, falling back to
+    /// the first one when no selection has been made or the prior selection
+    /// no longer matches a discovered repo.
+    private static func resolveSnapshot(
+        snapshots: [GitRepositoryStatusSnapshot],
+        selectedPath: URL?
+    ) -> GitRepositoryStatusSnapshot? {
+        if let selectedPath,
+           let match = snapshots.first(where: { $0.repositoryRootURL.path == selectedPath.path }) {
+            return match
+        }
+        return snapshots.first
+    }
+
+    private static func fetchGitStatus(
+        directoryURL: URL,
+        selectedPath: URL?
+    ) async -> (WireGitStatus, URL?) {
+        let empty = WireGitStatus(
+            hasRepository: false,
+            branchName: nil,
+            localBranches: [],
+            stagedFiles: [],
+            unstagedFiles: [],
+            unpushedCommits: [],
+            hasTrackingBranch: false,
+            remoteAheadCount: 0
+        )
         do {
             let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
-            guard let snap = snapshots.first else {
-                return WireGitStatus(
-                    hasRepository: false,
-                    branchName: nil,
-                    localBranches: [],
-                    stagedFiles: [],
-                    unstagedFiles: [],
-                    unpushedCommits: [],
-                    hasTrackingBranch: false,
-                    remoteAheadCount: 0
+            guard let snap = resolveSnapshot(snapshots: snapshots, selectedPath: selectedPath) else {
+                return (empty, nil)
+            }
+            let repos = snapshots.map {
+                WireGitRepository(
+                    path: $0.repositoryRootURL.path,
+                    displayName: $0.repositoryRootURL.lastPathComponent,
+                    branchName: $0.branchName
                 )
             }
-            return WireGitStatus(
+            let status = WireGitStatus(
                 hasRepository: true,
                 branchName: snap.branchName,
                 localBranches: snap.localBranches,
@@ -656,19 +702,13 @@ private final class ClientHandler {
                     )
                 },
                 hasTrackingBranch: snap.hasTrackingBranch,
-                remoteAheadCount: snap.remoteAheadCount
+                remoteAheadCount: snap.remoteAheadCount,
+                repositories: repos,
+                selectedRepositoryPath: snap.repositoryRootURL.path
             )
+            return (status, snap.repositoryRootURL)
         } catch {
-            return WireGitStatus(
-                hasRepository: false,
-                branchName: nil,
-                localBranches: [],
-                stagedFiles: [],
-                unstagedFiles: [],
-                unpushedCommits: [],
-                hasTrackingBranch: false,
-                remoteAheadCount: 0
-            )
+            return (empty, nil)
         }
     }
 
@@ -680,10 +720,11 @@ private final class ClientHandler {
         )
     }
 
-    /// Runs a git operation against the workspace's first repo, then refreshes
-    /// the subscriber. Action errors surface as a one-off `error` message and
-    /// do not prevent the refresh — the iOS UI should always reflect the new
-    /// truth after an attempt.
+    /// Runs a git operation against whichever discovered repo the client has
+    /// selected for this workspace (falling back to the first one), then
+    /// refreshes the subscriber. Action errors surface as a one-off `error`
+    /// message and do not prevent the refresh — the iOS UI should always
+    /// reflect the new truth after an attempt.
     private func performGitAction(
         workspaceId: UUID,
         _ action: @escaping (GitRepositoryStatusSnapshot) async throws -> Void
@@ -693,10 +734,11 @@ private final class ClientHandler {
             return
         }
         let directoryURL = workspace.url
+        let selectedPath = selectedGitRepoPaths[workspaceId]
         Task { [weak self] in
             do {
                 let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
-                guard let snap = snapshots.first else {
+                guard let snap = Self.resolveSnapshot(snapshots: snapshots, selectedPath: selectedPath) else {
                     await MainActor.run { self?.sendError("no repository") }
                     return
                 }
@@ -714,8 +756,14 @@ private final class ClientHandler {
             return
         }
         let directoryURL = workspace.url
+        let selectedPath = selectedGitRepoPaths[workspaceId]
         Task { [weak self] in
-            let text = await Self.fileDiffText(directoryURL: directoryURL, path: path, stage: stage)
+            let text = await Self.fileDiffText(
+                directoryURL: directoryURL,
+                selectedPath: selectedPath,
+                path: path,
+                stage: stage
+            )
             await MainActor.run {
                 guard let self else { return }
                 var msg = CompanionMessage(kind: .gitFileDiffResult)
@@ -728,10 +776,15 @@ private final class ClientHandler {
         }
     }
 
-    private static func fileDiffText(directoryURL: URL, path: String, stage: String) async -> String {
+    private static func fileDiffText(
+        directoryURL: URL,
+        selectedPath: URL?,
+        path: String,
+        stage: String
+    ) async -> String {
         do {
             let snapshots = try await GitRepository.shared.statusSnapshots(in: directoryURL)
-            guard let snap = snapshots.first else { return "No repository." }
+            guard let snap = resolveSnapshot(snapshots: snapshots, selectedPath: selectedPath) else { return "No repository." }
             let staged = (stage == "staged")
             let pool = staged ? snap.stagedFiles : snap.unstagedFiles
             guard let file = pool.first(where: { $0.repositoryRelativePath == path }) else {
