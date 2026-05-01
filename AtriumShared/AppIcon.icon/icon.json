@@ -8,6 +8,120 @@
         {
           "fill" : {
             "linear-gradient" : [
+              "srgb:0.83869,0.80000,0.00000,1.00000",
+              "extended-srgb:0.20392,0.78039,0.34902,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
+          },
+          "hidden" : true,
+          "image-name" : "Gemini_Generated_Image_p8kv4tp8kv4tp8kv-Photoroom.png",
+          "name" : "Gemini_Generated_Image_p8kv4tp8kv4tp8kv-Photoroom",
+          "position" : {
+            "scale" : 0.5,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.83869,0.80000,0.00000,1.00000",
+              "srgb:0.20392,0.78039,0.34902,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
+          },
+          "hidden" : true,
+          "image-name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom.png",
+          "name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.57976,0.75294,0.90980,1.00000",
+              "srgb:0.36471,0.66275,0.93725,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
+          },
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom.png",
+          "name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "extended-srgb:1.00000,0.55294,0.15686,1.00000",
+              "srgb:1.00000,0.45983,0.15686,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.7
+              }
+            }
+          },
+          "glass" : true,
+          "hidden" : true,
+          "image-name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom.png",
+          "name" : "Gemini_Generated_Image_5q1hvp5q1hvp5q1h-Photoroom",
+          "position" : {
+            "scale" : 0.7,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
               "extended-srgb:1.00000,0.55294,0.15686,1.00000",
               "display-p3:0.96783,0.42166,0.29550,1.00000"
             ],
@@ -52,7 +166,7 @@
             }
           },
           "glass" : false,
-          "hidden" : false,
+          "hidden" : true,
           "image-name" : "cmux-icon-chevron 2.png",
           "name" : "cmux-icon-chevron 2",
           "position" : {
@@ -78,7 +192,7 @@
       },
       "specular" : true,
       "translucency" : {
-        "enabled" : false,
+        "enabled" : true,
         "value" : 0.5
       }
     }
