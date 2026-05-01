@@ -46,11 +46,6 @@ struct CommandEntryRow: View {
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
-        } else if !terminal.displayDirectory.isEmpty {
-            Text(terminal.displayDirectory)
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
         }
     }
 

@@ -105,7 +105,6 @@ final class WorkspaceStore {
                 _ = ws.customIconFilename
                 for cmd in ws.commands {
                     _ = cmd.title
-                    _ = cmd.currentDirectory
                     _ = cmd.runScript
                     _ = cmd.isDefault
                 }

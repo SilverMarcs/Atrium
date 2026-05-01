@@ -57,7 +57,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
 
         private var viewMap: [ObjectIdentifier: (id: UUID, tab: Terminal)] = [:]
-        private var pollTasks: [UUID: Task<Void, Never>] = [:]
+        private var procSources: [UUID: DispatchSourceProcess] = [:]
 
         func register(_ view: LocalProcessTerminalView, for tab: Terminal) {
             viewMap[ObjectIdentifier(view)] = (id: tab.id, tab: tab)
@@ -92,37 +92,46 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
                 currentDirectory: startingDirectory
             )
 
-            pollTasks[tab.id]?.cancel()
-            pollTasks[tab.id] = Task { [weak self, weak tab] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled, let tab else { break }
-
-                    guard let pid = tab.localProcessTerminalView?.process.shellPid, pid > 0 else { continue }
-
-                    var pathInfo = proc_vnodepathinfo()
-                    let size = MemoryLayout<proc_vnodepathinfo>.size
-                    let result = proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &pathInfo, Int32(size))
-                    if result == size {
-                        let liveDir = withUnsafePointer(to: pathInfo.pvi_cdir.vip_path) { ptr in
-                            ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) {
-                                String(cString: $0)
-                            }
-                        }
-                        if !liveDir.isEmpty, liveDir != tab.currentDirectory {
-                            tab.currentDirectory = liveDir
-                        }
-                    }
-
-                    let fg = tab.childProcesses().first?.name
-                    if tab.foregroundProcessName != fg {
-                        tab.foregroundProcessName = fg
-                    }
-                }
-                self?.pollTasks[tab?.id ?? UUID()] = nil
-            }
+            startWatching(tab: tab)
 
             return tv
+        }
+
+        /// Watches the shell pid via kqueue (`EVFILT_PROC`) so we react the moment a
+        /// child process is forked, exec'd, or exits. Replaces the previous 1s polling loop.
+        private func startWatching(tab: Terminal) {
+            procSources[tab.id]?.cancel()
+
+            let shellPid = tab.localProcessTerminalView?.process.shellPid ?? 0
+            guard shellPid > 0 else { return }
+
+            let source = DispatchSource.makeProcessSource(
+                identifier: shellPid,
+                eventMask: [.fork, .exec, .exit, .signal],
+                queue: .main
+            )
+            source.setEventHandler { [weak self, weak tab, weak source] in
+                guard let tab else { return }
+                self?.refresh(tab: tab)
+                if let data = source?.data, data.contains(.exit) {
+                    source?.cancel()
+                }
+            }
+            source.setCancelHandler { [weak self] in
+                self?.procSources[tab.id] = nil
+            }
+            procSources[tab.id] = source
+            source.resume()
+
+            // Prime once so initial state is correct before the first event.
+            refresh(tab: tab)
+        }
+
+        private func refresh(tab: Terminal) {
+            let fg = tab.childProcesses().first?.name
+            if tab.foregroundProcessName != fg {
+                tab.foregroundProcessName = fg
+            }
         }
 
         // MARK: - LocalProcessTerminalViewDelegate
@@ -131,7 +140,13 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
         func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
 
-        func processTerminated(source: TerminalView, exitCode: Int32?) {}
+        func processTerminated(source: TerminalView, exitCode: Int32?) {
+            guard let local = source as? LocalProcessTerminalView,
+                  let entry = viewMap[ObjectIdentifier(local)] else { return }
+            entry.tab.foregroundProcessName = nil
+            procSources[entry.id]?.cancel()
+            viewMap.removeValue(forKey: ObjectIdentifier(local))
+        }
 
         private func resolvedWorkingDirectoryPath(from directory: String?) -> String? {
             guard let directory, !directory.isEmpty else { return nil }
