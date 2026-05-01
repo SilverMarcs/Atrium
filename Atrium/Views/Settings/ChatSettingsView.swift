@@ -37,7 +37,7 @@ struct ChatSettingsView: View {
                 }
             }
 
-            Section {
+            Section("Models") {
                 ForEach(AgentProvider.allCases, id: \.self) { provider in
                     LabeledContent {
                         Text(modelSummary(for: provider))

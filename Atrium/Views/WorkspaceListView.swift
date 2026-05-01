@@ -117,7 +117,6 @@ struct WorkspaceListView: View {
                 if !hideSettingsButton {
                     SettingsLink {
                         Image(systemName: "gearshape")
-                            .frame(width: 20, height: 20)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
