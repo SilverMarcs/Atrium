@@ -57,13 +57,13 @@ struct WorkspaceRow: View {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                         .clipShape(.rect(cornerRadius: 6))
                 } else if workspace.projectType != .unknown {
                     Image(workspace.projectType.iconName)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: "folder")
                 }
