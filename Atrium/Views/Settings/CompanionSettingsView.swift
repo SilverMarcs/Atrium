@@ -82,9 +82,7 @@ struct CompanionSettingsView: View {
         .formStyle(.grouped)
     }
 
-    /// Placeholder — replace with the real App Store URL once the iOS
-    /// companion ships. Format: `https://apps.apple.com/app/id<ID>`.
-    private static let iOSAppStoreURL = "https://apps.apple.com/app/id0000000000"
+    private static let iOSAppStoreURL = "https://apps.apple.com/app/id6765783787"
 
     private var statusText: String {
         if server.isRunning {
