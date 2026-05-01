@@ -35,6 +35,7 @@ private struct QuickPanelInnerView: View {
 
     private var canSend: Bool {
         !chat.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !chat.pendingAttachments.isEmpty
     }
 
     var body: some View {
@@ -43,19 +44,34 @@ private struct QuickPanelInnerView: View {
                 .padding(15)
                 .frame(height: QuickPanelHeight.collapsed.value)
 
+            if !chat.pendingAttachments.isEmpty {
+                AttachmentThumbnails(chat: chat)
+                    .padding(.horizontal, 15)
+                    .padding(.bottom, 10)
+            }
+
             if !chat.messages.isEmpty {
                 Divider()
                 messagesList
                 Divider()
                 bottomBar
+            } else {
+                // Anchor input + attachments to the top while the panel is
+                // expanded, so the empty space sits below — matching LynkChat.
+                Spacer(minLength: 0)
             }
         }
         .frame(width: 650)
         .task { isFocused = true }
-        .onChange(of: chat.messages.count) {
-            onHeightChange(chat.messages.isEmpty ? .collapsed : .expanded)
-        }
+        .onChange(of: chat.messages.count) { syncHeight() }
+        .onChange(of: chat.pendingAttachments.count) { syncHeight() }
         .onExitCommand(perform: onDismiss)
+        .imagePasteHandler(chat: chat)
+    }
+
+    private func syncHeight() {
+        let shouldExpand = !chat.messages.isEmpty || !chat.pendingAttachments.isEmpty
+        onHeightChange(shouldExpand ? .expanded : .collapsed)
     }
 
     private var inputBar: some View {
@@ -141,20 +157,26 @@ private struct QuickPanelInnerView: View {
     }
 
     private var messagesList: some View {
-        // Inverted: newest message at the top so streaming updates stay in
-        // view without needing a scroll-to-bottom anchor.
-        List {
-            if let error = session.error {
-                Label(error, systemImage: "exclamationmark.triangle")
-                    .listRowSeparator(.hidden)
-                    .foregroundStyle(.red)
+        // Inverted: newest message at the top. Scroll the list to the top
+        // when a new turn lands so the user always sees the latest exchange.
+        ScrollViewReader { proxy in
+            List {
+                Color.clear.frame(height: 1).id("top").listRowSeparator(.hidden)
+                if let error = session.error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .listRowSeparator(.hidden)
+                        .foregroundStyle(.red)
+                }
+                ForEach(chat.messages.reversed()) { message in
+                    MessageRow(message: message)
+                        .listRowSeparator(.hidden)
+                }
             }
-            ForEach(chat.messages.reversed()) { message in
-                MessageRow(message: message)
-                    .listRowSeparator(.hidden)
+            .scrollContentBackground(.hidden)
+            .onChange(of: chat.messages.count) {
+                withAnimation { proxy.scrollTo("top", anchor: .top) }
             }
         }
-        .scrollContentBackground(.hidden)
     }
 
     private var bottomBar: some View {
@@ -178,8 +200,9 @@ private struct QuickPanelInnerView: View {
 
     private func send() {
         let text = chat.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let attachments = chat.pendingAttachments
+        guard !text.isEmpty || !attachments.isEmpty else { return }
         chat.prompt = ""
-        chat.sendMessage(text)
+        chat.sendMessage(text, attachments: attachments)
     }
 }
