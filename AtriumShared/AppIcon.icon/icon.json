@@ -1,5 +1,7 @@
 {
-  "fill" : "automatic",
+  "fill" : {
+    "automatic-gradient" : "srgb:0.22745,0.75294,0.90980,1.00000"
+  },
   "groups" : [
     {
       "blur-material" : null,
@@ -63,20 +65,7 @@
         },
         {
           "fill" : {
-            "linear-gradient" : [
-              "srgb:0.57976,0.75294,0.90980,1.00000",
-              "srgb:0.36471,0.66275,0.93725,1.00000"
-            ],
-            "orientation" : {
-              "start" : {
-                "x" : 0.5,
-                "y" : 0
-              },
-              "stop" : {
-                "x" : 0.5,
-                "y" : 0.7
-              }
-            }
+            "solid" : "extended-gray:1.00000,1.00000"
           },
           "glass" : true,
           "hidden" : false,
