@@ -28,7 +28,7 @@ import Carbon
         let id = EventHotKeyID(signature: signature, id: hotKeyID)
         let err = unsafe RegisterEventHotKey(
             UInt32(kVK_Space),
-            UInt32(optionKey),
+            UInt32(controlKey),
             id,
             GetEventDispatcherTarget(),
             0,

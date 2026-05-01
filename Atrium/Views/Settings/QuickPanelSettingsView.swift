@@ -16,7 +16,7 @@ struct QuickPanelSettingsView: View {
                     }
                 } label: {
                     Text("Provider")
-                    Text("Used by the ⌥Space quick panel")
+                    Text("Used by the ⌃Space quick panel")
                 }
                 .onChange(of: quickPanelProvider) { _, newValue in
                     let models = catalog.models(for: newValue)
