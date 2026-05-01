@@ -1,7 +1,5 @@
 import SwiftUI
 
-import SwiftUI
-
 struct ReconnectingOverlay: View {
     let onDisconnect: () -> Void
 
@@ -10,7 +8,6 @@ struct ReconnectingOverlay: View {
             ProgressView("Reconnecting")
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button(role: .cancel, action: onDisconnect) {

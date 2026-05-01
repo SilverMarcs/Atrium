@@ -63,9 +63,28 @@ struct CompanionSettingsView: View {
             } footer: {
                 Text("Enter the pairing code on the iOS companion app the first time you connect. Regenerating invalidates existing pairings.")
             }
+
+            Section {
+                Link(destination: URL(string: Self.iOSAppStoreURL)!) {
+                    HStack {
+                        Image(systemName: "iphone.gen3")
+                        Text("Get Atrium for iPhone")
+                        Spacer()
+                        Image(systemName: "arrow.up.right.square")
+                    }
+                }
+            } header: {
+                Text("Download")
+            } footer: {
+                Text("Install the iPhone app to chat with your agents while away from your Mac. Both devices must be on the same Wi-Fi.")
+            }
         }
         .formStyle(.grouped)
     }
+
+    /// Placeholder — replace with the real App Store URL once the iOS
+    /// companion ships. Format: `https://apps.apple.com/app/id<ID>`.
+    private static let iOSAppStoreURL = "https://apps.apple.com/app/id0000000000"
 
     private var statusText: String {
         if server.isRunning {

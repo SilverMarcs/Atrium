@@ -52,9 +52,28 @@ struct PairingScreen: View {
                 }
             }
 
+            Section {
+                Button {
+                    client.enterDemoMode()
+                } label: {
+                    Label("Try the demo", systemImage: "play.circle")
+                }
+                Link(destination: URL(string: Self.hostDownloadURL)!) {
+                    Label("Download Atrium for Mac", systemImage: "arrow.down.circle")
+                }
+            } header: {
+                Text("No Mac App yet?")
+            } footer: {
+                // Text("The demo populates fake workspaces so you can explore the UI without a paired host. The download link opens the GitHub releases page for the latest signed Mac build.")
+            }
+
             PairingStatusSection()
         }
     }
+
+    /// Placeholder — point this at the real `releases/latest` page once
+    /// the host app has its first notarised GitHub release.
+    private static let hostDownloadURL = "https://github.com/SilverMarcs/Atrium/releases/latest"
 
     private var savedCode: String { client.savedPairingCode }
 

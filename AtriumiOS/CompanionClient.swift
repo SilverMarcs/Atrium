@@ -76,6 +76,16 @@ final class CompanionClient {
     /// to the pairing screen. Reset only on user-initiated disconnect or a
     /// rejected auth handshake.
     private(set) var hasConnectedBefore: Bool
+    /// True when the client is faking a host connection so the App Store
+    /// reviewer (or anyone evaluating the app without a Mac) can exercise
+    /// every screen. Drives `send()` to short-circuit into synthetic
+    /// responses instead of touching the network. Not persisted — the demo
+    /// session ends as soon as the user disconnects.
+    private(set) var isDemoMode = false
+    /// Buffered demo state used by `CompanionClient+Demo.swift`. Kept on
+    /// the main type so the extension can mutate it without exposing
+    /// internals through public setters.
+    var demoState = CompanionDemoState()
     /// Workspace + session pair to navigate to. Drives both notification
     /// taps and the post-`createChat` push — the root view either appends
     /// `.chat(...)` (when the user is already on the matching workspace)
@@ -124,6 +134,7 @@ final class CompanionClient {
     // MARK: - Discovery
 
     func startBrowsing() {
+        guard !isDemoMode else { return }
         guard browser == nil else { return }
         state = .browsing
         let params = NWParameters()
@@ -164,6 +175,7 @@ final class CompanionClient {
     /// and have a saved pairing code, unless the user explicitly disconnected
     /// or we're already mid-flight.
     func attemptAutoConnect() {
+        guard !isDemoMode else { return }
         guard !userInitiatedDisconnect else { return }
         switch state {
         case .connecting, .authenticating, .connected:
@@ -230,6 +242,8 @@ final class CompanionClient {
         activeSession = nil
         subscribedSessionId = nil
         setHasConnectedBefore(false)
+        isDemoMode = false
+        demoState = CompanionDemoState()
     }
 
     private func handleConnectionState(_ cstate: NWConnection.State) {
@@ -276,6 +290,10 @@ final class CompanionClient {
     }
 
     private func send(_ message: CompanionMessage) {
+        if isDemoMode {
+            demoHandle(outgoing: message)
+            return
+        }
         guard let connection else { return }
         do {
             let data = try CompanionFraming.encode(message)
@@ -708,5 +726,183 @@ final class CompanionClient {
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    // MARK: - Demo mode
+
+    /// Bypasses the network and stands up a fake host so the App Store
+    /// reviewer (or anyone without the Mac side installed) can navigate
+    /// every screen. Sets `hasConnectedBefore` in memory only — we don't
+    /// persist it, so a relaunch returns to the pairing screen.
+    func enterDemoMode() {
+        // Clean up any in-flight network state so the demo doesn't
+        // collide with a real reconnect attempt.
+        connection?.cancel()
+        connection = nil
+        browser?.cancel()
+        browser = nil
+        userInitiatedDisconnect = false
+        pendingPairingCode = nil
+        lastError = nil
+
+        isDemoMode = true
+        demoState = CompanionDemoState()
+        state = .connected(serverName: "Demo Mac")
+        availableProviders = [CompanionDemo.providerName]
+        workspaces = CompanionDemo.seedWorkspaces()
+        hasConnectedBefore = true
+        // Intentionally not calling setHasConnectedBefore(_:) — demo
+        // shouldn't survive a relaunch.
+    }
+
+    /// Synthetic transport for demo mode. Translates outgoing wire
+    /// messages into local state changes that mimic what a real host
+    /// would have echoed back.
+    private func demoHandle(outgoing message: CompanionMessage) {
+        switch message.kind {
+        case .listSessions:
+            // Workspaces are seeded on entry; nothing to do.
+            break
+        case .subscribe:
+            guard let id = message.sessionId,
+                  let meta = findSessionMeta(id: id) else { return }
+            let session = demoState.sessions[id] ?? CompanionDemo.sampleSession(for: meta)
+            demoState.sessions[id] = session
+            if id == subscribedSessionId {
+                activeSession = session
+            }
+        case .unsubscribe:
+            break
+        case .sendPrompt:
+            guard let id = message.sessionId,
+                  let promptText = message.promptText,
+                  var session = demoState.sessions[id] else { return }
+            let nextTurn = (session.messages.last?.turnIndex ?? -1) + 1
+            session.messages.append(CompanionDemo.userMessage(turnIndex: nextTurn, text: promptText))
+            session.meta.isProcessing = true
+            session.meta.turnCount = session.messages.count
+            session.meta.date = Date()
+            demoState.sessions[id] = session
+            if id == subscribedSessionId { activeSession = session }
+            applyMetaChange(in: session.meta)
+
+            let task = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.5))
+                guard let self, self.isDemoMode,
+                      var s = self.demoState.sessions[id] else { return }
+                let replyTurn = (s.messages.last?.turnIndex ?? 0) + 1
+                s.messages.append(CompanionDemo.assistantReply(turnIndex: replyTurn, to: promptText))
+                s.meta.isProcessing = false
+                s.meta.turnCount = s.messages.count
+                s.meta.date = Date()
+                self.demoState.sessions[id] = s
+                if id == self.subscribedSessionId { self.activeSession = s }
+                self.applyMetaChange(in: s.meta)
+            }
+            demoState.pendingTasks.append(task)
+        case .createChat:
+            guard let workspaceId = message.workspaceId,
+                  let wsIdx = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
+            let meta = CompanionDemo.sessionMeta(
+                in: workspaceId,
+                title: "New chat",
+                minutesAgo: 0,
+                turnCount: 0,
+                isProcessing: false,
+                hasNotification: false
+            )
+            workspaces[wsIdx].sessions.insert(meta, at: 0)
+            demoState.sessions[meta.id] = WireSession(
+                meta: meta,
+                messages: [],
+                modelLabel: "Opus 4.7",
+                permissionLabel: "Ask",
+                permissionSystemImage: "hand.raised",
+                usedTokens: 0,
+                contextSize: 200_000,
+                availableModels: CompanionDemo.availableModels,
+                modelRawValue: "claude-opus-4-7",
+                availableModes: CompanionDemo.availableModes,
+                permissionModeRawValue: "default"
+            )
+            pendingDeepLink = PendingDeepLink(workspaceId: workspaceId, sessionId: meta.id)
+        case .archiveChat:
+            guard let id = message.sessionId else { return }
+            mutateMeta(id: id) { $0.isArchived.toggle() }
+        case .deleteChat:
+            guard let id = message.sessionId else { return }
+            for wsIdx in workspaces.indices {
+                workspaces[wsIdx].sessions.removeAll { $0.id == id }
+            }
+            demoState.sessions[id] = nil
+            if subscribedSessionId == id {
+                subscribedSessionId = nil
+                activeSession = nil
+            }
+        case .stopChat, .disconnectChat:
+            guard let id = message.sessionId else { return }
+            mutateMeta(id: id) { $0.isProcessing = false }
+        case .updateScratchpad:
+            guard let workspaceId = message.workspaceId,
+                  let text = message.scratchpadText,
+                  let wsIdx = workspaces.firstIndex(where: { $0.id == workspaceId }) else { return }
+            workspaces[wsIdx].scratchpad = text
+        case .setSessionModel:
+            guard let id = message.sessionId, let raw = message.modelRawValue else { return }
+            if var session = demoState.sessions[id] {
+                session.modelRawValue = raw
+                if let m = session.availableModels.first(where: { $0.rawValue == raw }) {
+                    session.modelLabel = m.name
+                }
+                demoState.sessions[id] = session
+                if id == subscribedSessionId { activeSession = session }
+            }
+        case .setSessionPermissionMode:
+            guard let id = message.sessionId, let raw = message.permissionModeRawValue else { return }
+            if var session = demoState.sessions[id] {
+                session.permissionModeRawValue = raw
+                if let m = session.availableModes.first(where: { $0.rawValue == raw }) {
+                    session.permissionLabel = m.label
+                    session.permissionSystemImage = m.systemImage
+                }
+                demoState.sessions[id] = session
+                if id == subscribedSessionId { activeSession = session }
+            }
+        default:
+            // Git, commands, and any future actions are no-ops in demo.
+            // Their screens render an empty/idle state, which is enough
+            // for a reviewer to evaluate the UI.
+            break
+        }
+    }
+
+    private func findSessionMeta(id: UUID) -> WireSessionMeta? {
+        for ws in workspaces {
+            if let s = ws.sessions.first(where: { $0.id == id }) { return s }
+        }
+        return nil
+    }
+
+    private func mutateMeta(id: UUID, _ body: (inout WireSessionMeta) -> Void) {
+        for wsIdx in workspaces.indices {
+            guard let chatIdx = workspaces[wsIdx].sessions.firstIndex(where: { $0.id == id }) else { continue }
+            body(&workspaces[wsIdx].sessions[chatIdx])
+            let updated = workspaces[wsIdx].sessions[chatIdx]
+            if var session = demoState.sessions[id] {
+                session.meta = updated
+                demoState.sessions[id] = session
+                if id == subscribedSessionId { activeSession = session }
+            }
+            return
+        }
+    }
+
+    private func applyMetaChange(in meta: WireSessionMeta) {
+        for wsIdx in workspaces.indices {
+            if let chatIdx = workspaces[wsIdx].sessions.firstIndex(where: { $0.id == meta.id }) {
+                workspaces[wsIdx].sessions[chatIdx] = meta
+                return
+            }
+        }
     }
 }
