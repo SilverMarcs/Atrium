@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     @AppStorage("sidebarRowSize") private var sidebarRowSize: SidebarRowSizePreference = .medium
     @AppStorage("editorPanelSidebarBehavior") private var editorPanelSidebarBehavior: EditorPanelSidebarBehavior = .default
     @AppStorage(TerminalProcessRegistry.fontSizeKey) private var terminalFontSize: Double = Double(TerminalProcessRegistry.defaultFontSize)
+    @AppStorage("enterToSendChat") private var enterToSendChat: Bool = false
 
     var body: some View {
         Form {
@@ -24,6 +25,14 @@ struct GeneralSettingsView: View {
                         Text(behavior.displayName).tag(behavior)
                     }
                 }
+            }
+
+            Section {
+                Toggle("Send message on Return", isOn: $enterToSendChat)
+            } header: {
+                Text("Behavior")
+            } footer: {
+                Text("When enabled, pressing Return sends the message. Hold Shift or Option for a newline. Cmd+Return always sends.")
             }
 
             Section {
