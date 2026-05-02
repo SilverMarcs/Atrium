@@ -7,13 +7,20 @@ struct ChatBrowserView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
     @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @State private var searchText: String = ""
+
+    private func matches(_ chat: Chat) -> Bool {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        return chat.title.localizedCaseInsensitiveContains(query)
+    }
 
     private var regularChats: [Chat] {
-        workspace.chats.filter { !$0.isArchived }.sorted { $0.date > $1.date }
+        workspace.chats.filter { !$0.isArchived && matches($0) }.sorted { $0.date > $1.date }
     }
 
     private var archivedChats: [Chat] {
-        workspace.chats.filter { $0.isArchived }.sorted { $0.date > $1.date }
+        workspace.chats.filter { $0.isArchived && matches($0) }.sorted { $0.date > $1.date }
     }
 
     var body: some View {
@@ -42,8 +49,11 @@ struct ChatBrowserView: View {
                     } actions: {
                         newChatButton
                     }
+                } else if regularChats.isEmpty && archivedChats.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
                 }
             }
+            .searchable(text: $searchText, placement: .toolbar, prompt: "Search Chats")
             .navigationTitle(workspace.name)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
