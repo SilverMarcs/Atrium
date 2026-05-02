@@ -5,34 +5,41 @@ struct ChatSidebarRow: View {
     @Environment(AppState.self) private var appState
 
     @State private var isRenaming = false
-    @FocusState private var isNameFieldFocused: Bool
+    @State private var renameText = ""
 
     private var showNotificationBadge: Bool {
         chat.hasNotification && appState.selectedChat?.id != chat.id
     }
 
     var body: some View {
-        Label {
-            if isRenaming {
-                TextField("Chat Name", text: Bindable(chat).title)
-                    .textFieldStyle(.plain)
-                    .focused($isNameFieldFocused)
-                    .onSubmit { isRenaming = false }
-                    .onExitCommand { isRenaming = false }
-                    .onAppear { isNameFieldFocused = true }
-            } else {
+        HStack {
+            Label {
                 Text(chat.displayTitle)
                     .lineLimit(1)
-                    .shimmerWithoutRedact(when: chat.session.isProcessing)
+            } icon: {
+                Image(chat.provider.imageName)
+                    .foregroundStyle(chat.isActive ? chat.provider.color : .primary)
             }
-        } icon: {
-            Image(chat.provider.imageName)
-                .foregroundStyle(chat.isActive ? chat.provider.color : .primary)
+
+            Spacer()
+
+            if chat.session.isProcessing {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .alert("Rename Chat", isPresented: $isRenaming) {
+            TextField("Chat Name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename", role: .confirm) {
+                chat.title = renameText
+            }
         }
         .badge(showNotificationBadge ? Text("") : nil)
         .badgeProminence(.increased)
         .contextMenu {
             Button {
+                renameText = chat.title
                 isRenaming = true
             } label: {
                 Label("Rename", systemImage: "pencil")

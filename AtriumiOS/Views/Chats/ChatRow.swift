@@ -4,11 +4,7 @@ struct ChatRow: View {
     let chat: WireSessionMeta
 
     var body: some View {
-        LabeledContent {
-            if chat.isProcessing {
-                ProgressView()
-            }
-        } label: {
+        HStack {
             Label {
                 Text(chat.title.isEmpty ? "New Chat" : chat.title)
                     .lineLimit(1)
@@ -16,6 +12,12 @@ struct ChatRow: View {
                 Text("\(chat.turnCount) turns · \(RelativeTimeFormatter.shortRelative(from: chat.date))")
             } icon: {
                 ProviderIconView(providerName: chat.providerName, isActive: chat.isActive)
+            }
+
+            Spacer()
+
+            if chat.isProcessing {
+                ProgressView()
             }
         }
         .badge(chat.hasNotification ? Text("") : nil)
