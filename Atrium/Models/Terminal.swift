@@ -149,26 +149,25 @@ final class Terminal: Identifiable, Hashable, Codable {
         let shellPid = tv.process.shellPid
         guard shellPid > 0 else { return [] }
 
-        let bytesNeeded = proc_listchildpids(shellPid, nil, 0)
-        guard bytesNeeded > 0 else { return [] }
-
-        let count = Int(bytesNeeded) / MemoryLayout<pid_t>.stride
-        var pids = [pid_t](repeating: 0, count: count)
-        let written = pids.withUnsafeMutableBufferPointer { buf in
-            proc_listchildpids(shellPid, buf.baseAddress, Int32(buf.count * MemoryLayout<pid_t>.stride))
-        }
-        guard written > 0 else { return [] }
-        let actualCount = Int(written) / MemoryLayout<pid_t>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size: Int = 0
+        sysctl(&mib, 3, nil, &size, nil, 0)
+        let count = size / MemoryLayout<kinfo_proc>.stride
+        let procs = UnsafeMutablePointer<kinfo_proc>.allocate(capacity: count)
+        defer { procs.deallocate() }
+        sysctl(&mib, 3, procs, &size, nil, 0)
+        let actualCount = size / MemoryLayout<kinfo_proc>.stride
 
         var children: [(pid: pid_t, name: String)] = []
-        children.reserveCapacity(actualCount)
-        var nameBuf = [CChar](repeating: 0, count: Int(MAXCOMLEN) + 1)
         for i in 0..<actualCount {
-            let pid = pids[i]
-            guard pid > 0 else { continue }
-            let n = proc_name(pid, &nameBuf, UInt32(nameBuf.count))
-            let name = n > 0 ? String(cString: nameBuf) : ""
-            children.append((pid, name))
+            if procs[i].kp_eproc.e_ppid == shellPid {
+                let name = withUnsafePointer(to: procs[i].kp_proc.p_comm) { ptr in
+                    ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) + 1) {
+                        String(cString: $0)
+                    }
+                }
+                children.append((procs[i].kp_proc.p_pid, name))
+            }
         }
         return children
     }

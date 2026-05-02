@@ -76,8 +76,10 @@ struct ACPView: View {
             .onChange(of: panel.isOpen) {
                 guard !isPreparingInitialScroll, isAtBottom else { return }
                 Task {
-                    try? await Task.sleep(for: .milliseconds(200))
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    try? await Task.sleep(for: .milliseconds(100))
+                    withAnimation {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
             }
             .toolbar {

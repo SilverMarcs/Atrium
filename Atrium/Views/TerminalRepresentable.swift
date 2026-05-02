@@ -57,7 +57,6 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
 
         private var viewMap: [ObjectIdentifier: (id: UUID, tab: Terminal)] = [:]
-        private var procSources: [UUID: DispatchSourceProcess] = [:]
 
         func register(_ view: LocalProcessTerminalView, for tab: Terminal) {
             viewMap[ObjectIdentifier(view)] = (id: tab.id, tab: tab)
@@ -79,6 +78,9 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             var env = ProcessInfo.processInfo.environment
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
+            if shellBasename == "zsh", let zdotdir = ShellIntegration.zdotdir() {
+                env["ZDOTDIR"] = zdotdir
+            }
 
             let environment = env.map { "\($0.key)=\($0.value)" }
 
@@ -92,59 +94,30 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
                 currentDirectory: startingDirectory
             )
 
-            startWatching(tab: tab)
-
             return tv
-        }
-
-        /// Watches the shell pid via kqueue (`EVFILT_PROC`) so we react the moment a
-        /// child process is forked, exec'd, or exits. Replaces the previous 1s polling loop.
-        private func startWatching(tab: Terminal) {
-            procSources[tab.id]?.cancel()
-
-            let shellPid = tab.localProcessTerminalView?.process.shellPid ?? 0
-            guard shellPid > 0 else { return }
-
-            let source = DispatchSource.makeProcessSource(
-                identifier: shellPid,
-                eventMask: [.fork, .exec, .exit, .signal],
-                queue: .main
-            )
-            source.setEventHandler { [weak self, weak tab, weak source] in
-                guard let tab else { return }
-                self?.refresh(tab: tab)
-                if let data = source?.data, data.contains(.exit) {
-                    source?.cancel()
-                }
-            }
-            source.setCancelHandler { [weak self] in
-                self?.procSources[tab.id] = nil
-            }
-            procSources[tab.id] = source
-            source.resume()
-
-            // Prime once so initial state is correct before the first event.
-            refresh(tab: tab)
-        }
-
-        private func refresh(tab: Terminal) {
-            let fg = tab.childProcesses().first?.name
-            if tab.foregroundProcessName != fg {
-                tab.foregroundProcessName = fg
-            }
         }
 
         // MARK: - LocalProcessTerminalViewDelegate
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
 
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+        /// Driven by the `preexec`/`precmd` hooks in `ShellIntegration` — the
+        /// shell sets the title to the running command on `preexec` and clears
+        /// it on `precmd`, giving us instant, accurate run-state without any
+        /// kernel polling.
+        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+            guard let entry = viewMap[ObjectIdentifier(source)] else { return }
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let newValue = trimmed.isEmpty ? nil : trimmed
+            if entry.tab.foregroundProcessName != newValue {
+                entry.tab.foregroundProcessName = newValue
+            }
+        }
 
         func processTerminated(source: TerminalView, exitCode: Int32?) {
             guard let local = source as? LocalProcessTerminalView,
                   let entry = viewMap[ObjectIdentifier(local)] else { return }
             entry.tab.foregroundProcessName = nil
-            procSources[entry.id]?.cancel()
             viewMap.removeValue(forKey: ObjectIdentifier(local))
         }
 
