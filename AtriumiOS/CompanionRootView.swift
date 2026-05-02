@@ -7,6 +7,11 @@ struct CompanionRootView: View {
     /// in `client.workspaces` yet (cold launch). Resolved when the next
     /// `sessionsList` lands.
     @State private var unresolvedDeepLink: PendingDeepLink?
+    /// Debounced mirror of `client.isReconnecting`. We wait a short beat
+    /// before showing the overlay so the common-case fast reconnect (host
+    /// already in the Bonjour cache, socket re-auths almost immediately)
+    /// doesn't flash a full-screen spinner over otherwise-usable cached UI.
+    @State private var showReconnecting = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -54,12 +59,21 @@ struct CompanionRootView: View {
             }
         }
         .overlay {
-            if client.isReconnecting {
+            if showReconnecting {
                 ReconnectingOverlay(onDisconnect: client.disconnect)
                     .transition(.opacity)
             }
         }
-        .animation(.default, value: client.isReconnecting)
+        .animation(.default, value: showReconnecting)
+        .task(id: client.isReconnecting) {
+            guard client.isReconnecting else {
+                showReconnecting = false
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(2000))
+            guard !Task.isCancelled else { return }
+            showReconnecting = true
+        }
     }
 
     /// Navigates to `[workspace, chat]`. If the user is already on the
