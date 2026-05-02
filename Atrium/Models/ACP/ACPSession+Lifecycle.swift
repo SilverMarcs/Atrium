@@ -81,7 +81,7 @@ extension ACPSession {
 
         try await newClient.launch(
             agentPath: "/usr/bin/env",
-            arguments: ["npx", provider.acpPackage] + provider.acpArgs,
+            arguments: provider.acpCommand,
             workingDirectory: workingDirectory
         )
 

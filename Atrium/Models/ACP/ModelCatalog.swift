@@ -124,7 +124,7 @@ final class ModelCatalog {
             let cwd = FileManager.default.homeDirectoryForCurrentUser.path
             try await client.launch(
                 agentPath: "/usr/bin/env",
-                arguments: ["npx", provider.acpPackage] + provider.acpArgs,
+                arguments: provider.acpCommand,
                 workingDirectory: cwd
             )
             _ = try await client.initialize(

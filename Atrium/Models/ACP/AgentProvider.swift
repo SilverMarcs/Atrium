@@ -4,19 +4,17 @@ enum AgentProvider: String, Codable, CaseIterable {
     case claude = "Claude"
     case codex = "Codex"
     case gemini = "Gemini"
+    case opencode = "Opencode"
 
-    var acpPackage: String {
+    /// Full argv (after `/usr/bin/env`) used to spawn the ACP subprocess for
+    /// this provider. npm-distributed agents go through `npx`; standalone
+    /// binaries (opencode) are invoked directly off `PATH`.
+    var acpCommand: [String] {
         switch self {
-        case .claude: return "@agentclientprotocol/claude-agent-acp@latest"
-        case .codex: return "@zed-industries/codex-acp@latest"
-        case .gemini: return "@google/gemini-cli@latest"
-        }
-    }
-
-    var acpArgs: [String] {
-        switch self {
-        case .claude, .codex: return []
-        case .gemini: return ["--acp"]
+        case .claude: return ["npx", "@agentclientprotocol/claude-agent-acp@latest"]
+        case .codex: return ["npx", "@zed-industries/codex-acp@latest"]
+        case .gemini: return ["npx", "@google/gemini-cli@latest", "--acp"]
+        case .opencode: return ["opencode", "acp"]
         }
     }
 

@@ -30,12 +30,8 @@ struct SessionDetailScreen: View {
                         }
                         if session.meta.isProcessing {
                             ProgressView()
-                                .controlSize(.small)
                                 .padding(.top, 4)
                         }
-                    } else {
-                        HStack { Spacer(); ProgressView(); Spacer() }
-                            .padding(.top, 60)
                     }
                     Color.clear
                         .frame(height: 1)
@@ -56,6 +52,12 @@ struct SessionDetailScreen: View {
                         try? await Task.sleep(for: .milliseconds(200))
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
+                }
+            }
+            .overlay {
+                if client.activeSession == nil {
+                    ProgressView()
+                        .controlSize(.large)
                 }
             }
         }

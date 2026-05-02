@@ -11,10 +11,6 @@ struct AgentModel: Codable, Hashable, Identifiable {
     var id: String { rawValue }
 
     var imageName: String {
-        switch provider {
-        case .claude: return "claude.symbols"
-        case .codex: return "openai.symbols"
-        case .gemini: return "gemini.symbols"
-        }
+        ProviderStyle.symbolName(forProviderName: provider.rawValue)
     }
 }

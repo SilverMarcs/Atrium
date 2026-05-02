@@ -77,11 +77,25 @@ enum PermissionMode: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// The config value string to send to the Opencode ACP agent.
+    /// Opencode exposes "build" (default primary agent) and "plan"; it
+    /// has no separate accept-edits or bypass mode, so both fall back to
+    /// "build".
+    var opencodeConfigValue: String {
+        switch self {
+        case .standard: return "build"
+        case .acceptEdits: return "build"
+        case .plan: return "plan"
+        case .bypassPermissions: return "build"
+        }
+    }
+
     func configValue(for provider: AgentProvider) -> String {
         switch provider {
         case .claude: return claudeConfigValue
         case .codex: return codexConfigValue
         case .gemini: return geminiConfigValue
+        case .opencode: return opencodeConfigValue
         }
     }
 }
