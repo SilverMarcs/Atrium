@@ -111,7 +111,13 @@ final class Command: Identifiable, Hashable, Codable {
 
     private func spawn(_ script: String) {
         if isRunning { terminate() }
-        output.append("$ \(script)\n")
+        let raw = workspace?.directory ?? ""
+        let dir = raw.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        // Ensure the path line starts at a line boundary even when prior
+        // program output didn't end in a newline — otherwise the prompt
+        // visually merges into the trailing output.
+        let leadingNewline = (output.text.isEmpty || output.text.hasSuffix("\n")) ? "" : "\n"
+        output.append("\(leadingNewline)\(dir)\n> \(script)\n")
         CommandRunner.spawn(self, script: script)
     }
 

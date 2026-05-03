@@ -82,6 +82,7 @@ struct InspectorView: View {
     private func runIcon(for cmd: Command) -> some View {
         Image(systemName: cmd.isRunning ? "stop.fill" : "play.fill")
             .contentTransition(.symbolEffect(.replace))
+            // .animation(.default, value: cmd.isRunning)
     }
 
     private func iconName(for tab: InspectorTab) -> String {

@@ -84,10 +84,10 @@ struct CommandTextView: NSViewRepresentable {
                 let range = NSRange(location: 0, length: storage.length)
                 if range.length > 0 {
                     storage.setAttributes(
-                        [.font: font, .foregroundColor: NSColor.textColor],
+                        [.font: font, .foregroundColor: NSColor.labelColor],
                         range: range
                     )
-                    Self.colorDollars(in: storage, range: range)
+                    Self.colorPrompts(in: storage, range: range)
                 }
                 lastFontSize = fontSize
             }
@@ -95,7 +95,7 @@ struct CommandTextView: NSViewRepresentable {
             if text != lastApplied {
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: tv.font ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
-                    .foregroundColor: NSColor.textColor
+                    .foregroundColor: NSColor.labelColor
                 ]
 
                 if text.hasPrefix(lastApplied) {
@@ -105,11 +105,11 @@ struct CommandTextView: NSViewRepresentable {
                         storage.append(NSAttributedString(string: String(delta), attributes: attrs))
                         let start = max(0, oldLen - 1)
                         let scanRange = NSRange(location: start, length: storage.length - start)
-                        Self.colorDollars(in: storage, range: scanRange)
+                        Self.colorPrompts(in: storage, range: scanRange)
                     }
                 } else {
                     storage.setAttributedString(NSAttributedString(string: text, attributes: attrs))
-                    Self.colorDollars(in: storage, range: NSRange(location: 0, length: storage.length))
+                    Self.colorPrompts(in: storage, range: NSRange(location: 0, length: storage.length))
                 }
                 lastApplied = text
                 tv.scrollToEndOfDocument(nil)
@@ -138,9 +138,11 @@ struct CommandTextView: NSViewRepresentable {
             }
         }
 
-        /// Paints the leading `$` of any line that starts with `$ ` green so
-        /// user-entered commands stand out from program output.
-        private static func colorDollars(in storage: NSTextStorage, range: NSRange) {
+        /// Paints prompt blocks green: a `> ` line preceded by a path-looking
+        /// line (starts with `~` or `/`) is treated as a `Command.spawn`
+        /// prompt and both lines are colored. Bare `> ` lines (e.g. stdin
+        /// echoes) are left untouched so they don't masquerade as prompts.
+        private static func colorPrompts(in storage: NSTextStorage, range: NSRange) {
             let ns = storage.string as NSString
             let total = ns.length
             guard range.length > 0, range.location < total else { return }
@@ -150,14 +152,33 @@ struct CommandTextView: NSViewRepresentable {
                 let isLineStart = (i == 0) || (ns.character(at: i - 1) == 0x0A)
                 if isLineStart,
                    i + 1 < total,
-                   ns.character(at: i) == 0x24, // $
-                   ns.character(at: i + 1) == 0x20 // space
+                   ns.character(at: i) == 0x3E, // >
+                   ns.character(at: i + 1) == 0x20, // space
+                   i >= 2
                 {
-                    storage.addAttribute(
-                        .foregroundColor,
-                        value: NSColor.systemGreen,
-                        range: NSRange(location: i, length: 1)
-                    )
+                    let prevLineEnd = i - 1 // points at the `\n` ending prev line
+                    var prevLineStart = prevLineEnd
+                    while prevLineStart > 0, ns.character(at: prevLineStart - 1) != 0x0A {
+                        prevLineStart -= 1
+                    }
+                    if prevLineStart < prevLineEnd {
+                        let firstChar = ns.character(at: prevLineStart)
+                        if firstChar == 0x7E /* ~ */ || firstChar == 0x2F /* / */ {
+                            storage.addAttribute(
+                                .foregroundColor,
+                                value: NSColor.systemGreen,
+                                range: NSRange(location: prevLineStart, length: prevLineEnd - prevLineStart)
+                            )
+                            // Color just the `> ` marker — the script that
+                            // follows stays in normal output color, matching
+                            // the input bar where only the prefix is green.
+                            storage.addAttribute(
+                                .foregroundColor,
+                                value: NSColor.systemGreen,
+                                range: NSRange(location: i, length: 2)
+                            )
+                        }
+                    }
                 }
                 i += 1
             }

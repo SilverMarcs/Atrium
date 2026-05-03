@@ -69,22 +69,19 @@ struct CommandEntryRow: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        if isRunning {
+        if isRunning || hasScript {
             Button {
-                command.interrupt()
+                if isRunning {
+                    command.interrupt()
+                } else {
+                    command.workspace?.runCommand(command)
+                }
             } label: {
-                Image(systemName: "stop.fill")
+                Image(systemName: isRunning ? "stop.fill" : "play.fill")
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.borderless)
-        } else if hasScript {
-            Button {
-                command.workspace?.runCommand(command)
-            } label: {
-                Image(systemName: "play.fill")
-                    .contentTransition(.symbolEffect(.replace))
-            }
-            .buttonStyle(.borderless)
+            .animation(.default, value: isRunning)
         }
     }
 

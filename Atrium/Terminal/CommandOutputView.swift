@@ -45,30 +45,6 @@ struct CommandOutputView: View {
                     .frame(height: barHeight)
                     .background(.secondary.opacity(0.15), in: Capsule())
 
-                    if !command.isRunning, hasRunScript {
-                        Button {
-                            command.run()
-                        } label: {
-                            Image(systemName: "play.fill")
-                                .font(.caption2)
-                        }
-                        .help("Run")
-                        .frame(width: barHeight, height: barHeight)
-                        .background(.secondary.opacity(0.15), in: Circle())
-                    }
-
-                    if command.isRunning {
-                        Button {
-                            command.interrupt()
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.caption2)
-                        }
-                        .help("Interrupt (SIGINT)")
-                        .frame(width: barHeight, height: barHeight)
-                        .background(.secondary.opacity(0.15), in: Circle())
-                    }
-
                     Button {
                         command.clearOutput()
                     } label: {
@@ -79,6 +55,22 @@ struct CommandOutputView: View {
                     .keyboardShortcut("k", modifiers: .command)
                     .frame(width: barHeight, height: barHeight)
                     .background(.secondary.opacity(0.15), in: Circle())
+
+                    if command.isRunning || hasRunScript {
+                        Button {
+                            if command.isRunning {
+                                command.interrupt()
+                            } else {
+                                command.run()
+                            }
+                        } label: {
+                            Image(systemName: command.isRunning ? "stop.fill" : "play.fill")
+                                .font(.caption2)
+                        }
+                        .help(command.isRunning ? "Interrupt (SIGINT)" : "Run")
+                        .frame(width: barHeight, height: barHeight)
+                        .background(.secondary.opacity(0.15), in: Circle())
+                    }
                 }
                 .buttonStyle(.borderless)
             }
@@ -94,37 +86,66 @@ struct CommandOutputView: View {
             // height so the input bar floats up just under the last line.
             // When content is tall, the VStack's available space caps it
             // first and the scroll view scrolls inside.
-            .frame(maxHeight: contentHeight > 0 ? contentHeight : .infinity)
+            // Empty output collapses to 0; non-empty falls back to
+            // .infinity until the first measurement arrives.
+            .frame(maxHeight: outputCapHeight)
+            .padding(.top, 8)
+            .layoutPriority(1)
 
             inputBar
+                .layoutPriority(1)
 
-            Spacer(minLength: 0)
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { inputFocused = true }
         }
     }
 
     private var inputBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
-            TextField("", text: $input)
-                .textFieldStyle(.plain)
-                .font(.system(size: CGFloat(fontSize)).monospaced())
-                .focused($inputFocused)
-                .onSubmit(submit)
-                .onKeyPress(.upArrow) {
-                    recallPrevious()
-                    return .handled
+        let promptFont = Font.system(size: CGFloat(fontSize)).monospaced()
+        return VStack(alignment: .leading, spacing: 0) {
+            if !command.isRunning {
+                Text(promptDirectory)
+                    .font(promptFont)
+                    .foregroundStyle(Color(nsColor: .systemGreen))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            HStack(spacing: 0) {
+                if !command.isRunning {
+                    Text("> ")
+                        .font(promptFont)
+                        .foregroundStyle(Color(nsColor: .systemGreen))
                 }
-                .onKeyPress(.downArrow) {
-                    recallNext()
-                    return .handled
-                }
+                TextField(command.isRunning ? "stdin…" : "", text: $input)
+                    .textFieldStyle(.plain)
+                    .font(promptFont)
+                    .focused($inputFocused)
+                    .onSubmit(submit)
+                    .onKeyPress(.upArrow) {
+                        recallPrevious()
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        recallNext()
+                        return .handled
+                    }
+            }
         }
-        .padding(.trailing, 11)
-        .padding(.leading, 6)
-        .padding(.vertical, 6)
-        .background(.clear)
+        .padding(.horizontal, 8)
+        .padding(.top, command.output.text.isEmpty ? 0 : 4)
+        .padding(.bottom, 4)
+    }
+
+    private var outputCapHeight: CGFloat {
+        if command.output.text.isEmpty { return 0 }
+        return contentHeight > 0 ? contentHeight : .infinity
+    }
+
+    private var promptDirectory: String {
+        let raw = command.workspace?.directory ?? ""
+        return raw.replacingOccurrences(of: NSHomeDirectory(), with: "~")
     }
 
     private func submit() {
