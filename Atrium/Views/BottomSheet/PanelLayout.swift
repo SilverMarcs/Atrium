@@ -16,6 +16,7 @@ struct PanelHeaderHeightKey: PreferenceKey {
 /// buttons, the separator, and the trailing toggle button.
 struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     @Environment(EditorPanel.self) private var panel
+    @Environment(AppState.self) private var appState
     // @Environment(\.openWindow) private var openWindow
     @Environment(\.isDetachedEditor) private var isDetached
     @Environment(\.colorScheme) private var colorScheme
@@ -90,6 +91,23 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
+                    if isFocusMode {
+                        appState.sidebarVisibility = .automatic
+                        appState.showingInspector = true
+                    } else {
+                        appState.sidebarVisibility = .detailOnly
+                        appState.showingInspector = false
+                    }
+                }
+            } label: {
+                Image(systemName: "rectangle.center.inset.filled")
+                    .foregroundStyle(isFocusMode ? .accent : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(isFocusMode ? "Show Sidebar & Inspector" : "Hide Sidebar & Inspector")
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
                     panel.toggle()
                 }
             } label: {
@@ -104,6 +122,10 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
         .background(.background.secondary)
         .cursor(.resizeUpDown)
         .gesture(resizeGesture)
+    }
+
+    private var isFocusMode: Bool {
+        appState.sidebarVisibility == .detailOnly && !appState.showingInspector
     }
 
     @State private var dragStartHeight: Double?
