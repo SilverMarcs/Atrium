@@ -827,7 +827,7 @@ private final class ClientHandler {
                 id: $0.id,
                 title: $0.title,
                 script: $0.runScript,
-                isRunning: $0.hasChildProcess,
+                isRunning: $0.isRunning,
                 isDefault: $0.isDefault
             )
         }
@@ -1110,7 +1110,7 @@ private final class CommandsSubscription {
                 _ = cmd.title
                 _ = cmd.runScript
                 _ = cmd.isDefault
-                _ = cmd.foregroundProcessName
+                _ = cmd.state
             }
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in

@@ -8,7 +8,7 @@ struct GeneralSettingsView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("sidebarRowSize") private var sidebarRowSize: SidebarRowSizePreference = .medium
     @AppStorage("editorPanelSidebarBehavior") private var editorPanelSidebarBehavior: EditorPanelSidebarBehavior = .default
-    @AppStorage(TerminalProcessRegistry.fontSizeKey) private var terminalFontSize: Double = Double(TerminalProcessRegistry.defaultFontSize)
+    @AppStorage(TerminalFontSize.key) private var terminalFontSize: Double = Double(TerminalFontSize.defaultSize)
     @AppStorage("enterToSendChat") private var enterToSendChat: Bool = false
 
     var body: some View {
@@ -43,7 +43,7 @@ struct GeneralSettingsView: View {
                                 get: { terminalFontSize },
                                 set: { terminalFontSize = (($0 * 2).rounded()) / 2 }
                             ),
-                            in: Double(TerminalProcessRegistry.minFontSize)...Double(TerminalProcessRegistry.maxFontSize)
+                            in: Double(TerminalFontSize.min)...Double(TerminalFontSize.max)
                         )
                         Text(String(format: "%.1f", terminalFontSize))
                             .font(.subheadline.monospacedDigit())
@@ -55,9 +55,6 @@ struct GeneralSettingsView: View {
                 }
             } header: {
                 Text("Terminal")
-            }
-            .onChange(of: terminalFontSize) { _, newValue in
-                TerminalProcessRegistry.applyFontSizeToAll(CGFloat(newValue))
             }
 
             Section {

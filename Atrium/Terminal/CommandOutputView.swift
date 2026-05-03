@@ -1,14 +1,15 @@
 import SwiftUI
 
-struct CommandTerminalOutputView: View {
-    let terminal: Terminal
+struct CommandOutputView: View {
+    let command: Command
+    @AppStorage(TerminalFontSize.key) private var fontSize: Double = Double(TerminalFontSize.defaultSize)
 
     private let barHeight: CGFloat = 26
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(terminal.foregroundProcessName ?? terminal.title)
+                Text(statusLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -17,7 +18,9 @@ struct CommandTerminalOutputView: View {
 
                 HStack(spacing: 6) {
                     HStack(spacing: 0) {
-                        Button { terminal.decreaseFontSize() } label: {
+                        Button {
+                            fontSize = max(Double(TerminalFontSize.min), fontSize - 0.5)
+                        } label: {
                             Image(systemName: "textformat.size.smaller")
                         }
                         .help("Decrease font size")
@@ -26,7 +29,9 @@ struct CommandTerminalOutputView: View {
                             .frame(height: 12)
                             .padding(.horizontal, 4)
 
-                        Button { terminal.increaseFontSize() } label: {
+                        Button {
+                            fontSize = min(Double(TerminalFontSize.max), fontSize + 0.5)
+                        } label: {
                             Image(systemName: "textformat.size.larger")
                         }
                         .help("Increase font size")
@@ -35,11 +40,13 @@ struct CommandTerminalOutputView: View {
                     .frame(height: barHeight)
                     .background(.secondary.opacity(0.15), in: Capsule())
 
-                    Button { terminal.clearTerminal() } label: {
+                    Button {
+                        command.clearOutput()
+                    } label: {
                         Image(systemName: "delete.left")
                             .font(.caption2)
                     }
-                    .help("Reset terminal")
+                    .help("Clear output")
                     .frame(width: barHeight, height: barHeight)
                     .background(.secondary.opacity(0.15), in: Circle())
                 }
@@ -47,9 +54,17 @@ struct CommandTerminalOutputView: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 5)
-            // .frame(height: 36)
 
-            TerminalContainerRepresentable(tab: terminal)
+            CommandTextView(command: command, fontSize: CGFloat(fontSize))
+        }
+    }
+
+    private var statusLabel: String {
+        switch command.state {
+        case .idle: return command.title
+        case .running: return "\(command.title) — running"
+        case .finished(let code):
+            return code == 0 ? command.title : "\(command.title) — exit \(code)"
         }
     }
 }

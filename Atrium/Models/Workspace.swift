@@ -12,7 +12,7 @@ final class Workspace: Identifiable, Hashable, Codable {
     var isArchived: Bool = false
     private(set) var customIconFilename: String?
 
-    private(set) var commands: [Terminal]
+    private(set) var commands: [Command]
     private(set) var chats: [Chat]
 
     @ObservationIgnored
@@ -115,7 +115,7 @@ final class Workspace: Identifiable, Hashable, Codable {
         self.scratchPad = try c.decodeIfPresent(String.self, forKey: .scratchPad) ?? ""
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         self.customIconFilename = try c.decodeIfPresent(String.self, forKey: .customIconFilename)
-        self.commands = try c.decodeIfPresent([Terminal].self, forKey: .commands) ?? []
+        self.commands = try c.decodeIfPresent([Command].self, forKey: .commands) ?? []
         self.chats = try c.decodeIfPresent([Chat].self, forKey: .chats) ?? []
         for cmd in commands { cmd.workspace = self }
         for chat in chats { chat.workspace = self }
@@ -147,25 +147,25 @@ final class Workspace: Identifiable, Hashable, Codable {
     // MARK: - Command Management
 
     @discardableResult
-    func addCommand(title: String = "Terminal", runScript: String? = nil) -> Terminal {
-        let entry = Terminal(workspace: self, title: title, runScript: runScript)
+    func addCommand(title: String = "Terminal", runScript: String? = nil) -> Command {
+        let entry = Command(workspace: self, title: title, runScript: runScript)
         commands.append(entry)
         store?.scheduleSave()
         return entry
     }
 
-    var defaultCommand: Terminal? {
+    var defaultCommand: Command? {
         commands.first { $0.isDefault }
     }
 
-    func setDefaultCommand(_ entry: Terminal) {
+    func setDefaultCommand(_ entry: Command) {
         for cmd in commands {
             cmd.isDefault = cmd.id == entry.id
         }
         store?.scheduleSave()
     }
 
-    func removeCommand(_ entry: Terminal) {
+    func removeCommand(_ entry: Command) {
         if inspectorState.selectedCommand?.id == entry.id {
             inspectorState.selectedCommand = nil
         }
@@ -174,12 +174,8 @@ final class Workspace: Identifiable, Hashable, Codable {
         store?.scheduleSave()
     }
 
-    var hasRunningTerminals: Bool {
-        commands.contains { $0.localProcessTerminalView != nil }
-    }
-
     var hasActiveChildProcess: Bool {
-        commands.contains { $0.hasChildProcess }
+        commands.contains { $0.isRunning }
     }
 
     func killAllRunningTerminals() {
@@ -197,22 +193,12 @@ final class Workspace: Identifiable, Hashable, Codable {
         store?.scheduleSave()
     }
 
-    /// Selects the command in the inspector and sends its `runScript`.
-    /// If the terminal view hasn't been created yet, switches to the Commands
-    /// tab so the view renders and spawns the shell; otherwise runs in place
-    /// without disturbing the user's current tab.
-    func runCommand(_ entry: Terminal) {
+    /// Selects the command in the inspector and runs it. The Commands tab is
+    /// surfaced so the user sees output start streaming.
+    func runCommand(_ entry: Command) {
         inspectorState.selectedCommand = entry
-        let needsSpawn = entry.localProcessTerminalView == nil
-        if needsSpawn {
-            inspectorState.selectedTab = .commands
-        }
-        Task { @MainActor in
-            if needsSpawn {
-                try? await Task.sleep(for: .milliseconds(300))
-            }
-            entry.run()
-        }
+        inspectorState.selectedTab = .commands
+        entry.run()
     }
 
     // MARK: - Chat Management

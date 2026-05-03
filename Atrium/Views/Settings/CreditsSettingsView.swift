@@ -5,11 +5,6 @@ struct CreditsSettingsView: View {
         Form {
             Section("Open Source Attributions") {
                 CreditRow(
-                    name: "SwiftTerm",
-                    url: "https://github.com/migueldeicaza/SwiftTerm"
-                )
-
-                CreditRow(
                     name: "Highlightr",
                     url: "https://github.com/raspu/Highlightr"
                 )

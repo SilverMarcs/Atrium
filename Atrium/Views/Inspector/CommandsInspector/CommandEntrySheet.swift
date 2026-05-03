@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CommandEntrySheet: View {
     let workspace: Workspace
-    var terminal: Terminal?
+    var terminal: Command?
 
     @Environment(\.dismiss) private var dismiss
 

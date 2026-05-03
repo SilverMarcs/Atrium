@@ -8,9 +8,9 @@ struct CommandsInspectorView: View {
     var body: some View {
         @Bindable var state = workspace.inspectorState
         VSplitView {
-            List(workspace.commands, selection: $state.selectedCommand) { terminal in
-                CommandEntryRow(terminal: terminal)
-                    .tag(terminal)
+            List(workspace.commands, selection: $state.selectedCommand) { command in
+                CommandEntryRow(command: command)
+                    .tag(command)
                     .listRowSeparator(.hidden)
             }
             .safeAreaInset(edge: .top) {
@@ -20,9 +20,8 @@ struct CommandsInspectorView: View {
             .layoutPriority(1)
 
             Group {
-                if let terminal = state.selectedCommand {
-                    CommandTerminalOutputView(terminal: terminal)
-                        // .id(terminal.id)
+                if let command = state.selectedCommand {
+                    CommandOutputView(command: command)
                 } else {
                     Color.clear
                 }
@@ -47,8 +46,8 @@ struct CommandsInspectorView: View {
                 // .disabled(workspace.commands.isEmpty)
 
                 Button {
-                    let terminal = workspace.addCommand()
-                    state.selectedCommand = terminal
+                    let command = workspace.addCommand()
+                    state.selectedCommand = command
                 } label: {
                     Image(systemName: "plus")
                 }

@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		0896F7692F829B9C0024299A /* ACP in Frameworks */ = {isa = PBXBuildFile; productRef = 0896F7682F829B9C0024299A /* ACP */; };
-		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 /* End PBXBuildFile section */
 
@@ -61,7 +60,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				0896F7692F829B9C0024299A /* ACP in Frameworks */,
-				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -133,7 +131,6 @@
 			name = Atrium;
 			packageProductDependencies = (
 				0896F7682F829B9C0024299A /* ACP */,
-				08BEFC272F74722D009C370D /* SwiftTerm */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 			);
 			productName = Atrium;
@@ -169,7 +166,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */,
-				08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -557,14 +553,6 @@
 				kind = branch;
 			};
 		};
-		08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/SilverMarcs/SwiftTerm";
-			requirement = {
-				branch = feature;
-				kind = branch;
-			};
-		};
 		08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/raspu/Highlightr";
@@ -580,11 +568,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */;
 			productName = ACP;
-		};
-		08BEFC272F74722D009C370D /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
 		};
 		08BEFC312F74722D009C3710 /* Highlightr */ = {
 			isa = XCSwiftPackageProductDependency;

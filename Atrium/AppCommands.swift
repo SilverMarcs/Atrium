@@ -126,7 +126,7 @@ struct AppCommands: Commands {
                     guard let workspace = appState.selectedChat?.workspace,
                           let command = workspace.defaultCommand else { return }
                     appState.showingInspector = true
-                    if command.hasChildProcess {
+                    if command.isRunning {
                         appState.pendingRunReplacement = command
                     } else {
                         workspace.runCommand(command)
@@ -144,7 +144,7 @@ struct AppCommands: Commands {
                     Label("Stop", systemImage: "stop.fill")
                 }
                 .keyboardShortcut("d", modifiers: .command)
-                .disabled(appState.selectedChat?.workspace?.defaultCommand?.hasChildProcess != true)
+                .disabled(appState.selectedChat?.workspace?.defaultCommand?.isRunning != true)
 
                 Divider()
 

@@ -24,5 +24,5 @@ final class AppState {
 
     // Pending replacement when Cmd+R is invoked while the default command is
     // already running. ContentView observes this to present a confirm alert.
-    var pendingRunReplacement: Terminal?
+    var pendingRunReplacement: Command?
 }

@@ -42,7 +42,7 @@ struct InspectorView: View {
     }
 
     @ViewBuilder
-    private func runCommandControl(for defaultCommand: Terminal) -> some View {
+    private func runCommandControl(for defaultCommand: Command) -> some View {
         let others = workspace.commands.filter { cmd in
             cmd.id != defaultCommand.id
                 && !(cmd.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
@@ -60,7 +60,7 @@ struct InspectorView: View {
                     Button {
                         trigger(cmd)
                     } label: {
-                        Label(cmd.title, systemImage: cmd.hasChildProcess ? "stop.fill" : "play.fill")
+                        Label(cmd.title, systemImage: cmd.isRunning ? "stop.fill" : "play.fill")
                     }
                 }
             } label: {
@@ -71,21 +71,21 @@ struct InspectorView: View {
         }
     }
 
-    private func trigger(_ cmd: Terminal) {
-        if cmd.hasChildProcess {
+    private func trigger(_ cmd: Command) {
+        if cmd.isRunning {
             cmd.interrupt()
         } else {
             workspace.runCommand(cmd)
         }
     }
 
-    private func runIcon(for cmd: Terminal) -> some View {
-        Image(systemName: cmd.hasChildProcess ? "stop.fill" : "play.fill")
+    private func runIcon(for cmd: Command) -> some View {
+        Image(systemName: cmd.isRunning ? "stop.fill" : "play.fill")
             .contentTransition(.symbolEffect(.replace))
     }
 
     private func iconName(for tab: InspectorTab) -> String {
-        if tab == .commands && workspace.commands.contains(where: { $0.hasChildProcess }) {
+        if tab == .commands && workspace.commands.contains(where: { $0.isRunning }) {
             return "terminal.fill"
         }
         return tab.icon

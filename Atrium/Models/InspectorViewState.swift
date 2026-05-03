@@ -6,7 +6,7 @@ final class InspectorViewState {
     var fileTree = FileTreeInspectorState()
     var search = SearchInspectorState()
     var git = GitInspectorState()
-    var selectedCommand: Terminal?
+    var selectedCommand: Command?
 
     func revealInFileTree(_ url: URL, relativeTo rootURL: URL) {
         // Expand all ancestor folders

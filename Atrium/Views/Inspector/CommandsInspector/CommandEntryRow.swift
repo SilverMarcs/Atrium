@@ -1,21 +1,20 @@
 import SwiftUI
-import SwiftTerm
 
 struct CommandEntryRow: View {
-    let terminal: Terminal
+    let command: Command
 
     @State private var showEditSheet = false
 
-    private var isRunning: Bool { terminal.hasChildProcess }
+    private var isRunning: Bool { command.isRunning }
     private var hasScript: Bool {
-        !(terminal.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+        !(command.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
     }
 
     var body: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(terminal.title)
+                    Text(command.title)
                         .font(.callout)
                         .lineLimit(1)
                     statusIndicator
@@ -35,7 +34,7 @@ struct CommandEntryRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !hasScript {
                 Button(role: .destructive) {
-                    terminal.workspace?.removeCommand(terminal)
+                    command.workspace?.removeCommand(command)
                 } label: {
                     Label("Delete", systemImage: "trash")
                     .labelStyle(.iconOnly)
@@ -43,15 +42,15 @@ struct CommandEntryRow: View {
             }
         }
         .sheet(isPresented: $showEditSheet) {
-            if let workspace = terminal.workspace {
-                CommandEntrySheet(workspace: workspace, terminal: terminal)
+            if let workspace = command.workspace {
+                CommandEntrySheet(workspace: workspace, terminal: command)
             }
         }
     }
 
     @ViewBuilder
     private var subtitle: some View {
-        if let script = terminal.runScript, !script.isEmpty {
+        if let script = command.runScript, !script.isEmpty {
             Text(script)
                 .font(.subheadline)
                 .foregroundStyle(.tertiary)
@@ -72,7 +71,7 @@ struct CommandEntryRow: View {
     private var actionButton: some View {
         if isRunning {
             Button {
-                terminal.interrupt()
+                command.interrupt()
             } label: {
                 Image(systemName: "stop.fill")
                     .contentTransition(.symbolEffect(.replace))
@@ -80,7 +79,7 @@ struct CommandEntryRow: View {
             .buttonStyle(.borderless)
         } else if hasScript {
             Button {
-                terminal.workspace?.runCommand(terminal)
+                command.workspace?.runCommand(command)
             } label: {
                 Image(systemName: "play.fill")
                     .contentTransition(.symbolEffect(.replace))
@@ -92,32 +91,31 @@ struct CommandEntryRow: View {
     @ViewBuilder
     private var contextMenuItems: some View {
         if isRunning {
-            Button { terminal.interrupt() } label: {
+            Button { command.interrupt() } label: {
                 Label("Interrupt", systemImage: "stop.fill")
             }
         } else if hasScript {
             Button {
-                terminal.workspace?.runCommand(terminal)
+                command.workspace?.runCommand(command)
             } label: {
                 Label("Run", systemImage: "play.fill")
             }
         }
 
         Button {
-            terminal.clearTerminal()
+            command.clearOutput()
         } label: {
             Label("Clear", systemImage: "clear")
         }
-        .disabled(terminal.localProcessTerminalView == nil)
 
         Divider()
 
         Button {
-            terminal.workspace?.setDefaultCommand(terminal)
+            command.workspace?.setDefaultCommand(command)
         } label: {
-            Label("Set Default Command", systemImage: terminal.isDefault ? "checkmark" : "play.circle")
+            Label("Set Default Command", systemImage: command.isDefault ? "checkmark" : "play.circle")
         }
-        .disabled(terminal.isDefault || !hasScript)
+        .disabled(command.isDefault || !hasScript)
 
         Button {
             showEditSheet = true
@@ -128,14 +126,14 @@ struct CommandEntryRow: View {
         Divider()
 
         Button(role: .destructive) {
-            terminal.terminate()
+            command.terminate()
         } label: {
             Label("Kill", systemImage: "xmark.octagon")
         }
-        .disabled(terminal.localProcessTerminalView == nil)
+        .disabled(!isRunning)
 
         Button(role: .destructive) {
-            terminal.workspace?.removeCommand(terminal)
+            command.workspace?.removeCommand(command)
         } label: {
             Label("Delete", systemImage: "trash")
         }

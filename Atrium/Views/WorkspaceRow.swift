@@ -184,7 +184,7 @@ struct WorkspaceRow: View {
             } label: {
                 Label("Kill All Terminals", systemImage: "xmark.octagon")
             }
-            .disabled(!workspace.hasRunningTerminals)
+            .disabled(!workspace.hasActiveChildProcess)
 
             Divider()
             Button {
