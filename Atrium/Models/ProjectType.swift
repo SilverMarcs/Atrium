@@ -1,7 +1,6 @@
 import Foundation
 
 enum ProjectType: String, Codable, CaseIterable {
-    case xcode
     case swiftPackage
     case nextjs
     case expo
@@ -21,8 +20,7 @@ enum ProjectType: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .xcode:        "Xcode"
-        case .swiftPackage: "Swift Package"
+        case .swiftPackage: "Swift"
         case .nextjs:       "Next.js"
         case .expo:         "Expo"
         case .reactNative:  "React Native"
@@ -43,7 +41,6 @@ enum ProjectType: String, Codable, CaseIterable {
 
     var iconName: String {
         switch self {
-        case .xcode:        "swift"
         case .swiftPackage: "swift"
         case .nextjs:       "nextdotjs"
         case .expo:         "expo"
@@ -78,13 +75,8 @@ enum ProjectType: String, Codable, CaseIterable {
             return contents.contains { ($0 as NSString).pathExtension == ext }
         }
 
-        // Xcode projects
-        if hasExtension("xcodeproj") || hasExtension("xcworkspace") {
-            return .xcode
-        }
-
-        // Swift Package (standalone, no Xcode project)
-        if exists("Package.swift") {
+        // Swift (Xcode project, workspace, or standalone Swift package)
+        if hasExtension("xcodeproj") || hasExtension("xcworkspace") || exists("Package.swift") {
             return .swiftPackage
         }
 

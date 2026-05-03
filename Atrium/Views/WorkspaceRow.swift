@@ -120,37 +120,41 @@ struct WorkspaceRow: View {
             Divider()
 
             RenameButton()
-            
-            Menu {
-                ForEach(ProjectType.allCases, id: \.self) { type in
-                    Button {
-                        workspace.projectType = type
-                    } label: {
-                        Label {
-                            Text(type.displayName)
-                        } icon: {
-                            if workspace.projectType == type {
-                                Image(systemName: "checkmark")
-                            } else if !type.iconName.isEmpty {
-                                Image(type.iconName)
-                            }
-                        }
-                    }
-                }
-                
-                Divider()
-                
-                Button("Auto-Detect") {
-                    workspace.detectProjectType()
-                }
-            } label: {
-                Label("Project Type", systemImage: "shippingbox")
-            }
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([workspace.url])
             } label: {
                 Label("Reveal in Finder", systemImage: "folder")
+            }
+
+            Divider()
+
+            Menu {
+                Picker("Project Type", selection: Bindable(workspace).projectType) {
+                    ForEach(ProjectType.allCases, id: \.self) { type in
+                        Label {
+                            Text(type.displayName)
+                        } icon: {
+                            if !type.iconName.isEmpty {
+                                Image(type.iconName)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 18, height: 18)
+                            }
+                        }
+                        .tag(type)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+
+                Divider()
+
+                Button("Auto-Detect") {
+                    workspace.detectProjectType()
+                }
+            } label: {
+                Label("Project Type", systemImage: "shippingbox")
             }
 
             Button {
