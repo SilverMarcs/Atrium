@@ -4,7 +4,7 @@ struct ACPView: View {
     let chat: Chat
 
     @State private var isPreparingInitialScroll = true
-    @State private var isAtBottom = true
+    @State private var scrollAnchor = ScrollAnchor()
     @Environment(EditorPanel.self) private var panel
 
     private var session: ACPSession { chat.session }
@@ -67,21 +67,7 @@ struct ACPView: View {
                     .id("bottom")
                     .listRowSeparator(.hidden)
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                let maxOffset = geometry.contentSize.height - geometry.containerSize.height
-                return geometry.contentOffset.y >= maxOffset - 2
-            } action: { _, atBottom in
-                isAtBottom = atBottom
-            }
-            .onChange(of: panel.isOpen) {
-                guard !isPreparingInitialScroll, isAtBottom else { return }
-                Task {
-                    try? await Task.sleep(for: .milliseconds(100))
-                    withAnimation {
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    }
-                }
-            }
+            .bottomScrollAnchor(scrollAnchor, proxy: proxy)
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     Picker(selection: permissionModeBinding) {
@@ -150,19 +136,20 @@ struct ACPView: View {
                 }
             }
             .imageDropHandler(chat: chat)
+            .environment(\.scrollAnchor, scrollAnchor)
             .onChange(of: messages.count) {
                 guard !isPreparingInitialScroll else { return }
-                withAnimation {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+                scrollAnchor.scrollToBottom()
             }
             .task(id: chat.id) {
                 isPreparingInitialScroll = true
+                scrollAnchor.isEnabled = false
                 try? await Task.sleep(for: .milliseconds(50))
-                proxy.scrollTo("bottom", anchor: .bottom)
+                scrollAnchor.scrollToBottom(animated: false)
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 isPreparingInitialScroll = false
+                scrollAnchor.isEnabled = true
             }
         }
     }
