@@ -32,6 +32,16 @@ struct CommandEntryRow: View {
         .contextMenu {
             contextMenuItems
         }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if !hasScript {
+                Button(role: .destructive) {
+                    terminal.workspace?.removeCommand(terminal)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                    .labelStyle(.iconOnly)
+                }
+            }
+        }
         .sheet(isPresented: $showEditSheet) {
             if let workspace = terminal.workspace {
                 CommandEntrySheet(workspace: workspace, terminal: terminal)

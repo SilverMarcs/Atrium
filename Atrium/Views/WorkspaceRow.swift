@@ -209,18 +209,6 @@ struct WorkspaceRow: View {
             renameText = workspace.name
             isRenaming = true
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button {
-                toggleArchive()
-            } label: {
-                Label(
-                    workspace.isArchived ? "Unarchive" : "Archive",
-                    systemImage: workspace.isArchived ? "tray.and.arrow.up" : "archivebox"
-                )
-            }
-            .labelStyle(.iconOnly)
-            .tint(.orange)
-        }
         .sheet(isPresented: $isBrowsingChats) {
             ChatBrowserView(workspace: workspace)
         }
