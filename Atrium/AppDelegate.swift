@@ -67,18 +67,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        #if DEBUG
-        return .terminateNow
-        #else
+        // Only confirm if there's something the user might lose: running
+        // commands or connected chat sessions. Otherwise quit silently.
+        guard let store = WorkspaceStore.shared, store.hasLiveWork else {
+            return .terminateNow
+        }
+
         let alert = NSAlert()
         alert.messageText = "Quit Atrium?"
-        alert.informativeText = "Are you sure you want to quit?"
+        alert.informativeText = "There are running commands or active sessions. Quitting will stop them."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
 
         let response = alert.runModal()
         return response == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
-        #endif
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Belt-and-braces: even if `applicationShouldTerminate` was bypassed
+        // (sleep, system shutdown, etc.) make sure no child process outlives
+        // us as an orphan reparented to launchd.
+        WorkspaceStore.shared?.killAllRunningCommands()
     }
 }

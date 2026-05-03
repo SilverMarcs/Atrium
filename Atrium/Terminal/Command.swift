@@ -26,6 +26,19 @@ final class Command: Identifiable, Hashable, Codable {
     @ObservationIgnored
     let output = CommandOutput()
 
+    /// In-memory history of scripts the user typed into the inline input bar.
+    /// Drives up/down arrow recall in `CommandOutputView`. Not persisted —
+    /// lifetime matches the workspace's in-memory `Command` instance.
+    @ObservationIgnored
+    var inputHistory: [String] = []
+
+    func recordHistory(_ script: String) {
+        let trimmed = script.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        if inputHistory.last == trimmed { return }
+        inputHistory.append(trimmed)
+    }
+
     @ObservationIgnored
     private var process: Process?
 
@@ -78,29 +91,80 @@ final class Command: Identifiable, Hashable, Codable {
 
     // MARK: - Lifecycle
 
+    /// Runs the saved script. Clears the output first so each run gets a
+    /// fresh view (matches the play-button / Cmd+R UX).
     func run() {
         guard let script = runScript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !script.isEmpty else { return }
-
-        if isRunning { terminate() }
-
         output.clear()
+        spawn(script)
+    }
+
+    /// Runs an arbitrary script without touching the saved `runScript` or
+    /// clearing prior output. Used by the inline input bar so the entry
+    /// behaves like a shell history.
+    func runScript(_ script: String) {
+        let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        spawn(trimmed)
+    }
+
+    private func spawn(_ script: String) {
+        if isRunning { terminate() }
+        output.append("$ \(script)\n")
         CommandRunner.spawn(self, script: script)
     }
 
     func terminate() {
         guard let p = process, p.isRunning else { return }
-        // SIGTERM first; Process.terminate() also sends SIGTERM but we want
-        // to fall back to SIGKILL if the process ignores it.
-        kill(p.processIdentifier, SIGTERM)
+        // The Process is `/bin/zsh -c <script>`; zsh in non-interactive `-c`
+        // mode often doesn't forward signals to its child program, so we
+        // signal the whole descendant tree, leaves first.
+        let tree = Self.processTree(rootedAt: p.processIdentifier)
+        for pid in tree { kill(pid, SIGTERM) }
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) { [weak p] in
-            if let p, p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            guard let p, p.isRunning else { return }
+            // Best-effort follow-up: re-walk the tree (some pids may be gone)
+            // and SIGKILL anything still alive.
+            let stillAlive = Self.processTree(rootedAt: p.processIdentifier)
+            for pid in stillAlive { kill(pid, SIGKILL) }
         }
     }
 
     func interrupt() {
         guard let p = process, p.isRunning else { return }
-        kill(p.processIdentifier, SIGINT)
+        let tree = Self.processTree(rootedAt: p.processIdentifier)
+        for pid in tree { kill(pid, SIGINT) }
+    }
+
+    /// Returns `[leaves..., root]` of the live process subtree using
+    /// `pgrep -P` recursively. Leaf-first ordering means a SIGTERM walk
+    /// reaches the actual long-running program before its zsh wrapper exits
+    /// and orphans it.
+    private static func processTree(rootedAt root: pid_t) -> [pid_t] {
+        var descendants: [pid_t] = []
+        var queue: [pid_t] = [root]
+        while !queue.isEmpty {
+            let pid = queue.removeFirst()
+            let kids = directChildren(of: pid)
+            descendants.append(contentsOf: kids)
+            queue.append(contentsOf: kids)
+        }
+        return descendants.reversed() + [root]
+    }
+
+    private static func directChildren(of pid: pid_t) -> [pid_t] {
+        let task = Process()
+        task.launchPath = "/usr/bin/pgrep"
+        task.arguments = ["-P", String(pid)]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do { try task.run() } catch { return [] }
+        task.waitUntilExit()
+        let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+        guard let s = String(data: data, encoding: .utf8) else { return [] }
+        return s.split(whereSeparator: { $0.isNewline }).compactMap { pid_t($0) }
     }
 
     func clearOutput() {

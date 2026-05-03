@@ -1,13 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// AppKit-backed scrolling text view for command output. Uses NSTextView's
-/// non-contiguous layout for low-overhead append performance and tracks
-/// "stuck to bottom" state so streaming output keeps following until the user
-/// scrolls up.
+/// AppKit-backed scrolling text view for command output. SwiftUI's `Text`
+/// chokes on large strings (256 KB+ freezes layout); NSTextView handles it
+/// natively. We do an incremental append when possible to avoid rebuilding
+/// the entire text storage on every output chunk.
 struct CommandTextView: NSViewRepresentable {
-    let command: Command
+    let text: String
     let fontSize: CGFloat
+    var onContentHeight: ((CGFloat) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -32,156 +33,134 @@ struct CommandTextView: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
         textView.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainerInset = NSSize(width: 8, height: 0)
         textView.layoutManager?.allowsNonContiguousLayout = true
-        // Wrap to the scroll view width.
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
-                                  height: CGFloat.greatestFiniteMagnitude)
-        textView.isHorizontallyResizable = false
 
-        context.coordinator.scrollView = scrollView
-        context.coordinator.textView = textView
-        context.coordinator.bind(to: command)
+        textView.postsFrameChangedNotifications = true
+        let coord = context.coordinator
+        coord.textView = textView
+        coord.onContentHeight = onContentHeight
+        coord.frameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: textView,
+            queue: .main
+        ) { [weak coord] _ in
+            coord?.measureAndReport()
+        }
+
+        coord.sync(text: text, fontSize: fontSize)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        if context.coordinator.command !== command {
-            context.coordinator.bind(to: command)
-        }
-        if let tv = scrollView.documentView as? NSTextView {
-            let newFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-            if tv.font != newFont {
-                tv.font = newFont
-                let range = NSRange(location: 0, length: tv.textStorage?.length ?? 0)
-                tv.textStorage?.setAttributes(
-                    [.font: newFont, .foregroundColor: NSColor.textColor],
-                    range: range
-                )
-            }
-        }
-        // Pull any pending output the model has accumulated between updates.
-        context.coordinator.flushPending()
+        context.coordinator.onContentHeight = onContentHeight
+        context.coordinator.sync(text: text, fontSize: fontSize)
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
-        coordinator.unbind()
+        if let token = coordinator.frameObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
-        weak var scrollView: NSScrollView?
         weak var textView: NSTextView?
-        private(set) var command: Command?
-        private var observationTask: Task<Void, Never>?
+        var onContentHeight: ((CGFloat) -> Void)?
+        var frameObserver: NSObjectProtocol?
+        private var lastApplied: String = ""
+        private var lastFontSize: CGFloat = 0
+        private var lastReportedHeight: CGFloat = -1
 
-        func bind(to command: Command) {
-            unbind()
-            self.command = command
-            // Reset the view to the model's current full text.
-            if let tv = textView {
-                tv.textStorage?.setAttributedString(NSAttributedString(string: ""))
-                let initial = command.output.fullText
-                if !initial.isEmpty {
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .font: tv.font ?? NSFont.monospacedSystemFont(ofSize: TerminalFontSize.current, weight: .regular),
-                        .foregroundColor: NSColor.textColor
-                    ]
-                    tv.textStorage?.append(NSAttributedString(string: initial, attributes: attrs))
+        func sync(text: String, fontSize: CGFloat) {
+            guard let tv = textView, let storage = tv.textStorage else { return }
+
+            if fontSize != lastFontSize {
+                let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+                tv.font = font
+                let range = NSRange(location: 0, length: storage.length)
+                if range.length > 0 {
+                    storage.setAttributes(
+                        [.font: font, .foregroundColor: NSColor.textColor],
+                        range: range
+                    )
+                    Self.colorDollars(in: storage, range: range)
                 }
-                _ = command.output.drainPending()  // discard delta we already covered
+                lastFontSize = fontSize
+            }
+
+            if text != lastApplied {
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: tv.font ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
+                    .foregroundColor: NSColor.textColor
+                ]
+
+                if text.hasPrefix(lastApplied) {
+                    let oldLen = storage.length
+                    let delta = text.dropFirst(lastApplied.count)
+                    if !delta.isEmpty {
+                        storage.append(NSAttributedString(string: String(delta), attributes: attrs))
+                        let start = max(0, oldLen - 1)
+                        let scanRange = NSRange(location: start, length: storage.length - start)
+                        Self.colorDollars(in: storage, range: scanRange)
+                    }
+                } else {
+                    storage.setAttributedString(NSAttributedString(string: text, attributes: attrs))
+                    Self.colorDollars(in: storage, range: NSRange(location: 0, length: storage.length))
+                }
+                lastApplied = text
                 tv.scrollToEndOfDocument(nil)
             }
-            startObserving()
+
+            measureAndReport()
         }
 
-        func unbind() {
-            observationTask?.cancel()
-            observationTask = nil
-        }
-
-        private func startObserving() {
-            guard let command else { return }
-            // Loop using Observation: re-arm tracking after each change so we
-            // pick up subsequent edits to `version`.
-            observationTask = Task { @MainActor [weak self] in
-                while !Task.isCancelled {
-                    guard let self, let command = self.command else { return }
-                    let stream = AsyncStream<Void> { continuation in
-                        withObservationTracking {
-                            _ = command.output.version
-                        } onChange: {
-                            continuation.yield()
-                            continuation.finish()
-                        }
-                    }
-                    for await _ in stream {
-                        await MainActor.run { self.flushPending() }
-                    }
-                }
+        /// Measures the laid-out content height and reports it back to
+        /// SwiftUI so the parent can size this view to its content (when
+        /// short) or cap it at the available space (when long). Width must
+        /// be known — measurements at zero width produce nonsense from
+        /// word wrap.
+        func measureAndReport() {
+            guard let tv = textView,
+                  let lm = tv.layoutManager,
+                  let tc = tv.textContainer,
+                  tv.frame.width > 0,
+                  let cb = onContentHeight else { return }
+            lm.ensureLayout(for: tc)
+            let used = lm.usedRect(for: tc)
+            let h = ceil(used.height) + tv.textContainerInset.height * 2
+            if abs(h - lastReportedHeight) > 0.5 {
+                lastReportedHeight = h
+                DispatchQueue.main.async { cb(h) }
             }
         }
 
-        func flushPending() {
-            guard let command, let tv = textView else { return }
-            let delta = command.output.drainPending()
-            guard !delta.isEmpty else { return }
-            applyDelta(delta, to: tv)
-        }
-
-        private func applyDelta(_ delta: String, to tv: NSTextView) {
-            let storage = tv.textStorage
-            let scroller = scrollView?.verticalScroller
-            // "Stuck to bottom" if the user hasn't scrolled away.
-            let stickToBottom: Bool = {
-                if let v = scroller?.floatValue { return v > 0.98 }
-                return true
-            }()
-
-            // Parse our two private control sequences out of the delta and
-            // apply them as text-storage edits.
-            var i = delta.startIndex
-            while i < delta.endIndex {
-                if delta[i] == "\u{1B}",
-                   let bracket = delta.index(i, offsetBy: 1, limitedBy: delta.endIndex),
-                   bracket < delta.endIndex,
-                   delta[bracket] == "[" {
-                    if delta[i...].hasPrefix("\u{1B}[CLEAR]") {
-                        storage?.setAttributedString(NSAttributedString(string: ""))
-                        i = delta.index(i, offsetBy: "\u{1B}[CLEAR]".count)
-                        continue
-                    }
-                    if delta[i...].hasPrefix("\u{1B}[REWIND:") {
-                        let prefix = "\u{1B}[REWIND:"
-                        let after = delta.index(i, offsetBy: prefix.count)
-                        if let close = delta[after...].firstIndex(of: "]"),
-                           let n = Int(delta[after..<close]),
-                           let storage {
-                            let len = storage.length
-                            let drop = min(n, len)
-                            storage.deleteCharacters(in: NSRange(location: len - drop, length: drop))
-                            i = delta.index(after: close)
-                            continue
-                        }
-                    }
+        /// Paints the leading `$` of any line that starts with `$ ` green so
+        /// user-entered commands stand out from program output.
+        private static func colorDollars(in storage: NSTextStorage, range: NSRange) {
+            let ns = storage.string as NSString
+            let total = ns.length
+            guard range.length > 0, range.location < total else { return }
+            let end = min(NSMaxRange(range), total)
+            var i = range.location
+            while i < end {
+                let isLineStart = (i == 0) || (ns.character(at: i - 1) == 0x0A)
+                if isLineStart,
+                   i + 1 < total,
+                   ns.character(at: i) == 0x24, // $
+                   ns.character(at: i + 1) == 0x20 // space
+                {
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.systemGreen,
+                        range: NSRange(location: i, length: 1)
+                    )
                 }
-                // Find the next escape (or end) and append the run as plain text.
-                let next = delta[i...].firstIndex(of: "\u{1B}") ?? delta.endIndex
-                let run = String(delta[i..<next])
-                if !run.isEmpty {
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .font: tv.font ?? NSFont.monospacedSystemFont(ofSize: TerminalFontSize.current, weight: .regular),
-                        .foregroundColor: NSColor.textColor
-                    ]
-                    storage?.append(NSAttributedString(string: run, attributes: attrs))
-                }
-                i = next
+                i += 1
             }
-
-            if stickToBottom { tv.scrollToEndOfDocument(nil) }
         }
     }
 }

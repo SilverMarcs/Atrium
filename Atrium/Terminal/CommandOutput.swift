@@ -1,73 +1,65 @@
 import Foundation
 import Observation
 
-/// Append-only buffer of command output. The view layer observes `version`
-/// to know when to pull the latest delta via `drainPending()`.
+/// Append-only buffer of command output. ANSI escape sequences are stripped
+/// and `\r` (without `\n`) rewinds to the start of the current line so
+/// spinners and progress bars overwrite in place.
 @Observable
 final class CommandOutput {
-    /// Bumped after every append/clear so SwiftUI redraws (cheap Int change
-    /// rather than republishing the whole text storage).
-    private(set) var version: Int = 0
+    /// Soft cap on retained text. When exceeded we drop oldest output to the
+    /// next line boundary, keeping ~`trimTarget` bytes. Prevents `man bash`
+    /// or `tail -f` from growing the buffer unboundedly and choking SwiftUI's
+    /// Text rendering.
+    private let maxLength = 256 * 1024
+    private let trimTarget = 192 * 1024
 
-    @ObservationIgnored
-    private(set) var fullText: String = ""
-
-    /// Text appended since the last `drainPending()` call. Lets the NSTextView
-    /// representable do incremental appends without rebuilding the document.
-    @ObservationIgnored
-    private var pending: String = ""
-
-    /// Tracks whether the last byte of `fullText` is a partial line waiting
-    /// for either `\n` (commit) or `\r` (overwrite). `\r` collapse rewinds
-    /// `fullText` back to the start of the current line so spinners and
-    /// progress bars don't print a wall of duplicate lines.
-    @ObservationIgnored
-    private var currentLineStart: String.Index
-
-    init() {
-        currentLineStart = "".endIndex
-    }
+    private(set) var text: String = ""
 
     func append(_ chunk: String) {
         guard !chunk.isEmpty else { return }
         let cleaned = ANSIStripper.strip(chunk)
+
+        // Build the new text in a local buffer so the @Observable property
+        // gets exactly one write per chunk — not one per character. Without
+        // this, large dumps (e.g. `man bash`) trigger hundreds of thousands
+        // of observation notifications and freeze the UI.
+        var buf = text
+        // Per-char loop is fine — we mutate the local `buf`, not the
+        // @Observable `text`, so there's only one notification per chunk.
         for ch in cleaned {
             switch ch {
             case "\r":
-                // CR without LR — drop everything since the start of the
-                // current line so the next characters overwrite it.
-                let removed = String(fullText[currentLineStart...])
-                fullText.removeSubrange(currentLineStart..<fullText.endIndex)
-                if !removed.isEmpty {
-                    pending.append("\u{1B}[REWIND:\(removed.count)]")
+                // CR alone — rewind to the start of the current line.
+                if let lastNewline = buf.lastIndex(of: "\n") {
+                    buf.removeSubrange(buf.index(after: lastNewline)..<buf.endIndex)
+                } else {
+                    buf.removeAll(keepingCapacity: true)
                 }
-            case "\n":
-                fullText.append(ch)
-                pending.append(ch)
-                currentLineStart = fullText.endIndex
+            case "\u{08}":
+                // BS — drop the previous char. Handles `man`'s overstrike
+                // bold/underline encoding (`B\bB` -> `B`, `_\bX` -> `X`).
+                if let last = buf.last, last != "\n" {
+                    buf.removeLast()
+                }
             default:
-                fullText.append(ch)
-                pending.append(ch)
+                buf.append(ch)
             }
         }
-        version &+= 1
-    }
 
-    /// Returns and clears the buffer of text-deltas the view hasn't applied
-    /// yet. Encodes CR-rewinds as `ESC[REWIND:n]` so the text view can pop
-    /// `n` characters before appending the next chunk.
-    func drainPending() -> String {
-        defer { pending.removeAll(keepingCapacity: true) }
-        return pending
+        if buf.count > maxLength {
+            let dropCount = buf.count - trimTarget
+            let dropEnd = buf.index(buf.startIndex, offsetBy: dropCount)
+            // Snap to the next newline so we never slice mid-line.
+            let snapped = buf[dropEnd...].firstIndex(of: "\n").map { buf.index(after: $0) } ?? dropEnd
+            buf.removeSubrange(buf.startIndex..<snapped)
+            buf.insert(contentsOf: "[…earlier output trimmed…]\n", at: buf.startIndex)
+        }
+
+        text = buf
     }
 
     func clear() {
-        fullText.removeAll(keepingCapacity: false)
-        pending.removeAll(keepingCapacity: false)
-        currentLineStart = fullText.endIndex
-        // Sentinel "\u{1B}[CLEAR]" tells the view to wipe its storage.
-        pending = "\u{1B}[CLEAR]"
-        version &+= 1
+        text.removeAll(keepingCapacity: false)
     }
 }
 
@@ -84,22 +76,19 @@ enum ANSIStripper {
                 guard let next = iter.next() else { break }
                 switch next {
                 case "[":
-                    // CSI: skip until a final byte in 0x40-0x7E
                     while let c = iter.next() {
                         let v = c.value
                         if v >= 0x40 && v <= 0x7E { break }
                     }
                 case "]":
-                    // OSC: skip until BEL or ESC \
                     while let c = iter.next() {
                         if c == "\u{07}" { break }
                         if c == "\u{1B}" {
-                            _ = iter.next()  // consume the trailing '\\'
+                            _ = iter.next()
                             break
                         }
                     }
                 default:
-                    // Other 2-char escape (e.g. ESC =, ESC >) — drop both bytes.
                     break
                 }
             } else {

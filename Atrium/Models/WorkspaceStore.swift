@@ -12,6 +12,10 @@ import SwiftUI
 @MainActor
 @Observable
 final class WorkspaceStore {
+    /// Set during init so `AppDelegate` can reach the live store from
+    /// non-SwiftUI contexts (e.g. `applicationWillTerminate`).
+    @ObservationIgnored static weak var shared: WorkspaceStore?
+
     private(set) var workspaces: [Workspace] = []
 
     @ObservationIgnored private let fileURL: URL
@@ -35,8 +39,24 @@ final class WorkspaceStore {
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         self.fileURL = dir.appendingPathComponent("workspaces.json")
 
+        Self.shared = self
         load()
         beginObservingChanges()
+    }
+
+    /// True if any workspace has a running command or a connected chat session.
+    var hasLiveWork: Bool {
+        workspaces.contains { ws in
+            ws.hasActiveChildProcess || ws.chats.contains(where: { $0.isActive })
+        }
+    }
+
+    /// Best-effort termination of every running command across every workspace.
+    /// Called from `AppDelegate.applicationWillTerminate`.
+    func killAllRunningCommands() {
+        for ws in workspaces {
+            ws.killAllRunningTerminals()
+        }
     }
 
     // MARK: - Load / Save
