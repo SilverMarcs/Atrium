@@ -53,6 +53,12 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         Coordinator()
     }
 
+    /// Weak wrapper so OSC handler closures don't retain the Terminal model.
+    private final class WeakTab {
+        weak var value: Terminal?
+        init(_ value: Terminal) { self.value = value }
+    }
+
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
 
@@ -72,25 +78,30 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let shellBasename = (shell as NSString).lastPathComponent
-            let shellName = "-" + shellBasename
             let home = FileManager.default.homeDirectoryForCurrentUser.path
             let startingDirectory = resolvedWorkingDirectoryPath(from: tab.workspace?.directory) ?? home
+
+            let plan = ShellIntegration.plan(forShellPath: shell)
+
             var env = ProcessInfo.processInfo.environment
             env["TERM"] = "xterm-256color"
             env["COLORTERM"] = "truecolor"
-            if shellBasename == "zsh", let zdotdir = ShellIntegration.zdotdir() {
-                env["ZDOTDIR"] = zdotdir
-            }
-
+            for (k, v) in plan.env { env[k] = v }
             let environment = env.map { "\($0.key)=\($0.value)" }
+
+            // bash --rcfile only takes effect for non-login shells, so when our
+            // plan injects rc args we must drop the leading-dash login convention.
+            let execName = plan.args.contains("--rcfile") ? shellBasename : "-" + shellBasename
 
             tv.processDelegate = self
 
+            installSemanticPromptHandler(on: tv, for: tab)
+
             tv.startProcess(
                 executable: shell,
-                args: [],
+                args: plan.args,
                 environment: environment,
-                execName: shellName,
+                execName: execName,
                 currentDirectory: startingDirectory
             )
 
@@ -101,24 +112,63 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
 
-        /// Driven by the `preexec`/`precmd` hooks in `ShellIntegration` — the
-        /// shell sets the title to the running command on `preexec` and clears
-        /// it on `precmd`, giving us instant, accurate run-state without any
-        /// kernel polling.
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-            guard let entry = viewMap[ObjectIdentifier(source)] else { return }
-            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let newValue = trimmed.isEmpty ? nil : trimmed
-            if entry.tab.foregroundProcessName != newValue {
-                entry.tab.foregroundProcessName = newValue
-            }
-        }
+        /// SwiftTerm calls this for OSC 0/1/2 (window/icon title). Programs like
+        /// vim, ssh, and tmux freely overwrite the title, so it is *not* a
+        /// reliable signal for whether a command is running — the OSC 133
+        /// handler installed in `installSemanticPromptHandler` owns that state.
+        /// We intentionally ignore the title for state tracking.
+        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
 
         func processTerminated(source: TerminalView, exitCode: Int32?) {
             guard let local = source as? LocalProcessTerminalView,
                   let entry = viewMap[ObjectIdentifier(local)] else { return }
-            entry.tab.foregroundProcessName = nil
+            DispatchQueue.main.async {
+                entry.tab.foregroundProcessName = nil
+            }
             viewMap.removeValue(forKey: ObjectIdentifier(local))
+        }
+
+        /// Registers an OSC 133 (FinalTerm semantic prompt) handler on the
+        /// underlying `Terminal`. The shell-integration scripts emit:
+        ///   - `\e]133;C;<command>\a` when a foreground command starts
+        ///   - `\e]133;D;<exit>\a`    when it finishes
+        /// This is the authoritative signal driving `foregroundProcessName`
+        /// and `lastExitCode`, regardless of what programs do with the title.
+        func installSemanticPromptHandler(on view: LocalProcessTerminalView, for tab: Terminal) {
+            let weakTab = WeakTab(tab)
+            view.getTerminal().registerOscHandler(code: 133) { data in
+                let payload = String(bytes: data, encoding: .utf8) ?? ""
+                // Payload format: "<verb>" or "<verb>;<arg>"
+                let verb: String
+                let arg: String
+                if let semi = payload.firstIndex(of: ";") {
+                    verb = String(payload[..<semi])
+                    arg = String(payload[payload.index(after: semi)...])
+                } else {
+                    verb = payload
+                    arg = ""
+                }
+                switch verb {
+                case "C":
+                    let name = arg.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let value = name.isEmpty ? "(running)" : name
+                    DispatchQueue.main.async {
+                        guard let tab = weakTab.value else { return }
+                        if tab.foregroundProcessName != value {
+                            tab.foregroundProcessName = value
+                        }
+                    }
+                case "D":
+                    let exit = Int32(arg.trimmingCharacters(in: .whitespacesAndNewlines))
+                    DispatchQueue.main.async {
+                        guard let tab = weakTab.value else { return }
+                        tab.foregroundProcessName = nil
+                        tab.lastExitCode = exit
+                    }
+                default:
+                    break  // 133;A (prompt-start) and 133;B (prompt-end) ignored
+                }
+            }
         }
 
         private func resolvedWorkingDirectoryPath(from directory: String?) -> String? {

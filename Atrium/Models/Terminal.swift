@@ -15,9 +15,14 @@ final class Terminal: Identifiable, Hashable, Codable {
     /// Only meaningful for entries in `Workspace.commands`; ignored for ad-hoc tabs.
     var isDefault: Bool = false
 
-    /// Name of the current foreground child process, if any. Updated by the polling
-    /// task in `TerminalContainerRepresentable` so UI can react to start/stop.
+    /// Name of the current foreground child process, if any. Driven by the
+    /// shell-integration OSC 133 handler in `TerminalContainerRepresentable`:
+    /// set on `133;C` (preexec), cleared on `133;D` (precmd).
     var foregroundProcessName: String?
+
+    /// Exit status of the most recently completed foreground command, surfaced
+    /// by OSC 133;D. Nil before the first command finishes.
+    var lastExitCode: Int32?
 
     @ObservationIgnored
     weak var workspace: Workspace?
