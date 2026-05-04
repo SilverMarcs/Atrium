@@ -297,14 +297,16 @@ struct CodeTextEditor: NSViewRepresentable {
             textView.saveHandler = onSave
 
             if let text {
-                let highlighted = SyntaxHighlighter.highlight(
-                    text.wrappedValue,
+                coordinator.applyHighlight(
+                    source: text.wrappedValue,
                     fileExtension: fileExtension,
                     fontSize: fontSize,
-                    isDark: isDark
+                    isDark: isDark,
+                    preserveSelection: false,
+                    postProcess: { textView, _ in
+                        textView.recomputeFolding()
+                    }
                 )
-                textView.textStorage?.setAttributedString(highlighted)
-                textView.recomputeFolding()
             }
 
             coordinator.updateMinimapMarkers(gutterDiff: gutterDiff, text: textView.string)
@@ -338,14 +340,17 @@ struct CodeTextEditor: NSViewRepresentable {
                 coordinator?.handleGutterClick(renderLine: renderLine, at: point)
             }
 
-            let highlighted = SyntaxHighlighter.highlight(
-                presentation.string,
+            let lineKinds = presentation.lineKinds
+            coordinator.applyHighlight(
+                source: presentation.string,
                 fileExtension: fileExtension,
                 fontSize: fontSize,
-                isDark: isDark
+                isDark: isDark,
+                preserveSelection: false,
+                postProcess: { _, storage in
+                    Self.applyInlineHighlights(to: storage, lineKinds: lineKinds)
+                }
             )
-            textView.textStorage?.setAttributedString(highlighted)
-            Self.applyInlineHighlights(to: textView.textStorage, lineKinds: presentation.lineKinds)
             coordinator.lastIsDark = isDark
 
             coordinator.updateMinimapMarkers(lineKinds: presentation.lineKinds, text: presentation.string)
@@ -380,17 +385,17 @@ struct CodeTextEditor: NSViewRepresentable {
 
             if let text, !coordinator.isEditing,
                textView.string != text.wrappedValue || colorSchemeChanged || documentChanged {
-                let ranges = textView.selectedRanges
-                let highlighted = SyntaxHighlighter.highlight(
-                    text.wrappedValue,
+                coordinator.applyHighlight(
+                    source: text.wrappedValue,
                     fileExtension: fileExtension,
                     fontSize: fontSize,
-                    isDark: isDark
+                    isDark: isDark,
+                    preserveSelection: true,
+                    postProcess: { textView, _ in
+                        textView.recomputeFolding()
+                        textView.applyFoldAttributes()
+                    }
                 )
-                textView.textStorage?.setAttributedString(highlighted)
-                textView.setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
-                textView.recomputeFolding()
-                textView.applyFoldAttributes()
             }
 
             if let highlightRequest, highlightRequest != coordinator.lastAppliedHighlight {
@@ -429,14 +434,17 @@ struct CodeTextEditor: NSViewRepresentable {
             coordinator.buildHunkLookup()
 
             if textView.string != presentation.string || colorSchemeChanged {
-                let highlighted = SyntaxHighlighter.highlight(
-                    presentation.string,
+                let lineKinds = presentation.lineKinds
+                coordinator.applyHighlight(
+                    source: presentation.string,
                     fileExtension: fileExtension,
                     fontSize: fontSize,
-                    isDark: isDark
+                    isDark: isDark,
+                    preserveSelection: false,
+                    postProcess: { _, storage in
+                        Self.applyInlineHighlights(to: storage, lineKinds: lineKinds)
+                    }
                 )
-                textView.textStorage?.setAttributedString(highlighted)
-                Self.applyInlineHighlights(to: textView.textStorage, lineKinds: presentation.lineKinds)
             }
 
             coordinator.updateMinimapMarkers(lineKinds: presentation.lineKinds, text: presentation.string)
@@ -580,6 +588,8 @@ struct CodeTextEditor: NSViewRepresentable {
         var lastWrapContentWidth: CGFloat?
         var lastIsDark: Bool?
         private var rehighlightTask: Task<Void, Never>?
+        private var highlightTask: Task<Void, Never>?
+        private var highlightGeneration: Int = 0
 
         var presentation: GitDiffPresentation?
         var hunks: [DiffHunk] = []
@@ -598,6 +608,50 @@ struct CodeTextEditor: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(scrollObserver)
             }
             rehighlightTask?.cancel()
+            highlightTask?.cancel()
+        }
+
+        /// Paints `source` as plain monospaced text immediately, then kicks
+        /// off an off-main syntax-highlighting pass. When the pass finishes,
+        /// the result is applied to the text view only if no newer highlight
+        /// has been requested in the meantime (generation match).
+        func applyHighlight(
+            source: String,
+            fileExtension: String,
+            fontSize: CGFloat,
+            isDark: Bool,
+            preserveSelection: Bool,
+            postProcess: (@MainActor (EditorTextView, NSTextStorage) -> Void)? = nil
+        ) {
+            guard let textView, let storage = textView.textStorage else { return }
+
+            let ranges = preserveSelection ? textView.selectedRanges : nil
+            storage.setAttributedString(SyntaxHighlighter.plain(source, fontSize: fontSize))
+            if let ranges {
+                textView.setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
+            }
+            postProcess?(textView, storage)
+
+            highlightTask?.cancel()
+            highlightGeneration &+= 1
+            let gen = highlightGeneration
+
+            highlightTask = Task { [weak self] in
+                let attr = await SyntaxHighlighter.highlightAsync(
+                    source,
+                    fileExtension: fileExtension,
+                    fontSize: fontSize,
+                    isDark: isDark
+                )
+                guard !Task.isCancelled, let self, gen == self.highlightGeneration else { return }
+                guard let textView = self.textView, let storage = textView.textStorage else { return }
+                let preservedRanges = preserveSelection ? textView.selectedRanges : nil
+                storage.setAttributedString(attr)
+                if let preservedRanges {
+                    textView.setSelectedRanges(preservedRanges, affinity: .downstream, stillSelecting: false)
+                }
+                postProcess?(textView, storage)
+            }
         }
 
         func installScrollObserver(name: NSNotification.Name, object: Any?) {
@@ -644,23 +698,17 @@ struct CodeTextEditor: NSViewRepresentable {
             rehighlightTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled, let self, let editorTextView = self.textView else { return }
-
-                let source = editorTextView.string
-                let fileExtension = self.parent.fileExtension
-                let selectedRanges = editorTextView.selectedRanges
-                let highlighted = SyntaxHighlighter.highlight(
-                    source,
-                    fileExtension: fileExtension,
+                self.applyHighlight(
+                    source: editorTextView.string,
+                    fileExtension: self.parent.fileExtension,
                     fontSize: editorTextView.editorFontSize,
-                    isDark: editorTextView.isDarkAppearance
+                    isDark: editorTextView.isDarkAppearance,
+                    preserveSelection: true,
+                    postProcess: { textView, _ in
+                        textView.recomputeFolding()
+                        textView.applyFoldAttributes()
+                    }
                 )
-
-                await MainActor.run {
-                    editorTextView.textStorage?.setAttributedString(highlighted)
-                    editorTextView.setSelectedRanges(selectedRanges, affinity: .downstream, stillSelecting: false)
-                    editorTextView.recomputeFolding()
-                    editorTextView.applyFoldAttributes()
-                }
             }
         }
 
