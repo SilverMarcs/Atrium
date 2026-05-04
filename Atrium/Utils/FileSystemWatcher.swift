@@ -4,11 +4,33 @@ import SwiftUI
 
 /// FSEvents-based recursive directory watcher.
 final class FileSystemWatcher {
+    /// Directory components whose writes are noisy and don't reflect user-visible state.
+    /// A change is delivered only if at least one event path lies outside all of these.
+    static let defaultIgnoredSubstrings: [String] = [
+        "/.git/objects/",
+        "/.git/logs/",
+        "/.git/lfs/",
+        "/.build/",
+        "/.swiftpm/",
+        "/node_modules/",
+        "/DerivedData/",
+        "/.next/",
+        "/.tox/",
+        "/.venv/",
+    ]
+
     private var stream: FSEventStreamRef?
     private let onChange: () -> Void
+    private let ignoredSubstrings: [String]
 
-    init(url: URL, latency: TimeInterval = 0.3, onChange: @escaping () -> Void) {
+    init(
+        url: URL,
+        latency: TimeInterval = 1.0,
+        ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
+        onChange: @escaping () -> Void
+    ) {
         self.onChange = onChange
+        self.ignoredSubstrings = ignoredSubstrings
 
         var context = FSEventStreamContext(
             version: 0,
@@ -18,16 +40,26 @@ final class FileSystemWatcher {
             copyDescription: nil
         )
 
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
             guard let info else { return }
             let watcher = Unmanaged<FileSystemWatcher>.fromOpaque(info).takeUnretainedValue()
-            watcher.onChange()
+            let cfArray = unsafeBitCast(eventPaths, to: CFArray.self)
+            let paths = (cfArray as? [String]) ?? []
+            if watcher.ignoredSubstrings.isEmpty {
+                watcher.onChange()
+                return
+            }
+            for path in paths where !watcher.ignoredSubstrings.contains(where: path.contains) {
+                watcher.onChange()
+                return
+            }
+            _ = numEvents
         }
 
         let flags = FSEventStreamCreateFlags(
             kFSEventStreamCreateFlagNoDefer |
-            kFSEventStreamCreateFlagFileEvents |
-            kFSEventStreamCreateFlagWatchRoot
+            kFSEventStreamCreateFlagWatchRoot |
+            kFSEventStreamCreateFlagUseCFTypes
         )
 
         guard let stream = FSEventStreamCreate(

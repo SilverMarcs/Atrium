@@ -69,6 +69,7 @@ struct GitExecutor: Sendable {
 
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         environment["LC_ALL"] = "C"
         process.environment = environment
 
@@ -113,6 +114,7 @@ struct GitExecutor: Sendable {
 
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
         environment["LC_ALL"] = "C"
         process.environment = environment
 

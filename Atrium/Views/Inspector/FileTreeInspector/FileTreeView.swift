@@ -63,9 +63,7 @@ struct FileTreeView: View {
         }
         .watchFileSystem(at: directoryURL) {
             state.model.load(directoryURL: directoryURL)
-        }
-        .gitPolling(id: directoryURL) {
-            await state.model.refreshGit(directoryURL: directoryURL)
+            Task { await state.model.refreshGit(directoryURL: directoryURL) }
         }
         .alert(
             "Move to Trash?",
