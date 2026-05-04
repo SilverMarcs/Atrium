@@ -68,6 +68,8 @@ struct ACPInputArea: View {
                     }
 
                     TextEditor(text: $chat.prompt)
+                        .findDisabled()
+                        .replaceDisabled()
                         .padding(.leading, -4)
                         .frame(maxHeight: 350)
                         .fixedSize(horizontal: false, vertical: true)
