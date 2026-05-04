@@ -9,53 +9,17 @@ struct FileEditorPanel: View {
     let fileURL: URL
     let directoryURL: URL
     @Environment(EditorPanel.self) private var panel
-    @State private var content: String = ""
-    @State private var savedContent: String = ""
-    @State private var isLoaded = false
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-    @State private var unsupported: UnsupportedReason?
-    @State private var preview: PreviewContent?
-    @State private var lastModificationDate: Date?
+    @State private var loader = FileEditorLoadModel()
+    @State private var saveError: String?
     @State private var gutterDiff: GutterDiffResult = .empty
     @State private var gitState = FileGitState()
     @Environment(\.showInFileTree) private var showInFileTree
 
-    private enum UnsupportedReason {
-        case tooLarge(bytes: Int64)
-        case binary
-    }
-
-    private enum PreviewContent {
-        case image(NSImage)
-    }
-
-    /// Files larger than this are not loaded into the editor at all.
-    private static let maxEditableBytes: Int64 = 5 * 1024 * 1024
-
-    /// Image extensions that can be previewed inline.
-    private static let imageExtensions: Set<String> = [
-        "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tiff", "tif", "bmp", "ico", "icns", "svg",
-    ]
-
-    /// Extensions that we never try to read as text — skip the load entirely.
-    private static let binaryExtensions: Set<String> = [
-        // audio / video
-        "mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "wav", "flac", "m4a", "aac", "ogg",
-        // archives
-        "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "dmg", "iso",
-        // databases / executables
-        "sqlite", "sqlite3", "db", "pdf", "exe", "dylib", "so", "o", "a",
-        // office documents
-        "xlsx", "xls", "docx", "doc", "pptx", "ppt", "pages", "numbers", "key", "keynote",
-        // ml / data binary
-        "parquet", "arrow", "feather", "npy", "npz", "pkl", "h5", "hdf5",
-        // fonts
-        "ttf", "otf", "woff", "woff2",
-    ]
-
     private var hasUnsavedChanges: Bool {
-        isLoaded && content != savedContent
+        if case .text = loader.phase {
+            return loader.content != loader.savedContent
+        }
+        return false
     }
 
     var body: some View {
@@ -87,37 +51,46 @@ struct FileEditorPanel: View {
             .keyboardShortcut("j", modifiers: [.command, .shift])
             .help("Show in File Tree")
         } content: {
-            if isLoaded {
+            switch loader.phase {
+            case .text:
                 CodeTextEditor(
-                    text: $content,
+                    text: Binding(
+                        get: { loader.content },
+                        set: { loader.content = $0 }
+                    ),
                     documentID: fileURL,
                     fileExtension: fileURL.pathExtension.lowercased(),
                     gutterDiff: gutterDiff,
                     highlightRequest: panel.highlightRequest,
                     repositoryRootURL: directoryURL,
-                    onReloadFromDisk: { loadFile() },
+                    onReloadFromDisk: { loader.load(fileURL: fileURL) },
                     onSave: { saveFile() }
                 )
-            } else if let preview {
-                previewView(preview)
-            } else if let unsupported {
-                unsupportedView(unsupported)
-            } else if let errorMessage {
+            case .image(let image):
+                imagePreview(image)
+            case .unsupported(let reason):
+                unsupportedView(reason)
+            case .error(let message):
                 ContentUnavailableView {
                     Label("Cannot Open File", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text(errorMessage)
+                    Text(message)
                 }
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .idle, .loading:
+                Color.clear
             }
         }
-        .task(id: fileURL) {
-            loadFile()
+        .onChange(of: fileURL, initial: true) { _, newURL in
+            resetTransientState()
+            loader.load(fileURL: newURL)
+        }
+        .onChange(of: loader.loadedURL) { _, _ in
+            if case .text = loader.phase {
+                refreshGitState()
+            }
         }
         .watchFileSystem(at: fileURL.deletingLastPathComponent(), id: fileURL) {
-            reloadIfChanged()
+            loader.reloadIfChanged(fileURL: fileURL)
         }
         .onChange(of: hasUnsavedChanges) { _, dirty in
             panel.isDirty = dirty
@@ -145,105 +118,36 @@ struct FileEditorPanel: View {
         } message: {
             Text("Do you want to save changes to \"\(fileURL.lastPathComponent)\"?")
         }
+        .alert("Couldn't Save File", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
+        }
     }
 
-    private func reloadIfChanged() {
-        guard !hasUnsavedChanges, isLoaded else { return }
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-              let modDate = attrs[.modificationDate] as? Date,
-              modDate != lastModificationDate else { return }
-        lastModificationDate = modDate
-        do {
-            let data = try Data(contentsOf: fileURL)
-            guard let string = String(data: data, encoding: .utf8) else { return }
-            content = string
-            savedContent = string
-            refreshGitState()
-        } catch {}
-    }
-
-    private func loadFile() {
-        content = ""
-        savedContent = ""
-        isLoaded = false
-        errorMessage = nil
-        unsupported = nil
-        preview = nil
+    private func resetTransientState() {
+        saveError = nil
         gutterDiff = .empty
         gitState = FileGitState()
         panel.isDirty = false
-        lastModificationDate = nil
-
-        let ext = fileURL.pathExtension.lowercased()
-
-        // Try to load previewable file types.
-        if Self.imageExtensions.contains(ext) {
-            if let image = NSImage(contentsOf: fileURL) {
-                preview = .image(image)
-            } else {
-                unsupported = .binary
-            }
-            return
-        }
-
-        // Skip well-known binary file types entirely — never attempt to read.
-        if Self.binaryExtensions.contains(ext) {
-            unsupported = .binary
-            return
-        }
-
-        // Refuse anything past the size cap before allocating memory.
-        let fileSize: Int64
-        do {
-            let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
-            fileSize = Int64(values.fileSize ?? 0)
-        } catch {
-            errorMessage = error.localizedDescription
-            return
-        }
-        if fileSize > Self.maxEditableBytes {
-            unsupported = .tooLarge(bytes: fileSize)
-            return
-        }
-
-        do {
-            let data = try Data(contentsOf: fileURL)
-            // Quick binary sniff: a NUL byte in the first 8KB means it's not text.
-            let sniffCount = min(data.count, 8192)
-            if data.prefix(sniffCount).contains(0) {
-                unsupported = .binary
-                return
-            }
-            guard let string = String(data: data, encoding: .utf8) else {
-                unsupported = .binary
-                return
-            }
-            content = string
-            savedContent = string
-            isLoaded = true
-            lastModificationDate = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
-            refreshGitState()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 
     @ViewBuilder
-    private func previewView(_ content: PreviewContent) -> some View {
-        switch content {
-        case .image(let image):
-            ScrollView([.horizontal, .vertical]) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func imagePreview(_ image: NSImage) -> some View {
+        ScrollView([.horizontal, .vertical]) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
-    private func unsupportedView(_ reason: UnsupportedReason) -> some View {
+    private func unsupportedView(_ reason: FileEditorUnsupportedReason) -> some View {
         ContentUnavailableView {
             Label(unsupportedTitle(reason), systemImage: unsupportedSymbol(reason))
         } description: {
@@ -260,21 +164,21 @@ struct FileEditorPanel: View {
         }
     }
 
-    private func unsupportedTitle(_ reason: UnsupportedReason) -> String {
+    private func unsupportedTitle(_ reason: FileEditorUnsupportedReason) -> String {
         switch reason {
         case .tooLarge: return "File Too Large"
         case .binary: return "Preview Not Available"
         }
     }
 
-    private func unsupportedSymbol(_ reason: UnsupportedReason) -> String {
+    private func unsupportedSymbol(_ reason: FileEditorUnsupportedReason) -> String {
         switch reason {
         case .tooLarge: return "doc.badge.ellipsis"
         case .binary: return "doc"
         }
     }
 
-    private func unsupportedDescription(_ reason: UnsupportedReason) -> String {
+    private func unsupportedDescription(_ reason: FileEditorUnsupportedReason) -> String {
         switch reason {
         case .tooLarge(let bytes):
             let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -285,15 +189,14 @@ struct FileEditorPanel: View {
     }
 
     private func saveFile() {
-        isSaving = true
+        guard case .text = loader.phase else { return }
         do {
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
-            savedContent = content
+            try loader.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            loader.markSaved()
             refreshGitState()
         } catch {
-            errorMessage = error.localizedDescription
+            saveError = error.localizedDescription
         }
-        isSaving = false
     }
 
     private func refreshGitState() {

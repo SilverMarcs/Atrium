@@ -136,6 +136,29 @@ extension URL {
         let type = UTType(filenameExtension: pathExtension.lowercased()) ?? .data
         return NSWorkspace.shared.icon(for: type)
     }
+
+    var isPreviewableImage: Bool {
+        FileTypeSets.imageExtensions.contains(pathExtension.lowercased())
+    }
+
+    var isKnownBinary: Bool {
+        FileTypeSets.binaryExtensions.contains(pathExtension.lowercased())
+    }
+}
+
+enum FileTypeSets {
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "tiff", "tif", "bmp", "ico", "icns", "svg",
+    ]
+
+    static let binaryExtensions: Set<String> = [
+        "mp4", "mov", "avi", "mkv", "webm", "m4v", "mp3", "wav", "flac", "m4a", "aac", "ogg",
+        "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "dmg", "iso",
+        "sqlite", "sqlite3", "db", "pdf", "exe", "dylib", "so", "o", "a",
+        "xlsx", "xls", "docx", "doc", "pptx", "ppt", "pages", "numbers", "key", "keynote",
+        "parquet", "arrow", "feather", "npy", "npz", "pkl", "h5", "hdf5",
+        "ttf", "otf", "woff", "woff2",
+    ]
 }
 
 extension GitChangeKind {

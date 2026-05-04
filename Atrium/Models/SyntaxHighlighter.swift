@@ -44,7 +44,7 @@ enum SyntaxHighlighter {
 
     // MARK: - Public
 
-    static func highlight(
+    nonisolated static func highlight(
         _ source: String,
         fileExtension: String,
         fontSize: CGFloat = 12,
@@ -52,19 +52,52 @@ enum SyntaxHighlighter {
         theme: Theme = defaultTheme
     ) -> NSAttributedString {
         let font = fontSize == 12 ? theme.font : NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        let language = languageName(for: fileExtension)
-        let highlighter = isDark ? darkHighlighter : lightHighlighter
 
-        if let highlighter,
-           let highlighted = highlighter.highlight(source, as: language, fastRender: true) {
-            let result = NSMutableAttributedString(attributedString: highlighted)
-            let fullRange = NSRange(location: 0, length: result.length)
-            result.addAttribute(.font, value: font, range: fullRange)
-            return result
+        // Skip Highlightr when we don't know the language. Auto-detect scores
+        // every grammar against the source — O(grammars × length) and brutal
+        // on large files like project.pbxproj. Plain text is the right call.
+        guard let language = languageName(for: fileExtension) else {
+            return plain(source, font: font, theme: theme)
         }
 
-        // Fallback: plain monospaced text
-        return NSAttributedString(string: source, attributes: [
+        let highlighter = isDark ? darkHighlighter : lightHighlighter
+        guard let highlighter,
+              let highlighted = highlighter.highlight(source, as: language, fastRender: true) else {
+            return plain(source, font: font, theme: theme)
+        }
+
+        let result = NSMutableAttributedString(attributedString: highlighted)
+        result.addAttribute(.font, value: font, range: NSRange(location: 0, length: result.length))
+        return result
+    }
+
+    /// Off-main-thread variant — callers should use this for any user-visible
+    /// editor or diff render. Highlightr passes can take seconds on large
+    /// buffers and would otherwise freeze the UI.
+    static func highlightAsync(
+        _ source: String,
+        fileExtension: String,
+        fontSize: CGFloat,
+        isDark: Bool
+    ) async -> NSAttributedString {
+        await Task.detached(priority: .userInitiated) {
+            highlight(source, fileExtension: fileExtension, fontSize: fontSize, isDark: isDark)
+        }.value
+    }
+
+    /// Unstyled monospaced fallback — used as the immediate paint while an
+    /// async highlight pass runs in the background.
+    nonisolated static func plain(
+        _ source: String,
+        fontSize: CGFloat = 12,
+        theme: Theme = defaultTheme
+    ) -> NSAttributedString {
+        let font = fontSize == 12 ? theme.font : NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        return plain(source, font: font, theme: theme)
+    }
+
+    private nonisolated static func plain(_ source: String, font: NSFont, theme: Theme) -> NSAttributedString {
+        NSAttributedString(string: source, attributes: [
             .font: font,
             .foregroundColor: theme.foreground,
         ])
