@@ -16,21 +16,20 @@ actor GitRepository {
         return try await withThrowingTaskGroup(of: GitRepositoryStatusSnapshot.self) { group in
             for repositoryRootURL in repositoryRootURLs {
                 group.addTask {
-                    let entries = try await self.executor.execute(GitStatusCommand(), at: repositoryRootURL)
+                    let status = try await self.executor.execute(GitStatusCommand(), at: repositoryRootURL)
 
-                    async let branchName = try? self.executor.execute(GitBranchNameCommand(), at: repositoryRootURL)
-                    async let hasTracking = self.checkHasTrackingBranch(at: repositoryRootURL)
                     async let localBranches = (try? self.executor.execute(GitLocalBranchesCommand(), at: repositoryRootURL)) ?? []
-
-                    let tracking = await hasTracking
-                    let branch = await branchName
-                    async let unpushedCommits = self.fetchUnpushedCommits(at: repositoryRootURL, hasTrackingBranch: tracking, branchName: branch)
-                    async let remoteAheadCount = tracking ? ((try? self.executor.execute(GitRemoteAheadCountCommand(), at: repositoryRootURL)) ?? 0) : 0
+                    async let unpushedCommits = self.fetchUnpushedCommits(
+                        at: repositoryRootURL,
+                        hasTrackingBranch: status.hasUpstream,
+                        aheadCount: status.aheadCount,
+                        branchName: status.branchName
+                    )
 
                     var stagedFiles: [GitChangedFile] = []
                     var unstagedFiles: [GitChangedFile] = []
 
-                    for entry in entries {
+                    for entry in status.entries {
                         if let stagedKind = entry.stagedKind,
                            let fileURL = Self.fileURL(for: entry.path, in: repositoryRootURL, scopedTo: directoryURL) {
                             stagedFiles.append(GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: stagedKind))
@@ -43,13 +42,13 @@ actor GitRepository {
 
                     return GitRepositoryStatusSnapshot(
                         repositoryRootURL: repositoryRootURL,
-                        branchName: branch,
+                        branchName: status.branchName,
                         localBranches: await localBranches,
                         stagedFiles: stagedFiles,
                         unstagedFiles: unstagedFiles,
                         unpushedCommits: await unpushedCommits,
-                        remoteAheadCount: await remoteAheadCount,
-                        hasTrackingBranch: tracking
+                        remoteAheadCount: status.behindCount,
+                        hasTrackingBranch: status.hasUpstream
                     )
                 }
             }
@@ -351,18 +350,12 @@ actor GitRepository {
 
     // MARK: - Private
 
-    private func checkHasTrackingBranch(at repositoryRootURL: URL) async -> Bool {
-        do {
-            _ = try await self.executor.execute(GitTrackingBranchCommand(), at: repositoryRootURL)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private func fetchUnpushedCommits(at repositoryRootURL: URL, hasTrackingBranch: Bool, branchName: String?) async -> [GitUnpushedCommit] {
+    private func fetchUnpushedCommits(at repositoryRootURL: URL, hasTrackingBranch: Bool, aheadCount: Int, branchName: String?) async -> [GitUnpushedCommit] {
         let commitEntries: [(hash: String, message: String)]
         if hasTrackingBranch {
+            // Status v2's branch.ab line already told us how many commits are ahead;
+            // skip the spawn entirely when there are none.
+            guard aheadCount > 0 else { return [] }
             guard let entries = try? await self.executor.execute(
                 GitUnpushedCommitListCommand(), at: repositoryRootURL
             ) else { return [] }
@@ -623,24 +616,22 @@ enum GitStatusCode: Character, Equatable {
 
 // MARK: - Git Commands
 
-struct GitStatusCommand: GitCommand {
-    var arguments: [String] {
-        ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
-    }
-
-    func parse(output: String) throws -> [GitStatusEntry] {
-        GitStatusParser.parse(output)
-    }
+struct GitStatusResult: Equatable {
+    var branchName: String?
+    var upstreamBranch: String?
+    var hasUpstream: Bool = false
+    var aheadCount: Int = 0
+    var behindCount: Int = 0
+    var entries: [GitStatusEntry] = []
 }
 
-struct GitBranchNameCommand: GitCommand {
+struct GitStatusCommand: GitCommand {
     var arguments: [String] {
-        ["branch", "--show-current"]
+        ["status", "--branch", "--porcelain=v2", "-z", "--untracked-files=all"]
     }
 
-    func parse(output: String) throws -> String? {
-        let name = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+    func parse(output: String) throws -> GitStatusResult {
+        GitStatusParser.parse(output)
     }
 }
 
@@ -740,13 +731,6 @@ private struct GitRemoteURLCommand: GitCommand {
     }
 }
 
-private struct GitTrackingBranchCommand: GitCommand {
-    var arguments: [String] { ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"] }
-    func parse(output: String) throws -> String {
-        output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
 struct GitPullCommand: GitCommand {
     var arguments: [String] { ["pull"] }
     func parse(output: String) throws { }
@@ -834,16 +818,6 @@ private struct GitRevParseHeadCommand: GitCommand {
 enum PullPreservingResult: Equatable, Sendable {
     case clean
     case wouldConflict
-}
-
-private struct GitRemoteAheadCountCommand: GitCommand {
-    var arguments: [String] {
-        ["rev-list", "HEAD..@{u}", "--count"]
-    }
-
-    func parse(output: String) throws -> Int {
-        Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-    }
 }
 
 private struct GitUnpushedCommitListCommand: GitCommand {
@@ -941,29 +915,97 @@ private struct GitCommitFilesCommand: GitCommand {
 
 // MARK: - Status Parser
 
+/// Parses `git status --branch --porcelain=v2 -z` output.
+/// Each NUL-separated token is either a `# ...` header or a status entry whose
+/// first character indicates type (`1`, `2`, `u`, `?`, `!`). Type `2` (rename/copy)
+/// is followed by an extra NUL-separated token holding the original path.
 enum GitStatusParser {
-    static func parse(_ output: String) -> [GitStatusEntry] {
-        guard !output.isEmpty else { return [] }
+    static func parse(_ output: String) -> GitStatusResult {
+        var result = GitStatusResult()
+        guard !output.isEmpty else { return result }
 
-        let entries = output.split(separator: "\0", omittingEmptySubsequences: false)
-        var results: [GitStatusEntry] = []
-        var index = 0
+        let tokens = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
+        var i = 0
+        while i < tokens.count {
+            let token = tokens[i]
+            if token.isEmpty { i += 1; continue }
 
-        while index < entries.count {
-            let entry = String(entries[index])
-            guard entry.count >= 3 else { index += 1; continue }
+            if token.hasPrefix("# ") {
+                parseHeader(String(token.dropFirst(2)), into: &result)
+                i += 1
+                continue
+            }
 
-            guard
-                let indexStatus = GitStatusCode(rawValue: entry[entry.startIndex]),
-                let workTreeStatus = GitStatusCode(rawValue: entry[entry.index(after: entry.startIndex)])
-            else { index += 1; continue }
-
-            let isRenamedOrCopied = [.renamed, .copied].contains(indexStatus) || [.renamed, .copied].contains(workTreeStatus)
-            let path = String(entry.dropFirst(3))
-            results.append(GitStatusEntry(path: path, indexStatus: indexStatus, workTreeStatus: workTreeStatus))
-            index += isRenamedOrCopied ? 2 : 1
+            guard let kind = token.first else { i += 1; continue }
+            switch kind {
+            case "1":
+                if let entry = parseEntry(token, fieldsBeforePath: 8) {
+                    result.entries.append(entry)
+                }
+                i += 1
+            case "2":
+                if let entry = parseEntry(token, fieldsBeforePath: 9) {
+                    result.entries.append(entry)
+                }
+                i += 2
+            case "u":
+                if let entry = parseEntry(token, fieldsBeforePath: 10) {
+                    result.entries.append(entry)
+                }
+                i += 1
+            case "?":
+                let path = String(token.dropFirst(2))
+                result.entries.append(GitStatusEntry(path: path, indexStatus: .untracked, workTreeStatus: .untracked))
+                i += 1
+            default:
+                i += 1
+            }
         }
 
-        return results
+        return result
+    }
+
+    private static func parseHeader(_ body: String, into result: inout GitStatusResult) {
+        if let value = stripPrefix(body, "branch.head ") {
+            result.branchName = value == "(detached)" ? nil : value
+        } else if let value = stripPrefix(body, "branch.upstream ") {
+            result.upstreamBranch = value
+            result.hasUpstream = true
+        } else if let value = stripPrefix(body, "branch.ab ") {
+            let parts = value.split(separator: " ")
+            guard parts.count == 2 else { return }
+            result.aheadCount = Int(parts[0].dropFirst()) ?? 0
+            result.behindCount = Int(parts[1].dropFirst()) ?? 0
+        }
+    }
+
+    private static func stripPrefix(_ string: String, _ prefix: String) -> String? {
+        guard string.hasPrefix(prefix) else { return nil }
+        return String(string.dropFirst(prefix.count))
+    }
+
+    private static func parseEntry(_ token: String, fieldsBeforePath: Int) -> GitStatusEntry? {
+        guard token.count > 4 else { return nil }
+        let xyStart = token.index(token.startIndex, offsetBy: 2)
+        let yIndex = token.index(after: xyStart)
+        // v2 uses "." for unmodified where v1 used " ".
+        let xChar: Character = token[xyStart] == "." ? " " : token[xyStart]
+        let yChar: Character = token[yIndex] == "." ? " " : token[yIndex]
+        guard
+            let indexStatus = GitStatusCode(rawValue: xChar),
+            let workTreeStatus = GitStatusCode(rawValue: yChar)
+        else { return nil }
+
+        var spaceCount = 0
+        var pathStart: String.Index?
+        for index in token.indices where token[index] == " " {
+            spaceCount += 1
+            if spaceCount == fieldsBeforePath {
+                pathStart = token.index(after: index)
+                break
+            }
+        }
+        guard let start = pathStart else { return nil }
+        return GitStatusEntry(path: String(token[start...]), indexStatus: indexStatus, workTreeStatus: workTreeStatus)
     }
 }
