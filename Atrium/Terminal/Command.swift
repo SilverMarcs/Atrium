@@ -43,7 +43,7 @@ final class Command: Identifiable, Hashable, Codable {
     private var process: Process?
 
     @ObservationIgnored
-    private var stdinPipe: Pipe?
+    private var ptyMaster: FileHandle?
 
     init(workspace: Workspace, title: String = "Terminal", runScript: String? = nil) {
         self.id = UUID()
@@ -177,13 +177,13 @@ final class Command: Identifiable, Hashable, Codable {
         output.clear()
     }
 
-    /// Sends raw text to the running process's stdin. Caller is responsible
-    /// for any trailing newline (Tier A doesn't run a PTY, so most programs
-    /// won't see typed characters until a `\n` flushes the line).
+    /// Sends raw text to the running process's stdin via the PTY master.
+    /// Caller is responsible for any trailing newline; the line discipline is
+    /// in canonical mode, so the child won't see input until a `\n` flushes.
     func sendInput(_ text: String) {
-        guard let pipe = stdinPipe, isRunning else { return }
+        guard let master = ptyMaster, isRunning else { return }
         if let data = text.data(using: .utf8) {
-            try? pipe.fileHandleForWriting.write(contentsOf: data)
+            try? master.write(contentsOf: data)
         }
     }
 
@@ -196,9 +196,9 @@ final class Command: Identifiable, Hashable, Codable {
     }
 
     @ObservationIgnored
-    var _stdinBox: Pipe? {
-        get { stdinPipe }
-        set { stdinPipe = newValue }
+    var _ptyMaster: FileHandle? {
+        get { ptyMaster }
+        set { ptyMaster = newValue }
     }
 
     func _setState(_ newState: CommandState) {

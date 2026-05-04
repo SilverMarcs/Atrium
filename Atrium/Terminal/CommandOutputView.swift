@@ -71,6 +71,7 @@ struct CommandOutputView: View {
                         .frame(width: barHeight, height: barHeight)
                         .background(.secondary.opacity(0.15), in: Circle())
                     }
+
                 }
                 .buttonStyle(.borderless)
             }

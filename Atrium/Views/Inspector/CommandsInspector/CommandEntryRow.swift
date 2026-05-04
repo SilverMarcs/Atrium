@@ -99,10 +99,12 @@ struct CommandEntryRow: View {
             }
         }
 
-        Button {
-            command.clearOutput()
-        } label: {
-            Label("Clear", systemImage: "clear")
+        if hasScript {
+            Button {
+                runInExternalTerminal()
+            } label: {
+                Label("Run in Terminal", systemImage: "terminal")
+            }
         }
 
         Divider()
@@ -122,6 +124,12 @@ struct CommandEntryRow: View {
 
         Divider()
 
+        Button {
+            command.clearOutput()
+        } label: {
+            Label("Clear", systemImage: "clear")
+        }
+
         Button(role: .destructive) {
             command.terminate()
         } label: {
@@ -133,6 +141,30 @@ struct CommandEntryRow: View {
             command.workspace?.removeCommand(command)
         } label: {
             Label("Delete", systemImage: "trash")
+        }
+    }
+
+    /// Writes the saved script to a tempfile as a `.command` and hands it to
+    /// the user's default handler (Terminal.app out of the box, iTerm/etc. if
+    /// they've reassigned). Sidesteps AppleScript and quote-escaping by
+    /// letting the shebang + a real file do the work.
+    private func runInExternalTerminal() {
+        guard let script = command.runScript?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !script.isEmpty else { return }
+        let dir = command.workspace?.directory ?? ""
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("atrium-\(UUID().uuidString).command")
+        var body = "#!/bin/zsh -l\n"
+        if !dir.isEmpty {
+            body += "cd '\(dir.replacingOccurrences(of: "'", with: "'\\''"))'\n"
+        }
+        body += script + "\n"
+        do {
+            try body.write(to: tmp, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp.path)
+            NSWorkspace.shared.open(tmp)
+        } catch {
+            command.output.append("[failed to launch external terminal: \(error.localizedDescription)]\n")
         }
     }
 }
