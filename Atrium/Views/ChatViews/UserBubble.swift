@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import QuickLook
 
 struct UserMessageView: View {
     let message: Message
@@ -65,18 +66,24 @@ struct UserMessageView: View {
 
 private struct UserImageStrip: View {
     let blocks: [MessageBlock]
+    @State private var previewURL: URL?
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             ForEach(blocks) { block in
-                if let data = block.imageData, let nsImage = NSImage(data: data) {
+                if let name = block.imageFilename,
+                   let nsImage = ChatImageStore.loadImage(filename: name) {
                     Image(nsImage: nsImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 140, height: 140)
                         .clipShape(.rect(cornerRadius: 14))
+                        .onTapGesture {
+                            previewURL = ChatImageStore.url(forFilename: name)
+                        }
                 }
             }
         }
+        .quickLookPreview($previewURL)
     }
 }

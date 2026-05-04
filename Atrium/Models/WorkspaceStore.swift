@@ -76,6 +76,7 @@ final class WorkspaceStore {
             }
             workspaces = payload.workspaces
             didLoad = true
+            migrateInlineImagesIfNeeded()
         } catch {
             // Move the unreadable file aside so the user can recover it
             // manually, then start with an empty store.
@@ -95,6 +96,42 @@ final class WorkspaceStore {
             try data.write(to: fileURL, options: [.atomic])
         } catch {
             print("WorkspaceStore: failed to write \(fileURL.lastPathComponent): \(error)")
+        }
+    }
+
+    /// One-time migration: chat messages used to embed image bytes inline as
+    /// `imageData` inside the JSON blob. Now images live as files in
+    /// `ChatImageStore.directory` and blocks reference them by filename. Walk
+    /// every loaded message, write any legacy bytes to disk, swap in the
+    /// filename, and persist if anything changed.
+    private func migrateInlineImagesIfNeeded() {
+        var migrated = 0
+        for ws in workspaces {
+            for chat in ws.chats {
+                for msg in chat.messages {
+                    var blocks = msg.blocks
+                    var changed = false
+                    for i in blocks.indices {
+                        guard blocks[i].isImage,
+                              blocks[i].imageFilename == nil,
+                              let data = blocks[i].legacyImageData else { continue }
+                        let mime = blocks[i].legacyImageMimeType ?? "image/jpeg"
+                        let ext = ChatImageStore.fileExtension(forMimeType: mime)
+                        if let name = ChatImageStore.save(data: data, extensionHint: ext) {
+                            blocks[i].imageFilename = name
+                            blocks[i].legacyImageData = nil
+                            blocks[i].legacyImageMimeType = nil
+                            changed = true
+                            migrated += 1
+                        }
+                    }
+                    if changed { msg.blocks = blocks }
+                }
+            }
+        }
+        if migrated > 0 {
+            print("WorkspaceStore: migrated \(migrated) inline image(s) to \(ChatImageStore.directory.path)")
+            save()
         }
     }
 
