@@ -65,6 +65,7 @@ struct ACPInputArea: View {
                 VStack(alignment: .leading) {
                     if !chat.pendingAttachments.isEmpty {
                         AttachmentThumbnails(chat: chat)
+                        .padding(.top, 4)
                     }
 
                     TextEditor(text: $chat.prompt)

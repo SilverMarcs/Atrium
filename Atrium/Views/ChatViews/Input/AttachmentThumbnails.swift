@@ -25,26 +25,23 @@ private struct AttachmentThumbnail: View {
     let onRemove: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            thumbnailImage
-                .frame(width: 56, height: 56)
-                .clipShape(.rect(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(.separator, lineWidth: 0.5)
-                )
-
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .black.opacity(0.75))
+        thumbnailImage
+            .frame(width: 56, height: 56)
+            .clipShape(.rect(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(.separator, lineWidth: 0.5)
+            )
+            .overlay(alignment: .topTrailing) {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .padding(3)
             }
-            .buttonStyle(.plain)
-            .offset(x: 6, y: -6)
-        }
-        .padding(.top, 6)
-        .padding(.trailing, 6)
     }
 
     @ViewBuilder
