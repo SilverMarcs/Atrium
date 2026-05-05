@@ -6,10 +6,19 @@ enum EditorTextViewConstants {
     static let foldColumnWidth: CGFloat = 12
     static let minimapWidth: CGFloat = 16
 
+    /// Right edge x of the line number column. Shared between editor and
+    /// diff modes so the line numbers visually align in the same horizontal
+    /// strip from the left edge regardless of which mode is active. Anything
+    /// to the right of this (git markers, fold column) is mode-specific.
+    static let lineNumberEndX: CGFloat = 26
+
+    /// Left edge x of the git/diff marker bar. Shared between editor and
+    /// diff modes so the colored bar sits at the same horizontal position
+    /// regardless of which mode is active.
+    static let markerBarX: CGFloat = 30
+
     // Diff mode gutter layout (single line number, no fold column)
     static let diffGutterWidth: CGFloat = 36
-    static let diffNumEndX: CGFloat = 26
-    static let diffMarkerX: CGFloat = 30
 }
 
 // MARK: - Editor Text View with Gutter
@@ -564,9 +573,9 @@ final class EditorTextView: NSTextView {
                 // Marker bar per fragment.
                 kind.color.setFill()
                 NSRect(
-                    x: constants.diffMarkerX,
+                    x: constants.markerBarX,
                     y: fragmentRect.minY,
-                    width: 3,
+                    width: constants.markerBarWidth,
                     height: fragmentRect.height
                 ).fill()
             }
@@ -578,7 +587,7 @@ final class EditorTextView: NSTextView {
                 if let num = lineNum {
                     let str = "\(num)" as NSString
                     let size = str.size(withAttributes: lineNumAttrs)
-                    str.draw(at: NSPoint(x: constants.diffNumEndX - size.width, y: yCenter), withAttributes: lineNumAttrs)
+                    str.draw(at: NSPoint(x: constants.lineNumberEndX - size.width, y: yCenter), withAttributes: lineNumAttrs)
                 }
             }
 
@@ -635,7 +644,7 @@ final class EditorTextView: NSTextView {
             .font: lineNumberFont,
             .foregroundColor: NSColor.secondaryLabelColor,
         ]
-        let lineNumEndX = gutterWidth - foldColWidth - markerBarWidth - 6
+        let lineNumEndX = EditorTextViewConstants.lineNumberEndX
 
         if text.length == 0 {
             var fragmentRect = layoutManager.extraLineFragmentRect
@@ -673,7 +682,7 @@ final class EditorTextView: NSTextView {
             startLineNumber = preText.components(separatedBy: "\n").count
         }
 
-        let markerBarX = gutterWidth - foldColWidth - markerBarWidth - 1
+        let markerBarX = EditorTextViewConstants.markerBarX
         let foldCenterX = gutterWidth - foldColWidth / 2
 
         let cursorLine = currentCursorLine
