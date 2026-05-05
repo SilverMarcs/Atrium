@@ -1,6 +1,23 @@
 import AppKit
 import SwiftUI
 
+/// NSView subclass that fires a callback whenever AppKit changes its frame
+/// size. SwiftUI's `updateNSView` is not reliably re-invoked when the
+/// container resizes (e.g. when the bottom sheet finishes its open animation
+/// or when the source-control inspector swaps in a new editor instance), so
+/// the editor used to be stuck rendering whatever broken state was cached at
+/// the bad initial size. This callback gives us a deterministic hook to
+/// re-run the layout pass once the geometry is actually usable.
+final class LayoutAwareContainer: NSView {
+    var onResize: (() -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { onResize?() }
+    }
+}
+
 struct CodeTextEditor: NSViewRepresentable {
     private enum Mode {
         case editable(gutterDiff: GutterDiffResult, highlightRequest: HighlightRequest?)
@@ -70,7 +87,7 @@ struct CodeTextEditor: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = LayoutAwareContainer()
         container.autoresizesSubviews = true
 
         let scrollView = NSScrollView()
@@ -134,13 +151,25 @@ struct CodeTextEditor: NSViewRepresentable {
         // character (the rehighlight path) made the gutter cut-off go away.
         // Defer configureMode to updateNSView so text is laid out exactly once,
         // in the correctly sized container.
+
+        container.onResize = { [weak coordinator = context.coordinator, weak container] in
+            guard let coordinator, let container else { return }
+            coordinator.parent.runLayoutPass(container: container, coordinator: coordinator)
+        }
         return container
     }
 
     func updateNSView(_ container: NSView, context: Context) {
         context.coordinator.parent = self
+        runLayoutPass(container: container, coordinator: context.coordinator, fromSwiftUI: true)
+    }
 
-        guard let textView = context.coordinator.textView else { return }
+    /// Shared layout pass invoked both from SwiftUI's `updateNSView` and from
+    /// the container's frame-change callback. When `fromSwiftUI` is true and
+    /// `didConfigureMode` is already set, also drive `updateMode` for any
+    /// SwiftUI state changes (text binding, gutter diff, dark mode, etc).
+    fileprivate func runLayoutPass(container: NSView, coordinator: Coordinator, fromSwiftUI: Bool = false) {
+        guard let textView = coordinator.textView else { return }
         let bounds = container.bounds
         let minimapWidth = EditorTextViewConstants.minimapWidth
 
@@ -150,8 +179,8 @@ struct CodeTextEditor: NSViewRepresentable {
             width: bounds.width - minimapWidth,
             height: bounds.height
         )
-        context.coordinator.scrollView?.frame = scrollViewFrame
-        context.coordinator.minimap?.frame = NSRect(
+        coordinator.scrollView?.frame = scrollViewFrame
+        coordinator.minimap?.frame = NSRect(
             x: bounds.width - minimapWidth,
             y: 0,
             width: minimapWidth,
@@ -160,17 +189,28 @@ struct CodeTextEditor: NSViewRepresentable {
 
         updateSharedTextView(textView)
 
-        // Until SwiftUI gives us a real width there's nothing useful to lay
-        // out. Skip — we'll be called again once the parent is sized.
-        guard scrollViewFrame.width > 0, let minimap = context.coordinator.minimap else { return }
+        // We need bounds.width > 0 (otherwise the NSRect normalization
+        // shenanigans below kick in) AND room to fit at least the gutter
+        // inset on both sides — without this, `applyWrapping` derives a
+        // negative containerWidth (e.g. 16 - 96 = -80) and configureMode
+        // caches a broken layout that doesn't recover when the real width
+        // arrives. Check container.bounds.width, NOT scrollViewFrame.width:
+        // NSRect(width: -16) normalizes to (x: -16, width: 16), so a
+        // `scrollViewFrame.width > 0` guard passes even when bounds.width is
+        // 0.
+        guard let minimap = coordinator.minimap else { return }
+        let minimumWidth = EditorTextViewConstants.minimapWidth + 2 * textView.textContainerInset.width
+        let geometryUsable = bounds.width >= minimumWidth
 
-        applyWrapping(textView: textView, contentWidth: scrollViewFrame.width, coordinator: context.coordinator)
+        if geometryUsable {
+            applyWrapping(textView: textView, contentWidth: scrollViewFrame.width, coordinator: coordinator)
+        }
 
-        if context.coordinator.didConfigureMode {
-            updateMode(textView: textView, coordinator: context.coordinator)
-        } else {
-            context.coordinator.didConfigureMode = true
-            configureMode(textView: textView, minimap: minimap, coordinator: context.coordinator)
+        if !coordinator.didConfigureMode, geometryUsable {
+            coordinator.didConfigureMode = true
+            configureMode(textView: textView, minimap: minimap, coordinator: coordinator)
+        } else if coordinator.didConfigureMode, fromSwiftUI {
+            updateMode(textView: textView, coordinator: coordinator)
         }
         textView.needsDisplay = true
     }
@@ -222,6 +262,19 @@ struct CodeTextEditor: NSViewRepresentable {
             layoutManager.textContainerChangedGeometry(textContainer)
             let fullRange = NSRange(location: 0, length: textStorage.length)
             layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+
+            // invalidateLayout marks layout dirty but AppKit keeps the
+            // cached glyph positions from the previous container width, so
+            // the visible text stays clipped/offset until something forces a
+            // fresh setAttributedString. Re-applying the existing storage
+            // forces a real relayout while preserving selection.
+            if coordinator.didConfigureMode, textStorage.length > 0 {
+                let preservedRanges = textView.selectedRanges
+                let snapshot = NSAttributedString(attributedString: textStorage)
+                textStorage.setAttributedString(snapshot)
+                textView.setSelectedRanges(preservedRanges, affinity: .downstream, stillSelecting: false)
+            }
+
             layoutManager.ensureLayout(for: textContainer)
             textView.needsLayout = true
             textView.needsDisplay = true
@@ -321,6 +374,15 @@ struct CodeTextEditor: NSViewRepresentable {
                 }
             }
 
+            // Seed the bookkeeping that updateMode compares against, so the
+            // first updateMode after any text edit doesn't incorrectly see
+            // documentChanged/colorSchemeChanged as true and reset the
+            // cursor to position 0 + scroll to top.
+            coordinator.lastDocumentID = documentID
+            coordinator.lastIsDark = isDark
+
+            finalizeInitialLayout(textView: textView, coordinator: coordinator)
+
         case .diff(let presentation, let hunks, let reference, let onReload):
             textView.isEditable = false
             textView.allowsUndo = false
@@ -360,9 +422,40 @@ struct CodeTextEditor: NSViewRepresentable {
                     textView.scrollToLine(max(firstLine - 3, 1))
                 }
             }
+
+            coordinator.lastDocumentID = documentID
+
+            finalizeInitialLayout(textView: textView, coordinator: coordinator)
         }
 
         minimap.totalLines = max(textView.string.components(separatedBy: "\n").count, 1)
+    }
+
+    /// Forces a fresh layout pass on the text view's contents and resets the
+    /// scroll origin to the top-left. Call once after the very first
+    /// setAttributedString in `configureMode`. Without this, the initial paint
+    /// can show stale glyph positions cached from when the text container had
+    /// its placeholder geometry, plus a non-zero clip view origin from
+    /// AppKit's auto-scroll-to-selection during the first text load — which
+    /// is what the post-edit re-highlight was inadvertently fixing.
+    private func finalizeInitialLayout(textView: EditorTextView, coordinator: Coordinator) {
+        if let layoutManager = textView.layoutManager,
+           let textContainer = textView.textContainer,
+           let textStorage = textView.textStorage,
+           textStorage.length > 0 {
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+            layoutManager.ensureLayout(for: textContainer)
+        }
+
+        if let scrollView = coordinator.scrollView {
+            scrollView.contentView.setBoundsOrigin(.zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            coordinator.minimap?.updateViewport(from: scrollView)
+        }
+
+        textView.needsLayout = true
+        textView.needsDisplay = true
     }
 
     private func updateMode(textView: EditorTextView, coordinator: Coordinator) {
