@@ -7,9 +7,9 @@ enum EditorTextViewConstants {
     static let minimapWidth: CGFloat = 16
 
     // Diff mode gutter layout (single line number, no fold column)
-    static let diffGutterWidth: CGFloat = 52
-    static let diffNumEndX: CGFloat = 42
-    static let diffMarkerX: CGFloat = 46
+    static let diffGutterWidth: CGFloat = 36
+    static let diffNumEndX: CGFloat = 26
+    static let diffMarkerX: CGFloat = 30
 }
 
 // MARK: - Editor Text View with Gutter
