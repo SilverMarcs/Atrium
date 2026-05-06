@@ -747,6 +747,50 @@ struct CodeTextEditor: NSViewRepresentable {
             }
         }
 
+        /// Re-runs syntax highlighting and applies the result as an
+        /// **attributes-only** change against the existing text storage. The
+        /// caller must guarantee that `source` equals the current storage
+        /// string (e.g. the rehighlight after a keystroke). Because text isn't
+        /// replaced, AppKit doesn't push an undo entry and the user's
+        /// selection/cursor stays put — fixing the cursor-jump-while-typing
+        /// and the broken Cmd+Z behaviour caused by `setAttributedString`
+        /// wiping the undo stack on every keystroke.
+        func reapplyHighlightAttributes(
+            source: String,
+            fileExtension: String,
+            fontSize: CGFloat,
+            isDark: Bool,
+            postProcess: (@MainActor (EditorTextView, NSTextStorage) -> Void)? = nil
+        ) {
+            guard let textView, let storage = textView.textStorage else { return }
+            guard storage.string == source else { return }
+
+            highlightTask?.cancel()
+            highlightGeneration &+= 1
+            let gen = highlightGeneration
+
+            highlightTask = Task { [weak self] in
+                let attr = await SyntaxHighlighter.highlightAsync(
+                    source,
+                    fileExtension: fileExtension,
+                    fontSize: fontSize,
+                    isDark: isDark
+                )
+                guard !Task.isCancelled, let self, gen == self.highlightGeneration else { return }
+                guard let textView = self.textView, let storage = textView.textStorage else { return }
+                guard storage.string == attr.string else { return }
+
+                let fullRange = NSRange(location: 0, length: storage.length)
+                storage.beginEditing()
+                storage.setAttributes([:], range: fullRange)
+                attr.enumerateAttributes(in: NSRange(location: 0, length: attr.length), options: []) { attrs, range, _ in
+                    storage.setAttributes(attrs, range: range)
+                }
+                storage.endEditing()
+                postProcess?(textView, storage)
+            }
+        }
+
         func installScrollObserver(name: NSNotification.Name, object: Any?) {
             if let scrollObserver {
                 NotificationCenter.default.removeObserver(scrollObserver)
@@ -783,20 +827,27 @@ struct CodeTextEditor: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             guard let textBinding = parent.text else { return }
 
+            // Hold isEditing across the binding write AND the SwiftUI update
+            // pass it triggers. Without this, `updateMode` runs while the
+            // flag is already false and re-enters `applyHighlight` (line ~479)
+            // for text that just changed, doing a full setAttributedString and
+            // resetting cursor/selection. Clearing on the next runloop tick
+            // keeps the guard active for the entire SwiftUI round-trip.
             isEditing = true
             textBinding.wrappedValue = textView.string
-            isEditing = false
+            DispatchQueue.main.async { [weak self] in
+                self?.isEditing = false
+            }
 
             rehighlightTask?.cancel()
             rehighlightTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled, let self, let editorTextView = self.textView else { return }
-                self.applyHighlight(
+                self.reapplyHighlightAttributes(
                     source: editorTextView.string,
                     fileExtension: self.parent.fileExtension,
                     fontSize: editorTextView.editorFontSize,
                     isDark: editorTextView.isDarkAppearance,
-                    preserveSelection: true,
                     postProcess: { textView, _ in
                         textView.recomputeFolding()
                         textView.applyFoldAttributes()
