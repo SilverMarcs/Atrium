@@ -311,14 +311,15 @@ struct MacMarkdownRenderer: Sendable {
         language: String?,
         blockID: Int
     ) async -> NSAttributedString {
-        let codeFont = NSFont.monospacedSystemFont(ofSize: codeFontSize, weight: .regular)
-        let output = NSMutableAttributedString(
-            string: content,
-            attributes: [.foregroundColor: NSColor.labelColor]
+        let highlighted = SyntaxHighlighter.highlight(
+            content,
+            languageHint: language,
+            fontSize: codeFontSize,
+            isDark: themeName.contains("dark")
         )
 
+        let output = NSMutableAttributedString(attributedString: highlighted)
         output.addAttributes([
-            .font: codeFont,
             .paragraphStyle: codeBlockParagraphStyle(),
             .markdownCodeBlockID: blockID
         ], range: output.fullRange)

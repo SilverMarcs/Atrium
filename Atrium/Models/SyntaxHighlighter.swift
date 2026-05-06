@@ -56,7 +56,35 @@ enum SyntaxHighlighter {
         // Skip Highlightr when we don't know the language. Auto-detect scores
         // every grammar against the source — O(grammars × length) and brutal
         // on large files like project.pbxproj. Plain text is the right call.
-        guard let language = languageName(for: fileExtension) else {
+        return highlight(source, languageHint: fileExtension, font: font, isDark: isDark, theme: theme)
+    }
+
+    /// Highlight using a markdown fence language hint (e.g. ```` ```swift ````,
+    /// ```` ```python ````). Accepts both file extensions ("py") and full
+    /// language names ("python"); unknown hints fall back to plain monospace.
+    nonisolated static func highlight(
+        _ source: String,
+        languageHint: String?,
+        fontSize: CGFloat,
+        isDark: Bool,
+        theme: Theme = defaultTheme
+    ) -> NSAttributedString {
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        return highlight(source, languageHint: languageHint, font: font, isDark: isDark, theme: theme)
+    }
+
+    private nonisolated static func highlight(
+        _ source: String,
+        languageHint: String?,
+        font: NSFont,
+        isDark: Bool,
+        theme: Theme
+    ) -> NSAttributedString {
+        // Skip Highlightr when we don't know the language. Auto-detect scores
+        // every grammar against the source — O(grammars × length) and brutal
+        // on large files like project.pbxproj. Plain text is the right call.
+        guard let hint = languageHint?.lowercased(),
+              let language = languageName(forHint: hint) else {
             return plain(source, font: font, theme: theme)
         }
 
@@ -105,50 +133,53 @@ enum SyntaxHighlighter {
 
     // MARK: - Language Mapping
 
-    private static func languageName(for ext: String) -> String? {
-        switch ext {
-        case "swift":                                return "swift"
-        case "js", "jsx", "mjs":                     return "javascript"
-        case "ts", "tsx":                             return "typescript"
-        case "py":                                    return "python"
-        case "rb":                                    return "ruby"
-        case "rs":                                    return "rust"
-        case "go":                                    return "go"
-        case "c", "h":                                return "c"
-        case "cpp", "hpp", "cc", "cxx":               return "cpp"
-        case "m", "mm":                               return "objectivec"
-        case "java":                                  return "java"
-        case "kt", "kts":                             return "kotlin"
-        case "cs":                                    return "csharp"
-        case "php":                                   return "php"
-        case "sh", "bash", "zsh":                     return "bash"
-        case "html", "htm":                           return "xml"
-        case "xml", "svg", "plist":                   return "xml"
-        case "css":                                   return "css"
-        case "scss":                                  return "scss"
-        case "less":                                  return "less"
-        case "json":                                  return "json"
-        case "yml", "yaml":                           return "yaml"
-        case "toml":                                  return "ini"
-        case "md", "markdown":                        return "markdown"
-        case "sql":                                   return "sql"
-        case "r", "R":                                return "r"
-        case "lua":                                   return "lua"
-        case "pl", "pm":                              return "perl"
-        case "dart":                                  return "dart"
-        case "ex", "exs":                             return "elixir"
-        case "erl", "hrl":                            return "erlang"
-        case "hs":                                    return "haskell"
-        case "scala":                                 return "scala"
-        case "tf":                                    return "hcl"
-        case "dockerfile", "Dockerfile":              return "dockerfile"
-        case "makefile", "Makefile", "mk":            return "makefile"
-        case "cmake", "CMakeLists.txt":               return "cmake"
-        case "groovy", "gradle":                      return "groovy"
-        case "vim":                                   return "vim"
-        case "proto":                                 return "protobuf"
-        case "graphql", "gql":                        return "graphql"
-        default:                                      return nil
+    /// Maps a lowercased file extension or markdown fence hint
+    /// (e.g. "py", "python", "swift", "c++") to a highlight.js language name.
+    private static func languageName(forHint hint: String) -> String? {
+        switch hint {
+        case "swift":                                          return "swift"
+        case "js", "javascript", "jsx", "mjs", "node":         return "javascript"
+        case "ts", "typescript", "tsx":                        return "typescript"
+        case "py", "python", "python3":                        return "python"
+        case "rb", "ruby":                                     return "ruby"
+        case "rs", "rust":                                     return "rust"
+        case "go", "golang":                                   return "go"
+        case "c", "h":                                         return "c"
+        case "cpp", "c++", "cxx", "cc", "hpp":                 return "cpp"
+        case "objc", "objectivec", "objective-c", "m", "mm":   return "objectivec"
+        case "java":                                           return "java"
+        case "kt", "kotlin", "kts":                            return "kotlin"
+        case "cs", "csharp", "c#":                             return "csharp"
+        case "php":                                            return "php"
+        case "sh", "bash", "shell", "shellscript", "zsh", "console": return "bash"
+        case "html", "htm":                                    return "xml"
+        case "xml", "svg", "plist":                            return "xml"
+        case "css":                                            return "css"
+        case "scss", "sass":                                   return "scss"
+        case "less":                                           return "less"
+        case "json":                                           return "json"
+        case "yml", "yaml":                                    return "yaml"
+        case "toml", "ini":                                    return "ini"
+        case "md", "markdown":                                 return "markdown"
+        case "sql":                                            return "sql"
+        case "r":                                              return "r"
+        case "lua":                                            return "lua"
+        case "pl", "perl", "pm":                               return "perl"
+        case "dart":                                           return "dart"
+        case "ex", "elixir", "exs":                            return "elixir"
+        case "erl", "erlang", "hrl":                           return "erlang"
+        case "hs", "haskell":                                  return "haskell"
+        case "scala":                                          return "scala"
+        case "tf", "terraform", "hcl":                         return "hcl"
+        case "dockerfile", "docker":                           return "dockerfile"
+        case "makefile", "make", "mk":                         return "makefile"
+        case "cmake":                                          return "cmake"
+        case "groovy", "gradle":                               return "groovy"
+        case "vim", "viml":                                    return "vim"
+        case "proto", "protobuf":                              return "protobuf"
+        case "graphql", "gql":                                 return "graphql"
+        case "diff", "patch":                                  return "diff"
+        default:                                               return nil
         }
     }
 }
