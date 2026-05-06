@@ -65,6 +65,7 @@ struct InspectorView: View {
                 )) {
                     ForEach(runnable) { cmd in
                         Label(cmd.title, systemImage: "play.fill").tag(cmd.id)
+                            .labelStyle(.titleOnly)
                     }
                 }
                 .labelsHidden()

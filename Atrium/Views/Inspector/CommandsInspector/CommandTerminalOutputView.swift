@@ -5,6 +5,11 @@ struct CommandTerminalOutputView: View {
 
     private let barHeight: CGFloat = 26
 
+    private var isRunning: Bool { terminal.hasChildProcess }
+    private var hasScript: Bool {
+        !(terminal.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -42,6 +47,23 @@ struct CommandTerminalOutputView: View {
                     .help("Reset terminal")
                     .frame(width: barHeight, height: barHeight)
                     .background(.secondary.opacity(0.15), in: Circle())
+
+                    if isRunning || hasScript {
+                        Button {
+                            if isRunning {
+                                terminal.interrupt()
+                            } else {
+                                terminal.workspace?.runCommand(terminal)
+                            }
+                        } label: {
+                            Image(systemName: isRunning ? "stop.fill" : "play.fill")
+                                .font(.caption2)
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .help(isRunning ? "Stop" : "Run")
+                        .frame(width: barHeight, height: barHeight)
+                        .background(.secondary.opacity(0.15), in: Circle())
+                    }
                 }
                 .buttonStyle(.borderless)
             }
