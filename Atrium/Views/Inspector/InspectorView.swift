@@ -43,12 +43,11 @@ struct InspectorView: View {
 
     @ViewBuilder
     private func runCommandControl(for defaultCommand: Terminal) -> some View {
-        let others = workspace.commands.filter { cmd in
-            cmd.id != defaultCommand.id
-                && !(cmd.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+        let runnable = workspace.commands.filter { cmd in
+            !(cmd.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         }
 
-        if others.isEmpty {
+        if runnable.count <= 1 {
             Button {
                 trigger(defaultCommand)
             } label: {
@@ -56,18 +55,26 @@ struct InspectorView: View {
             }
         } else {
             Menu {
-                ForEach(others) { cmd in
-                    Button {
-                        trigger(cmd)
-                    } label: {
-                        Label(cmd.title, systemImage: cmd.hasChildProcess ? "stop.fill" : "play.fill")
+                Picker("Default Command", selection: Binding(
+                    get: { workspace.defaultCommand?.id ?? defaultCommand.id },
+                    set: { newID in
+                        if let cmd = workspace.commands.first(where: { $0.id == newID }) {
+                            workspace.setDefaultCommand(cmd)
+                        }
+                    }
+                )) {
+                    ForEach(runnable) { cmd in
+                        Label(cmd.title, systemImage: "play.fill").tag(cmd.id)
                     }
                 }
+                .labelsHidden()
+                .pickerStyle(.inline)
             } label: {
                 runIcon(for: defaultCommand)
             } primaryAction: {
                 trigger(defaultCommand)
             }
+            .id(defaultCommand.id)
         }
     }
 

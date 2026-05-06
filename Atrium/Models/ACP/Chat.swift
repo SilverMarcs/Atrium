@@ -140,10 +140,15 @@ final class Chat: Identifiable, Hashable, Codable {
             msgBlocks.append(MessageBlock(type: .text, text: text))
         }
         for a in attachments {
+            let ext = (a.fileName as NSString).pathExtension.isEmpty
+                ? ChatImageStore.fileExtension(forMimeType: a.mimeType)
+                : (a.fileName as NSString).pathExtension
+            guard let filename = ChatImageStore.save(data: a.data, extensionHint: ext) else {
+                continue
+            }
             msgBlocks.append(MessageBlock(
                 type: .image,
-                imageData: a.data,
-                imageMimeType: a.mimeType
+                imageFilename: filename
             ))
         }
         guard !msgBlocks.isEmpty else { return }

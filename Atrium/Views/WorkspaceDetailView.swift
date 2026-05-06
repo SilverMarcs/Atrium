@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WorkspaceDetailView: View {
+    @Environment(AppState.self) private var appState
     let chat: Chat
     let workspace: Workspace
     @State private var showingScratchPad = false
@@ -31,6 +32,12 @@ struct WorkspaceDetailView: View {
             }
             .sheet(isPresented: $showingScratchPad) {
                 ScratchPadSheet(workspace: workspace)
+            }
+            .onChange(of: appState.scratchPadRequest) { _, newValue in
+                if newValue === workspace {
+                    showingScratchPad = true
+                    appState.scratchPadRequest = nil
+                }
             }
             .navigationTitle(workspace.name)
             .navigationSubtitle(navigationSubtitle)

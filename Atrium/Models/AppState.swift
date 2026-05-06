@@ -25,4 +25,8 @@ final class AppState {
     // Pending replacement when Cmd+R is invoked while the default command is
     // already running. ContentView observes this to present a confirm alert.
     var pendingRunReplacement: Terminal?
+
+    // Workspace whose scratch pad should be opened. WorkspaceDetailView watches
+    // this and presents the sheet when its workspace matches.
+    var scratchPadRequest: Workspace?
 }

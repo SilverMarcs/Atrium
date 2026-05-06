@@ -48,7 +48,7 @@ struct WorkspaceRow: View {
 
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Label {
                 Text(workspace.name)
                     .lineLimit(1)
@@ -71,16 +71,38 @@ struct WorkspaceRow: View {
 
             Spacer(minLength: 4)
 
+            if !workspace.scratchPad.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    openScratchPad()
+                } label: {
+                    Image(systemName: "note.text")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
             if workspace.hasActiveChildProcess {
-                Image(systemName: "terminal.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                Button {
+                    openCommands()
+                } label: {
+                    Image(systemName: "terminal.fill")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
 
             ForEach(displayedProviders, id: \.self) { provider in
-                Image(provider.imageName)
-                    .foregroundStyle(provider.color)
-                    .symbolEffect(.pulse, isActive: notificationProviders.contains(provider))
+                Button {
+                    selectChat(for: provider)
+                } label: {
+                    Image(provider.imageName)
+                        .foregroundStyle(provider.color)
+                        .imageScale(.small)
+                        .symbolEffect(.pulse, isActive: notificationProviders.contains(provider))
+                }
+                .buttonStyle(.plain)
             }
         }
         .alert("Rename Workspace", isPresented: $isRenaming) {
@@ -228,6 +250,41 @@ struct WorkspaceRow: View {
             try workspace.setCustomIcon(from: url)
         } catch {
             print("WorkspaceRow: failed to set custom icon: \(error)")
+        }
+    }
+
+    @discardableResult
+    private func ensureSelectedChat() -> Chat {
+        appState.expandedWorkspaceIDs.insert("w:\(workspace.id.uuidString)")
+        if let active = workspace.chats.last(where: { !$0.isArchived && $0.isActive }) {
+            appState.selectedChat = active
+            return active
+        }
+        if let recent = workspace.chats.last(where: { !$0.isArchived }) {
+            appState.selectedChat = recent
+            return recent
+        }
+        let chat = workspace.addChat(provider: defaultChatMode, permissionMode: defaultPermissionMode)
+        appState.selectedChat = chat
+        return chat
+    }
+
+    private func openCommands() {
+        ensureSelectedChat()
+        workspace.inspectorState.selectedTab = .commands
+    }
+
+    private func openScratchPad() {
+        ensureSelectedChat()
+        appState.scratchPadRequest = workspace
+    }
+
+    private func selectChat(for provider: AgentProvider) {
+        if let chat = workspace.chats.last(where: { !$0.isArchived && $0.provider == provider }) {
+            appState.expandedWorkspaceIDs.insert("w:\(workspace.id.uuidString)")
+            appState.selectedChat = chat
+        } else {
+            ensureSelectedChat()
         }
     }
 

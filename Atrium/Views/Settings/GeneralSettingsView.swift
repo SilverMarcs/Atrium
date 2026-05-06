@@ -7,7 +7,6 @@ struct GeneralSettingsView: View {
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("sidebarRowSize") private var sidebarRowSize: SidebarRowSizePreference = .medium
-    @AppStorage("editorPanelSidebarBehavior") private var editorPanelSidebarBehavior: EditorPanelSidebarBehavior = .default
     @AppStorage(TerminalProcessRegistry.fontSizeKey) private var terminalFontSize: Double = Double(TerminalProcessRegistry.defaultFontSize)
     @AppStorage("enterToSendChat") private var enterToSendChat: Bool = false
 
@@ -20,11 +19,6 @@ struct GeneralSettingsView: View {
                         // Text(size.displayName).tag(size)
                     // }
                 // }
-                Picker("When editor panel opens", selection: $editorPanelSidebarBehavior) {
-                    ForEach(EditorPanelSidebarBehavior.allCases) { behavior in
-                        Text(behavior.displayName).tag(behavior)
-                    }
-                }
             }
 
             Section {

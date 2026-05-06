@@ -5,7 +5,6 @@ struct ContentView: View {
     @Environment(WorkspaceStore.self) private var store
     @State private var searchText = ""
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @AppStorage("editorPanelSidebarBehavior") private var editorPanelSidebarBehavior: EditorPanelSidebarBehavior = .default
     @State private var showingOnboarding = false
 
     var body: some View {
@@ -69,22 +68,6 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { }
         } message: { command in
             Text("\"\(command.title)\" is currently running. Replacing will stop it and start a new instance.")
-        }
-        .onChange(of: appState.selectedChat?.workspace?.editorPanel.isOpen ?? false) { _, isOpen in
-            let behavior = editorPanelSidebarBehavior
-            guard behavior != .default else { return }
-            if isOpen {
-                Task { @MainActor in
-                    // Let the bottom sheet expansion animation finish first.
-                    try? await Task.sleep(for: .milliseconds(200))
-                    guard appState.selectedChat?.workspace?.editorPanel.isOpen == true else { return }
-                    if behavior.hidesSidebar { appState.sidebarVisibility = .detailOnly }
-                    if behavior.hidesInspector { appState.showingInspector = false }
-                }
-            } else {
-                if behavior.hidesSidebar { appState.sidebarVisibility = .automatic }
-                if behavior.hidesInspector { appState.showingInspector = true }
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToChat)) { note in
             guard let info = note.userInfo,
