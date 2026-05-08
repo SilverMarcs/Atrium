@@ -3,6 +3,7 @@ import SwiftUI
 struct FileNodeView: View {
     let item: FileItem
     @Environment(FileTreeInspectorState.self) private var state
+    @Environment(EditorPanel.self) private var editorPanel
 
     var body: some View {
         @Bindable var state = state
@@ -39,6 +40,15 @@ struct FileNodeView: View {
         } else {
             FileRowView(item: item)
                 .tag(item.id)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if state.selectedID == item.id {
+                        editorPanel.openFile(item.url)
+                    } else {
+                        state.selectedID = item.id
+                    }
+                }
                 .contextMenu { FileTreeContextMenu(item: item) }
                 .listRowSeparator(.hidden)
         }

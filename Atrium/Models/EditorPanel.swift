@@ -10,6 +10,9 @@ enum EditorPanelContent: Hashable, Codable {
 struct HighlightRequest: Equatable {
     let lineNumber: Int
     let columnRange: Range<Int>
+    /// Distinguishes otherwise-identical requests so re-clicking the same
+    /// search result re-fires navigation past the dedupe guard.
+    let nonce: UUID = UUID()
 }
 
 /// Shared state for the bottom slide-up editor panel in the workspace.

@@ -13,7 +13,20 @@ struct SearchInspectorView: View {
                     ForEach(fileResult.matches) { match in
                         matchRow(match)
                             .tag(match.id)
+                            .selectionDisabled(false)
                             .padding(.leading, -15)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if state.selectedID == match.id {
+                                    editorPanel.openFileAndHighlight(
+                                        match.fileURL,
+                                        lineNumber: match.lineNumber,
+                                        columnRange: match.columnRange
+                                    )
+                                } else {
+                                    state.selectedID = match.id
+                                }
+                            }
                     }
                 } label: {
                     FileLabel(name: fileResult.fileName, icon: fileResult.fileURL.fileIcon) {
@@ -25,8 +38,19 @@ struct SearchInspectorView: View {
                                 .truncationMode(.middle)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation {
+                            if state.expandedIDs.contains(fileResult.id) {
+                                state.expandedIDs.remove(fileResult.id)
+                            } else {
+                                state.expandedIDs.insert(fileResult.id)
+                            }
+                        }
+                    }
                 }
-                .tag(fileResult.id)
+                .selectionDisabled()
             }
             .listRowSeparator(.hidden)
         }
@@ -50,12 +74,6 @@ struct SearchInspectorView: View {
         }
         .onChange(of: state.selectedID) { _, newID in
             guard let id = newID else { return }
-
-            if let fileResult = state.model.results.first(where: { $0.id == id }) {
-                editorPanel.openFile(fileResult.fileURL)
-                return
-            }
-
             for fileResult in state.model.results {
                 if let match = fileResult.matches.first(where: { $0.id == id }) {
                     editorPanel.openFileAndHighlight(
