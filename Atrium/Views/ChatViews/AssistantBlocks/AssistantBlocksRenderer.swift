@@ -149,8 +149,9 @@ struct AssistantBlocksRenderer: Sendable {
                 let diffID = nextDiffID
                 nextDiffID += 1
 
-                let isWrite = block.isWriteWithContent
-                let maxLines: Int? = isWrite ? 20 : nil
+                // let isWrite = block.isWriteWithContent
+                // let maxLines: Int? = isWrite ? 20 : nil
+                let maxLines: Int? = nil
 
                 let headerHeight: CGFloat = 24
                 let diffFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
