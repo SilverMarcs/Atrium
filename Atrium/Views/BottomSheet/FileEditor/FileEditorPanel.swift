@@ -63,7 +63,10 @@ struct FileEditorPanel: View {
                     gutterDiff: gutterDiff,
                     highlightRequest: panel.highlightRequest,
                     repositoryRootURL: directoryURL,
-                    onReloadFromDisk: { loader.load(fileURL: fileURL) },
+                    onReloadFromDisk: {
+                        await loader.reloadInPlace(fileURL: fileURL)
+                        refreshGitState()
+                    },
                     onSave: { saveFile() }
                 )
             case .image(let image):

@@ -484,6 +484,7 @@ struct CodeTextEditor: NSViewRepresentable {
                     fontSize: fontSize,
                     isDark: isDark,
                     preserveSelection: true,
+                    preserveScroll: !documentChanged,
                     postProcess: { textView, _ in
                         textView.recomputeFolding()
                         textView.applyFoldAttributes()
@@ -526,6 +527,7 @@ struct CodeTextEditor: NSViewRepresentable {
             textView.diffLineKinds = presentation.lineKinds
             textView.diffLineNumbers = presentation.lineNumbers
 
+            let referenceChanged = coordinator.reference != reference
             coordinator.presentation = presentation
             coordinator.hunks = hunks
             coordinator.reference = reference
@@ -540,6 +542,7 @@ struct CodeTextEditor: NSViewRepresentable {
                     fontSize: fontSize,
                     isDark: isDark,
                     preserveSelection: false,
+                    preserveScroll: !referenceChanged,
                     postProcess: { _, storage in
                         Self.applyInlineHighlights(to: storage, lineKinds: lineKinds)
                     }
@@ -721,15 +724,18 @@ struct CodeTextEditor: NSViewRepresentable {
             fontSize: CGFloat,
             isDark: Bool,
             preserveSelection: Bool,
+            preserveScroll: Bool = false,
             postProcess: (@MainActor (EditorTextView, NSTextStorage) -> Void)? = nil
         ) {
             guard let textView, let storage = textView.textStorage else { return }
 
             let ranges = preserveSelection ? textView.selectedRanges : nil
+            let scrollOrigin = preserveScroll ? scrollView?.contentView.bounds.origin : nil
             storage.setAttributedString(SyntaxHighlighter.plain(source, fontSize: fontSize))
             if let ranges {
                 textView.setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
             }
+            if let scrollOrigin { restoreScrollOrigin(scrollOrigin) }
             postProcess?(textView, storage)
 
             highlightTask?.cancel()
@@ -746,10 +752,12 @@ struct CodeTextEditor: NSViewRepresentable {
                 guard !Task.isCancelled, let self, gen == self.highlightGeneration else { return }
                 guard let textView = self.textView, let storage = textView.textStorage else { return }
                 let preservedRanges = preserveSelection ? textView.selectedRanges : nil
+                let preservedOrigin = preserveScroll ? self.scrollView?.contentView.bounds.origin : nil
                 storage.setAttributedString(attr)
                 if let preservedRanges {
                     textView.setSelectedRanges(preservedRanges, affinity: .downstream, stillSelecting: false)
                 }
+                if let preservedOrigin { self.restoreScrollOrigin(preservedOrigin) }
                 postProcess?(textView, storage)
                 if let pending = self.pendingFindHighlight {
                     self.pendingFindHighlight = nil
@@ -803,6 +811,26 @@ struct CodeTextEditor: NSViewRepresentable {
                 storage.endEditing()
                 postProcess?(textView, storage)
             }
+        }
+
+        /// Re-applies a saved scroll origin (clamped to the document) and
+        /// syncs the minimap. Used after `setAttributedString` replaces the
+        /// text storage, which would otherwise let AppKit reset scroll to top.
+        func restoreScrollOrigin(_ origin: NSPoint) {
+            guard let scrollView else { return }
+            let clipView = scrollView.contentView
+            // Force layout so documentView.frame reflects the new content
+            // before we ask NSClipView to clamp.
+            if let textView,
+               let layoutManager = textView.layoutManager,
+               let textContainer = textView.textContainer {
+                layoutManager.ensureLayout(for: textContainer)
+            }
+            let target = NSRect(origin: origin, size: clipView.bounds.size)
+            let constrained = clipView.constrainBoundsRect(target)
+            clipView.setBoundsOrigin(constrained.origin)
+            scrollView.reflectScrolledClipView(clipView)
+            minimap?.updateViewport(from: scrollView)
         }
 
         func installScrollObserver(name: NSNotification.Name, object: Any?) {

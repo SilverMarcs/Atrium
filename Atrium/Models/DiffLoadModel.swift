@@ -35,6 +35,25 @@ final class DiffLoadModel {
         }
     }
 
+    /// Reloads the diff without dropping `phase` to `.loading`. Use after
+    /// applying a hunk so the DiffPanel's CodeTextEditor stays mounted and
+    /// keeps its scroll position.
+    func reloadInPlace(reference: GitDiffReference) async {
+        loadTask?.cancel()
+        let isImage = reference.fileURL.isPreviewableImage
+        if isImage {
+            let images = await Task.detached(priority: .userInitiated) {
+                await DiffLoadEngine.loadImageDiff(reference: reference)
+            }.value
+            applyImage(images)
+        } else {
+            let result = await Task.detached(priority: .userInitiated) {
+                await DiffLoadEngine.loadTextDiff(reference: reference)
+            }.value
+            applyText(result)
+        }
+    }
+
     private func applyText(_ result: DiffLoadEngine.TextResult) {
         switch result {
         case .success(let presentation, let file):

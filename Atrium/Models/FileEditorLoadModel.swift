@@ -48,6 +48,18 @@ final class FileEditorLoadModel {
         }
     }
 
+    /// Reloads file contents from disk without dropping the current `phase`.
+    /// Use this when the file is being re-read in response to an action that
+    /// shouldn't blank the editor (e.g. discard/stage/unstage a hunk) — the
+    /// CodeTextEditor stays mounted and keeps its scroll position.
+    func reloadInPlace(fileURL: URL) async {
+        loadTask?.cancel()
+        let outcome = await Task.detached(priority: .userInitiated) {
+            FileLoadEngine.performLoad(fileURL: fileURL)
+        }.value
+        apply(outcome, fileURL: fileURL)
+    }
+
     func reloadIfChanged(fileURL: URL) {
         guard case .text = phase, content == savedContent else { return }
         let previousModDate = lastModificationDate

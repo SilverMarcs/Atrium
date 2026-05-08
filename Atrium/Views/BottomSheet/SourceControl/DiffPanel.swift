@@ -59,7 +59,7 @@ struct DiffPanel: View {
                         fileExtension: reference.fileURL.pathExtension.lowercased(),
                         hunks: file?.hunks ?? [],
                         reference: reference,
-                        onReload: { loader.load(reference: reference) }
+                        onReload: { await loader.reloadInPlace(reference: reference) }
                     )
                 }
             case .message(let text):
