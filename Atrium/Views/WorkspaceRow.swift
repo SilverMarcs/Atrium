@@ -25,6 +25,12 @@ struct WorkspaceRow: View {
             .map { $0.provider })
     }
 
+    private var processingProviders: Set<AgentProvider> {
+        Set(workspace.chats.lazy
+            .filter { !$0.isArchived && $0.session.isProcessing }
+            .map { $0.provider })
+    }
+
     private var displayedProviders: [AgentProvider] {
         guard !isExpanded else { return [] }
         var seen = Set<AgentProvider>()
@@ -98,9 +104,9 @@ struct WorkspaceRow: View {
                     selectChat(for: provider)
                 } label: {
                     Image(provider.imageName)
-                        .foregroundStyle(provider.color)
+                        .foregroundStyle(notificationProviders.contains(provider) ? Color.red : provider.color)
                         .imageScale(.small)
-                        .symbolEffect(.pulse, isActive: notificationProviders.contains(provider))
+                        .symbolEffect(.pulse, isActive: processingProviders.contains(provider))
                 }
                 .buttonStyle(.plain)
             }
