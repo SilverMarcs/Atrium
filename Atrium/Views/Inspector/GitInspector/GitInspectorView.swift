@@ -149,6 +149,9 @@ struct GitInspectorView: View {
         .sheet(isPresented: $state.showCommitLogSheet) {
             GitCommitLogSheet(state: state)
         }
+        .sheet(item: $state.commitDiffSheetItem) { item in
+            GitCommitDiffSheet(item: item)
+        }
         .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
             Button("Undo", role: .destructive) {
                 state.undoLastCommit(directoryURL: directoryURL)

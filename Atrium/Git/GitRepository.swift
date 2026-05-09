@@ -303,6 +303,15 @@ actor GitRepository {
         try await self.executor.execute(GitLogCommand(limit: limit), at: repositoryRootURL)
     }
 
+    func changedFiles(forCommit hash: String, at repositoryRootURL: URL) async throws -> [GitChangedFile] {
+        let entries = try await self.executor.execute(GitCommitFilesCommand(hash: hash), at: repositoryRootURL)
+        return entries.compactMap { entry in
+            guard let kind = Self.changeKindFromDiffTreeStatus(entry.status) else { return nil }
+            let fileURL = repositoryRootURL.appending(path: entry.path).standardizedFileURL
+            return GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: kind)
+        }
+    }
+
     func switchBranch(to branch: String, at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitSwitchCommand(branch: branch), at: repositoryRootURL)
     }
@@ -371,16 +380,7 @@ actor GitRepository {
         return await withTaskGroup(of: (Int, GitUnpushedCommit).self) { group in
             for (index, entry) in commitEntries.enumerated() {
                 group.addTask {
-                    let fileEntries = (try? await self.executor.execute(
-                        GitCommitFilesCommand(hash: entry.hash), at: repositoryRootURL
-                    )) ?? []
-
-                    let files: [GitChangedFile] = fileEntries.compactMap { fileEntry in
-                        guard let kind = Self.changeKindFromDiffTreeStatus(fileEntry.status) else { return nil }
-                        let fileURL = repositoryRootURL.appending(path: fileEntry.path).standardizedFileURL
-                        return GitChangedFile(fileURL: fileURL, repositoryRelativePath: fileEntry.path, kind: kind)
-                    }
-
+                    let files = (try? await self.changedFiles(forCommit: entry.hash, at: repositoryRootURL)) ?? []
                     return (index, GitUnpushedCommit(hash: entry.hash, message: entry.message, files: files))
                 }
             }

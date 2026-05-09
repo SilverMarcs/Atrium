@@ -34,6 +34,14 @@ struct GitInspectorChangesList: View {
                                     },
                                     onUndo: {
                                         state.showUndoLastCommitAlert = true
+                                    },
+                                    onShowChanges: {
+                                        state.commitDiffSheetItem = GitCommitDiffSheetItem(
+                                            hash: commit.hash,
+                                            message: commit.message,
+                                            repositoryRootURL: snapshot.repositoryRootURL,
+                                            preloadedFiles: commit.files
+                                        )
                                     }
                                 )
                             }

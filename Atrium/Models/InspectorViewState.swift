@@ -70,4 +70,13 @@ final class GitInspectorState {
     var showUndoLastCommitAlert = false
     var showSyncWithBranchSheet = false
     var showCommitLogSheet = false
+    var commitDiffSheetItem: GitCommitDiffSheetItem?
+}
+
+struct GitCommitDiffSheetItem: Identifiable {
+    let hash: String
+    let message: String
+    let repositoryRootURL: URL
+    let preloadedFiles: [GitChangedFile]?
+    var id: String { hash }
 }

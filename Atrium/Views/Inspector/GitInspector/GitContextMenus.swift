@@ -52,8 +52,16 @@ struct GitCommitContextMenu: View {
     let isDirty: Bool
     var onRename: (() -> Void)?
     var onUndo: (() -> Void)?
+    var onShowChanges: (() -> Void)?
 
     var body: some View {
+        if let onShowChanges, !commit.files.isEmpty {
+            Button { onShowChanges() } label: {
+                Label("View Changes…", systemImage: "doc.richtext")
+            }
+            Divider()
+        }
+
         Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(commit.hash, forType: .string)
