@@ -20,17 +20,36 @@ struct ACPInputArea: View {
             || !chat.pendingAttachments.isEmpty
     }
 
-    private var slashQuery: String? {
+    /// Range of the trailing "/command" token in `chat.prompt`, if the user is
+    /// currently typing one. The token must start with "/" at the beginning of
+    /// the prompt or after whitespace, and must run to the end of the prompt
+    /// without any intervening whitespace.
+    private var slashTokenRange: Range<String.Index>? {
         let prompt = chat.prompt
-        guard prompt.hasPrefix("/") else { return nil }
-        let afterSlash = prompt.dropFirst()
-        // Once whitespace appears after the slash, the user has finished
-        // typing the command name — drop the popover instead of keeping it
-        // open while they type the rest of the line.
-        if afterSlash.contains(where: { $0.isWhitespace || $0.isNewline }) {
-            return nil
+        guard !prompt.isEmpty else { return nil }
+        var idx = prompt.endIndex
+        while idx > prompt.startIndex {
+            let prev = prompt.index(before: idx)
+            let ch = prompt[prev]
+            if ch.isWhitespace || ch.isNewline { return nil }
+            if ch == "/" {
+                if prev == prompt.startIndex {
+                    return prev..<prompt.endIndex
+                }
+                let before = prompt[prompt.index(before: prev)]
+                if before.isWhitespace || before.isNewline {
+                    return prev..<prompt.endIndex
+                }
+                return nil
+            }
+            idx = prev
         }
-        return String(afterSlash)
+        return nil
+    }
+
+    private var slashQuery: String? {
+        guard let range = slashTokenRange else { return nil }
+        return String(chat.prompt[range].dropFirst())
     }
 
     private var filteredCommands: [AvailableCommand] {
@@ -48,10 +67,12 @@ struct ACPInputArea: View {
         Binding(
             get: { showSlashMenu },
             set: { newValue in
-                // Escape / outside-click. Suppress until the slash sequence
-                // ends — don't touch `chat.prompt`, the user can still send
-                // "/foo" as literal text.
-                if !newValue { slashMenuSuppressed = true }
+                // Only treat this as Escape / outside-click when the user is
+                // still inside a slash token. If the popover is closing
+                // because the slash sequence already ended (space typed,
+                // command accepted), don't latch suppression — that would
+                // block the next "/" from reopening the menu.
+                if !newValue, slashQuery != nil { slashMenuSuppressed = true }
             }
         )
     }
@@ -86,6 +107,13 @@ struct ACPInputArea: View {
                         }
                        .font(.body)
                        .onKeyPress(.return) { handleReturnKey() }
+                       .onKeyPress(.tab) {
+                           if showSlashMenu, let top = filteredCommands.first {
+                               applyCommand(top)
+                               return .handled
+                           }
+                           return .ignored
+                       }
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -97,7 +125,7 @@ struct ACPInputArea: View {
                     arrowEdge: .bottom
                 ) {
                     SlashCommandMenu(commands: filteredCommands) { cmd in
-                        chat.prompt = "/\(cmd.name) "
+                        applyCommand(cmd)
                     }
                 }
 
@@ -152,6 +180,14 @@ struct ACPInputArea: View {
         }
 
         return .ignored
+    }
+
+    private func applyCommand(_ cmd: AvailableCommand) {
+        if let range = slashTokenRange {
+            chat.prompt.replaceSubrange(range, with: "/\(cmd.name) ")
+        } else {
+            chat.prompt = "/\(cmd.name) "
+        }
     }
 
     private func send() {
