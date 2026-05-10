@@ -6,6 +6,7 @@ enum MarkdownPart: Equatable {
     case heading(level: Int, text: String)
     case list(items: [ListItem])
     case table(headers: [String], alignments: [TableColumnAlignment], rows: [[String]])
+    case blockquote(text: String, depth: Int)
 }
 
 enum TableColumnAlignment: Equatable {
@@ -60,6 +61,9 @@ struct NativeMarkdownView: View {
 
                 case .table(let headers, let alignments, let rows):
                     tableView(headers: headers, alignments: alignments, rows: rows)
+
+                case .blockquote(let text, let depth):
+                    blockquoteView(text: text, depth: depth)
                 }
             }
         }
@@ -114,6 +118,24 @@ struct NativeMarkdownView: View {
         case .ordered(let n):
             Text("\(n).")
         }
+    }
+
+    // MARK: - Blockquote Rendering
+
+    @ViewBuilder
+    private func blockquoteView(text: String, depth: Int) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(0..<max(1, depth), id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(.secondary)
+                    .frame(width: 3)
+            }
+            Text(LocalizedStringKey(text))
+                .lineSpacing(2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - Table Rendering
@@ -240,6 +262,14 @@ struct NativeMarkdownView: View {
                 continue
             }
 
+            // Handle blockquote (lines starting with `>`)
+            if isBlockquoteLine(line) {
+                let (quote, nextIndex) = parseBlockquote(from: i, lines: lines)
+                parts.append(quote)
+                i = nextIndex
+                continue
+            }
+
             // Collect consecutive non-special lines as regular text
             var textLines: [String] = []
             while i < lines.count {
@@ -250,6 +280,7 @@ struct NativeMarkdownView: View {
                     || isListLine(currentLine)
                     || parseHeading(line: currentLine) != nil
                     || isTableStart(at: i, lines: lines)
+                    || isBlockquoteLine(currentLine)
                 {
                     break
                 }
@@ -346,6 +377,47 @@ struct NativeMarkdownView: View {
     }
 
     // Removed complex tree building; using flat list rendering for simplicity
+
+    // MARK: - Helpers: Blockquotes
+
+    private static func isBlockquoteLine(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix(">")
+    }
+
+    /// Strip a single leading `>` (with optional space) and return the inner content,
+    /// along with how many `>` markers were consumed at this position. Returns nil if
+    /// the line is not a blockquote line.
+    private static func stripBlockquoteMarker(_ line: String) -> (inner: String, depth: Int)? {
+        var s = Substring(line)
+        // Skip leading whitespace
+        while let first = s.first, first == " " || first == "\t" {
+            s = s.dropFirst()
+        }
+        guard s.first == ">" else { return nil }
+        var depth = 0
+        while s.first == ">" {
+            depth += 1
+            s = s.dropFirst()
+            if s.first == " " { s = s.dropFirst() }
+        }
+        return (String(s), depth)
+    }
+
+    private static func parseBlockquote(from start: Int, lines: [String]) -> (MarkdownPart, Int) {
+        var i = start
+        var inner: [String] = []
+        var maxDepth = 1
+        while i < lines.count {
+            let line = lines[i]
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { break }
+            guard let stripped = stripBlockquoteMarker(line) else { break }
+            maxDepth = max(maxDepth, stripped.depth)
+            inner.append(stripped.inner)
+            i += 1
+        }
+        return (.blockquote(text: inner.joined(separator: "\n"), depth: maxDepth), i)
+    }
 
     // MARK: - Helpers: Tables
 
