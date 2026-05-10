@@ -23,54 +23,56 @@ struct GitCommitDiffSheet: View {
                         description: Text("This commit has no file changes.")
                     )
                 } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                            ForEach(files, id: \.repositoryRelativePath) { file in
-                                Section {
-                                    DiffPanel(reference: reference(for: file))
-                                        .frame(minHeight: 320)
-                                        .padding(.bottom, 12)
-                                } header: {
-                                    fileHeader(file)
-                                }
-                            }
+                    List(files, id: \.repositoryRelativePath) { file in
+                        NavigationLink(value: file) {
+                            fileRow(file)
                         }
                     }
+                    .listStyle(.inset)
                 }
             }
             .navigationTitle("Changes in \(shortHash)")
             .navigationSubtitle(item.message)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(role: .confirm) { dismiss() }
-                }
+            .navigationDestination(for: GitChangedFile.self) { file in
+                DiffPanel(reference: reference(for: file))
+                    .navigationTitle(file.fileURL.lastPathComponent)
+                    .navigationSubtitle(file.repositoryRelativePath)
+                    .toolbar { doneToolbar }
             }
+            .toolbar { doneToolbar }
         }
         .frame(minWidth: 720, idealWidth: 900, minHeight: 520, idealHeight: 720)
         .environment(\.isDetachedEditor, true)
         .task(id: item.id) { await load() }
     }
 
+    @ToolbarContentBuilder
+    private var doneToolbar: some ToolbarContent {
+        ToolbarItem(placement: .confirmationAction) {
+            Button(role: .confirm) { dismiss() }
+        }
+    }
+
     @ViewBuilder
-    private func fileHeader(_ file: GitChangedFile) -> some View {
-        HStack(spacing: 6) {
+    private func fileRow(_ file: GitChangedFile) -> some View {
+        HStack(spacing: 8) {
             Image(nsImage: file.fileURL.fileIcon)
                 .resizable()
                 .frame(width: 16, height: 16)
-            Text(file.repositoryRelativePath)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            GitStatusBadge(kind: file.kind, staged: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.fileURL.lastPathComponent)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(file.repositoryRelativePath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             Spacer()
+            GitStatusBadge(kind: file.kind, staged: true)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .padding(.vertical, 2)
     }
 
     private func reference(for file: GitChangedFile) -> GitDiffReference {
