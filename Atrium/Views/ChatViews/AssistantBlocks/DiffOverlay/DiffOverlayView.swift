@@ -1,4 +1,5 @@
 import AppKit
+import SwiftMarkdownView
 
 private final class HeaderButton: NSButton {
     override func hitTest(_ point: NSPoint) -> NSView? {

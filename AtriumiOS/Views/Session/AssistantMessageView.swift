@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Renders an assistant turn as the underlying blocks: contiguous text
-/// runs become a single `NativeMarkdownView`; contiguous tool-call runs
+/// runs become a single `MDView`; contiguous tool-call runs
 /// collapse into one `ToolGroupBadge`. Order is preserved across the run
 /// so a "explanation → tools → follow-up text" cadence looks right.
 struct AssistantMessageView: View {
@@ -12,7 +12,7 @@ struct AssistantMessageView: View {
             ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
                 switch group {
                 case .text(let text):
-                    NativeMarkdownView(text: text)
+                    MDView(content: text)
                 case .tools(let blocks):
                     ToolGroupBadge(tools: blocks)
                 }

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftMarkdownView
 
 final class AssistantBlocksTextView: NSTextView {
     let blocksTextStorage = NSTextStorage()

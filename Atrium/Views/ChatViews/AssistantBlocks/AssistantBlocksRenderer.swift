@@ -1,5 +1,6 @@
 import ACP
 import AppKit
+import SwiftMarkdownView
 import Foundation
 
 // MARK: - Document types
@@ -77,7 +78,7 @@ struct AssistantBlocksRenderer: Sendable {
         var nextDiffID = 0
 
         let groups = Self.groupBlocks(blocks)
-        let markdownRenderer = MacMarkdownRenderer(fontSize: fontSize, themeName: themeName)
+        let markdownRenderer = MarkdownRenderer(fontSize: fontSize, themeName: themeName)
 
         for group in groups {
             switch group.kind {

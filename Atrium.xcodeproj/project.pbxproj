@@ -10,6 +10,8 @@
 		0896F7692F829B9C0024299A /* ACP in Frameworks */ = {isa = PBXBuildFile; productRef = 0896F7682F829B9C0024299A /* ACP */; };
 		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
+		08AABEFC322F74722D009C3713 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 08AABEFC312F74722D009C3712 /* SwiftMarkdownView */; };
+		08AABEFC322F74722D009C3715 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 08AABEFC312F74722D009C3714 /* SwiftMarkdownView */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +55,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				08AABEFC322F74722D009C3715 /* SwiftMarkdownView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -63,6 +66,7 @@
 				0896F7692F829B9C0024299A /* ACP in Frameworks */,
 				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
+				08AABEFC322F74722D009C3713 /* SwiftMarkdownView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -109,6 +113,7 @@
 			);
 			name = AtriumiOS;
 			packageProductDependencies = (
+				08AABEFC312F74722D009C3714 /* SwiftMarkdownView */,
 			);
 			productName = AtriumiOS;
 			productReference = 00AA00000000000000000A08 /* AtriumiOS.app */;
@@ -135,6 +140,7 @@
 				0896F7682F829B9C0024299A /* ACP */,
 				08BEFC272F74722D009C370D /* SwiftTerm */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
+				08AABEFC312F74722D009C3712 /* SwiftMarkdownView */,
 			);
 			productName = Atrium;
 			productReference = 08D10C4A2F64897100754649 /* Atrium.app */;
@@ -171,6 +177,7 @@
 				0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */,
 				08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
+				08AABEFC302F74722D009C3711 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D10C4B2F64897100754649 /* Products */;
@@ -573,6 +580,14 @@
 				minimumVersion = 2.2.1;
 			};
 		};
+		08AABEFC302F74722D009C3711 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SilverMarcs/SwiftMarkdownView";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -590,6 +605,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */;
 			productName = Highlightr;
+		};
+		08AABEFC312F74722D009C3712 /* SwiftMarkdownView */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08AABEFC302F74722D009C3711 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */;
+			productName = SwiftMarkdownView;
+		};
+		08AABEFC312F74722D009C3714 /* SwiftMarkdownView */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 08AABEFC302F74722D009C3711 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */;
+			productName = SwiftMarkdownView;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

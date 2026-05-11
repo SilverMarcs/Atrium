@@ -1,4 +1,5 @@
 import AppKit
+import SwiftMarkdownView
 
 final class AssistantBlocksContainerView: NSView {
     private enum Layout {

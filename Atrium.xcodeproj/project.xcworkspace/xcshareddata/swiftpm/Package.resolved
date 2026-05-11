@@ -1,5 +1,5 @@
 {
-  "originHash" : "791fed59b91da22e779f12b65a44a2894655cc6f2059ccfa10419b0774e53315",
+  "originHash" : "4474e74f727628ef7c474f11b9e0a990af84d4301034a869d710780f970aff4b",
   "pins" : [
     {
       "identity" : "highlightr",
@@ -29,12 +29,21 @@
       }
     },
     {
+      "identity" : "swiftmarkdownview",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SilverMarcs/SwiftMarkdownView",
+      "state" : {
+        "revision" : "f49b67b43d2b6e3ef6a4bce14062db6cc7f0ac41",
+        "version" : "1.1.0"
+      }
+    },
+    {
       "identity" : "swiftterm",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SilverMarcs/SwiftTerm",
       "state" : {
         "branch" : "feature",
-        "revision" : "d52f1ccd74a6a631d89df68e37ba438cc7aa23de"
+        "revision" : "6489471573e81d8291fa33b1a0da264b9e4fb28b"
       }
     }
   ],
