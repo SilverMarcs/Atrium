@@ -133,6 +133,7 @@ struct ACPView: View {
                         .padding(.horizontal, 16)
                     }
                     ACPInputArea(chat: chat)
+                    .id(chat.id)
                 }
             }
             .imageDropHandler(chat: chat)

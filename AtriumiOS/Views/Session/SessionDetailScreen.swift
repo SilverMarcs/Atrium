@@ -38,8 +38,8 @@ struct SessionDetailScreen: View {
                         .id(Self.bottomID)
                 }
             }
-            .contentMargins(.top, 10)
-            .contentMargins([.horizontal, .bottom], 20)
+            .contentMargins(.top, 10, for: .scrollContent)
+            .contentMargins([.horizontal, .bottom], 20, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: client.activeSession?.messages.last?.id) { _, _ in
                 // withAnimation {
