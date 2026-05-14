@@ -166,18 +166,6 @@ struct GitInspectorChangesList: View {
             .tag(row.id)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture {
-                if state.selectedFileID == row.id {
-                    editorPanel.openDiff(
-                        row.file.fileURL,
-                        in: snapshot.repositoryRootURL,
-                        stage: staged ? .staged : .unstaged,
-                        kind: row.file.kind
-                    )
-                } else {
-                    state.selectedFileID = row.id
-                }
-            }
         }
         .listRowSeparator(.hidden)
     }
