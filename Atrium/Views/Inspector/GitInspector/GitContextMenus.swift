@@ -55,7 +55,7 @@ struct GitCommitContextMenu: View {
     var onShowChanges: (() -> Void)?
 
     var body: some View {
-        if let onShowChanges, !commit.files.isEmpty {
+        if let onShowChanges {
             Button { onShowChanges() } label: {
                 Label("View Changes…", systemImage: "doc.richtext")
             }

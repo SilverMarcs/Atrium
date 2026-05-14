@@ -375,22 +375,7 @@ actor GitRepository {
             ) else { return [] }
             commitEntries = entries
         }
-        guard !commitEntries.isEmpty else { return [] }
-
-        return await withTaskGroup(of: (Int, GitUnpushedCommit).self) { group in
-            for (index, entry) in commitEntries.enumerated() {
-                group.addTask {
-                    let files = (try? await self.changedFiles(forCommit: entry.hash, at: repositoryRootURL)) ?? []
-                    return (index, GitUnpushedCommit(hash: entry.hash, message: entry.message, files: files))
-                }
-            }
-
-            var results: [(Int, GitUnpushedCommit)] = []
-            for await result in group {
-                results.append(result)
-            }
-            return results.sorted { $0.0 < $1.0 }.map(\.1)
-        }
+        return commitEntries.map { GitUnpushedCommit(hash: $0.hash, message: $0.message) }
     }
 
     private nonisolated static func changeKindFromDiffTreeStatus(_ status: Character) -> GitChangeKind? {
@@ -529,7 +514,6 @@ struct GitUnpushedCommit: Equatable, Identifiable {
     var id: String { hash }
     var hash: String
     var message: String
-    var files: [GitChangedFile]
 }
 
 struct GitLogEntry: Equatable, Identifiable, Sendable {

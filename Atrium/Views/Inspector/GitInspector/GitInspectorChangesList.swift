@@ -40,7 +40,7 @@ struct GitInspectorChangesList: View {
                                             hash: commit.hash,
                                             message: commit.message,
                                             repositoryRootURL: snapshot.repositoryRootURL,
-                                            preloadedFiles: commit.files
+                                            preloadedFiles: nil
                                         )
                                     }
                                 )
