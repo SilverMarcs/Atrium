@@ -13,6 +13,8 @@ struct WorkspaceRow: View {
     @State private var isRenaming = false
     @State private var renameText = ""
     @State private var isBrowsingChats = false
+    @State private var customIconImage: NSImage?
+    @State private var loadedIconFilename: String?
 
     private var isExpanded: Bool {
         appState.expandedWorkspaceIDs.contains("w:\(workspace.id.uuidString)")
@@ -47,9 +49,15 @@ struct WorkspaceRow: View {
         return result
     }
 
-    private var customIconImage: NSImage? {
-        guard let url = workspace.customIconURL else { return nil }
-        return NSImage(contentsOf: url)
+    private func reloadCustomIconIfNeeded() {
+        let filename = workspace.customIconFilename
+        guard filename != loadedIconFilename else { return }
+        loadedIconFilename = filename
+        if let url = workspace.customIconURL {
+            customIconImage = NSImage(contentsOf: url)
+        } else {
+            customIconImage = nil
+        }
     }
 
 
@@ -239,6 +247,9 @@ struct WorkspaceRow: View {
         }
         .sheet(isPresented: $isBrowsingChats) {
             ChatBrowserView(workspace: workspace)
+        }
+        .task(id: workspace.customIconFilename) {
+            reloadCustomIconIfNeeded()
         }
     }
 

@@ -130,11 +130,14 @@ extension URL {
 
     var fileIcon: NSImage {
         let values = try? resourceValues(forKeys: [.isDirectoryKey])
-        if values?.isDirectory == true {
-            return NSWorkspace.shared.icon(for: .folder)
-        }
-        let type = UTType(filenameExtension: pathExtension.lowercased()) ?? .data
-        return NSWorkspace.shared.icon(for: type)
+        let isDir = values?.isDirectory == true
+        let key: NSString = isDir ? "__dir__" : (pathExtension.lowercased() as NSString)
+        if let cached = fileIconCache.object(forKey: key) { return cached }
+        let image: NSImage = isDir
+            ? NSWorkspace.shared.icon(for: .folder)
+            : NSWorkspace.shared.icon(for: UTType(filenameExtension: pathExtension.lowercased()) ?? .data)
+        fileIconCache.setObject(image, forKey: key)
+        return image
     }
 
     var isPreviewableImage: Bool {
@@ -145,6 +148,17 @@ extension URL {
         FileTypeSets.binaryExtensions.contains(pathExtension.lowercased())
     }
 }
+
+/// Caches the NSImage returned by `URL.fileIcon` so SwiftUI sees a stable
+/// instance across body recomputes. Without this, every body re-render calls
+/// `NSWorkspace.icon(for:)` which returns a fresh NSImage, causing visible
+/// icon flashes in lists (search results, git changes, file tree) whenever
+/// any parent state — like a disclosure toggle — invalidates the view.
+private let fileIconCache: NSCache<NSString, NSImage> = {
+    let cache = NSCache<NSString, NSImage>()
+    cache.countLimit = 200
+    return cache
+}()
 
 enum FileTypeSets {
     static let imageExtensions: Set<String> = [
