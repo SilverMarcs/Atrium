@@ -3,6 +3,7 @@ import Observation
 import ACP
 
 @Observable
+@MainActor
 final class Chat: Identifiable, Hashable, Codable {
     var id = UUID()
     var title: String = "New Chat"
@@ -259,6 +260,8 @@ final class Chat: Identifiable, Hashable, Codable {
             if let id = self.session.sessionId?.value, self.acpSessionId != id {
                 self.acpSessionId = id
             }
+            self.model = self.session.model
+            self.permissionMode = self.session.permissionMode
             self.date = Date()
             self.scheduleSave()
 
@@ -358,6 +361,11 @@ final class Chat: Identifiable, Hashable, Codable {
                     if let mode = PermissionMode.allCases.first(where: { $0.configValue(for: provider) == select.currentValue.value }) {
                         permissionMode = mode
                         session.permissionMode = mode
+                    }
+                case CodexSessionConfiguration.collaborationModeConfigId:
+                    if provider == .codex, select.currentValue.value == "plan" {
+                        permissionMode = .plan
+                        session.permissionMode = .plan
                     }
                 default:
                     break

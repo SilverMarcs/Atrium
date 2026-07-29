@@ -44,7 +44,12 @@ extension ACPSession {
             let resolvedId = response.sessionId ?? sessionId
             setSessionId(resolvedId)
 
-            try? await applySessionConfig(client: newClient, sessionId: resolvedId)
+            let configOptions = try await applySessionConfig(
+                client: newClient,
+                sessionId: resolvedId,
+                initialOptions: response.configOptions
+            )
+            publishSessionConfiguration(configOptions)
 
             // Let queued replay notifications drain before re-opening the
             // update handler.
@@ -108,7 +113,12 @@ extension ACPSession {
         )
         setSessionId(session.sessionId)
 
-        try? await applySessionConfig(client: client, sessionId: session.sessionId)
+        let configOptions = try await applySessionConfig(
+            client: client,
+            sessionId: session.sessionId,
+            initialOptions: session.configOptions
+        )
+        publishSessionConfiguration(configOptions)
 
         isConnected = true
         isConnecting = false
@@ -138,18 +148,92 @@ extension ACPSession {
         }
     }
 
-    private func applySessionConfig(client: Client, sessionId: SessionId) async throws {
-        _ = try await client.setConfigOption(
-            sessionId: sessionId,
-            configId: SessionConfigId("mode"),
-            value: SessionConfigValueId(permissionMode.configValue(for: provider))
-        )
-        if !model.isEmpty {
-            _ = try await client.setConfigOption(
-                sessionId: sessionId,
-                configId: SessionConfigId("model"),
-                value: SessionConfigValueId(model)
+    private func applySessionConfig(
+        client: Client,
+        sessionId: SessionId,
+        initialOptions: [SessionConfigOption]?
+    ) async throws -> [SessionConfigOption]? {
+        var latestOptions: [SessionConfigOption]?
+        do {
+            latestOptions = try await applyPermissionConfiguration(
+                permissionMode,
+                client: client,
+                sessionId: sessionId
             )
+        } catch {
+            guard provider != .codex else { throw error }
         }
+
+        let availableOptions = latestOptions ?? initialOptions
+        guard let modelOption = availableOptions?.first(where: {
+            $0.id.value == CodexSessionConfiguration.modelConfigId
+        }), case .select(let select) = modelOption.kind else {
+            if !model.isEmpty {
+                do {
+                    let response = try await client.setConfigOption(
+                        sessionId: sessionId,
+                        configId: SessionConfigId(CodexSessionConfiguration.modelConfigId),
+                        value: SessionConfigValueId(model)
+                    )
+                    latestOptions = response.configOptions
+                } catch {
+                    guard provider != .codex else { throw error }
+                }
+            }
+            return latestOptions ?? initialOptions
+        }
+
+        let selectableOptions: [SessionConfigSelectOption]
+        switch select.options {
+        case .ungrouped(let options):
+            selectableOptions = options
+        case .grouped(let groups):
+            selectableOptions = groups.flatMap(\.options)
+        }
+        let availableValues = selectableOptions.map(\.value.value)
+        let selectedModel = CodexSessionConfiguration.compatibleModelSelection(
+            model,
+            availableValues: availableValues
+        ) ?? select.currentValue.value
+        model = selectedModel
+
+        if selectedModel != select.currentValue.value {
+            let response = try await client.setConfigOption(
+                sessionId: sessionId,
+                configId: SessionConfigId(CodexSessionConfiguration.modelConfigId),
+                value: SessionConfigValueId(selectedModel)
+            )
+            latestOptions = response.configOptions
+        }
+
+        return latestOptions ?? initialOptions
+    }
+
+    func applyPermissionConfiguration(
+        _ mode: PermissionMode,
+        client: Client,
+        sessionId: SessionId
+    ) async throws -> [SessionConfigOption] {
+        let modeResponse = try await client.setConfigOption(
+            sessionId: sessionId,
+            configId: SessionConfigId(CodexSessionConfiguration.modeConfigId),
+            value: SessionConfigValueId(mode.configValue(for: provider))
+        )
+
+        guard provider == .codex else {
+            return modeResponse.configOptions
+        }
+
+        let collaborationResponse = try await client.setConfigOption(
+            sessionId: sessionId,
+            configId: SessionConfigId(CodexSessionConfiguration.collaborationModeConfigId),
+            value: SessionConfigValueId(mode.codexCollaborationConfigValue)
+        )
+        return collaborationResponse.configOptions
+    }
+
+    func publishSessionConfiguration(_ options: [SessionConfigOption]?) {
+        guard let options else { return }
+        onSessionUpdate?(.configOptionUpdate(options))
     }
 }

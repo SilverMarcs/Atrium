@@ -3,6 +3,7 @@ import ACP
 import ACPModel
 
 @Observable
+@MainActor
 final class ACPSession {
     var isConnected = false
     var isConnecting = false
@@ -103,24 +104,33 @@ final class ACPSession {
         model = newModel
         guard let client, let sessionId, !newModel.isEmpty else { return }
         Task {
-            try? await client.setConfigOption(
-                sessionId: sessionId,
-                configId: SessionConfigId("model"),
-                value: SessionConfigValueId(newModel)
-            )
+            do {
+                let response = try await client.setConfigOption(
+                    sessionId: sessionId,
+                    configId: SessionConfigId(CodexSessionConfiguration.modelConfigId),
+                    value: SessionConfigValueId(newModel)
+                )
+                publishSessionConfiguration(response.configOptions)
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 
     func applyPermissionMode(_ mode: PermissionMode) {
         permissionMode = mode
         guard let client, let sessionId else { return }
-        let value = mode.configValue(for: provider)
         Task {
-            try? await client.setConfigOption(
-                sessionId: sessionId,
-                configId: SessionConfigId("mode"),
-                value: SessionConfigValueId(value)
-            )
+            do {
+                let options = try await applyPermissionConfiguration(
+                    mode,
+                    client: client,
+                    sessionId: sessionId
+                )
+                publishSessionConfiguration(options)
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 

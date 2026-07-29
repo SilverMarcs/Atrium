@@ -3,19 +3,19 @@ import Foundation
 // Permission mode for ACP agents.
 enum PermissionMode: String, Codable, CaseIterable, Identifiable {
     /// Standard behavior — prompts for dangerous operations.
-    /// Claude: "default", Codex: "auto"
+    /// Claude: "default", Codex: "agent"
     case standard
 
     /// Auto-accept file edit operations (Claude only).
-    /// Claude: "acceptEdits", Codex: falls back to "auto"
+    /// Claude: "acceptEdits", Codex: falls back to "agent"
     case acceptEdits
 
     /// Planning mode — no actual tool execution.
-    /// Claude: "plan", Codex: "read-only"
+    /// Claude: "plan", Codex: read-only sandbox + plan collaboration mode
     case plan
 
     /// Bypass all permission checks.
-    /// Claude: "bypassPermissions", Codex: "full-access"
+    /// Claude: "bypassPermissions", Codex: "agent-full-access"
     case bypassPermissions
 
     var id: String { rawValue }
@@ -59,12 +59,13 @@ enum PermissionMode: String, Codable, CaseIterable, Identifiable {
 
     /// The config value string to send to the Codex ACP agent.
     var codexConfigValue: String {
-        switch self {
-        case .standard: return "auto"
-        case .acceptEdits: return "auto"
-        case .plan: return "read-only"
-        case .bypassPermissions: return "full-access"
-        }
+        CodexSessionConfiguration.agentMode(for: self)
+    }
+
+    /// Codex keeps collaboration behavior separate from its sandbox and
+    /// approval mode. Plan mode must set both configuration options.
+    var codexCollaborationConfigValue: String {
+        CodexSessionConfiguration.collaborationMode(for: self)
     }
 
     /// The config value string to send to the Gemini ACP agent.

@@ -142,11 +142,17 @@ final class ModelCatalog {
             let response = try await client.newSession(workingDirectory: cwd, timeout: 60)
             await client.terminate()
 
+            if let modelOption = response.configOptions?.first(where: {
+                $0.id.value == CodexSessionConfiguration.modelConfigId
+            }), case .select(let select) = modelOption.kind {
+                return models(from: select.options, provider: provider)
+            }
+
             guard let info = response.models else { return nil }
-            return info.availableModels.map { m in
+            return info.availableModels.map { model in
                 AgentModel(
-                    rawValue: m.modelId,
-                    name: stripRecommended(m.name),
+                    rawValue: model.modelId,
+                    name: stripRecommended(model.name),
                     provider: provider
                 )
             }
@@ -168,6 +174,27 @@ final class ModelCatalog {
         let range = NSRange(name.startIndex..., in: name)
         let cleaned = regex.stringByReplacingMatches(in: name, options: [], range: range, withTemplate: "")
         return cleaned.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func models(
+        from options: SessionConfigSelectOptions,
+        provider: AgentProvider
+    ) -> [AgentModel] {
+        let selectableOptions: [SessionConfigSelectOption]
+        switch options {
+        case .ungrouped(let options):
+            selectableOptions = options
+        case .grouped(let groups):
+            selectableOptions = groups.flatMap(\.options)
+        }
+
+        return selectableOptions.map { option in
+            AgentModel(
+                rawValue: option.value.value,
+                name: stripRecommended(option.name),
+                provider: provider
+            )
+        }
     }
 
     // MARK: - Persistence

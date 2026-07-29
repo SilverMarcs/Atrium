@@ -96,7 +96,7 @@ struct ACPView: View {
                     }
                     .pickerStyle(.menu)
                     .menuOrder(.fixed)
-                    .frame(maxWidth: 125)
+                    .frame(maxWidth: 187.5)
                 }
             }
             .overlay {
