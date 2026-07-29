@@ -10,9 +10,9 @@ enum EditorPanelContent: Hashable, Codable {
 struct HighlightRequest: Equatable {
     let lineNumber: Int
     let columnRange: Range<Int>
-    /// Distinguishes otherwise-identical requests so re-clicking the same
-    /// search result re-fires navigation past the dedupe guard.
-    let nonce: UUID = UUID()
+    /// Distinguishes otherwise-identical requests so selecting the same search
+    /// result again re-runs navigation and the find indicator.
+    let nonce = UUID()
 }
 
 /// Shared state for the bottom slide-up editor panel in the workspace.
@@ -20,7 +20,7 @@ struct HighlightRequest: Equatable {
 final class EditorPanel {
     var content: EditorPanelContent?
     var isDirty = false
-    var isOpen = false
+    private(set) var isOpen = false
 
     /// Toggled by the header save button; observed by file editor content.
     var saveRequested = false
@@ -35,6 +35,11 @@ final class EditorPanel {
     /// Pending highlight to apply after the file loads.
     var highlightRequest: HighlightRequest?
 
+    /// Pending line to scroll to the top of the editor after the file loads.
+    /// Set when opening a file from the diff view so the editor lands at
+    /// roughly the same place the diff was scrolled to.
+    var pendingScrollLine: Int?
+
     var showUnsavedAlert: Bool { pendingContent != nil }
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }
@@ -43,13 +48,23 @@ final class EditorPanel {
         isOpen.toggle()
     }
 
-    func openFile(_ url: URL) {
+    func expand() {
+        isOpen = true
+    }
+
+    func collapse() {
+        isOpen = false
+    }
+
+    func openFile(_ url: URL, scrollToLine line: Int? = nil) {
         highlightRequest = nil
+        pendingScrollLine = line
         navigate(to: .file(url))
     }
 
     func openFileAndHighlight(_ url: URL, lineNumber: Int, columnRange: Range<Int>) {
         let request = HighlightRequest(lineNumber: lineNumber, columnRange: columnRange)
+        pendingScrollLine = nil
         navigate(to: .file(url))
         highlightRequest = request
     }
@@ -138,7 +153,7 @@ final class EditorPanel {
     private var pendingNavigation: PendingNavigation?
 
     private func navigate(to newContent: EditorPanelContent) {
-        isOpen = true
+        expand()
         guard newContent != content else { return }
         if isDirty {
             pendingContent = newContent
@@ -158,7 +173,7 @@ final class EditorPanel {
             forwardStack.append(current)
         }
         content = previous
-        isOpen = true
+        expand()
     }
 
     private func performForward() {
@@ -167,6 +182,6 @@ final class EditorPanel {
             backStack.append(current)
         }
         content = next
-        isOpen = true
+        expand()
     }
 }

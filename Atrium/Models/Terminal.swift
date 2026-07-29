@@ -6,6 +6,7 @@ import SwiftTerm
 final class Terminal: Identifiable, Hashable, Codable {
     var id: UUID
     var title: String
+    var currentDirectory: String?
 
     /// When set, this terminal represents a saved "command" the user can run on demand.
     /// Sending the script appends a newline so the shell executes it.
@@ -38,17 +39,23 @@ final class Terminal: Identifiable, Hashable, Codable {
         }
     }
 
-    init(workspace: Workspace, title: String = "Terminal", runScript: String? = nil) {
+    init(
+        workspace: Workspace,
+        title: String = "Terminal",
+        currentDirectory: String? = nil,
+        runScript: String? = nil
+    ) {
         self.id = UUID()
         self.workspace = workspace
         self.title = title
+        self.currentDirectory = currentDirectory
         self.runScript = runScript
     }
 
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, runScript, isDefault
+        case id, title, currentDirectory, runScript, isDefault
         // Legacy CommandEntry keys retained so old workspaces.json decodes.
         case name, command
     }
@@ -63,6 +70,7 @@ final class Terminal: Identifiable, Hashable, Codable {
         } else {
             self.title = "Terminal"
         }
+        self.currentDirectory = try c.decodeIfPresent(String.self, forKey: .currentDirectory)
         if let script = try c.decodeIfPresent(String.self, forKey: .runScript) {
             self.runScript = script
         } else if let legacy = try c.decodeIfPresent(String.self, forKey: .command) {
@@ -77,6 +85,7 @@ final class Terminal: Identifiable, Hashable, Codable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(currentDirectory, forKey: .currentDirectory)
         try c.encodeIfPresent(runScript, forKey: .runScript)
         if isDefault { try c.encode(isDefault, forKey: .isDefault) }
     }

@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 extension GitInspectorState {
     func refresh(directoryURL: URL) async {
-        await model.refresh(directoryURL: directoryURL)
+        await model.refresh(directoryURL: directoryURL, worktreeOverrides: worktreeOverrides)
     }
 
     /// Handles state-only actions. View-specific actions (`.commit`, `.showInFileTree`)
@@ -44,33 +44,53 @@ extension GitInspectorState {
         }
     }
 
+    /// Plain branches live in the repository's main worktree, so a branch switch
+    /// always targets that root — a linked worktree in view is left untouched (it's
+    /// isolated) and the dirty check runs against the main worktree, not it.
     func switchBranch(to branch: String, directoryURL: URL, snapshot: GitRepositoryStatusSnapshot) {
-        if snapshot.isDirty {
-            pendingBranchSwitch = branch
-        } else {
-            Task {
-                await model.switchBranch(to: branch, snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-                await fetchAndRefreshQuietly(directoryURL: directoryURL, snapshot: snapshot)
+        let rootURL = snapshot.mainRepositoryURL
+        Task {
+            let isDirty = rootURL == snapshot.repositoryRootURL
+                ? snapshot.isDirty
+                : await GitRepository.shared.hasUncommittedChanges(at: rootURL)
+            if isDirty {
+                pendingBranchSwitch = PendingBranchSwitch(branch: branch, repositoryRootURL: rootURL)
+            } else {
+                await model.switchBranch(to: branch, at: rootURL)
+                await finishBranchSwitch(at: rootURL, directoryURL: directoryURL)
             }
         }
     }
 
     func confirmStashAndSwitch(directoryURL: URL) {
-        guard let branch = pendingBranchSwitch,
-              let snapshot = currentSnapshot else { return }
+        guard let pending = pendingBranchSwitch else { return }
         Task {
-            await model.stashAndSwitch(to: branch, snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-            await fetchAndRefreshQuietly(directoryURL: directoryURL, snapshot: snapshot)
+            await model.stashAndSwitch(to: pending.branch, at: pending.repositoryRootURL)
+            await finishBranchSwitch(at: pending.repositoryRootURL, directoryURL: directoryURL)
         }
     }
 
-    /// Best-effort fetch so the new branch's upstream state reflects reality.
-    /// Errors (offline, no remote) are silent — branch switching shouldn't surface them.
-    private func fetchAndRefreshQuietly(directoryURL: URL, snapshot: GitRepositoryStatusSnapshot) async {
-        try? await GitRepository.shared.fetch(at: snapshot.repositoryRootURL)
-        await refresh(directoryURL: directoryURL)
+    /// Points a repository at one of its worktrees (or back at the main one).
+    /// The override change re-fires the inspector's scan task, so no manual refresh.
+    func activateWorktree(_ worktree: GitWorktreeInfo, in snapshot: GitRepositoryStatusSnapshot) {
+        let rootURL = snapshot.mainRepositoryURL
+        if worktree.isMain {
+            worktreeOverrides.removeValue(forKey: rootURL)
+        } else {
+            worktreeOverrides[rootURL] = worktree.path.standardizedFileURL
+        }
+        selectedRepoURL = rootURL
+    }
+
+    /// After a switch that leaves a linked worktree, dropping the override hands the
+    /// refresh to the view's scan task; an in-place switch refreshes here, with a
+    /// best-effort quiet fetch so the new branch's upstream state reflects reality.
+    private func finishBranchSwitch(at rootURL: URL, directoryURL: URL) async {
+        if worktreeOverrides.removeValue(forKey: rootURL) == nil {
+            await refresh(directoryURL: directoryURL)
+            try? await GitRepository.shared.fetchIfStale(at: rootURL)
+            await refresh(directoryURL: directoryURL)
+        }
     }
 
     func confirmStashAll(directoryURL: URL) {
@@ -183,7 +203,7 @@ extension GitInspectorState {
     }
 
     var currentSnapshot: GitRepositoryStatusSnapshot? {
-        model.snapshots.first { $0.repositoryRootURL == selectedRepoURL }
+        model.snapshots.first { $0.mainRepositoryURL == selectedRepoURL }
             ?? model.snapshots.first
     }
 }

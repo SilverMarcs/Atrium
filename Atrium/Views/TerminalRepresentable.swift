@@ -60,7 +60,23 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
+        func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {
+            guard let directory,
+                  let local = source as? LocalProcessTerminalView,
+                  let entry = viewMap[ObjectIdentifier(local)] else { return }
+            let path: String
+            if let url = URL(string: directory), url.isFileURL {
+                path = url.path(percentEncoded: false)
+            } else {
+                path = directory
+            }
+            guard !path.isEmpty else { return }
+            Task { @MainActor in
+                if entry.tab.currentDirectory != path {
+                    entry.tab.currentDirectory = path
+                }
+            }
+        }
 
         private var viewMap: [ObjectIdentifier: (id: UUID, tab: Terminal)] = [:]
 
@@ -79,7 +95,9 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
             let shellBasename = (shell as NSString).lastPathComponent
             let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let startingDirectory = resolvedWorkingDirectoryPath(from: tab.workspace?.directory) ?? home
+            let startingDirectory = resolvedWorkingDirectoryPath(from: tab.currentDirectory)
+                ?? resolvedWorkingDirectoryPath(from: tab.workspace?.effectiveURL.path)
+                ?? home
 
             let plan = ShellIntegration.plan(forShellPath: shell)
 
@@ -128,6 +146,22 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             viewMap.removeValue(forKey: ObjectIdentifier(local))
         }
 
+        /// Opens workspace-local terminal links in the bottom editor panel.
+        /// Links outside the workspace continue to use the system handler.
+        func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
+            let tab = (source as? LocalProcessTerminalView)
+                .flatMap { viewMap[ObjectIdentifier($0)]?.tab }
+            Task { @MainActor [weak self] in
+                if let self, let tab, let target = self.workspaceFileTarget(for: link, tab: tab) {
+                    tab.workspace?.editorPanel.openFile(target.url, scrollToLine: target.line)
+                    return
+                }
+                if let url = URL(string: link) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
+
         /// Registers an OSC 133 (FinalTerm semantic prompt) handler on the
         /// underlying `Terminal`. The shell-integration scripts emit:
         ///   - `\e]133;C;<command>\a` when a foreground command starts
@@ -169,6 +203,51 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
                     break  // 133;A (prompt-start) and 133;B (prompt-end) ignored
                 }
             }
+        }
+
+        private func workspaceFileTarget(for link: String, tab: Terminal) -> (url: URL, line: Int?)? {
+            guard let workspace = tab.workspace else { return nil }
+
+            let rawPath: String
+            if link.hasPrefix("file:") {
+                guard let url = URL(string: link), url.isFileURL else { return nil }
+                rawPath = url.path(percentEncoded: false)
+            } else if link.contains("://") {
+                return nil
+            } else {
+                rawPath = link
+            }
+
+            var candidates: [(path: String, line: Int?)] = [(rawPath, nil)]
+            if let match = rawPath.wholeMatch(of: /(.+?):(\d+)(?::\d+)?/) {
+                candidates.append((String(match.1), Int(match.2)))
+            }
+
+            let roots = [workspace.effectiveURL, workspace.url]
+                .map { $0.standardizedFileURL.resolvingSymlinksInPath().path }
+            let currentDirectory = resolvedWorkingDirectoryPath(from: tab.currentDirectory)
+            for (path, line) in candidates {
+                let resolved: [URL]
+                if path.hasPrefix("/") {
+                    resolved = [URL(filePath: path)]
+                } else if path == "~" || path.hasPrefix("~/") {
+                    resolved = [URL(filePath: (path as NSString).expandingTildeInPath)]
+                } else {
+                    resolved = ([currentDirectory].compactMap(\.self) + roots)
+                        .map { URL(filePath: $0).appending(path: path) }
+                }
+
+                for url in resolved.map({ $0.standardizedFileURL.resolvingSymlinksInPath() }) {
+                    var isDirectory: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                          !isDirectory.boolValue,
+                          roots.contains(where: { url.path == $0 || url.path.hasPrefix($0 + "/") }) else {
+                        continue
+                    }
+                    return (url, line)
+                }
+            }
+            return nil
         }
 
         private func resolvedWorkingDirectoryPath(from directory: String?) -> String? {

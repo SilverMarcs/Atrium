@@ -24,20 +24,20 @@ struct SharedDiffTextLayout {
         )
     }
 
-    static func popover(wrapsLines: Bool) -> SharedDiffTextLayout {
+    static func popover(wrapsLines: Bool, fontSize: CGFloat) -> SharedDiffTextLayout {
         SharedDiffTextLayout(
             gutterWidth: 36,
             verticalPadding: 0,
             wrapsLines: wrapsLines,
-            fontSize: 12,
-            lineNumberFontSize: 11
+            fontSize: fontSize,
+            lineNumberFontSize: fontSize - 1
         )
     }
 }
 
 final class SharedDiffTextView: NSTextView {
     private var lineData: [SharedDiffLine] = []
-    private var layoutStyle: SharedDiffTextLayout = .popover(wrapsLines: false)
+    private var layoutStyle: SharedDiffTextLayout = .popover(wrapsLines: false, fontSize: CGFloat(EditorFontSize.default))
 
     func configure(lines: [SharedDiffLine], fileExtension: String, layout: SharedDiffTextLayout, width: CGFloat) {
         lineData = lines

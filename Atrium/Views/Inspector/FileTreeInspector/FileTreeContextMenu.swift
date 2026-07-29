@@ -17,44 +17,50 @@ enum FileTreeAction {
 
 struct FileTreeContextMenu: View {
     let item: FileItem
-    var onAction: (FileTreeAction) -> Void = { _ in }
+    var onAction: ((FileTreeAction) -> Void)? = nil
+
+    @Environment(\.fileTreeAction) private var fileTreeAction
 
     private var parentURL: URL {
         item.isDirectory ? item.url : item.url.deletingLastPathComponent()
     }
 
+    private var currentAction: (FileTreeAction) -> Void {
+        onAction ?? fileTreeAction
+    }
+
     var body: some View {
         if !item.isDirectory {
-            Button { onAction(.openFile(item.url)) } label: {
+            Button { currentAction(.openFile(item.url)) } label: {
                 Label("Open File", systemImage: "doc")
             }
         }
 
-        Button { onAction(.revealInFinder(item.url)) } label: {
+        Button { currentAction(.revealInFinder(item.url)) } label: {
             Label("Reveal in Finder", systemImage: "folder")
         }
 
         Divider()
 
-        Button { onAction(.rename(item)) } label: {
+        Button { currentAction(.rename(item)) } label: {
             Label("Rename", systemImage: "pencil")
         }
 
-        Button { onAction(.duplicate(item.url)) } label: {
+        Button { currentAction(.duplicate(item.url)) } label: {
             Label("Duplicate", systemImage: "doc.on.doc")
         }
 
-        Button(role: .destructive) { onAction(.moveToTrash(item.url)) } label: {
+        Button(role: .destructive) { currentAction(.moveToTrash(item.url)) } label: {
             Label("Move to Trash", systemImage: "trash")
         }
 
         Divider()
 
-        Button { onAction(.newFile(parentURL)) } label: {
+        Button { currentAction(.newFile(parentURL)) } label: {
             Label("New File", systemImage: "doc.badge.plus")
         }
 
-        Button { onAction(.newFolder(parentURL)) } label: {
+        Button { currentAction(.newFolder(parentURL)) } label: {
             Label("New Folder", systemImage: "folder.badge.plus")
         }
     }

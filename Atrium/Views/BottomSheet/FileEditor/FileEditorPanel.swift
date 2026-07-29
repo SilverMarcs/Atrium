@@ -13,13 +13,20 @@ struct FileEditorPanel: View {
     @State private var saveError: String?
     @State private var gutterDiff: GutterDiffResult = .empty
     @State private var gitState = FileGitState()
+    @State private var showingPreview = false
     @Environment(\.showInFileTree) private var showInFileTree
+    @Environment(\.editorFontSize) private var editorFontSize
 
     private var hasUnsavedChanges: Bool {
         if case .text = loader.phase {
             return loader.content != loader.savedContent
         }
         return false
+    }
+
+    private var isMarkdownFile: Bool {
+        let ext = fileURL.pathExtension.lowercased()
+        return ext == "md" || ext == "markdown"
     }
 
     var body: some View {
@@ -44,6 +51,17 @@ struct FileEditorPanel: View {
                     .help("Unsaved changes")
             }
         } actions: {
+            if isMarkdownFile, case .text = loader.phase {
+                Button {
+                    showingPreview.toggle()
+                } label: {
+                    Image(systemName: "doc.plaintext")
+                        .foregroundStyle(showingPreview ? .accent : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(showingPreview ? "Show Editor" : "Show Preview")
+            }
+
             Button { showInFileTree(fileURL) } label: {
                 Image(systemName: "folder")
             }
@@ -53,22 +71,30 @@ struct FileEditorPanel: View {
         } content: {
             switch loader.phase {
             case .text:
-                CodeTextEditor(
-                    text: Binding(
-                        get: { loader.content },
-                        set: { loader.content = $0 }
-                    ),
-                    documentID: fileURL,
-                    fileExtension: fileURL.pathExtension.lowercased(),
-                    gutterDiff: gutterDiff,
-                    highlightRequest: panel.highlightRequest,
-                    repositoryRootURL: directoryURL,
-                    onReloadFromDisk: {
-                        await loader.reloadInPlace(fileURL: fileURL)
-                        refreshGitState()
-                    },
-                    onSave: { saveFile() }
-                )
+                if showingPreview && isMarkdownFile {
+                    MarkdownPreviewView(
+                        markdownText: loader.content,
+                        fontSize: editorFontSize
+                    )
+                } else {
+                    CodeTextEditor(
+                        text: Binding(
+                            get: { loader.content },
+                            set: { loader.content = $0 }
+                        ),
+                        documentID: fileURL,
+                        fileExtension: fileURL.pathExtension.lowercased(),
+                        gutterDiff: gutterDiff,
+                        highlightRequest: panel.highlightRequest,
+                        scrollToLine: panel.pendingScrollLine,
+                        repositoryRootURL: directoryURL,
+                        onReloadFromDisk: {
+                            await loader.reloadInPlace(fileURL: fileURL)
+                            refreshGitState()
+                        },
+                        onSave: { saveFile() }
+                    )
+                }
             case .image(let image):
                 imagePreview(image)
             case .unsupported(let reason):
@@ -84,6 +110,7 @@ struct FileEditorPanel: View {
             }
         }
         .onChange(of: fileURL, initial: true) { _, newURL in
+            showingPreview = false
             resetTransientState()
             loader.load(fileURL: newURL)
         }

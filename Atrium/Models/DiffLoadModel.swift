@@ -98,6 +98,7 @@ enum DiffLoadEngine {
             case .unstaged: ref = ""
             case .staged: ref = "HEAD"
             case .commit(let hash): ref = "\(hash)~1"
+            case .range(let base, _): ref = base
             }
             if let data = try? await GitRepository.shared.fileData(at: path, ref: ref, repositoryRootURL: root) {
                 oldImage = await ImageLoader.decode(data: data)
@@ -116,6 +117,10 @@ enum DiffLoadEngine {
                 }
             case .commit(let hash):
                 if let data = try? await GitRepository.shared.fileData(at: path, ref: hash, repositoryRootURL: root) {
+                    newImage = await ImageLoader.decode(data: data)
+                }
+            case .range(_, let head):
+                if let data = try? await GitRepository.shared.fileData(at: path, ref: head, repositoryRootURL: root) {
                     newImage = await ImageLoader.decode(data: data)
                 }
             }

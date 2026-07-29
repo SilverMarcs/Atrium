@@ -8,10 +8,15 @@ struct CommandsInspectorView: View {
     var body: some View {
         @Bindable var state = workspace.inspectorState
         VSplitView {
-            List(workspace.commands, selection: $state.selectedCommand) { terminal in
-                CommandEntryRow(terminal: terminal)
-                    .tag(terminal)
-                    .listRowSeparator(.hidden)
+            List(selection: $state.selectedCommand) {
+                ForEach(workspace.commands) { terminal in
+                    CommandEntryRow(terminal: terminal)
+                        .tag(terminal)
+                        .listRowSeparator(.hidden)
+                }
+                .onMove { source, destination in
+                    workspace.moveCommands(from: source, to: destination)
+                }
             }
             .safeAreaInset(edge: .top) {
                 Color.clear.frame(height: 50)

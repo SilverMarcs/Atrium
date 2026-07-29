@@ -77,22 +77,25 @@ struct GitInspectorView: View {
             .padding()
             .animation(.easeInOut(duration: 0.2), value: activeBanner)
         }
-        .task(id: directoryURL) {
+        .task(id: scanID) {
             await state.refresh(directoryURL: directoryURL)
             if state.selectedRepoURL == nil {
-                state.selectedRepoURL = state.model.snapshots.first?.repositoryRootURL
+                state.selectedRepoURL = state.model.snapshots.first?.mainRepositoryURL
             }
+            guard let snapshot = state.currentSnapshot else { return }
+            await state.model.fetchIfStale(snapshot: snapshot)
+            await state.refresh(directoryURL: directoryURL)
         }
         .task(id: snapshot?.branchName) {
-            guard let snapshot else { return }
-            await state.model.fetch(snapshot: snapshot)
+            guard let snapshot, snapshot.branchName != nil else { return }
+            await state.model.fetchIfStale(snapshot: snapshot)
             await state.refresh(directoryURL: directoryURL)
         }
         .watchFileSystem(at: directoryURL) {
             Task { await state.refresh(directoryURL: directoryURL) }
         }
         .alert("Discard Changes?", isPresented: discardAlertBinding) {
-            Button("Discard", role: .destructive) {
+            Button("Discard", role: .confirm) {
                 guard let target = state.discardTarget else { return }
                 state.performDiscard(target, directoryURL: directoryURL)
             }
@@ -101,12 +104,12 @@ struct GitInspectorView: View {
             Text(discardAlertMessage)
         }
         .alert("Stash Changes?", isPresented: stashAlertBinding) {
-            Button("Stash & Switch", role: .destructive) {
+            Button("Stash & Switch", role: .confirm) {
                 state.confirmStashAndSwitch(directoryURL: directoryURL)
             }
             Button("Cancel", role: .cancel) { state.pendingBranchSwitch = nil }
         } message: {
-            Text("You have uncommitted changes. Stash all changes (including staged and untracked) before switching branches?")
+            Text(stashAlertMessage)
         }
         .alert("Stash All Changes", isPresented: $state.showStashAlert) {
             TextField("Stash name", text: $state.stashMessage)
@@ -149,11 +152,14 @@ struct GitInspectorView: View {
         .sheet(isPresented: $state.showCommitLogSheet) {
             GitCommitLogSheet(state: state)
         }
-        .sheet(item: $state.commitDiffSheetItem) { item in
-            GitCommitDiffSheet(item: item)
+        .sheet(isPresented: $state.showBranchListSheet) {
+            GitBranchListSheet(directoryURL: directoryURL, state: state)
+        }
+        .sheet(isPresented: $state.showStashListSheet) {
+            GitStashListSheet(directoryURL: directoryURL, state: state)
         }
         .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
-            Button("Undo", role: .destructive) {
+            Button("Undo", role: .confirm) {
                 state.undoLastCommit(directoryURL: directoryURL)
             }
             Button("Cancel", role: .cancel) {}
@@ -185,18 +191,50 @@ struct GitInspectorView: View {
         }
     }
 
+    // MARK: - Scan Identity
+
+    /// Re-runs the scan task when either the viewed directory or any repo's
+    /// worktree context changes — a worktree switch doesn't move `directoryURL`
+    /// in multi-repo workspaces.
+    private var scanID: ScanID {
+        ScanID(directoryURL: directoryURL, worktreeOverrides: state.worktreeOverrides)
+    }
+
+    private struct ScanID: Equatable {
+        var directoryURL: URL
+        var worktreeOverrides: [URL: URL]
+    }
+
     // MARK: - Repo Picker
 
     private var repoPicker: some View {
         Picker(selection: $state.selectedRepoURL) {
-            ForEach(state.model.snapshots, id: \.repositoryRootURL) { snapshot in
-                Label {
-                    Text(snapshot.repositoryRootURL.lastPathComponent)
-                } icon: {
-                    Image(systemName: "arrow.right.arrow.left")
+            let snapshots = state.model.snapshots
+            let mainRepos = snapshots.filter { snapshot in
+                !snapshots.contains { other in
+                    other.mainRepositoryURL != snapshot.mainRepositoryURL &&
+                    other.mainRepositoryURL.isAncestor(of: snapshot.mainRepositoryURL)
                 }
-                .lineLimit(1)
-                .tag(Optional(snapshot.repositoryRootURL))
+            }
+            let submodules = snapshots.filter { snapshot in
+                snapshots.contains { other in
+                    other.mainRepositoryURL != snapshot.mainRepositoryURL &&
+                    other.mainRepositoryURL.isAncestor(of: snapshot.mainRepositoryURL)
+                }
+            }
+
+            ForEach(mainRepos, id: \.mainRepositoryURL) { snapshot in
+                repoLabel(for: snapshot)
+                    .tag(Optional(snapshot.mainRepositoryURL))
+            }
+
+            if !submodules.isEmpty {
+                Section("Submodules") {
+                    ForEach(submodules, id: \.mainRepositoryURL) { snapshot in
+                        repoLabel(for: snapshot)
+                            .tag(Optional(snapshot.mainRepositoryURL))
+                    }
+                }
             }
         } label: {
             EmptyView()
@@ -204,6 +242,20 @@ struct GitInspectorView: View {
         .pickerStyle(.menu)
         .controlSize(.large)
         .buttonSizing(.flexible)
+    }
+
+    private func repoLabel(for snapshot: GitRepositoryStatusSnapshot) -> some View {
+        let repoName = snapshot.mainRepositoryURL.lastPathComponent
+        return Label {
+            if snapshot.isLinkedWorktree {
+                Text("\(repoName) (\(snapshot.repositoryRootURL.lastPathComponent))")
+            } else {
+                Text(repoName)
+            }
+        } icon: {
+            Image(systemName: snapshot.isLinkedWorktree ? "arrow.triangle.branch" : "arrow.right.arrow.left")
+        }
+        .lineLimit(1)
     }
 
     // MARK: - Banner
@@ -273,6 +325,14 @@ struct GitInspectorView: View {
             get: { state.model.errorMessage != nil },
             set: { if !$0 { state.model.errorMessage = nil } }
         )
+    }
+
+    private var stashAlertMessage: String {
+        if let pending = state.pendingBranchSwitch, let snapshot,
+           pending.repositoryRootURL != snapshot.repositoryRootURL {
+            return "The main worktree has uncommitted changes. Stash them (including staged and untracked) before switching it to \"\(pending.branch)\"?"
+        }
+        return "You have uncommitted changes. Stash all changes (including staged and untracked) before switching branches?"
     }
 
     private var discardAlertMessage: String {

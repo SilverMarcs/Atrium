@@ -18,6 +18,16 @@ final class LayoutAwareContainer: NSView {
     }
 }
 
+/// Bridges the diff editor's live scroll position to the "Open File" button,
+/// which lives in the panel header — outside the editor view, so it can't read
+/// the scroll position directly. The diff editor installs `provider` when it
+/// appears; the button pulls the current top line on click.
+final class DiffScrollAnchor {
+    var provider: (() -> Int?)?
+
+    func currentNewFileLine() -> Int? { provider?() }
+}
+
 struct CodeTextEditor: NSViewRepresentable {
     private enum Mode {
         case editable(gutterDiff: GutterDiffResult, highlightRequest: HighlightRequest?)
@@ -36,6 +46,12 @@ struct CodeTextEditor: NSViewRepresentable {
     private let repositoryRootURL: URL?
     private let onReloadFromDisk: (() async -> Void)?
     private let onSave: (() -> Void)?
+    /// Editable mode: line to pin to the top once the file finishes loading
+    /// (handed over from the diff view). Nil in diff mode.
+    private let scrollToTopLine: Int?
+    /// Diff mode: receives the closure that reports the diff's current top
+    /// line so the header's "Open File" button can read it. Nil in edit mode.
+    private let diffScrollAnchor: DiffScrollAnchor?
     @Environment(\.editorFontSize) private var fontSize
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("editorWrapLines") private var wrapLines: Bool = true
@@ -48,6 +64,7 @@ struct CodeTextEditor: NSViewRepresentable {
         fileExtension: String,
         gutterDiff: GutterDiffResult,
         highlightRequest: HighlightRequest?,
+        scrollToLine: Int? = nil,
         repositoryRootURL: URL? = nil,
         onReloadFromDisk: (() async -> Void)? = nil,
         onSave: (() -> Void)? = nil
@@ -59,6 +76,8 @@ struct CodeTextEditor: NSViewRepresentable {
         self.repositoryRootURL = repositoryRootURL
         self.onReloadFromDisk = onReloadFromDisk
         self.onSave = onSave
+        self.scrollToTopLine = scrollToLine
+        self.diffScrollAnchor = nil
     }
 
     init(
@@ -66,6 +85,7 @@ struct CodeTextEditor: NSViewRepresentable {
         fileExtension: String,
         hunks: [DiffHunk],
         reference: GitDiffReference,
+        scrollAnchor: DiffScrollAnchor? = nil,
         onReload: @escaping () async -> Void
     ) {
         text = nil
@@ -74,6 +94,8 @@ struct CodeTextEditor: NSViewRepresentable {
         repositoryRootURL = nil
         onReloadFromDisk = nil
         onSave = nil
+        scrollToTopLine = nil
+        diffScrollAnchor = scrollAnchor
         mode = .diff(
             presentation: presentation,
             hunks: hunks,
@@ -140,6 +162,12 @@ struct CodeTextEditor: NSViewRepresentable {
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
         )
+
+        // Let the panel header's "Open File" button pull the diff's current
+        // top line on demand, without pushing a SwiftUI update on every scroll.
+        diffScrollAnchor?.provider = { [weak coordinator = context.coordinator] in
+            coordinator?.topNewFileLine()
+        }
 
         // Don't call configureMode here. Loading the file's text in makeNSView
         // means setAttributedString runs against a textContainer that hasn't
@@ -370,6 +398,12 @@ struct CodeTextEditor: NSViewRepresentable {
                 // ends with setAttributedString — running it after the find
                 // indicator would dismiss the indicator overlay. Defer.
                 coordinator.pendingFindHighlight = highlightRequest
+            } else if let scrollToTopLine {
+                // Same deferral as the find indicator: finalizeInitialLayout
+                // below resets scroll to the top, and the async highlight pass
+                // re-applies the storage — so apply the scroll once both are
+                // done, not now.
+                coordinator.pendingScrollToTopLine = scrollToTopLine
             }
 
             // Seed the bookkeeping that updateMode compares against, so the
@@ -463,6 +497,11 @@ struct CodeTextEditor: NSViewRepresentable {
         switch mode {
         case .editable(let gutterDiff, let highlightRequest):
             textView.isEditable = true
+            // Re-assert undo support every update, not just in configureMode.
+            // The text view is reused across modes; once it has shown a diff
+            // (allowsUndo = false) switching back to editable would otherwise
+            // leave undo disabled — edits work but Cmd+Z does nothing.
+            textView.allowsUndo = true
             textView.textContainerInset = NSSize(width: EditorTextViewConstants.gutterWidth, height: 4)
             textView.gutterDiff = gutterDiff
             textView.diffLineKinds = [:]
@@ -522,6 +561,7 @@ struct CodeTextEditor: NSViewRepresentable {
 
         case .diff(let presentation, let hunks, let reference, let onReload):
             textView.isEditable = false
+            textView.allowsUndo = false
             textView.textContainerInset = NSSize(width: EditorTextViewConstants.diffGutterWidth, height: 4)
             textView.gutterDiff = .empty
             textView.diffLineKinds = presentation.lineKinds
@@ -686,6 +726,7 @@ struct CodeTextEditor: NSViewRepresentable {
         var didConfigureMode = false
         var lastAppliedHighlight: HighlightRequest?
         var pendingFindHighlight: HighlightRequest?
+        var pendingScrollToTopLine: Int?
         var lastDocumentID: AnyHashable?
         var lastWrapLines: Bool?
         var lastWrapContentWidth: CGFloat?
@@ -765,6 +806,9 @@ struct CodeTextEditor: NSViewRepresentable {
                         lineNumber: pending.lineNumber,
                         columnRange: pending.columnRange
                     )
+                } else if let topLine = self.pendingScrollToTopLine {
+                    self.pendingScrollToTopLine = nil
+                    textView.scrollLineToTop(topLine)
                 }
             }
         }
@@ -898,6 +942,29 @@ struct CodeTextEditor: NSViewRepresentable {
             }
         }
 
+        /// New-file line number at the top of the diff viewport, for handing
+        /// off to the editor. The diff shows removed lines (no new-file number)
+        /// and context/added lines; if the topmost line is a removed one we
+        /// resolve to the next line that does carry a new-file number — i.e.
+        /// what visually follows it in the new file.
+        func topNewFileLine() -> Int? {
+            guard let textView, let presentation else { return nil }
+            guard let renderLine = textView.topVisibleLine() else { return nil }
+            let maxLine = presentation.lineNumbers.keys.max() ?? renderLine
+
+            var line = renderLine
+            while line <= maxLine {
+                if let new = presentation.lineNumbers[line]?.new { return new }
+                line += 1
+            }
+            line = renderLine
+            while line >= 1 {
+                if let new = presentation.lineNumbers[line]?.new { return new }
+                line -= 1
+            }
+            return nil
+        }
+
         func buildHunkLookup() {
             newLineToHunkIndex.removeAll()
             oldLineToHunkIndex.removeAll()
@@ -929,6 +996,7 @@ struct CodeTextEditor: NSViewRepresentable {
 
             guard let hunkIndex, hunkIndex < hunks.count else { return }
             if case .commit = reference.stage { return }
+            if case .range = reference.stage { return }
 
             showContextMenu(for: hunks[hunkIndex], reference: reference, at: point, in: textView)
         }
@@ -956,7 +1024,7 @@ struct CodeTextEditor: NSViewRepresentable {
                 unstageItem.representedObject = hunk
                 menu.addItem(unstageItem)
 
-            case .commit:
+            case .commit, .range:
                 return
             }
 

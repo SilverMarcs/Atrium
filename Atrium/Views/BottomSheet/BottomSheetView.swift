@@ -6,17 +6,18 @@ struct BottomSheetView: View {
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
+    @State private var headerHeight: CGFloat = 30
 
     var body: some View {
         VStack(spacing: 0) {
             dragBorder
             content
         }
-        .frame(maxHeight: panel.isOpen ? panelHeight : 0, alignment: .top)
+        .frame(maxHeight: panel.isOpen ? panelHeight : headerHeight + 1, alignment: .top)
         .clipped()
-        .allowsHitTesting(panel.isOpen)
-        .background(.bar)
+        .background(colorScheme == .dark ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.bar))
         .environment(\.editorFontSize, CGFloat(editorFontSize))
+        .onPreferenceChange(PanelHeaderHeightKey.self) { headerHeight = $0 }
     }
 
     private var borderColor: Color {
