@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DiffPopoverHeaderView: View {
+    @AppStorage(AppUIScale.key) private var appUIScale: AppUIScale = .standard
     let addedCount: Int
     let removedCount: Int
     let stage: GutterHunkStage
@@ -43,5 +44,6 @@ struct DiffPopoverHeaderView: View {
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 4)
+        .dynamicTypeSize(appUIScale.dynamicTypeSize)
     }
 }

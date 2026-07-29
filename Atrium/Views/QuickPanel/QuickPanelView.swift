@@ -2,6 +2,7 @@ import SwiftUI
 
 struct QuickPanelView: View {
     @Bindable var controller: QuickPanelController
+    @AppStorage(AppUIScale.key) private var appUIScale: AppUIScale = .standard
     var onHeightChange: (QuickPanelHeight) -> Void
     var onDismiss: () -> Void
 
@@ -15,6 +16,7 @@ struct QuickPanelView: View {
         // Re-mount whenever a fresh chat is swapped in by `reset()`, so the
         // input field, focus state, and toolbars start clean.
         .id(controller.chat.id)
+        .dynamicTypeSize(appUIScale.dynamicTypeSize)
     }
 }
 

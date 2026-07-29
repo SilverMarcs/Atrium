@@ -87,7 +87,8 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func createTerminalView(for tab: Terminal) -> LocalProcessTerminalView {
             let tv = LocalProcessTerminalView(frame: .zero)
             tv.configureNativeColors()
-            tv.getTerminal().setCursorStyle(.blinkBar)
+            try? tv.setUseMetal(true)
+            tv.getTerminal().setCursorStyle(.steadyBlock)
             tv.font = NSFont(descriptor: tv.font.fontDescriptor, size: TerminalProcessRegistry.fontSize) ?? tv.font
             tab.localProcessTerminalView = tv
             register(tv, for: tab)
