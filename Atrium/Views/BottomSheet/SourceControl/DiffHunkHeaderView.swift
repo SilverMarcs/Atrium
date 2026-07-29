@@ -32,7 +32,7 @@ struct DiffHunkHeaderView: View {
                     Task { await applyHunk(reverse: true, cached: true) }
                 }
                 .controlSize(.small)
-            case .commit:
+            case .commit, .range:
                 EmptyView()
             }
         }

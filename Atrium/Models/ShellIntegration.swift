@@ -122,11 +122,16 @@ enum ShellIntegration {
         local exit=$?
         printf '\e]133;D;%d\a' "$exit"
     }
+    __atrium_chpwd() {
+        printf '\e]7;file://%s%s\a' "${HOST:-localhost}" "$PWD"
+    }
 
     if (( $+functions[add-zsh-hook] )); then
         add-zsh-hook preexec __atrium_preexec
         add-zsh-hook precmd __atrium_precmd
+        add-zsh-hook chpwd __atrium_chpwd
     fi
+    __atrium_chpwd
     """#
 
     /// Bash integration uses the bash-preexec pattern: a DEBUG trap fires for
@@ -157,6 +162,7 @@ enum ShellIntegration {
     __atrium_precmd_invoke() {
         local ret=$?
         printf '\e]133;D;%d\a' "$ret"
+        printf '\e]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"
         __atrium_preexec_ran=0
         return $ret
     }
@@ -166,6 +172,7 @@ enum ShellIntegration {
       *__atrium_precmd_invoke*) ;;
       *) PROMPT_COMMAND="__atrium_precmd_invoke${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
     esac
+    printf '\e]7;file://%s%s\a' "${HOSTNAME:-localhost}" "$PWD"
     """#
 
     private static let fishInit = #"""
@@ -177,5 +184,9 @@ enum ShellIntegration {
     function __atrium_postexec --on-event fish_postexec
         printf '\e]133;D;%d\a' $status
     end
+    function __atrium_cwd --on-variable PWD
+        printf '\e]7;file://%s%s\a' (hostname) "$PWD"
+    end
+    printf '\e]7;file://%s%s\a' (hostname) "$PWD"
     """#
 }

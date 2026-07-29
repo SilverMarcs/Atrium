@@ -17,10 +17,9 @@ struct PanelHeaderHeightKey: PreferenceKey {
 struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     @Environment(EditorPanel.self) private var panel
     @Environment(AppState.self) private var appState
-    // @Environment(\.openWindow) private var openWindow
-    @Environment(\.isDetachedEditor) private var isDetached
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
+    @State private var headerHeight: CGFloat = 0
 
     @ViewBuilder let title: Title
     @ViewBuilder let actions: Actions
@@ -31,21 +30,18 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     }
 
     var body: some View {
-        if isDetached {
+        VStack(spacing: 0) {
+            header
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newHeight in
+                    headerHeight = newHeight
+                }
+                .preference(key: PanelHeaderHeightKey.self, value: headerHeight)
+            Rectangle()
+                .fill(borderColor)
+                .frame(height: 1)
             content
-        } else {
-            VStack(spacing: 0) {
-                header
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(key: PanelHeaderHeightKey.self, value: geo.size.height)
-                        }
-                    )
-                Rectangle()
-                    .fill(borderColor)
-                    .frame(height: 1)
-                content
-            }
         }
     }
 
@@ -76,35 +72,26 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
 
             Spacer()
 
-            actions
+            if panel.isOpen {
+                actions
 
-            // MARK: Open in New Window (disabled for now)
-            // if let content = panel.content {
-            //     Button {
-            //         openWindow(value: content)
-            //     } label: {
-            //         Image(systemName: "arrow.up.forward.square")
-            //     }
-            //     .buttonStyle(.borderless)
-            //     .help("Open in New Window")
-            // }
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isFocusMode {
-                        appState.sidebarVisibility = .automatic
-                        appState.showingInspector = true
-                    } else {
-                        appState.sidebarVisibility = .detailOnly
-                        appState.showingInspector = false
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if isFocusMode {
+                            appState.sidebarVisibility = .automatic
+                            appState.showingInspector = true
+                        } else {
+                            appState.sidebarVisibility = .detailOnly
+                            appState.showingInspector = false
+                        }
                     }
+                } label: {
+                    Image(systemName: "rectangle.center.inset.filled")
+                        .foregroundStyle(isFocusMode ? .accent : .secondary)
                 }
-            } label: {
-                Image(systemName: "rectangle.center.inset.filled")
-                    .foregroundStyle(isFocusMode ? .accent : .secondary)
+                .buttonStyle(.borderless)
+                .help(isFocusMode ? "Show Sidebar & Inspector" : "Hide Sidebar & Inspector")
             }
-            .buttonStyle(.borderless)
-            .help(isFocusMode ? "Show Sidebar & Inspector" : "Hide Sidebar & Inspector")
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -135,12 +122,25 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
         DragGesture(minimumDistance: 1, coordinateSpace: .global)
             .onChanged { value in
                 if dragStartHeight == nil {
-                    dragStartHeight = panelHeight
+                    // When collapsed, anchor the drag at the minimum expanded height
+                    // so any upward motion immediately expands the panel.
+                    dragStartHeight = panel.isOpen ? panelHeight : 100
                     dragStartY = value.startLocation.y
                 }
                 guard let startHeight = dragStartHeight, let startY = dragStartY else { return }
                 let delta = startY - value.location.y
-                panelHeight = min(max(100, startHeight + delta), 800)
+                let target = startHeight + delta
+                let collapseThreshold: Double = 40
+                if target >= 100 {
+                    if !panel.isOpen { panel.expand() }
+                    panelHeight = min(target, 800)
+                } else if target < collapseThreshold {
+                    if panel.isOpen { panel.collapse() }
+                } else {
+                    // Between collapseThreshold and 100: keep panel open, clamped at min.
+                    if !panel.isOpen { panel.expand() }
+                    panelHeight = 100
+                }
             }
             .onEnded { _ in
                 dragStartHeight = nil

@@ -6,12 +6,14 @@ struct AtriumApp: App {
 
     @State private var workspaceStore = WorkspaceStore()
     @State private var appState = AppState()
+    @AppStorage(AppUIScale.key) private var appUIScale: AppUIScale = .standard
 
     var body: some Scene {
         Window("Atrium", id: "atrium") {
             ContentView()
                 .environment(appState)
                 .environment(workspaceStore)
+                .dynamicTypeSize(appUIScale.dynamicTypeSize)
                 .frame(minWidth: 600, minHeight: 400)
                 .task { CompanionServer.shared.start(workspaceStore: workspaceStore) }
                 .task { ModelCatalog.shared.bootstrapIfNeeded() }
@@ -22,17 +24,18 @@ struct AtriumApp: App {
             AppCommands(appState: appState)
         }
 
-        WindowGroup("Editor", for: EditorPanelContent.self) { $content in
-            if let content {
-                DetachedEditorView(content: content)
-                    .frame(minWidth: 400, minHeight: 300)
+        WindowGroup("Diff", for: GitCommitDiffSheetItem.self) { $item in
+            if let item {
+                GitCommitDiffWindow(item: item)
+                    .dynamicTypeSize(appUIScale.dynamicTypeSize)
             }
         }
-        .defaultSize(width: 875, height: 625)
+        .defaultSize(width: 1100, height: 700)
         .restorationBehavior(.disabled)
 
         Window("About Atrium", id: "about") {
             AboutView()
+                .dynamicTypeSize(appUIScale.dynamicTypeSize)
                 .containerBackground(.regularMaterial, for: .window)
                 .toolbar(removing: .title)
                 .toolbarBackground(.hidden, for: .windowToolbar)
@@ -45,6 +48,7 @@ struct AtriumApp: App {
         Settings {
             SettingsView()
                 .environment(workspaceStore)
+                .dynamicTypeSize(appUIScale.dynamicTypeSize)
         }
     }
 }

@@ -48,7 +48,7 @@ enum DiffPopoverPresenter {
         let popoverWidth: CGFloat = 560
         let maxPopoverHeight: CGFloat = 250
         let headerHeight: CGFloat = 32
-        let layout = SharedDiffTextLayout.popover(wrapsLines: wrapLines)
+        let layout = SharedDiffTextLayout.popover(wrapsLines: wrapLines, fontSize: textView.editorFontSize)
 
         let popoverTextView = SharedDiffTextView()
         popoverTextView.frame = NSRect(x: 0, y: 0, width: popoverWidth, height: 0)

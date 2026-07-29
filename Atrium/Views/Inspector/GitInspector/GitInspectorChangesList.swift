@@ -6,6 +6,7 @@ struct GitInspectorChangesList: View {
     var onShowInFileTree: ((URL) -> Void)?
 
     @Environment(EditorPanel.self) private var editorPanel
+    @Environment(\.openWindow) private var openWindow
 
     private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
 
@@ -36,12 +37,12 @@ struct GitInspectorChangesList: View {
                                         state.showUndoLastCommitAlert = true
                                     },
                                     onShowChanges: {
-                                        state.commitDiffSheetItem = GitCommitDiffSheetItem(
+                                        openWindow(value: GitCommitDiffSheetItem(
                                             hash: commit.hash,
                                             message: commit.message,
                                             repositoryRootURL: snapshot.repositoryRootURL,
                                             preloadedFiles: nil
-                                        )
+                                        ))
                                     }
                                 )
                             }
@@ -78,7 +79,7 @@ struct GitInspectorChangesList: View {
                             systemImage: "checkmark.circle",
                             isExpanded: $state.stagedExpanded
                         )
-                        .contextMenu { GitRepoContextMenu(snapshot: snapshot, onAction: handleAction) }
+                        .contextMenu { GitRepoContextMenu(staged: true, snapshot: snapshot, onAction: handleAction) }
                     }
                     .listRowSeparator(.hidden)
                 }
@@ -92,7 +93,7 @@ struct GitInspectorChangesList: View {
                             systemImage: "circle.dashed",
                             isExpanded: $state.unstagedExpanded
                         )
-                        .contextMenu { GitRepoContextMenu(snapshot: snapshot, onAction: handleAction) }
+                        .contextMenu { GitRepoContextMenu(staged: false, snapshot: snapshot, onAction: handleAction) }
                     }
                     .listRowSeparator(.hidden)
                 }
@@ -111,8 +112,9 @@ struct GitInspectorChangesList: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .onChange(of: state.selectedFileID) { _, newID in
-            guard let id = newID,
+        .onChange(of: InspectorSelection(state, state.selectedFileID)) { old, new in
+            guard old.owner == new.owner,
+                  let id = new.selection,
                   let (file, stage, snap) = resolveFile(id: id) else { return }
             editorPanel.openDiff(file.fileURL, in: snap.repositoryRootURL, stage: stage, kind: file.kind)
         }
@@ -122,21 +124,23 @@ struct GitInspectorChangesList: View {
 
     @ViewBuilder
     private func sectionHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
-        Label {
-            Text(title)
-        } icon: {
-            Image(systemName: systemImage)
-                .foregroundStyle(.accent)
-        }
-        .font(.subheadline)
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             withAnimation {
                 isExpanded.wrappedValue.toggle()
             }
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.accent)
+            }
+            .font(.subheadline)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Rows

@@ -3,10 +3,10 @@ import SwiftUI
 
 struct GitCommitLogSheet: View {
     @Bindable var state: GitInspectorState
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     @State private var entries: [GitLogEntry] = []
     @State private var isLoading = true
-    @State private var diffItem: GitCommitDiffSheetItem?
-    @Environment(\.dismiss) private var dismiss
 
     private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
 
@@ -24,9 +24,14 @@ struct GitCommitLogSheet: View {
                     )
                 } else {
                     List(entries) { entry in
-                        commitRow(entry)
-                            .contentShape(Rectangle())
-                            .onTapGesture { openDiffs(for: entry) }
+                        Button {
+                            openDiffs(for: entry)
+                        } label: {
+                            commitRow(entry)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                            .buttonStyle(.plain)
                             .listRowSeparator(.visible)
                     }
                     .listStyle(.inset)
@@ -43,9 +48,17 @@ struct GitCommitLogSheet: View {
         .task {
             await load()
         }
-        .sheet(item: $diffItem) { item in
-            GitCommitDiffSheet(item: item)
-        }
+    }
+
+    private func openDiffs(for entry: GitLogEntry) {
+        guard let snapshot else { return }
+        openWindow(value: GitCommitDiffSheetItem(
+            hash: entry.hash,
+            message: entry.subject,
+            repositoryRootURL: snapshot.repositoryRootURL,
+            preloadedFiles: nil
+        ))
+        dismiss()
     }
 
     @ViewBuilder
@@ -84,16 +97,6 @@ struct GitCommitLogSheet: View {
                 copyToClipboard(entry.subject)
             }
         }
-    }
-
-    private func openDiffs(for entry: GitLogEntry) {
-        guard let snapshot else { return }
-        diffItem = GitCommitDiffSheetItem(
-            hash: entry.hash,
-            message: entry.subject,
-            repositoryRootURL: snapshot.repositoryRootURL,
-            preloadedFiles: nil
-        )
     }
 
     private func load() async {

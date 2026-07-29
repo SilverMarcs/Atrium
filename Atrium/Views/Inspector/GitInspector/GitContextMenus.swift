@@ -18,6 +18,10 @@ enum GitAction {
 // MARK: - Context Menus
 
 struct GitRepoContextMenu: View {
+    /// Whether this menu is attached to the staged section header. Scopes which
+    /// actions are enabled so the staged header can't offer stage/discard and the
+    /// unstaged header can't offer unstage/commit.
+    let staged: Bool
     let snapshot: GitRepositoryStatusSnapshot
     let onAction: (GitAction) -> Void
 
@@ -25,24 +29,24 @@ struct GitRepoContextMenu: View {
         Button { onAction(.stageAll(snapshot)) } label: {
             Label("Stage All Changes", systemImage: "tray.and.arrow.down")
         }
-        .disabled(snapshot.unstagedFiles.isEmpty)
+        .disabled(staged)
 
         Button { onAction(.unstageAll(snapshot)) } label: {
             Label("Unstage All Changes", systemImage: "tray.and.arrow.up")
         }
-        .disabled(snapshot.stagedFiles.isEmpty)
+        .disabled(!staged)
 
         Button(role: .destructive) { onAction(.discardAll(snapshot)) } label: {
             Label("Discard All Changes", systemImage: "arrow.uturn.backward")
         }
-        .disabled(snapshot.unstagedFiles.isEmpty)
+        .disabled(staged)
 
         Divider()
 
         Button { onAction(.commit) } label: {
             Label("Commit...", systemImage: "checkmark.circle")
         }
-        .disabled(snapshot.stagedFiles.isEmpty)
+        .disabled(!staged)
     }
 }
 

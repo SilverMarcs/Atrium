@@ -8,6 +8,8 @@ struct AppCommands: Commands {
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
     @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
     @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage(AppUIScale.key) private var appUIScale: AppUIScale = .standard
+    @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
 
     /// Whether the focused window is the main Atrium window.
     private var mainWindowActive: Bool { isMainWindow == true }
@@ -19,6 +21,35 @@ struct AppCommands: Commands {
             Button("About Atrium") {
                 openWindow(id: "about")
             }
+        }
+
+        CommandGroup(before: .toolbar) {
+            Button {
+                appUIScale = appUIScale.increased
+                TerminalProcessRegistry.fontSize += 0.5
+                editorFontSize = min(editorFontSize + 0.5, EditorFontSize.max)
+            } label: {
+                Label("Zoom In", systemImage: "plus.magnifyingglass")
+            }
+            .keyboardShortcut("+", modifiers: .command)
+
+            Button {
+                appUIScale = appUIScale.decreased
+                TerminalProcessRegistry.fontSize -= 0.5
+                editorFontSize = max(editorFontSize - 0.5, EditorFontSize.min)
+            } label: {
+                Label("Zoom Out", systemImage: "minus.magnifyingglass")
+            }
+            .keyboardShortcut("-", modifiers: .command)
+
+            Button {
+                appUIScale = .standard
+                TerminalProcessRegistry.fontSize = TerminalProcessRegistry.defaultFontSize
+                editorFontSize = EditorFontSize.default
+            } label: {
+                Label("Actual Size", systemImage: "1.magnifyingglass")
+            }
+            .keyboardShortcut("0", modifiers: .command)
         }
 
         if mainWindowActive {
@@ -113,7 +144,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("3", modifiers: .command)
 
                 Button {
-                    // appState.showingInspector = true
+                    appState.showingInspector = true
                     appState.selectedChat?.workspace?.inspectorState.selectedTab = .commands
                 } label: {
                     Label("Command Runner", systemImage: "apple.terminal")

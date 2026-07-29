@@ -12,6 +12,7 @@ struct FileTreeView: View {
         List(selection: $state.selectedID) {
             ForEach(state.model.displayItems) { item in
                 FileNodeView(item: item)
+                    .tag(item.id)
             }
         }
         .environment(state)
@@ -73,7 +74,7 @@ struct FileTreeView: View {
             ),
             presenting: pendingTrashURL
         ) { url in
-            Button("Move to Trash", role: .destructive) {
+            Button("Move to Trash", role: .confirm) {
                 state.model.moveToTrash(url: url, directoryURL: directoryURL)
             }
             Button("Cancel", role: .cancel) {}
@@ -106,8 +107,9 @@ struct FileTreeView: View {
             state.model.showHiddenFiles = showHiddenFiles
             state.model.load(directoryURL: directoryURL)
         }
-        .onChange(of: state.selectedID) { _, newID in
-            guard let id = newID,
+        .onChange(of: InspectorSelection(state, state.selectedID)) { old, new in
+            guard old.owner == new.owner,
+                  let id = new.selection,
                   let item = state.model.findItem(id: id),
                   !item.isDirectory
             else { return }

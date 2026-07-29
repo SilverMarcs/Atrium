@@ -50,6 +50,19 @@ struct GitInspectorCommitArea: View {
                 state.commitMessage = ""
                 await state.refresh(directoryURL: directoryURL)
             }
+        case .push, .pull:
+            Task {
+                await state.model.fetch(snapshot: snapshot)
+                await state.refresh(directoryURL: directoryURL)
+                guard state.model.errorMessage == nil,
+                      let refreshed = state.currentSnapshot else { return }
+                dispatchSyncAction(snapshot: refreshed)
+            }
+        }
+    }
+
+    private func dispatchSyncAction(snapshot: GitRepositoryStatusSnapshot) {
+        switch currentAction {
         case .push:
             if needsUpstream {
                 state.showPushUpstreamAlert = true
@@ -59,6 +72,7 @@ struct GitInspectorCommitArea: View {
                 state.showPullRebaseAlert = true
                 return
             }
+            guard !snapshot.unpushedCommits.isEmpty else { return }
             state.perform(.push(snapshot), directoryURL: directoryURL)
         case .pull:
             if !snapshot.unpushedCommits.isEmpty {
@@ -73,6 +87,8 @@ struct GitInspectorCommitArea: View {
                 await state.model.pull(snapshot: snapshot)
                 await state.refresh(directoryURL: directoryURL)
             }
+        case .commit:
+            return
         }
     }
 }

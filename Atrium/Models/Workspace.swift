@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 @Observable
 final class Workspace: Identifiable, Hashable, Codable {
@@ -26,6 +27,21 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     var url: URL {
         URL(fileURLWithPath: directory)
+    }
+
+    /// The directory reflected by the files, search, and Git inspectors.
+    /// Switching the workspace repository to a linked worktree moves the
+    /// complete inspector context with it; nested repositories remain scoped
+    /// to the Git inspector.
+    var effectiveURL: URL {
+        let workspaceRoot = url.standardizedFileURL.resolvingSymlinksInPath()
+        for (repositoryURL, worktreeURL) in inspectorState.git.worktreeOverrides
+        where repositoryURL == workspaceRoot || repositoryURL.isAncestor(of: workspaceRoot) {
+            if FileManager.default.fileExists(atPath: worktreeURL.path) {
+                return worktreeURL
+            }
+        }
+        return url
     }
 
     var projectType: ProjectType {
@@ -162,6 +178,11 @@ final class Workspace: Identifiable, Hashable, Codable {
         for cmd in commands {
             cmd.isDefault = cmd.id == entry.id
         }
+        store?.scheduleSave()
+    }
+
+    func moveCommands(from source: IndexSet, to destination: Int) {
+        commands.move(fromOffsets: source, toOffset: destination)
         store?.scheduleSave()
     }
 

@@ -8,7 +8,6 @@ enum EditorFontSize {
 }
 
 extension EnvironmentValues {
-    @Entry var isDetachedEditor: Bool = false
     @Entry var editorFontSize: CGFloat = CGFloat(EditorFontSize.default)
     @Entry var fileTreeAction: (FileTreeAction) -> Void = { _ in }
     @Entry var showInFileTree: (URL) -> Void = { _ in }

@@ -3,6 +3,7 @@ import SwiftUI
 struct DiffPanel: View {
     let reference: GitDiffReference
     @State private var loader = DiffLoadModel()
+    @State private var scrollAnchor = DiffScrollAnchor()
 
     @Environment(EditorPanel.self) private var panel
 
@@ -31,12 +32,43 @@ struct DiffPanel: View {
                 diffStats(stats)
             }
         } actions: {
-            Button { panel.openFile(reference.fileURL) } label: {
+            Button {
+                panel.openFile(reference.fileURL, scrollToLine: scrollAnchor.currentNewFileLine())
+            } label: {
                 Image(systemName: "arrow.up.forward.square")
             }
             .buttonStyle(.borderless)
             .help("Open File")
         } content: {
+            DiffBodyView(reference: reference, loader: loader, scrollAnchor: scrollAnchor)
+        }
+    }
+
+    @ViewBuilder
+    private func diffStats(_ lineKinds: [Int: GitDiffLineKind]) -> some View {
+        let added = lineKinds.values.filter { $0 == .added }.count
+        let removed = lineKinds.values.filter { $0 == .removed }.count
+        HStack(spacing: 4) {
+            if added > 0 {
+                Text("+\(added)")
+                    .foregroundStyle(.green)
+            }
+            if removed > 0 {
+                Text("-\(removed)")
+                    .foregroundStyle(.red)
+            }
+        }
+        .font(.caption.monospacedDigit())
+    }
+}
+
+struct DiffBodyView: View {
+    let reference: GitDiffReference
+    let loader: DiffLoadModel
+    var scrollAnchor: DiffScrollAnchor?
+
+    var body: some View {
+        Group {
             switch loader.phase {
             case .idle, .loading:
                 Color.clear
@@ -59,6 +91,7 @@ struct DiffPanel: View {
                         fileExtension: reference.fileURL.pathExtension.lowercased(),
                         hunks: file?.hunks ?? [],
                         reference: reference,
+                        scrollAnchor: scrollAnchor,
                         onReload: { await loader.reloadInPlace(reference: reference) }
                     )
                 }
@@ -72,23 +105,6 @@ struct DiffPanel: View {
         .onChange(of: reference, initial: true) { _, newReference in
             loader.load(reference: newReference)
         }
-    }
-
-    @ViewBuilder
-    private func diffStats(_ lineKinds: [Int: GitDiffLineKind]) -> some View {
-        let added = lineKinds.values.filter { $0 == .added }.count
-        let removed = lineKinds.values.filter { $0 == .removed }.count
-        HStack(spacing: 4) {
-            if added > 0 {
-                Text("+\(added)")
-                    .foregroundStyle(.green)
-            }
-            if removed > 0 {
-                Text("-\(removed)")
-                    .foregroundStyle(.red)
-            }
-        }
-        .font(.caption.monospacedDigit())
     }
 }
 
