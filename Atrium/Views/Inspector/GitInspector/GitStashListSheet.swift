@@ -25,14 +25,10 @@ struct GitStashListSheet: View {
                 } else {
                     List {
                         ForEach(stashes) { entry in
-                            Button {
-                                openDiffs(for: entry)
-                            } label: {
-                                stashRow(entry)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                                .buttonStyle(.plain)
+                            stashRow(entry)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { openDiffs(for: entry) }
                                 .contextMenu {
                                     applyButton(entry)
                                     dropButton(entry)

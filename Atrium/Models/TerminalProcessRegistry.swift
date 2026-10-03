@@ -6,6 +6,7 @@ import SwiftTerm
 ///
 /// Keying the views off `Terminal.id` in a static registry decouples shell
 /// process lifetime from the lifetime of any individual `Terminal` instance.
+@MainActor
 enum TerminalProcessRegistry {
     private static var views: [UUID: LocalProcessTerminalView] = [:]
 

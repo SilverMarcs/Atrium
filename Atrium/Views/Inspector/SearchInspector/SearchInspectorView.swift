@@ -11,28 +11,36 @@ struct SearchInspectorView: View {
             ForEach(state.model.results) { fileResult in
                 DisclosureGroup(isExpanded: binding(for: fileResult.id)) {
                     ForEach(fileResult.matches) { match in
-                        Button {
-                            if state.selectedID == match.id {
-                                editorPanel.openFileAndHighlight(
-                                    match.fileURL,
-                                    lineNumber: match.lineNumber,
-                                    columnRange: match.columnRange
-                                )
-                            } else {
-                                state.selectedID = match.id
+                        matchRow(match)
+                            .tag(match.id)
+                            .selectionDisabled(false)
+                            .padding(.leading, -15)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if state.selectedID == match.id {
+                                    editorPanel.openFileAndHighlight(
+                                        match.fileURL,
+                                        lineNumber: match.lineNumber,
+                                        columnRange: match.columnRange
+                                    )
+                                } else {
+                                    state.selectedID = match.id
+                                }
                             }
-                        } label: {
-                            matchRow(match)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .tag(match.id)
-                        .selectionDisabled(false)
-                        .padding(.leading, -15)
                     }
                 } label: {
-                    Button {
+                    FileLabel(name: fileResult.fileName, icon: fileResult.fileURL.fileIcon) {
+                        if let disambiguator = fileResult.disambiguator {
+                            Text(disambiguator)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         withAnimation {
                             if state.expandedIDs.contains(fileResult.id) {
                                 state.expandedIDs.remove(fileResult.id)
@@ -40,20 +48,7 @@ struct SearchInspectorView: View {
                                 state.expandedIDs.insert(fileResult.id)
                             }
                         }
-                    } label: {
-                        FileLabel(name: fileResult.fileName, icon: fileResult.fileURL.fileIcon) {
-                            if let disambiguator = fileResult.disambiguator {
-                                Text(disambiguator)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
                 }
                 .selectionDisabled()
             }

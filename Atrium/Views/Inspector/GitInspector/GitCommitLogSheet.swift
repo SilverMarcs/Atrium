@@ -24,14 +24,10 @@ struct GitCommitLogSheet: View {
                     )
                 } else {
                     List(entries) { entry in
-                        Button {
-                            openDiffs(for: entry)
-                        } label: {
-                            commitRow(entry)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                            .buttonStyle(.plain)
+                        commitRow(entry)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { openDiffs(for: entry) }
                             .listRowSeparator(.visible)
                     }
                     .listStyle(.inset)

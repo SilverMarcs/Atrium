@@ -23,38 +23,34 @@ struct FileNodeView: View {
                     FileNodeView(item: child)
                 }
             } label: {
-                Button {
-                    withAnimation {
-                        if state.expandedIDs.contains(item.id) {
-                            state.expandedIDs.remove(item.id)
-                        } else {
-                            state.expandedIDs.insert(item.id)
+                FileRowView(item: item)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation {
+                            if state.expandedIDs.contains(item.id) {
+                                state.expandedIDs.remove(item.id)
+                            } else {
+                                state.expandedIDs.insert(item.id)
+                            }
                         }
                     }
-                } label: {
-                    FileRowView(item: item)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
                     .contextMenu { FileTreeContextMenu(item: item, onAction: onAction) }
             }
             .tag(item.id)
             .listRowSeparator(.hidden)
         } else {
-            Button {
-                if state.selectedID == item.id {
-                    editorPanel.openFile(item.url)
-                } else {
-                    state.selectedID = item.id
-                }
-            } label: {
-                FileRowView(item: item)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-                .buttonStyle(.plain)
+            FileRowView(item: item)
                 .tag(item.id)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if state.selectedID == item.id {
+                        editorPanel.openFile(item.url)
+                    } else {
+                        state.selectedID = item.id
+                    }
+                }
                 .contextMenu { FileTreeContextMenu(item: item, onAction: onAction) }
                 .listRowSeparator(.hidden)
         }

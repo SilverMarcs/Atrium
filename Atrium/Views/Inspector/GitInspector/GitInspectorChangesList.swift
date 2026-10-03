@@ -124,23 +124,21 @@ struct GitInspectorChangesList: View {
 
     @ViewBuilder
     private func sectionHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
-        Button {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(.accent)
+        }
+        .font(.subheadline)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
             withAnimation {
                 isExpanded.wrappedValue.toggle()
             }
-        } label: {
-            Label {
-                Text(title)
-            } icon: {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.accent)
-            }
-            .font(.subheadline)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Rows

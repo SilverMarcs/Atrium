@@ -123,8 +123,9 @@ struct WorkspaceRow: View {
             TextField("Workspace Name", text: $renameText)
             Button("Cancel", role: .cancel) { }
             Button("Rename") {
-                if !renameText.isEmpty {
-                    workspace.name = renameText
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    workspace.name = trimmed
                 }
             }
         }

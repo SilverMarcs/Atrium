@@ -8,7 +8,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
     let tab: Terminal
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView(frame: .zero)
+        let container = TerminalHostView(frame: .zero)
         container.wantsLayer = true
         return container
     }
@@ -26,26 +26,15 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
         terminalView.processDelegate = coordinator
 
-        // Add to container if not already a subview (never remove — just hide/show)
-        if terminalView.superview !== container {
-            terminalView.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(terminalView)
-            NSLayoutConstraint.activate([
-                terminalView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                terminalView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                terminalView.topAnchor.constraint(equalTo: container.topAnchor),
-                terminalView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            ])
-        }
+        guard let host = container as? TerminalHostView else { return }
+        host.host(terminalView)
 
-        // Hide all, then show the selected one
-        for subview in container.subviews {
-            subview.isHidden = (subview !== terminalView)
-        }
-        terminalView.isHidden = false
-
-        DispatchQueue.main.async {
-            terminalView.window?.makeFirstResponder(terminalView)
+        Task { @MainActor [weak host, weak terminalView] in
+            // Wait for SwiftUI to attach the host before assigning focus.
+            await Task.yield()
+            guard let host, let terminalView,
+                  terminalView.superview === host else { return }
+            host.window?.makeFirstResponder(terminalView)
         }
     }
 
@@ -87,7 +76,6 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func createTerminalView(for tab: Terminal) -> LocalProcessTerminalView {
             let tv = LocalProcessTerminalView(frame: .zero)
             tv.configureNativeColors()
-            try? tv.setUseMetal(true)
             tv.getTerminal().setCursorStyle(.steadyBlock)
             tv.font = NSFont(descriptor: tv.font.fontDescriptor, size: TerminalProcessRegistry.fontSize) ?? tv.font
             tab.localProcessTerminalView = tv
@@ -141,7 +129,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func processTerminated(source: TerminalView, exitCode: Int32?) {
             guard let local = source as? LocalProcessTerminalView,
                   let entry = viewMap[ObjectIdentifier(local)] else { return }
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 entry.tab.foregroundProcessName = nil
             }
             viewMap.removeValue(forKey: ObjectIdentifier(local))
@@ -187,7 +175,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
                 case "C":
                     let name = arg.trimmingCharacters(in: .whitespacesAndNewlines)
                     let value = name.isEmpty ? "(running)" : name
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         guard let tab = weakTab.value else { return }
                         if tab.foregroundProcessName != value {
                             tab.foregroundProcessName = value
@@ -195,7 +183,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
                     }
                 case "D":
                     let exit = Int32(arg.trimmingCharacters(in: .whitespacesAndNewlines))
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         guard let tab = weakTab.value else { return }
                         tab.foregroundProcessName = nil
                         tab.lastExitCode = exit

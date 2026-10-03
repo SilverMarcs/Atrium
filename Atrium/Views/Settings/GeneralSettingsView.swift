@@ -39,7 +39,7 @@ struct GeneralSettingsView: View {
                             ),
                             in: Double(TerminalProcessRegistry.minFontSize)...Double(TerminalProcessRegistry.maxFontSize)
                         )
-                        Text(String(format: "%.1f", terminalFontSize))
+                        Text(terminalFontSize, format: .number.precision(.fractionLength(1)))
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 25, alignment: .trailing)
@@ -64,7 +64,7 @@ struct GeneralSettingsView: View {
                             ),
                             in: EditorFontSize.min...EditorFontSize.max
                         )
-                        Text(String(format: "%.1f", editorFontSize))
+                        Text(editorFontSize, format: .number.precision(.fractionLength(1)))
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 25, alignment: .trailing)
