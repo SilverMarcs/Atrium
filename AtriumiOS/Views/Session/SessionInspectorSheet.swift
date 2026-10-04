@@ -60,8 +60,15 @@ struct SessionInspectorSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .disabled(session.meta.isConnecting)
                     }
                     
+                    if let model = session.availableModels.first(where: { $0.rawValue == session.modelRawValue }), !model.reasoningLevels.isEmpty {
+                        Picker("Reasoning", selection: Binding(get: { client.activeSession?.reasoningLevel ?? "" }, set: { client.setSessionReasoningLevel($0) })) {
+                            ForEach(model.reasoningLevels) { level in Text(level.name).tag(level.id) }
+                        }
+                        .disabled(session.meta.isConnecting)
+                    }
                     Section("Permission") {
                         Picker(selection: permissionBinding) {
                             ForEach(session.availableModes) { mode in
@@ -81,6 +88,7 @@ struct SessionInspectorSheet: View {
                         .padding(.horizontal, -16)
                         .padding(.top, -13)
                     }
+                    .disabled(session.meta.isConnecting)
                     .controlSize(.large)
                     // .listSectionMargins(.horizontal, 0)
                     .listSectionSpacing(.compact)

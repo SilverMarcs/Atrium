@@ -246,7 +246,7 @@ final class Workspace: Identifiable, Hashable, Codable {
     }
 
     @discardableResult
-    func addChat(title: String = "New Chat", provider: AgentProvider = .codex, permissionMode: PermissionMode = .bypassPermissions) -> Chat {
+    func addChat(title: String = "New Chat", provider: AgentProvider = .codex, permissionMode: String = "") -> Chat {
         for existing in chats { existing.sortOrder += 1 }
         let chat = Chat(
             title: title,

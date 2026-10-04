@@ -1,5 +1,4 @@
 import SwiftUI
-import ACP
 
 struct AssistantMessageView: View {
     @AppStorage("fontSize") private var fontSize: Double = 13
@@ -10,7 +9,7 @@ struct AssistantMessageView: View {
     @State private var measuredHeight: CGFloat = 0
 
     private var chat: Chat { message.chat! }
-    private var session: ACPSession { chat.session }
+    private var session: AgentSession { chat.session }
     private var isLastMessage: Bool { message.id == chat.messages.last?.id }
 
     private func resolveFileURL(_ path: String) -> URL? {

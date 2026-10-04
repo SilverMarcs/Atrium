@@ -29,12 +29,13 @@ private struct QuickPanelInnerView: View {
     @FocusState private var isFocused: Bool
     private let catalog = ModelCatalog.shared
 
-    private var session: ACPSession { chat.session }
+    private var session: AgentSession { chat.session }
 
     private var canChangeProvider: Bool {
         chat.messages.isEmpty && !session.isConnected && !session.isConnecting
     }
 
+    private var showsStop: Bool { session.isProcessing && !canSend }
     private var canSend: Bool {
         !chat.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !chat.pendingAttachments.isEmpty
@@ -46,6 +47,10 @@ private struct QuickPanelInnerView: View {
                 .padding(15)
                 .frame(height: QuickPanelHeight.collapsed.value)
 
+            if let request = session.pendingQuestion {
+                QuestionPromptView(prompt: request.prompt) { request.respond($0) }
+                            .id(request.id)
+            }
             if !chat.pendingAttachments.isEmpty {
                 AttachmentThumbnails(chat: chat)
                     .padding(.horizontal, 15)
@@ -99,15 +104,17 @@ private struct QuickPanelInnerView: View {
             }
             .font(.system(size: 22))
 
-            Button(action: { session.isProcessing ? session.stopStreaming() : send() }) {
-                Image(systemName: session.isProcessing ? "stop.circle.fill" : "arrow.up.circle.fill")
+            Button(action: { showsStop ? session.stopStreaming() : send() }) {
+                Label(showsStop ? "Stop" : "Send", systemImage: showsStop ? "stop.circle.fill" : "arrow.up.circle.fill")
+                    .labelStyle(.iconOnly)
                     .font(.largeTitle)
                     .fontWeight(.semibold)
                     .scaleEffect(1.1)
             }
-            .foregroundStyle(.white, session.isProcessing ? AnyShapeStyle(Color.red) : AnyShapeStyle(Color.accentColor))
+            .foregroundStyle(.white, showsStop ? AnyShapeStyle(Color.red) : AnyShapeStyle(Color.accentColor))
             .buttonStyle(.plain)
-            .disabled(!session.isProcessing && !canSend)
+            .disabled(session.isConnecting || (session.isProcessing && canSend ? !session.canSteer : !session.isProcessing && !canSend))
+            .help(showsStop ? "Stop" : "Send")
         }
     }
 
@@ -204,7 +211,6 @@ private struct QuickPanelInnerView: View {
         let text = chat.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = chat.pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
-        chat.prompt = ""
-        chat.sendMessage(text, attachments: attachments)
+        if chat.sendMessage(text, attachments: attachments) { chat.prompt = "" }
     }
 }

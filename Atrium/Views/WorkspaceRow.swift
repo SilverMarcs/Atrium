@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 struct WorkspaceRow: View {
     @Environment(AppState.self) private var appState
     @Environment(WorkspaceStore.self) private var store
-    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
-    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .codex
+    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: String = ""
 
     let workspace: Workspace
 

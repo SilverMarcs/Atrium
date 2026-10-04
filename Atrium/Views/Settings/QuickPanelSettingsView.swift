@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct QuickPanelSettingsView: View {
-    @AppStorage("quickPanelProvider") private var quickPanelProvider: AgentProvider = .claude
+    @AppStorage("quickPanelProvider") private var quickPanelProvider: AgentProvider = .codex
     @AppStorage("quickPanelModel") private var quickPanelModel: String = ""
 
     private let catalog = ModelCatalog.shared

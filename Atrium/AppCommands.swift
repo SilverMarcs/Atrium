@@ -6,8 +6,8 @@ struct AppCommands: Commands {
     @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
-    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
-    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .codex
+    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: String = ""
     @AppStorage(AppUIScale.key) private var appUIScale: AppUIScale = .standard
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
 

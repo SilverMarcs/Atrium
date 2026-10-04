@@ -22,6 +22,10 @@ struct SessionDetailScreen: View {
                                 .id(message.id)
                                 .padding(.vertical, 2)
                         }
+                        if let prompt = session.questions.first {
+                            QuestionPromptView(prompt: prompt) { client.answerQuestions(requestId: prompt.id, answers: $0) }
+                                .id(prompt.id)
+                        }
                         if let error = session.error {
                             Label(error, systemImage: "exclamationmark.triangle")
                                 .frame(maxWidth: .infinity)
@@ -66,7 +70,7 @@ struct SessionDetailScreen: View {
         .searchable(
             text: $draft,
             isPresented: $isInputFocused,
-            prompt: "Ask anything…"
+            prompt: isProcessing ? "Steer the active response…" : "Ask anything…"
         )
         .searchPresentationToolbarBehavior(.avoidHidingContent)
         .onSubmit(of: .search) { sendDraft() }
@@ -134,8 +138,8 @@ struct SessionDetailScreen: View {
 
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        client.sendPrompt(text)
+        guard !text.isEmpty, client.activeSession?.meta.isConnecting == false, !isProcessing || client.activeSession?.canSteer == true else { return }
+        client.sendPrompt(text, steering: isProcessing)
         draft = ""
         isInputFocused = false
     }

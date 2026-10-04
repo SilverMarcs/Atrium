@@ -1,0 +1,52 @@
+import Foundation
+
+public enum CompanionKind: String, Codable, Sendable {
+    case auth
+    case listSessions
+    case subscribe
+    case unsubscribe
+    case sendPrompt
+    case steerPrompt
+    case answerQuestions
+    case createChat
+    case archiveChat
+    case disconnectChat
+    case deleteChat
+    case updateScratchpad
+    case stopChat
+    case setSessionModel
+    case setSessionPermissionMode
+    case setSessionReasoningLevel
+    case gitSubscribe
+    case gitUnsubscribe
+    case gitRefresh
+    case gitStage
+    case gitUnstage
+    case gitDiscard
+    case gitStageAll
+    case gitUnstageAll
+    case gitDiscardAll
+    case gitCommit
+    case gitPush
+    case gitPull
+    case gitFetch
+    case gitSwitchBranch
+    case gitCreateBranch
+    case gitFileDiff
+    case gitSelectRepository
+    case commandsSubscribe
+    case commandsUnsubscribe
+    case runCommand
+    case stopCommand
+
+    case hello
+    case authResult
+    case sessionsList
+    case sessionSnapshot
+    case sessionUpdate
+    case chatCreated
+    case error
+    case gitStatus
+    case gitFileDiffResult
+    case commandsList
+}

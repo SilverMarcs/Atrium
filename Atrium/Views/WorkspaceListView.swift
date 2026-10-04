@@ -6,8 +6,8 @@ struct WorkspaceListView: View {
     @Environment(WorkspaceStore.self) private var store
     @AppStorage("hideSettingsButton") private var hideSettingsButton = false
     @AppStorage("sidebarRowSize") private var sidebarRowSize: SidebarRowSizePreference = .medium
-    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
-    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .codex
+    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: String = ""
 
     let searchText: String
 

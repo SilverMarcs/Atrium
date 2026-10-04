@@ -1,4 +1,3 @@
-import ACP
 import AppKit
 import SwiftMarkdownView
 import Foundation
@@ -40,6 +39,7 @@ struct DiffOverlaySpec: Sendable {
     let path: String
     let oldText: String?
     let newText: String
+    let patch: String?
     let status: ToolCallItemStatus
     let reservedHeight: CGFloat
     let maxLines: Int?
@@ -150,14 +150,13 @@ struct AssistantBlocksRenderer: Sendable {
                 let diffID = nextDiffID
                 nextDiffID += 1
 
-                // let isWrite = block.isWriteWithContent
-                // let maxLines: Int? = isWrite ? 20 : nil
                 let maxLines: Int? = nil
 
                 let headerHeight: CGFloat = 24
                 let diffFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
                 let lineHeight = ceil(diffFont.ascender - diffFont.descender + diffFont.leading)
-                let unifiedLines = UnifiedDiff.lines(oldText: block.diffOldText, newText: block.diffNewText ?? "")
+                let unifiedLines = UnifiedDiff.lines(oldText: block.diffOldText, newText: block.diffNewText ?? "",
+                    patch: block.diffPatch)
                 let renderedLineCount: Int = {
                     if let cap = maxLines { return min(cap, max(1, unifiedLines.count)) }
                     return max(1, unifiedLines.count)
@@ -175,6 +174,7 @@ struct AssistantBlocksRenderer: Sendable {
                     path: block.diffPath ?? "",
                     oldText: block.diffOldText,
                     newText: block.diffNewText ?? "",
+                    patch: block.diffPatch,
                     status: Self.mapStatus(block.toolStatus),
                     reservedHeight: diffHeight,
                     maxLines: maxLines
@@ -209,7 +209,7 @@ struct AssistantBlocksRenderer: Sendable {
             if block.isThought { continue }
             if block.isText && block.text.isEmpty { continue }
 
-            if block.isEditWithDiff || block.isWriteWithContent {
+            if block.hasDiff {
                 groups.append(Group(kind: .editDiff, blocks: [block]))
             } else if block.isToolCall {
                 if let last = groups.last, last.kind == .toolCalls {
@@ -224,7 +224,7 @@ struct AssistantBlocksRenderer: Sendable {
         return groups
     }
 
-    private static func mapStatus(_ status: ACP.ToolStatus?) -> ToolCallItemStatus {
+    private static func mapStatus(_ status: ToolStatus?) -> ToolCallItemStatus {
         switch status {
         case .pending: return .pending
         case .inProgress: return .inProgress

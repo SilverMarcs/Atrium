@@ -16,11 +16,7 @@ struct CompanionDemoState {
 enum CompanionDemo {
     static let providerName = "Claude"
 
-    static let availableModels: [WireAgentModel] = [
-        WireAgentModel(rawValue: "claude-opus-4-7", name: "Opus 4.7", imageName: "sparkle"),
-        WireAgentModel(rawValue: "claude-sonnet-4-6", name: "Sonnet 4.6", imageName: "sparkle"),
-        WireAgentModel(rawValue: "claude-haiku-4-5", name: "Haiku 4.5", imageName: "sparkle")
-    ]
+    static let availableModels: [WireAgentModel] = []
 
     static let availableModes: [WirePermissionMode] = [
         WirePermissionMode(
@@ -156,13 +152,13 @@ enum CompanionDemo {
         return WireSession(
             meta: meta,
             messages: [userMsg, assistantMsg],
-            modelLabel: "Opus 4.7",
+            modelLabel: "Model",
             permissionLabel: "Ask",
             permissionSystemImage: "hand.raised",
             usedTokens: 14_320,
             contextSize: 200_000,
             availableModels: availableModels,
-            modelRawValue: "claude-opus-4-7",
+            modelRawValue: "",
             availableModes: availableModes,
             permissionModeRawValue: "default",
             error: nil

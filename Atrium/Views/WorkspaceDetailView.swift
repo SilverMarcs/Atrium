@@ -16,7 +16,7 @@ struct WorkspaceDetailView: View {
     }
 
     var body: some View {
-        ACPView(chat: chat)
+        ChatView(chat: chat)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 BottomSheetView(directoryURL: workspace.url)
             }

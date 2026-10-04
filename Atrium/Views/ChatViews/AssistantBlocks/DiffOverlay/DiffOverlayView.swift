@@ -163,7 +163,7 @@ final class DiffOverlayView: NSView {
 
         pathLabel.stringValue = (spec.path as NSString).lastPathComponent
 
-        let allLines = UnifiedDiff.lines(oldText: spec.oldText, newText: spec.newText)
+        let allLines = UnifiedDiff.lines(oldText: spec.oldText, newText: spec.newText, patch: spec.patch)
         let rawLines: [SharedDiffLine] = {
             if let cap = spec.maxLines, allLines.count > cap {
                 return Array(allLines.prefix(cap))

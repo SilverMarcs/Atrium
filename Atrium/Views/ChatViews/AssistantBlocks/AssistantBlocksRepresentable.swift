@@ -1,4 +1,3 @@
-import ACP
 import SwiftUI
 
 struct AssistantBlocksRepresentable: NSViewRepresentable {
@@ -57,6 +56,7 @@ struct AssistantBlocksRepresentable: NSViewRepresentable {
                 hasher.combine(block.diffPath)
                 hasher.combine(block.diffOldText)
                 hasher.combine(block.diffNewText)
+                hasher.combine(block.diffPatch)
             }
             return hasher.finalize()
         }

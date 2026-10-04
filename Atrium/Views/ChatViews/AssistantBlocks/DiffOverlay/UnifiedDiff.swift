@@ -3,7 +3,8 @@ import Foundation
 enum UnifiedDiff {
     /// Produces a unified diff as an ordered list of context/removed/added lines.
     /// Uses Swift's built-in `CollectionDifference` for line-level diffing.
-    static func lines(oldText: String?, newText: String) -> [SharedDiffLine] {
+    static func lines(oldText: String?, newText: String, patch: String? = nil) -> [SharedDiffLine] {
+        if let patch { return patchLines(patch) }
         let newLines = newText.components(separatedBy: "\n")
 
         guard let old = oldText, !old.isEmpty else {

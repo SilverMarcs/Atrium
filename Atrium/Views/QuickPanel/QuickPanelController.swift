@@ -45,7 +45,7 @@ final class QuickPanelController {
     }
 
     /// Disconnects the current session and swaps in a fresh chat so the next
-    /// prompt starts a brand new ACP session with whatever provider/model the
+    /// prompt starts a brand new session with whatever provider/model the
     /// user currently has selected as the Quick Panel default.
     func reset() {
         chat.disconnect()
@@ -57,8 +57,7 @@ final class QuickPanelController {
     func selectProviderAndModel(_ provider: AgentProvider, model: String) {
         chat.provider = provider
         chat.model = model
-        chat.session.provider = provider
-        chat.session.model = model
+        chat.selectModel(model)
     }
 
     private static func makeChat() -> Chat {
@@ -67,7 +66,7 @@ final class QuickPanelController {
         return Chat(
             title: "Quick",
             provider: provider,
-            permissionMode: .bypassPermissions,
+            permissionMode: "",
             model: model
         )
     }
@@ -77,7 +76,7 @@ final class QuickPanelController {
            let p = AgentProvider(rawValue: raw) { return p }
         if let raw = UserDefaults.standard.string(forKey: "defaultChatMode"),
            let p = AgentProvider(rawValue: raw) { return p }
-        return .claude
+        return .codex
     }
 
     private static func readModel(provider: AgentProvider) -> String? {

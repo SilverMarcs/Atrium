@@ -7,27 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0896F7692F829B9C0024299A /* ACP in Frameworks */ = {isa = PBXBuildFile; productRef = 0896F7682F829B9C0024299A /* ACP */; };
 		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 		08AABEFC322F74722D009C3713 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 08AABEFC312F74722D009C3712 /* SwiftMarkdownView */; };
 		08AABEFC322F74722D009C3715 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 08AABEFC312F74722D009C3714 /* SwiftMarkdownView */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		C0DE0000000000000000000A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08D10C422F64897100754649 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 08D10C492F64897100754649;
-			remoteInfo = Atrium;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		00AA00000000000000000A08 /* AtriumiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AtriumiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		08D10C4A2F64897100754649 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C0DE00000000000000000002 /* AtriumTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AtriumTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -59,11 +47,6 @@
 			path = Atrium;
 			sourceTree = "<group>";
 		};
-		C0DE00000000000000000001 /* AtriumTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AtriumTests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,17 +62,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0896F7692F829B9C0024299A /* ACP in Frameworks */,
 				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
 				08AABEFC322F74722D009C3713 /* SwiftMarkdownView in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C0DE00000000000000000004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,7 +77,6 @@
 				08D10C4C2F64897100754649 /* Atrium */,
 				00AA00000000000000000B01 /* AtriumShared */,
 				00AA00000000000000000C01 /* AtriumiOS */,
-				C0DE00000000000000000001 /* AtriumTests */,
 				08D10C4B2F64897100754649 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,7 +86,6 @@
 			children = (
 				08D10C4A2F64897100754649 /* Atrium.app */,
 				00AA00000000000000000A08 /* AtriumiOS.app */,
-				C0DE00000000000000000002 /* AtriumTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -162,7 +135,6 @@
 			);
 			name = Atrium;
 			packageProductDependencies = (
-				0896F7682F829B9C0024299A /* ACP */,
 				08BEFC272F74722D009C370D /* SwiftTerm */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 				08AABEFC312F74722D009C3712 /* SwiftMarkdownView */,
@@ -170,29 +142,6 @@
 			productName = Atrium;
 			productReference = 08D10C4A2F64897100754649 /* Atrium.app */;
 			productType = "com.apple.product-type.application";
-		};
-		C0DE00000000000000000003 /* AtriumTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C0DE0000000000000000000D /* Build configuration list for PBXNativeTarget "AtriumTests" */;
-			buildPhases = (
-				C0DE00000000000000000005 /* Sources */,
-				C0DE00000000000000000004 /* Frameworks */,
-				C0DE00000000000000000006 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				C0DE0000000000000000000B /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				C0DE00000000000000000001 /* AtriumTests */,
-			);
-			name = AtriumTests;
-			packageProductDependencies = (
-			);
-			productName = AtriumTests;
-			productReference = C0DE00000000000000000002 /* AtriumTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -210,9 +159,6 @@
 					08D10C492F64897100754649 = {
 						CreatedOnToolsVersion = 26.3;
 					};
-					C0DE00000000000000000003 = {
-						CreatedOnToolsVersion = 26.3;
-					};
 				};
 			};
 			buildConfigurationList = 08D10C452F64897100754649 /* Build configuration list for PBXProject "Atrium" */;
@@ -225,7 +171,6 @@
 			mainGroup = 08D10C412F64897100754649;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */,
 				08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				08AABEFC302F74722D009C3711 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
@@ -237,7 +182,6 @@
 			targets = (
 				08D10C492F64897100754649 /* Atrium */,
 				00AA00000000000000000A01 /* AtriumiOS */,
-				C0DE00000000000000000003 /* AtriumTests */,
 			);
 		};
 /* End PBXProject section */
@@ -251,13 +195,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		08D10C482F64897100754649 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		C0DE00000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -281,22 +218,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C0DE00000000000000000005 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		C0DE0000000000000000000B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 08D10C492F64897100754649 /* Atrium */;
-			targetProxy = C0DE0000000000000000000A /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		00AA00000000000000000A02 /* Debug */ = {
@@ -597,42 +519,6 @@
 			};
 			name = Release;
 		};
-		C0DE00000000000000000007 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.AtriumTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Atrium.app/Contents/MacOS/Atrium";
-			};
-			name = Debug;
-		};
-		C0DE00000000000000000008 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.AtriumTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Atrium.app/Contents/MacOS/Atrium";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -663,26 +549,9 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		C0DE0000000000000000000D /* Build configuration list for PBXNativeTarget "AtriumTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C0DE00000000000000000007 /* Debug */,
-				C0DE00000000000000000008 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/wiedymi/swift-acp";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
 		08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SilverMarcs/SwiftTerm";
@@ -710,11 +579,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0896F7682F829B9C0024299A /* ACP */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0896F7672F829B9C0024299A /* XCRemoteSwiftPackageReference "swift-acp" */;
-			productName = ACP;
-		};
 		08BEFC272F74722D009C370D /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */;

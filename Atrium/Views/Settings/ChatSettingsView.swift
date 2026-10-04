@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ChatSettingsView: View {
-    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
-    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .codex
+    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: String = ""
 
     @Environment(WorkspaceStore.self) private var store
     @State private var showDeleteArchivedConfirm = false
@@ -26,37 +26,15 @@ struct ChatSettingsView: View {
                 }
 
                 Picker(selection: $defaultPermissionMode) {
-                    ForEach(PermissionMode.allCases) { mode in
+                    Text("Provider Default").tag("")
+                    ForEach(catalog.permissionModes(for: defaultChatMode)) { mode in
                         Text(mode.label)
-                            .tag(mode)
+                            .tag(mode.rawValue)
                     }
                 } label: {
                     Text("Default Permission Mode")
-                    Text(defaultPermissionMode.description)
+                    Text(catalog.permissionModes(for: defaultChatMode).first { $0.rawValue == defaultPermissionMode }?.description ?? "Use the provider’s configuration")
                 }
-            }
-
-            Section("Models") {
-                ForEach(AgentProvider.allCases, id: \.self) { provider in
-                    LabeledContent {
-                        Text(modelSummary(for: provider))
-                            .foregroundStyle(.secondary)
-                    } label: {
-                        Label(provider.rawValue, image: provider.imageName)
-                    }
-                }
-            }
-            .sectionActions {
-                Button {
-                    catalog.refreshAll()
-                } label: {
-                    if catalog.isRefreshing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text("Refresh")
-                    }
-                }
-                .disabled(catalog.isRefreshing)
             }
 
             Section {
@@ -83,15 +61,6 @@ struct ChatSettingsView: View {
         } message: {
             Text("This permanently removes all archived chats across every workspace. This action cannot be undone.")
         }
-    }
-
-    private func modelSummary(for provider: AgentProvider) -> String {
-        let count = catalog.models(for: provider).count
-        if catalog.isRefreshing(provider: provider) && count == 0 {
-            return "Loading…"
-        }
-        if count == 0 { return "Not loaded" }
-        return count == 1 ? "1 model" : "\(count) models"
     }
 
     private func deleteArchivedChats() {

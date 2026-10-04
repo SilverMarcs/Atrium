@@ -1,5 +1,4 @@
 import SwiftUI
-import ACPModel
 
 struct SlashCommandMenu: View {
     let commands: [AvailableCommand]

@@ -355,6 +355,8 @@ final class CompanionClient {
             if let title = patch.title { current.meta.title = title }
             if let date = patch.date { current.meta.date = date }
             if let turnCount = patch.turnCount { current.meta.turnCount = turnCount }
+            if let isConnecting = patch.isConnecting { current.meta.isConnecting = isConnecting }
+            if let isActive = patch.isActive { current.meta.isActive = isActive }
             if let isProcessing = patch.isProcessing { current.meta.isProcessing = isProcessing }
             if let messages = patch.messages { current.messages = messages }
             if let modelLabel = patch.modelLabel { current.modelLabel = modelLabel }
@@ -364,8 +366,17 @@ final class CompanionClient {
             }
             if let usedTokens = patch.usedTokens { current.usedTokens = usedTokens }
             if let contextSize = patch.contextSize { current.contextSize = contextSize }
+            if let models = patch.availableModels { current.availableModels = models }
+            if let modes = patch.availableModes { current.availableModes = modes }
+            if let level = patch.reasoningLevel { current.reasoningLevel = level }
             if let modelRaw = patch.modelRawValue { current.modelRawValue = modelRaw }
             if let modeRaw = patch.permissionModeRawValue { current.permissionModeRawValue = modeRaw }
+            if let token = patch.activeTurnToken { current.activeTurnToken = token }
+            if let canSteer = patch.canSteer {
+                current.canSteer = canSteer
+            }
+            if let questions = patch.questions { current.questions = questions }
+            if !current.meta.isProcessing { current.activeTurnToken = nil }
             if patch.errorChanged == true { current.error = patch.error }
             activeSession = current
         case .chatCreated:
@@ -444,12 +455,22 @@ final class CompanionClient {
 
     // Live Activity / BGContinuedProcessingTask hookup lived here — see
     // commit 3b737b7 if we want it back.
-    func sendPrompt(_ text: String) {
+    func sendPrompt(_ text: String, steering: Bool = false) {
         guard let id = subscribedSessionId else { return }
-        var msg = CompanionMessage(kind: .sendPrompt)
+        var msg = CompanionMessage(kind: steering ? .steerPrompt : .sendPrompt)
+        if steering { msg.expectedTurnToken = activeSession?.activeTurnToken }
         msg.sessionId = id
         msg.promptText = text
         send(msg)
+    }
+
+    func answerQuestions(requestId: UUID, answers: [String: [String]]) {
+        guard let id = subscribedSessionId else { return }
+        var message = CompanionMessage(kind: .answerQuestions)
+        message.sessionId = id
+        message.questionRequestId = requestId
+        message.questionAnswers = answers
+        send(message)
     }
 
     func toggleArchive(sessionId: UUID) {
@@ -659,6 +680,14 @@ final class CompanionClient {
         send(msg)
     }
 
+    func setSessionReasoningLevel(_ value: String) {
+        guard let id = activeSession?.meta.id else { return }
+        var message = CompanionMessage(kind: .setSessionReasoningLevel)
+        message.sessionId = id
+        message.reasoningLevel = value
+        send(message)
+    }
+
     func setSessionPermissionMode(_ rawValue: String) {
         guard let id = subscribedSessionId else { return }
         if var session = activeSession, session.meta.id == id {
@@ -773,7 +802,12 @@ final class CompanionClient {
             }
         case .unsubscribe:
             break
-        case .sendPrompt:
+        case .answerQuestions:
+            guard let id = message.sessionId, var session = demoState.sessions[id] else { return }
+            session.questions.removeAll { $0.id == message.questionRequestId }
+            demoState.sessions[id] = session
+            if subscribedSessionId == id { activeSession = session }
+        case .sendPrompt, .steerPrompt:
             guard let id = message.sessionId,
                   let promptText = message.promptText,
                   var session = demoState.sessions[id] else { return }
@@ -815,13 +849,13 @@ final class CompanionClient {
             demoState.sessions[meta.id] = WireSession(
                 meta: meta,
                 messages: [],
-                modelLabel: "Opus 4.7",
+                modelLabel: "Model",
                 permissionLabel: "Ask",
                 permissionSystemImage: "hand.raised",
                 usedTokens: 0,
                 contextSize: 200_000,
                 availableModels: CompanionDemo.availableModels,
-                modelRawValue: "claude-opus-4-7",
+                modelRawValue: "",
                 availableModes: CompanionDemo.availableModes,
                 permissionModeRawValue: "default"
             )
@@ -857,6 +891,8 @@ final class CompanionClient {
                 demoState.sessions[id] = session
                 if id == subscribedSessionId { activeSession = session }
             }
+        case .setSessionReasoningLevel:
+            if let value = message.reasoningLevel { activeSession?.reasoningLevel = value }
         case .setSessionPermissionMode:
             guard let id = message.sessionId, let raw = message.permissionModeRawValue else { return }
             if var session = demoState.sessions[id] {

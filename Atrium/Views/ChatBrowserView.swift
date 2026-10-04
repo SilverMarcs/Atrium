@@ -5,8 +5,8 @@ struct ChatBrowserView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .claude
-    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: PermissionMode = .bypassPermissions
+    @AppStorage("defaultChatMode") private var defaultChatMode: AgentProvider = .codex
+    @AppStorage("defaultPermissionMode") private var defaultPermissionMode: String = ""
     @State private var searchText: String = ""
 
     private func matches(_ chat: Chat) -> Bool {

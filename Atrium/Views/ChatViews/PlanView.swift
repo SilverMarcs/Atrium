@@ -1,5 +1,4 @@
 import SwiftUI
-import ACPModel
 
 struct PlanView: View {
     let entries: [PlanEntry]
@@ -61,7 +60,7 @@ struct PlanView: View {
                     .padding(.horizontal, 12)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                    ForEach(entries.enumerated(), id: \.offset) { _, entry in
                         HStack(spacing: 6) {
                             Image(systemName: entry.status.systemImage)
                                 .foregroundStyle(entry.status.color)
