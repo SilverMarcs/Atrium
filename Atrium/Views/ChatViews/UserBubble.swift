@@ -4,9 +4,6 @@ import QuickLook
 
 struct UserMessageView: View {
     let message: Message
-    @State private var showRevertConfirmation = false
-
-    private var chat: Chat { message.chat! }
 
     private var imageBlocks: [MessageBlock] {
         message.blocks.filter(\.isImage)
@@ -37,30 +34,8 @@ struct UserMessageView: View {
                     Label("Copy Message", systemImage: "doc.on.doc")
                 }
             }
-
-            revertButton
-        }
-        .alert("Revert to this message?", isPresented: $showRevertConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Revert", role: .confirm) {
-                Task { await chat.revert(toBeforeTurn: message.turnIndex) }
-            }
-        } message: {
-            Text("This will remove all messages after this point.")
         }
         .padding(.leading, 160)
-    }
-
-    @ViewBuilder
-    private var revertButton: some View {
-        let turn = message.turnIndex
-        if turn >= 1 && chat.turnCount >= turn {
-            Button {
-                showRevertConfirmation = true
-            } label: {
-                Label("Revert to this message", systemImage: "arrow.uturn.backward")
-            }
-        }
     }
 }
 

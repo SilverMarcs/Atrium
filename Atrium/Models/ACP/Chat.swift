@@ -24,8 +24,6 @@ final class Chat: Identifiable, Hashable, Codable {
     var contextSize: Int = 0
     var plan: [PlanEntry] = []
     private(set) var messages: [Message] = []
-    private(set) var checkpoints: [Checkpoint] = []
-    var pendingRevertedPrompts: [String] = []
 
     @ObservationIgnored
     weak var workspace: Workspace?
@@ -37,9 +35,6 @@ final class Chat: Identifiable, Hashable, Codable {
     private var currentTurnMessage: Message?
 
     @ObservationIgnored
-    private var suppressNextTurnEvents: Bool = false
-
-    @ObservationIgnored
     var pendingContent: [ContentBlock]?
 
     var prompt: String = ""
@@ -48,8 +43,6 @@ final class Chat: Identifiable, Hashable, Codable {
     var hasNotification: Bool = false
 
     var isActive: Bool { session.isConnected }
-
-    private var checkpointNamespace: String { id.uuidString }
 
     init(title: String = "New Chat", provider: AgentProvider = .codex, permissionMode: PermissionMode = .bypassPermissions, model: String? = nil, sortOrder: Int = 0) {
         self.title = title
@@ -63,7 +56,7 @@ final class Chat: Identifiable, Hashable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, title, acpSessionId, provider, permissionMode, model, date, sortOrder, turnCount, isArchived
-        case usedTokens, contextSize, plan, messages, checkpoints, pendingRevertedPrompts
+        case usedTokens, contextSize, plan, messages
     }
 
     init(from decoder: Decoder) throws {
@@ -82,8 +75,6 @@ final class Chat: Identifiable, Hashable, Codable {
         self.contextSize = try c.decodeIfPresent(Int.self, forKey: .contextSize) ?? 0
         self.plan = try c.decodeIfPresent([PlanEntry].self, forKey: .plan) ?? []
         self.messages = try c.decodeIfPresent([Message].self, forKey: .messages) ?? []
-        self.checkpoints = try c.decodeIfPresent([Checkpoint].self, forKey: .checkpoints) ?? []
-        self.pendingRevertedPrompts = try c.decodeIfPresent([String].self, forKey: .pendingRevertedPrompts) ?? []
         for msg in messages { msg.chat = self }
     }
 
@@ -103,8 +94,6 @@ final class Chat: Identifiable, Hashable, Codable {
         try c.encode(contextSize, forKey: .contextSize)
         try c.encode(plan, forKey: .plan)
         try c.encode(messages, forKey: .messages)
-        try c.encode(checkpoints, forKey: .checkpoints)
-        try c.encode(pendingRevertedPrompts, forKey: .pendingRevertedPrompts)
     }
 
     // MARK: - Hashable
@@ -165,13 +154,6 @@ final class Chat: Identifiable, Hashable, Codable {
         date = Date()
 
         var content: [ContentBlock] = []
-        // Prepended only on the wire — never appended to `messages`, so it stays
-        // invisible in the UI but reaches the agent so it can drop the
-        // reverted turns from its retained context.
-        if let revertNote = buildRevertNote() {
-            content.append(.text(TextContent(text: revertNote)))
-            pendingRevertedPrompts.removeAll()
-        }
         if !text.isEmpty {
             content.append(.text(TextContent(text: text)))
         }
@@ -210,7 +192,7 @@ final class Chat: Identifiable, Hashable, Codable {
 
     private func wireLiveCallbacks() {
         session.onSessionUpdate = { [weak self] update in
-            guard let self, !self.suppressNextTurnEvents else { return }
+            guard let self else { return }
             self.handleLiveUpdate(update)
         }
 
@@ -220,14 +202,6 @@ final class Chat: Identifiable, Hashable, Codable {
 
         session.onTurnComplete = { [weak self] in
             guard let self else { return }
-            if self.suppressNextTurnEvents {
-                // The just-finished turn was cancelled by a revert; drop its
-                // bookkeeping (no turnCount bump, no checkpoint capture) so the
-                // reverted state stays authoritative.
-                self.suppressNextTurnEvents = false
-                self.currentTurnMessage = nil
-                return
-            }
             self.turnCount += 1
             self.date = Date()
             self.currentTurnMessage = nil
@@ -238,21 +212,6 @@ final class Chat: Identifiable, Hashable, Codable {
 
             self.scheduleSave()
             self.notify("Finished responding")
-
-            guard let dir = self.workspace?.directory else { return }
-
-            do {
-                let snapshots = try await CheckpointService.captureCheckpoint(
-                    workspace: URL(fileURLWithPath: dir),
-                    chatId: self.checkpointNamespace,
-                    turn: self.turnCount
-                )
-                var checkpoint = Checkpoint(turnIndex: self.turnCount)
-                checkpoint.repoSnapshots = snapshots
-                self.checkpoints.append(checkpoint)
-            } catch {
-                print("[Checkpoint] capture failed: \(error.localizedDescription)")
-            }
         }
 
         session.onConnected = { [weak self] in
@@ -268,24 +227,6 @@ final class Chat: Identifiable, Hashable, Codable {
             if let content = self.pendingContent {
                 self.pendingContent = nil
                 self.session.send(content: content)
-            }
-
-            if self.turnCount == 0 && !self.checkpoints.contains(where: { $0.turnIndex == 0 }) {
-                Task { [weak self] in
-                    guard let self, let dir = self.workspace?.directory else { return }
-                    do {
-                        let snapshots = try await CheckpointService.captureCheckpoint(
-                            workspace: URL(fileURLWithPath: dir),
-                            chatId: self.checkpointNamespace,
-                            turn: 0
-                        )
-                        var checkpoint = Checkpoint(turnIndex: 0)
-                        checkpoint.repoSnapshots = snapshots
-                        self.checkpoints.append(checkpoint)
-                    } catch {
-                        print("[Checkpoint] baseline capture failed: \(error.localizedDescription)")
-                    }
-                }
             }
         }
     }
@@ -374,75 +315,6 @@ final class Chat: Identifiable, Hashable, Codable {
         default:
             break
         }
-    }
-
-    // MARK: - Revert
-
-    func revert(toBeforeTurn turn: Int) async {
-        guard turn >= 1, turn <= turnCount else { return }
-        let restoreToTurn = turn - 1
-        let oldTurnCount = turnCount
-        let workspaceURL = (workspace?.directory).map { URL(fileURLWithPath: $0) }
-        let snapshotsToRestore = checkpoints.first { $0.turnIndex == restoreToTurn }?.repoSnapshots
-
-        // Cancel any in-flight turn without tearing down the agent session,
-        // so the agent retains conversation context. The hidden note injected
-        // on the next prompt tells it to disregard the reverted turns.
-        if session.isProcessing {
-            suppressNextTurnEvents = true
-            session.stopStreaming()
-        }
-
-        if let workspaceURL, let snapshots = snapshotsToRestore {
-            do {
-                try await CheckpointService.restoreCheckpoint(workspace: workspaceURL, snapshots: snapshots)
-            } catch {
-                print("[Revert] filesystem restore failed: \(error.localizedDescription)")
-            }
-        }
-
-        if let workspaceURL {
-            await CheckpointService.deleteCheckpoints(
-                workspace: workspaceURL,
-                chatId: checkpointNamespace,
-                afterTurn: restoreToTurn,
-                throughTurn: oldTurnCount
-            )
-        }
-
-        applyReverted(toBeforeTurn: turn)
-        scheduleSave()
-    }
-
-    // Sole place revert mutates Chat state. Keep all trimming here so
-    // `revert` only orchestrates async I/O around this single reducer.
-    private func applyReverted(toBeforeTurn turn: Int) {
-        let revertedUserPrompts = messages
-            .filter { $0.turnIndex >= turn && $0.role == .user }
-            .map(\.text)
-            .filter { !$0.isEmpty }
-
-        prompt = messages.first { $0.turnIndex == turn && $0.role == .user }?.text ?? ""
-        messages.removeAll { $0.turnIndex >= turn }
-        checkpoints.removeAll { $0.turnIndex >= turn }
-        turnCount = turn - 1
-        date = Date()
-        currentTurnMessage = nil
-        pendingRevertedPrompts.append(contentsOf: revertedUserPrompts)
-    }
-
-    private func buildRevertNote() -> String? {
-        guard !pendingRevertedPrompts.isEmpty else { return nil }
-        var lines: [String] = []
-        lines.append("[System note from the user's IDE — not from the user themselves.")
-        lines.append("The user has reverted the conversation. Please disregard the following \(pendingRevertedPrompts.count) prior user message(s) and any of your replies to them — treat them as if they never happened, and continue from the context that preceded them. The on-disk file state has also been rolled back to that earlier point.")
-        lines.append("Reverted user message(s):")
-        for (i, p) in pendingRevertedPrompts.enumerated() {
-            let snippet = p.count > 500 ? String(p.prefix(500)) + "…" : p
-            lines.append("  \(i + 1). \(snippet)")
-        }
-        lines.append("End of system note. The user's actual next message follows below.]")
-        return lines.joined(separator: "\n")
     }
 
     // MARK: - Persistence
