@@ -153,7 +153,9 @@ struct GitInspectorView: View {
             GitCommitLogSheet(state: state)
         }
         .sheet(isPresented: $state.showBranchListSheet) {
-            GitBranchListSheet(directoryURL: directoryURL, state: state)
+            if let snapshot {
+                GitBranchListSheet(snapshot: snapshot, directoryURL: directoryURL, state: state)
+            }
         }
         .sheet(isPresented: $state.showStashListSheet) {
             GitStashListSheet(directoryURL: directoryURL, state: state)

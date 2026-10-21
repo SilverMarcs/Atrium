@@ -6,6 +6,18 @@ extension GitInspectorState {
         await model.refresh(directoryURL: directoryURL, worktreeOverrides: worktreeOverrides)
     }
 
+    /// Reconciles inspector navigation after the branch manager changes a checkout.
+    func finishBranchOperation(mainRepositoryURL: URL, previousRoot: URL, directoryURL: URL, didConvert: Bool) async {
+        if didConvert {
+            worktreeOverrides.removeValue(forKey: mainRepositoryURL)
+            selectedRepoURL = mainRepositoryURL
+        }
+        let directory = directoryURL.standardizedFileURL.resolvingSymlinksInPath()
+        let leftLinkedCheckout = didConvert && previousRoot != mainRepositoryURL
+            && (previousRoot == directory || previousRoot.isAncestor(of: directory))
+        await refresh(directoryURL: leftLinkedCheckout ? mainRepositoryURL : directoryURL)
+    }
+
     /// Handles state-only actions. View-specific actions (`.commit`, `.showInFileTree`)
     /// are no-ops here and must be dispatched by the calling view.
     func perform(_ action: GitAction, directoryURL: URL) {

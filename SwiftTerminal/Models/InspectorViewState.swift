@@ -95,7 +95,6 @@ final class GitInspectorState {
     var showCommitLogSheet = false
     var showBranchListSheet = false
     var showStashListSheet = false
-    var branchPendingDelete: GitBranchInfo?
 }
 
 struct GitCommitDiffSheetItem: Identifiable, Hashable, Codable {
