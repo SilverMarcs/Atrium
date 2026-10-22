@@ -20,16 +20,28 @@ final class FileSystemWatcher {
     ]
 
     private var stream: FSEventStreamRef?
-    private let onChange: () -> Void
+    private let onChange: ([String]) -> Void
     private let ignoredSubstrings: [String]
 
-    init(
+    convenience init(
         url: URL,
         latency: TimeInterval = 1.0,
         ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
         onChange: @escaping () -> Void
     ) {
-        self.onChange = onChange
+        self.init(url: url, latency: latency, ignoredSubstrings: ignoredSubstrings, fileEvents: false,
+                  onPathsChanged: { _ in onChange() })
+    }
+
+    /// File-level paths let session watchers ignore heartbeats, logs, and unrelated writes.
+    init(
+        url: URL,
+        latency: TimeInterval = 1.0,
+        ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
+        fileEvents: Bool = true,
+        onPathsChanged: @escaping ([String]) -> Void
+    ) {
+        self.onChange = onPathsChanged
         self.ignoredSubstrings = ignoredSubstrings
 
         var context = FSEventStreamContext(
@@ -40,27 +52,23 @@ final class FileSystemWatcher {
             copyDescription: nil
         )
 
-        let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
             guard let info else { return }
             let watcher = Unmanaged<FileSystemWatcher>.fromOpaque(info).takeUnretainedValue()
             let cfArray = unsafeBitCast(eventPaths, to: CFArray.self)
             let paths = (cfArray as? [String]) ?? []
-            if watcher.ignoredSubstrings.isEmpty {
-                watcher.onChange()
-                return
+            let changed = paths.filter { path in
+                !watcher.ignoredSubstrings.contains(where: path.contains)
             }
-            for path in paths where !watcher.ignoredSubstrings.contains(where: path.contains) {
-                watcher.onChange()
-                return
-            }
-            _ = numEvents
+            if !changed.isEmpty { watcher.onChange(changed) }
         }
 
-        let flags = FSEventStreamCreateFlags(
+        var flags = FSEventStreamCreateFlags(
             kFSEventStreamCreateFlagNoDefer |
             kFSEventStreamCreateFlagWatchRoot |
             kFSEventStreamCreateFlagUseCFTypes
         )
+        if fileEvents { flags |= FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents) }
 
         guard let stream = FSEventStreamCreate(
             kCFAllocatorDefault,

@@ -13,6 +13,7 @@ struct ThreadActivity: Codable {
 
     mutating func update(_ source: AgentThread, isViewed: Bool, now: Date = .now) -> AgentThread {
         var thread = source
+        date = max(date, source.updatedAt)
         if thread.status == .idle, [.processing, .done].contains(status) {
             thread.status = .done
         }

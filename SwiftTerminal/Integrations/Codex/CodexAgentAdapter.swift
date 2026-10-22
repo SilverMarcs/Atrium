@@ -14,6 +14,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var nextID = 0
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
     private var socketPath: String?
+    private var watchers: [FileSystemWatcher] = []
+    private var historyTask: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -52,6 +54,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func listThreads() async throws -> [AgentThread] {
         try await connect()
+        try startWatching()
         let active = try await listThreads(archived: false)
         guard !archivedThreadIDs.isEmpty else { return active }
         let archived = try await listThreads(archived: true).filter { archivedThreadIDs.contains($0.sessionID) }
@@ -170,8 +173,56 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func setEnabled(_ isEnabled: Bool) {
         guard !isEnabled else { return }
+        watchers.forEach { $0.stop() }
+        watchers.removeAll()
+        historyTask?.cancel()
         connectionTask?.cancel()
         disconnect(error: CancellationError())
+    }
+
+    private func startWatching() throws {
+        guard watchers.isEmpty else { return }
+        let configured = IntegrationProcess.environment["CODEX_HOME"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        let home = configured ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
+        let directories = ["sessions", "archived_sessions"].map { home.appending(path: $0) }
+        for directory in directories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        // fs/watch currently watches immediate children; rollouts live in dated subdirectories.
+        watchers = directories.map { directory in
+            FileSystemWatcher(url: directory, ignoredSubstrings: [], onPathsChanged: { [weak self] paths in
+                Task { @MainActor [weak self] in self?.historyChanged(paths) }
+            })
+        }
+    }
+
+    private func historyChanged(_ paths: [String]) {
+        guard !watchers.isEmpty else { return }
+        var needsListing = false
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            if url.pathExtension == "jsonl" {
+                let id = String(url.deletingPathExtension().lastPathComponent.suffix(36))
+                guard UUID(uuidString: id) != nil else { continue }
+                if FileManager.default.fileExists(atPath: path) {
+                    onEvent?(.threadInvalidated(sessionID: id))
+                } else {
+                    needsListing = true
+                }
+            } else if url.pathExtension.isEmpty {
+                // Covers removed directories and coalesced/root notifications.
+                needsListing = true
+            }
+        }
+        guard needsListing, historyTask == nil else { return }
+        historyTask = Task { [weak self] in
+            defer { self?.historyTask = nil }
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                self?.onEvent?(.listInvalidated)
+            } catch {}
+        }
     }
 
     private func request(_ method: String, params: [String: Any]) async throws -> Data {

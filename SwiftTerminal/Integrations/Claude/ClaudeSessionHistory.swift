@@ -46,7 +46,6 @@ actor ClaudeSessionHistory {
             $0.stamp.modified == $1.stamp.modified ? $0.sessionID < $1.sessionID : $0.stamp.modified > $1.stamp.modified
         }
         var threads: [AgentThread] = []
-        var kept: Set<URL> = []
         var seen: Set<String> = []
         for file in files {
             try Task.checkCancellation()
@@ -55,11 +54,13 @@ actor ClaudeSessionHistory {
                let target = self.file(at: file.url.deletingLastPathComponent().appending(path: "\(next).jsonl")),
                target.stamp.size > 0 { continue }
             seen.insert(file.sessionID)
-            kept.insert(file.url)
             locations[file.sessionID] = file.url
             threads.append(thread(file, metadata: metadata))
         }
-        cache = cache.filter { kept.contains($0.key) }
+        // Keep metadata (including filtered transcripts) only for files still on disk.
+        // A fixed 50-entry limit caused larger histories to be reparsed on every refresh.
+        let existing = Set(files.map(\.url))
+        cache = cache.filter { existing.contains($0.key) }
         locations = locations.filter { seen.contains($0.key) }
         return threads
     }
@@ -162,11 +163,6 @@ actor ClaudeSessionHistory {
         let metadata = sidechain ? nil : ClaudeSessionMetadata.parse(
             head: String(decoding: head, as: UTF8.self), tail: String(decoding: tail, as: UTF8.self), renamedTitle: renamedTitle
         )
-        // Bound cache growth even when individual metadata requests arrive without a list refresh.
-        if cache.count >= 50, let oldest = cache.min(by: { $0.value.transcript.modified < $1.value.transcript.modified })?.key {
-            cache[oldest] = nil
-            locations = locations.filter { $0.value != oldest }
-        }
         cache[file.url] = Cached(transcript: file.stamp, rename: renameStamp, metadata: metadata)
         return metadata
     }

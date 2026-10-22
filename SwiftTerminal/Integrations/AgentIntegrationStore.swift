@@ -28,7 +28,7 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var metadataRequests: Set<String> = []
     @ObservationIgnored private var metadataTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
-    @ObservationIgnored private var refreshRequested = false
+    @ObservationIgnored private var requestedProviders: Set<AgentProvider> = []
     @ObservationIgnored private var drafts: [String: AgentThread] = [:]
     @ObservationIgnored private var stopTasks: [String: Task<Void, Never>] = [:]
 
@@ -176,10 +176,13 @@ final class AgentIntegrationStore {
             saveActivity()
         case .threadInvalidated(let sessionID):
             guard enabled.contains(provider) else { return }
-            requestMetadata("\(provider.rawValue):\(sessionID)")
+            let id = "\(provider.rawValue):\(sessionID)"
+            guard !deletedThreadIDs.contains(id) else { return }
+            if threads.contains(where: { $0.id == id }) { requestMetadata(id) }
+            else { Task { await refresh(provider: provider) } }
         case .listInvalidated:
             guard enabled.contains(provider) else { return }
-            Task { await refresh() }
+            Task { await refresh(provider: provider) }
         case .threadDeleted(let sessionID):
             removeDeletedThread("\(provider.rawValue):\(sessionID)")
         }
@@ -324,19 +327,20 @@ final class AgentIntegrationStore {
         }
     }
 
-    func refresh() async {
-        refreshRequested = true
+    func refresh(provider: AgentProvider? = nil) async {
+        requestedProviders.formUnion(provider.map { [$0] } ?? enabledProviders)
         if let refreshTask { await refreshTask.value; return }
         isRefreshing = true
         let task = Task {
             repeat {
-                refreshRequested = false
+                let requested = requestedProviders
+                requestedProviders.removeAll()
                 await withTaskGroup(of: Void.self) { group in
-                    for provider in providers {
+                    for provider in requested {
                         group.addTask { await self.refresh(provider) }
                     }
                 }
-            } while refreshRequested
+            } while !requestedProviders.isEmpty
         }
         refreshTask = task
         await task.value

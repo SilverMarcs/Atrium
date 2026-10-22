@@ -5,7 +5,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
     let capabilities: AgentCapabilities = [.deleteThread, .renameThread]
     var onEvent: ((AgentEvent) -> Void)?
-    private let history = ClaudeSessionHistory()
+    private let history: ClaudeSessionHistory
+    private let configDirectory: URL
     private let defaults: UserDefaults
     private var backgroundIDs: [String: String]
     private var backgroundSessions: [String: ClaudeBackgroundSession] = [:]
@@ -13,15 +14,24 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var statusTask: Task<Void, Never>?
     private var statusRefreshRequested = false
     private var statusRevision = 0
+    private var backgroundListTask: Task<[ClaudeBackgroundSession], Error>?
+    private var historyTask: Task<Void, Never>?
+    private var needsStatusRefresh = true
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, configDirectory: URL? = nil) {
         self.defaults = defaults
+        let configured = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        let directory = configDirectory ?? configured
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
+        self.configDirectory = directory.standardizedFileURL.resolvingSymlinksInPath()
+        history = ClaudeSessionHistory(configDirectory: self.configDirectory)
         backgroundIDs = defaults.dictionary(forKey: "integration.claude.backgroundIDs") as? [String: String] ?? [:]
     }
 
     func listThreads() async throws -> [AgentThread] {
         try startWatching()
-        try await refreshBackgroundSessions()
+        if needsStatusRefresh { try await refreshBackgroundSessions() }
         let history = try await history.listThreads().map(withStatus)
         let listedIDs = Set(history.map(\.sessionID))
         let drafts = backgroundSessions.values.compactMap(\.thread).filter { !listedIDs.contains($0.sessionID) }
@@ -90,6 +100,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             watchers.forEach { $0.stop() }
             watchers.removeAll()
             statusTask?.cancel()
+            historyTask?.cancel()
+            backgroundListTask?.cancel()
+            statusRevision += 1
+            needsStatusRefresh = true
         }
     }
 
@@ -132,8 +146,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     private func listBackgroundSessions() async throws -> [ClaudeBackgroundSession] {
-        let data = try await IntegrationProcess.run("claude", arguments: ["agents", "--json", "--all"])
-        return try JSONDecoder().decode([ClaudeBackgroundSession].self, from: data)
+        if let backgroundListTask { return try await backgroundListTask.value }
+        let task = Task {
+            let data = try await IntegrationProcess.run("claude", arguments: ["agents", "--json", "--all"])
+            return try JSONDecoder().decode([ClaudeBackgroundSession].self, from: data)
+        }
+        backgroundListTask = task
+        defer { backgroundListTask = nil }
+        return try await task.value
     }
 
     private func refreshBackgroundSessions() async throws {
@@ -143,6 +163,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let sessions = try await listBackgroundSessions()
         try Task.checkCancellation()
         guard revision == statusRevision else { return }
+        needsStatusRefresh = false
         let presentIDs = Set(sessions.filter { $0.kind == "background" }.compactMap(\.sessionID))
         for (sessionID, id) in expectedIDs where backgroundIDs[sessionID] == id && !presentIDs.contains(sessionID) {
             backgroundSessions[sessionID] = nil
@@ -161,31 +182,88 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     private func startWatching() throws {
         guard watchers.isEmpty else { return }
-        let config = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
-        let directories = ["jobs", "sessions"].map { config.appending(path: $0) }
+        let directories = ["jobs", "sessions", "projects"].map { configDirectory.appending(path: $0) }
         for directory in directories {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
         watchers = directories.map { directory in
-            FileSystemWatcher(url: directory, latency: 0.3, ignoredSubstrings: []) { [weak self] in
-                Task { @MainActor [weak self] in self?.requestStatusRefresh() }
+            FileSystemWatcher(url: directory, latency: 0.3, ignoredSubstrings: [], onPathsChanged: { [weak self] paths in
+                Task { @MainActor [weak self] in self?.filesChanged(paths) }
+            })
+        }
+    }
+
+    private func filesChanged(_ paths: [String]) {
+        guard !watchers.isEmpty else { return }
+        let prefix = configDirectory.path + "/"
+        var historyChanged = false
+        for changedPath in paths {
+            // Resolve the parent so aliases also match when the changed file was deleted.
+            let changedURL = URL(fileURLWithPath: changedPath).standardizedFileURL
+            let url = changedURL.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appending(path: changedURL.lastPathComponent)
+            let path = url.path
+            guard path.hasPrefix(prefix) else { continue }
+            let components = path.dropFirst(prefix.count).split(separator: "/")
+            guard let area = components.first else { continue }
+            if area == "jobs", (components.count == 3 && components.last == "state.json")
+                || (components.count == 2 && url.pathExtension.isEmpty) {
+                requestStatusRefresh()
+            } else if area == "sessions", components.count == 2,
+                      url.pathExtension == "json",
+                      Int(url.deletingPathExtension().lastPathComponent) != nil {
+                // Ignore messaging keys and the periodic fleet-view heartbeat.
+                requestStatusRefresh()
+            } else if area == "projects" {
+                let sessionID: String?
+                if components.count == 3, url.pathExtension == "jsonl" {
+                    sessionID = url.deletingPathExtension().lastPathComponent
+                } else if components.count == 4, components.last == "custom-title.json" {
+                    sessionID = String(components[2])
+                } else {
+                    sessionID = nil
+                }
+                if let sessionID, UUID(uuidString: sessionID) != nil {
+                    if FileManager.default.fileExists(atPath: path) {
+                        onEvent?(.threadInvalidated(sessionID: sessionID))
+                    } else {
+                        historyChanged = true
+                    }
+                } else if components.count <= 2 {
+                    // Directory removal and coalesced/root events require a new snapshot.
+                    historyChanged = true
+                }
             }
+        }
+        if historyChanged { requestHistoryRefresh() }
+    }
+
+    private func requestHistoryRefresh() {
+        guard historyTask == nil else { return }
+        historyTask = Task { [weak self] in
+            defer { self?.historyTask = nil }
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                self?.onEvent?(.listInvalidated)
+            } catch {}
         }
     }
 
     private func requestStatusRefresh() {
         guard !watchers.isEmpty else { return }
+        needsStatusRefresh = true
         statusRefreshRequested = true
         guard statusTask == nil else { return }
         statusTask = Task { [weak self] in
             guard let self else { return }
             defer { self.statusTask = nil }
             do {
+                try await Task.sleep(for: .milliseconds(300))
                 repeat {
                     self.statusRefreshRequested = false
-                    try await Task.sleep(for: .milliseconds(300))
                     try await self.refreshBackgroundSessions()
+                    // Stay event-driven while limiting CLI launches during continuous writes.
+                    try await Task.sleep(for: .seconds(1))
                 } while self.statusRefreshRequested
             } catch is CancellationError {
             } catch {
