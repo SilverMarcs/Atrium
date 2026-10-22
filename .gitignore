@@ -2,7 +2,14 @@ run.sh
 build.sh
 release.sh
 build
-SwiftTerminal.dmg
+Atrium.dmg
 .codex/
 .build
 .DS_Store
+
+# Local build and release artifacts
+xcuserdata/
+*.xcarchive
+DerivedData/
+.asc/
+Screenshots/
