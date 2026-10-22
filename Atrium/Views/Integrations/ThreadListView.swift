@@ -8,6 +8,7 @@ struct ThreadListView: View {
     @State private var threadToDelete: AgentThread?
     @State private var showingDeleteConfirmation = false
     @State private var isSettledExpanded = false
+    @State private var isSnoozedExpanded = false
     @State private var threadToRename: AgentThread?
     @State private var showingRename = false
     @State private var renamedTitle = ""
@@ -28,14 +29,27 @@ struct ThreadListView: View {
     }
 
     var body: some View {
-        let regularThreads = threads.filter { !integrations.settledThreadIDs.contains($0.id) }
         let settledThreads = threads.filter { integrations.settledThreadIDs.contains($0.id) }
+        let snoozedThreads = threads.filter { integrations.snoozedUntil[$0.id] != nil && !integrations.settledThreadIDs.contains($0.id) }
+        let regularThreads = threads.filter { integrations.snoozedUntil[$0.id] == nil && !integrations.settledThreadIDs.contains($0.id) }
 
         List(selection: Binding<String?>(get: { appState.selectedThreadID }, set: { id in
             guard let thread = threads.first(where: { $0.id == id }) else { return }
             sessions.open(thread)
         })) {
             ThreadListRows(threads: regularThreads, requestDeletion: requestDeletion, requestRename: requestRename)
+
+            if !snoozedThreads.isEmpty {
+                if isSearching {
+                    Section("Snoozed") {
+                        ThreadListRows(threads: snoozedThreads, requestDeletion: requestDeletion, requestRename: requestRename)
+                    }
+                } else {
+                    Section("Snoozed", isExpanded: $isSnoozedExpanded.animation()) {
+                        ThreadListRows(threads: snoozedThreads, requestDeletion: requestDeletion, requestRename: requestRename)
+                    }
+                }
+            }
 
             if !settledThreads.isEmpty {
                 if isSearching {
@@ -50,6 +64,7 @@ struct ThreadListView: View {
             }
         }
         .listStyle(.sidebar)
+        .animation(.default, value: [regularThreads.map(\.id), snoozedThreads.map(\.id), settledThreads.map(\.id)])
         .environment(\.sidebarRowSize, .medium) //
         .overlay {
             if !unavailableProviderNames.isEmpty {

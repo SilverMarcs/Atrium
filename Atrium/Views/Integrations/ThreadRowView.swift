@@ -47,6 +47,12 @@ struct ThreadRowView: View {
 
                 Spacer(minLength: 0)
 
+                if let snoozedUntil = integrations.snoozedUntil[thread.id] {
+                    Text(snoozedUntil, format: .dateTime.weekday().hour().minute())
+                        .lineLimit(1)
+                        .help("Snoozed until \(snoozedUntil.formatted(date: .abbreviated, time: .shortened))")
+                }
+
                 Image(thread.provider.symbolName)
                     .foregroundStyle(thread.provider.color)
                     .accessibilityLabel(thread.provider.name)

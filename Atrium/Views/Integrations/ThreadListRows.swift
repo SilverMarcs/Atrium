@@ -12,6 +12,7 @@ struct ThreadListRows: View {
                 .tag(thread.id)
                 .contextMenu {
                     SettleThreadButton(thread: thread)
+                    SnoozeThreadButton(thread: thread)
 
                     Divider()
 
@@ -27,6 +28,8 @@ struct ThreadListRows: View {
                 }
                 .swipeActions(edge: .leading) {
                     SettleThreadButton(thread: thread)
+                        .labelStyle(.iconOnly)
+                    SnoozeThreadButton(thread: thread)
                         .labelStyle(.iconOnly)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {

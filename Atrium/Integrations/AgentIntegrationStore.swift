@@ -15,6 +15,7 @@ final class AgentIntegrationStore {
     private(set) var deletedThreadIDs: Set<String> = []
     var actionError: String?
     private(set) var settledThreadIDs: Set<String>
+    private(set) var snoozedUntil: [String: Date]
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
@@ -31,20 +32,22 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var requestedProviders: Set<AgentProvider> = []
     @ObservationIgnored private var drafts: [String: AgentThread] = [:]
     @ObservationIgnored private var stopTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var snoozeTask: Task<Void, Never>?
 
     var enabledProviders: [AgentProvider] { providers.filter { enabled.contains($0) } }
     var isEnabled: Bool { !enabled.isEmpty }
     func visibleThreads(matching searchText: String) -> [AgentThread] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return enabledProviders.flatMap { provider in
-            threads.filter {
+            let matching = threads.filter {
                 $0.provider == provider && (query.isEmpty
                     || $0.title.localizedStandardContains(query)
                     || $0.projectName.localizedStandardContains(query)
                     || $0.directory.localizedStandardContains(query))
             }
                 .sorted(by: AgentThread.newestFirst)
-                .prefix(25)
+            // Snoozed threads stay reachable however far newer activity pushes them down.
+            return Array(matching.filter { snoozedUntil[$0.id] == nil }.prefix(25)) + matching.filter { snoozedUntil[$0.id] != nil }
         }.sorted(by: AgentThread.newestFirst)
     }
 
@@ -54,19 +57,23 @@ final class AgentIntegrationStore {
         providers = adapters.map(\.provider)
         enabled = Set(providers.filter { defaults.bool(forKey: $0.settingsKey) })
         settledThreadIDs = Set(defaults.stringArray(forKey: "integration.settledThreadIDs") ?? [])
+        snoozedUntil = defaults.dictionary(forKey: "integration.snoozedThreads") as? [String: Date] ?? [:]
         activity = defaults.data(forKey: "integration.threadActivity")
             .flatMap { try? JSONDecoder().decode([String: ThreadActivity].self, from: $0) } ?? [:]
-        let savedThreads = defaults.data(forKey: "integration.settledThreads")
+        let savedThreads = defaults.data(forKey: "integration.retainedThreads")
             .flatMap { try? JSONDecoder().decode([AgentThread].self, from: $0) } ?? []
-        threads = savedThreads.filter { settledThreadIDs.contains($0.id) }.map {
-            var thread = $0
-            thread.status = .stopped
+        threads = savedThreads.compactMap { saved in
+            var thread = saved
+            if settledThreadIDs.contains(thread.id) { thread.status = .stopped }
+            else if snoozedUntil[thread.id] != nil { thread.status = .unknown }
+            else { return nil }
             return thread
         }
         for adapter in adapters {
             let provider = adapter.provider
             adapter.onEvent = { [weak self] event in self?.receive(event, from: provider) }
         }
+        wakeExpiredSnoozes()
     }
 
     subscript(isEnabled provider: AgentProvider) -> Bool {
@@ -122,7 +129,7 @@ final class AgentIntegrationStore {
             threads[index].hasProviderTitle = true
             if drafts[thread.id] != nil { drafts[thread.id] = threads[index] }
             revisions[thread.id, default: 0] += 1
-            saveSettledThreads()
+            saveRetainedThreads()
             return true
         } catch {
             if isCurrent(thread.provider, generation: generation), !deletedThreadIDs.contains(thread.id) {
@@ -169,6 +176,10 @@ final class AgentIntegrationStore {
         revisions[id, default: 0] += 1
         if viewedThreadID == id { viewedThreadID = nil }
         defaults.set(settledThreadIDs.sorted(), forKey: "integration.settledThreadIDs")
+        if snoozedUntil.removeValue(forKey: id) != nil {
+            saveSnoozes()
+            scheduleSnoozeWake()
+        }
         saveActivity()
     }
 
@@ -243,7 +254,11 @@ final class AgentIntegrationStore {
               let adapter = adapters[thread.provider] else { return nil }
         settledThreadIDs.insert(thread.id)
         defaults.set(settledThreadIDs.sorted(), forKey: "integration.settledThreadIDs")
-        saveSettledThreads()
+        if snoozedUntil.removeValue(forKey: thread.id) != nil {
+            saveSnoozes()
+            scheduleSnoozeWake()
+        }
+        saveRetainedThreads()
         let draft = drafts.removeValue(forKey: thread.id)
         metadataRequests.remove(thread.id)
         revisions[thread.id, default: 0] += 1
@@ -283,7 +298,73 @@ final class AgentIntegrationStore {
             threads.append(reconcile(thread))
         }
         revisions[thread.id, default: 0] += 1
-        saveSettledThreads()
+        saveRetainedThreads()
+    }
+
+    func canSnooze(_ thread: AgentThread) -> Bool {
+        !settledThreadIDs.contains(thread.id) && snoozedUntil[thread.id] == nil
+            && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
+    }
+
+    func snooze(_ thread: AgentThread, until date: Date) {
+        guard canSnooze(thread), date > .now else { return }
+        snoozedUntil[thread.id] = date
+        if !threads.contains(where: { $0.id == thread.id }) {
+            threads.append(reconcile(thread))
+        }
+        revisions[thread.id, default: 0] += 1
+        saveSnoozes()
+        saveActivity()
+        scheduleSnoozeWake()
+    }
+
+    func unsnooze(_ thread: AgentThread) {
+        guard snoozedUntil.removeValue(forKey: thread.id) != nil else { return }
+        // Move it to the top so an older thread cannot fall outside the visible list.
+        resurface(thread.id, markUnread: false)
+        saveSnoozes()
+        saveActivity()
+        scheduleSnoozeWake()
+    }
+
+    private func wakeExpiredSnoozes(now: Date = .now) {
+        let expired = snoozedUntil.filter { $0.value <= now }.map(\.key)
+        if !expired.isEmpty {
+            for id in expired {
+                snoozedUntil[id] = nil
+                resurface(id, now: now, markUnread: true)
+            }
+            saveSnoozes()
+            saveActivity()
+        }
+        scheduleSnoozeWake()
+    }
+
+    private func resurface(_ id: String, now: Date = .now, markUnread: Bool) {
+        guard let index = threads.firstIndex(where: { $0.id == id }) else {
+            activity[id]?.resurface(now: now, markUnread: markUnread)
+            return
+        }
+        activity[id, default: ThreadActivity(thread: threads[index])].resurface(now: now, markUnread: markUnread)
+        threads[index] = reconcile(threads[index], now: now)
+        if drafts[id] != nil { drafts[id] = threads[index] }
+        revisions[id, default: 0] += 1
+    }
+
+    private func scheduleSnoozeWake() {
+        snoozeTask?.cancel()
+        guard let next = snoozedUntil.values.min() else {
+            snoozeTask = nil
+            return
+        }
+        snoozeTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(max(next.timeIntervalSinceNow, 0))) } catch { return }
+            self?.wakeExpiredSnoozes()
+        }
+    }
+
+    private func saveSnoozes() {
+        defaults.set(snoozedUntil, forKey: "integration.snoozedThreads")
     }
 
     func markUnread(_ thread: AgentThread) async {
@@ -324,7 +405,7 @@ final class AgentIntegrationStore {
         if let previous = threads.first(where: { $0.id == thread.id }),
            previous.status != .unknown, previous.status != result.status,
            result.status == .done || result.status == .waiting,
-           enabled.contains(thread.provider), !settledThreadIDs.contains(thread.id),
+           enabled.contains(thread.provider), !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil,
            !deletingThreadIDs.contains(thread.id), !deletedThreadIDs.contains(thread.id) {
             onAttention?(result)
         }
@@ -335,21 +416,21 @@ final class AgentIntegrationStore {
         if let data = try? JSONEncoder().encode(activity) {
             defaults.set(data, forKey: "integration.threadActivity")
         }
-        saveSettledThreads()
+        saveRetainedThreads()
     }
 
-    private func saveSettledThreads() {
-        let settled = providers.flatMap { provider in
-            threads.filter { $0.provider == provider && settledThreadIDs.contains($0.id) }
-                .sorted(by: AgentThread.newestFirst)
-                .prefix(25)
+    private func saveRetainedThreads() {
+        let retained = providers.flatMap { provider in
+            let sorted = threads.filter { $0.provider == provider }.sorted(by: AgentThread.newestFirst)
+            return Array(sorted.filter { settledThreadIDs.contains($0.id) }.prefix(25)) + sorted.filter { snoozedUntil[$0.id] != nil }
         }
-        if let data = try? JSONEncoder().encode(settled) {
-            defaults.set(data, forKey: "integration.settledThreads")
+        if let data = try? JSONEncoder().encode(retained) {
+            defaults.set(data, forKey: "integration.retainedThreads")
         }
     }
 
     func refresh(provider: AgentProvider? = nil) async {
+        wakeExpiredSnoozes()
         requestedProviders.formUnion(provider.map { [$0] } ?? enabledProviders)
         if let refreshTask { await refreshTask.value; return }
         isRefreshing = true
@@ -390,11 +471,14 @@ final class AgentIntegrationStore {
                 unlisted.append(draft)
             }
             // A bounded provider page can omit a thread immediately after archiving it.
-            // Keep recent settled entries so it cannot be replaced by older active history.
-            let retainedSettled = threads.filter {
-                $0.provider == provider && settledThreadIDs.contains($0.id) && !listedIDs.contains($0.id)
-            }.sorted(by: AgentThread.newestFirst).prefix(25)
-            let incoming = latest + unlisted + retainedSettled
+            // Keep recent settled entries so it cannot be replaced by older active history,
+            // and every snoozed entry so it can still wake after newer threads push it off the page.
+            let unlistedIDs = Set(unlisted.map(\.id))
+            let omitted = threads.filter {
+                $0.provider == provider && !listedIDs.contains($0.id) && !unlistedIDs.contains($0.id)
+            }.sorted(by: AgentThread.newestFirst)
+            let retained = Array(omitted.filter { settledThreadIDs.contains($0.id) }.prefix(25)) + omitted.filter { snoozedUntil[$0.id] != nil }
+            let incoming = latest + unlisted + retained
             let incomingIDs = Set(incoming.map(\.id))
             let changed = threads.filter {
                 $0.provider == provider && revisions[$0.id, default: 0] != initialRevisions[$0.id, default: 0]

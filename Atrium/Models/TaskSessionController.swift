@@ -94,30 +94,59 @@ final class TaskSessionController {
     func settle(_ thread: AgentThread, undoManager: UndoManager? = nil) {
         guard !isOpening, !integrations.settledThreadIDs.contains(thread.id), !integrations.renamingThreadIDs.contains(thread.id),
               !integrations.deletingThreadIDs.contains(thread.id), !integrations.deletedThreadIDs.contains(thread.id) else { return }
+        let snoozedUntil = integrations.snoozedUntil[thread.id]
         let draft = withAnimation {
             let draft = integrations.settle(thread)
             appState.closeSession(thread.id)
             return draft
         }
         undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
-            controller.restore(thread, draft: draft, undoManager: undoManager)
+            controller.restore(thread, draft: draft, snoozedUntil: snoozedUntil, undoManager: undoManager)
         }
         if let undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
             undoManager.setActionName("Settle Thread")
         }
     }
 
-    func restore(_ thread: AgentThread, draft: AgentThread? = nil, undoManager: UndoManager? = nil) {
+    func restore(_ thread: AgentThread, draft: AgentThread? = nil, snoozedUntil: Date? = nil, undoManager: UndoManager? = nil) {
         guard integrations.settledThreadIDs.contains(thread.id),
               !integrations.deletingThreadIDs.contains(thread.id), !integrations.deletedThreadIDs.contains(thread.id) else { return }
         withAnimation {
             integrations.restore(thread, draft: draft)
+            if let snoozedUntil { integrations.snooze(thread, until: snoozedUntil) }
         }
         undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
             controller.settle(thread, undoManager: undoManager)
         }
         if let undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
             undoManager.setActionName("Restore Thread")
+        }
+    }
+
+    func snooze(_ thread: AgentThread, until date: Date? = nil, undoManager: UndoManager? = nil) {
+        guard let date = date ?? Calendar.current.date(byAdding: .day, value: 1, to: .now), date > .now,
+              integrations.canSnooze(thread) else { return }
+        withAnimation {
+            integrations.snooze(thread, until: date)
+        }
+        undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
+            controller.unsnooze(thread, undoManager: undoManager)
+        }
+        if let undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
+            undoManager.setActionName("Snooze Thread")
+        }
+    }
+
+    func unsnooze(_ thread: AgentThread, undoManager: UndoManager? = nil) {
+        guard let date = integrations.snoozedUntil[thread.id] else { return }
+        withAnimation {
+            integrations.unsnooze(thread)
+        }
+        undoManager?.registerUndo(withTarget: self) { [weak undoManager] controller in
+            controller.snooze(thread, until: date, undoManager: undoManager)
+        }
+        if let undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
+            undoManager.setActionName("Unsnooze Thread")
         }
     }
 

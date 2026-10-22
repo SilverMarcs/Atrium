@@ -5,6 +5,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     let title: String
     let directory: String
     let continuedIn: String?
+    let lastActivity: Date?
 
     static func parse(head: String, tail: String, renamedTitle: String?) -> Self? {
         // Claude has used transcript records for names and, more recently, a separate rename file.
@@ -16,8 +17,20 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         return Self(
             title: title,
             directory: string("relocatedCwd", in: tail, last: true) ?? string("cwd", in: head) ?? "",
-            continuedIn: continuation(in: tail)
+            continuedIn: continuation(in: tail),
+            lastActivity: lastActivity(in: tail)
         )
+    }
+
+    /// Claude appends bookkeeping records to old transcripts on resume and reconnect,
+    /// so the file's modification date is not when the conversation last changed.
+    private static func lastActivity(in tail: String) -> Date? {
+        for line in tail.split(separator: "\n").reversed() where line.contains("\"timestamp\"") {
+            guard let record = object(line), ["user", "assistant"].contains(record["type"] as? String),
+                  let timestamp = record["timestamp"] as? String else { continue }
+            if let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(timestamp) { return date }
+        }
+        return nil
     }
 
     /// Reads a JSON string field even when a large record crosses the edge of a read window.
