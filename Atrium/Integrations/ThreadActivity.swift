@@ -13,13 +13,17 @@ struct ThreadActivity: Codable {
 
     mutating func update(_ source: AgentThread, isViewed: Bool, now: Date = .now) -> AgentThread {
         var thread = source
-        date = max(date, source.updatedAt)
         if thread.status == .idle, [.processing, .done].contains(status) {
             thread.status = .done
         }
         let completed = thread.status == .done && status != .done
         let beganWorking = thread.status == .processing && status != .processing
-        if beganWorking && status != .waiting { date = max(date, now) }
+        // Provider timestamps advance on every transcript write, so a running task keeps its place until it finishes.
+        if completed || (beganWorking && status != .waiting) {
+            date = max(date, now)
+        } else if ![.processing, .waiting].contains(thread.status) {
+            date = max(date, source.updatedAt)
+        }
         if completed { unread = true }
         if beganWorking { unread = false }
         if thread.status != .unknown { status = thread.status }
