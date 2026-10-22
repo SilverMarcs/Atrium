@@ -56,6 +56,13 @@ final class AgentIntegrationStore {
         settledThreadIDs = Set(defaults.stringArray(forKey: "integration.settledThreadIDs") ?? [])
         activity = defaults.data(forKey: "integration.threadActivity")
             .flatMap { try? JSONDecoder().decode([String: ThreadActivity].self, from: $0) } ?? [:]
+        let savedThreads = defaults.data(forKey: "integration.settledThreads")
+            .flatMap { try? JSONDecoder().decode([AgentThread].self, from: $0) } ?? []
+        threads = savedThreads.filter { settledThreadIDs.contains($0.id) }.map {
+            var thread = $0
+            thread.status = .stopped
+            return thread
+        }
         for adapter in adapters {
             let provider = adapter.provider
             adapter.onEvent = { [weak self] event in self?.receive(event, from: provider) }
@@ -115,6 +122,7 @@ final class AgentIntegrationStore {
             threads[index].hasProviderTitle = true
             if drafts[thread.id] != nil { drafts[thread.id] = threads[index] }
             revisions[thread.id, default: 0] += 1
+            saveSettledThreads()
             return true
         } catch {
             if isCurrent(thread.provider, generation: generation), !deletedThreadIDs.contains(thread.id) {
@@ -235,6 +243,7 @@ final class AgentIntegrationStore {
               let adapter = adapters[thread.provider] else { return nil }
         settledThreadIDs.insert(thread.id)
         defaults.set(settledThreadIDs.sorted(), forKey: "integration.settledThreadIDs")
+        saveSettledThreads()
         let draft = drafts.removeValue(forKey: thread.id)
         metadataRequests.remove(thread.id)
         revisions[thread.id, default: 0] += 1
@@ -274,6 +283,7 @@ final class AgentIntegrationStore {
             threads.append(reconcile(thread))
         }
         revisions[thread.id, default: 0] += 1
+        saveSettledThreads()
     }
 
     func markUnread(_ thread: AgentThread) async {
@@ -324,6 +334,18 @@ final class AgentIntegrationStore {
     private func saveActivity() {
         if let data = try? JSONEncoder().encode(activity) {
             defaults.set(data, forKey: "integration.threadActivity")
+        }
+        saveSettledThreads()
+    }
+
+    private func saveSettledThreads() {
+        let settled = providers.flatMap { provider in
+            threads.filter { $0.provider == provider && settledThreadIDs.contains($0.id) }
+                .sorted(by: AgentThread.newestFirst)
+                .prefix(25)
+        }
+        if let data = try? JSONEncoder().encode(settled) {
+            defaults.set(data, forKey: "integration.settledThreads")
         }
     }
 
@@ -380,9 +402,9 @@ final class AgentIntegrationStore {
             let reconciled = incoming.map { source in
                 changed.first(where: { $0.id == source.id }) ?? reconcile(source)
             } + changed.filter { !incomingIDs.contains($0.id) }
-            saveActivity()
             threads.removeAll { $0.provider == provider }
             threads.append(contentsOf: reconciled)
+            saveActivity()
             errors[provider] = nil
         } catch is CancellationError {
         } catch {

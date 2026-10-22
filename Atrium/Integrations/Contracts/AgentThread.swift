@@ -1,6 +1,6 @@
 import Foundation
 
-struct AgentThread: Identifiable, Sendable, Equatable {
+struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     let sessionID: String
     let provider: AgentProvider
     var title: String
