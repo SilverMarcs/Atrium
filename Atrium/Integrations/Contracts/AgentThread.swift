@@ -11,9 +11,11 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var hasProviderTitle = false
     var readState: AgentReadState?
     var hasUnreadResult = false
+    /// Original project identity, independent of a provider relocating into a worktree.
+    var projectDirectory: String?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
-    var projectName: String { URL(fileURLWithPath: directory).lastPathComponent }
+    var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }
     var needsAttention: Bool { status == .processing || status == .waiting || hasUnreadResult }
 
     nonisolated static func newestFirst(_ lhs: AgentThread, _ rhs: AgentThread) -> Bool {

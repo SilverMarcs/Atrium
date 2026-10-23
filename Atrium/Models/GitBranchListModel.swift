@@ -11,6 +11,7 @@ final class GitBranchListModel {
     private(set) var actionError: String?
     private(set) var pendingAction: GitBranchAction?
     private var isPerforming = false
+    private var loadRevision = 0
     private var repositoryRootURL: URL
     private let mainRepositoryURL: URL
     private let directoryURL: URL
@@ -35,16 +36,19 @@ final class GitBranchListModel {
     }
 
     func load() async {
+        loadRevision += 1
+        let revision = loadRevision
         isLoading = listing.branches.isEmpty && listing.linkedWorktrees.isEmpty
         loadError = nil
-        defer { isLoading = false }
+        defer { if revision == loadRevision { isLoading = false } }
         do {
             let loaded = try await repository.allBranchesDetailed(at: repositoryRootURL)
             try Task.checkCancellation()
+            guard revision == loadRevision else { return }
             listing = loaded
         } catch is CancellationError {
         } catch {
-            loadError = error.localizedDescription
+            if revision == loadRevision { loadError = error.localizedDescription }
         }
     }
 
@@ -97,6 +101,14 @@ final class GitBranchListModel {
         }
     }
 
+    func merge(_ source: GitBranchInfo, into target: GitBranchInfo) async {
+        guard !isBusy, !target.isRemote, source.id != target.id else { return }
+        await perform {
+            try await self.repository.mergeBranch(source, into: target, at: self.mainRepositoryURL)
+            return "Merged \(source.name) into \(target.name)"
+        }
+    }
+
     func comparison(for branch: GitBranchInfo) -> GitCommitDiffSheetItem? {
         guard !branch.isCurrent, let head = listing.currentBranchName else { return nil }
         return GitCommitDiffSheetItem(range: GitBranchRange(base: branch.name, head: head),
@@ -117,11 +129,11 @@ final class GitBranchListModel {
             } catch {
                 self.actionError = error.localizedDescription
             }
+            await self.load()
             await self.inspector.finishBranchOperation(
                 mainRepositoryURL: self.mainRepositoryURL, previousRoot: previousRoot,
                 directoryURL: self.directoryURL, didConvert: didConvert
             )
-            await self.load()
         }
     }
 }

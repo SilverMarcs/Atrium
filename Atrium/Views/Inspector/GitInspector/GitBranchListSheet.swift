@@ -3,9 +3,11 @@ import SwiftUI
 struct GitBranchListSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    private let repositoryURL: URL
     @State private var model: GitBranchListModel
 
     init(snapshot: GitRepositoryStatusSnapshot, directoryURL: URL, state: GitInspectorState) {
+        repositoryURL = snapshot.mainRepositoryURL
         _model = State(initialValue: GitBranchListModel(snapshot: snapshot, directoryURL: directoryURL, inspector: state))
     }
 
@@ -105,6 +107,9 @@ struct GitBranchListSheet: View {
         }
         .frame(width: 420, height: 440)
         .task { await model.load() }
+        .watchFileSystem(at: repositoryURL) {
+            Task { await model.load() }
+        }
         .alert(model.pendingAction?.title ?? "Confirm", isPresented: $model.isConfirming, presenting: model.pendingAction) { action in
             Button(action.buttonTitle, role: action.isDestructive ? .destructive : .confirm) {
                 Task { await model.confirm(action) }

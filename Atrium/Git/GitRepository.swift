@@ -504,6 +504,28 @@ actor GitRepository {
                                 mergedDetachedHeads: mergedDetachedHeads)
     }
 
+    /// Merge in the destination checkout, keeping the source worktree untouched.
+    func mergeBranch(_ source: GitBranchInfo, into target: GitBranchInfo, at root: URL) async throws {
+        guard !target.isRemote, source.id != target.id else { return }
+        let checkouts = try await worktrees(at: root)
+        let destination = checkouts.first { $0.branch == target.name }
+        guard let checkout = destination ?? checkouts.first(where: { $0.isMain && !$0.isBare }) else {
+            throw GitError.commandFailed(command: "git merge", message: "No destination checkout is available.")
+        }
+        let status = try await executor.execute(GitStatusCommand(), at: checkout.path)
+        guard status.entries.isEmpty else {
+            throw GitError.commandFailed(command: "git merge", message: "Commit or stash changes in the destination checkout before merging.")
+        }
+        if destination == nil {
+            try await executor.execute(GitSwitchCommand(branch: target.name), at: checkout.path)
+        }
+        let ref = "refs/\(source.isRemote ? "remotes" : "heads")/\(source.name)"
+        let result = try await executor.runWithExitCode(arguments: ["merge", "--no-edit", "--", ref], at: checkout.path)
+        guard result.exitCode == 0 else {
+            throw GitError.commandFailed(command: "git merge", message: "Merge into \(target.name) at \(checkout.path.path) failed. Resolve conflicts or abort the merge there. \(result.stderr)")
+        }
+    }
+
     func deleteBranch(_ name: String, force: Bool, at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitDeleteBranchCommand(name: name, force: force), at: repositoryRootURL)
     }

@@ -4,6 +4,7 @@ import Foundation
 nonisolated struct ClaudeSessionMetadata: Sendable {
     let title: String
     let directory: String
+    let projectDirectory: String?
     let continuedIn: String?
     let lastActivity: Date?
 
@@ -17,6 +18,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         return Self(
             title: title,
             directory: string("relocatedCwd", in: tail, last: true) ?? string("cwd", in: head) ?? "",
+            projectDirectory: string("cwd", in: head),
             continuedIn: continuation(in: tail),
             lastActivity: lastActivity(in: tail)
         )
