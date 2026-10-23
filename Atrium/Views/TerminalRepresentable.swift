@@ -3,6 +3,8 @@ import SwiftTerm
 
 /// Hosts a retained terminal process for a task or inspector command.
 struct TerminalContainerRepresentable: NSViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
+
     let terminal: Terminal
     let appState: AppState
 
@@ -21,8 +23,10 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         if let existing = terminal.localProcessTerminalView {
             terminalView = existing
         } else {
-            terminalView = coordinator.createTerminalView(for: terminal, appState: appState)
+            terminalView = coordinator.createTerminalView(for: terminal, appState: appState, isDark: colorScheme == .dark)
         }
+
+        (terminalView as? AppTerminalView)?.applyAppearance(isDark: colorScheme == .dark)
 
         if terminalView.processDelegate !== terminal.processDelegate {
             terminalView.processDelegate = terminal.processDelegate
@@ -69,11 +73,11 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             viewMap[ObjectIdentifier(view)] = WeakTerminal(terminal)
         }
 
-        func createTerminalView(for terminal: Terminal, appState: AppState) -> LocalProcessTerminalView {
+        func createTerminalView(for terminal: Terminal, appState: AppState, isDark: Bool) -> LocalProcessTerminalView {
             self.appState = appState
             let tv = AppTerminalView(frame: .zero)
             // Install colors and theme reporting before any shell, agent, or command starts.
-            tv.applyAppearance()
+            tv.applyAppearance(isDark: isDark)
             // Agent attention comes from provider state, so discard their bells.
             tv.bellStyle = terminal.isTaskTerminal ? .none : .sound
             tv.setCursorStyle(.steadyBlock)
