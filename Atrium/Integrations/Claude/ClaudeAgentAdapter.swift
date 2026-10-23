@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.deleteThread, .renameThread]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread]
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
     private let configDirectory: URL
@@ -64,6 +64,17 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return thread
     }
 
+    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+        guard UUID(uuidString: thread.sessionID) != nil else {
+            throw IntegrationError(message: "Invalid Claude session identifier.")
+        }
+        let session = try await startBackgroundSession(directory: thread.directory, resuming: thread.sessionID, forking: true)
+        guard let fork = session.thread else {
+            throw IntegrationError(message: "Claude did not provide a forked session identifier.")
+        }
+        return fork
+    }
+
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch {
         guard UUID(uuidString: thread.sessionID) != nil else {
             throw IntegrationError(message: "Invalid Claude session identifier.")
@@ -107,10 +118,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
     }
 
-    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil) async throws -> ClaudeBackgroundSession {
+    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false) async throws -> ClaudeBackgroundSession {
         let settings = #"{"env":{"CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF":"1"}}"#
         var arguments = ["--bg", "--settings", settings]
         if let sessionID { arguments += ["--resume", sessionID] }
+        if forking { arguments.append("--fork-session") }
         let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, timeout: .seconds(120))
         guard let line = String(decoding: output, as: UTF8.self).split(separator: "\n").first(where: { $0.hasPrefix("backgrounded") }),
               let field = line.split(separator: "·").dropFirst().first,
@@ -125,7 +137,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                 try Task.checkCancellation()
                 if let session = try await listBackgroundSessions().first(where: { $0.kind == "background" && $0.id == id }),
                    let thread = session.thread {
-                    guard sessionID == nil || thread.sessionID == sessionID else {
+                    if forking, thread.sessionID == sessionID {
+                        throw IntegrationError(message: "Claude did not create an independent forked session.")
+                    }
+                    guard forking || sessionID == nil || thread.sessionID == sessionID else {
                         throw IntegrationError(message: "This Claude conversation is already open elsewhere. Close that session before opening it here.")
                     }
                     backgroundIDs[thread.sessionID] = id

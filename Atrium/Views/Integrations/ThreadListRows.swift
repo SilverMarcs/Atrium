@@ -16,6 +16,7 @@ struct ThreadListRows: View {
 
                     Divider()
 
+                    ForkThreadButton(thread: thread)
                     RenameThreadButton(thread: thread) { requestRename(thread) }
 
                     if integrations.canMarkUnread(thread) {

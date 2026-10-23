@@ -500,6 +500,22 @@ final class AgentIntegrationStore {
         }
     }
 
+    func canFork(_ thread: AgentThread) -> Bool {
+        enabled.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.forkThread) == true
+            && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
+            && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
+    }
+
+    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+        guard canFork(thread) else { throw IntegrationError(message: "This chat cannot be forked right now.") }
+        let adapter = try enabledAdapter(for: thread.provider)
+        let generation = generations[thread.provider, default: 0]
+        let fork = try await adapter.forkThread(thread)
+        guard isCurrent(thread.provider, generation: generation) else { throw CancellationError() }
+        registerDraft(fork)
+        return fork
+    }
+
     func createThread(provider: AgentProvider, directory: String) async throws -> AgentThread {
         let adapter = try enabledAdapter(for: provider)
         let generation = generations[provider, default: 0]

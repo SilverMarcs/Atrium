@@ -47,6 +47,25 @@ final class TaskSessionController {
         }
     }
 
+    func fork(_ thread: AgentThread) async {
+        guard !isOpening, integrations.canFork(thread) else { return }
+        isComposing = true
+        defer { isComposing = false }
+        do {
+            try validateDirectory(thread.directory)
+            let fork = try await integrations.forkThread(thread)
+            try Task.checkCancellation()
+            guard canOpen(fork) else { return }
+            let launch = try await integrations.prepareLaunch(for: fork)
+            try Task.checkCancellation()
+            guard canOpen(fork) else { return }
+            launchSession(fork, configuration: launch, workspace: workspace(for: fork.directory))
+        } catch is CancellationError {
+        } catch {
+            integrations.actionError = error.localizedDescription
+        }
+    }
+
     func open(_ thread: AgentThread) {
         guard !isComposing, canOpen(thread), openingThreadID != thread.id else { return }
         openingTask?.cancel()

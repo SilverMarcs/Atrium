@@ -10,6 +10,7 @@ protocol AgentProviderAdapter: AnyObject {
 
     func listThreads() async throws -> [AgentThread]
     func readThread(_ sessionID: String) async throws -> AgentThread?
+    func forkThread(_ thread: AgentThread) async throws -> AgentThread
     func createThread(directory: String) async throws -> AgentThread
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch
     func stopThread(_ thread: AgentThread) async throws
@@ -23,6 +24,10 @@ protocol AgentProviderAdapter: AnyObject {
 
 extension AgentProviderAdapter {
     var capabilities: AgentCapabilities { [] }
+
+    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+        throw IntegrationError(message: "\(provider.name) does not support forking a thread.")
+    }
 
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState {
         throw IntegrationError(message: "\(provider.name) does not support marking a thread unread.")

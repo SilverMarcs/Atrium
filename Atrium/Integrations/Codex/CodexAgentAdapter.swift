@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.markUnread, .deleteThread, .deleteDescendants, .renameThread]
+    let capabilities: AgentCapabilities = [.forkThread, .markUnread, .deleteThread, .deleteDescendants, .renameThread]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let defaults: UserDefaults
@@ -116,6 +116,17 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         _ = try await request("thread/name/set", params: ["threadId": thread.sessionID, "name": "New Codex thread"])
         _ = try await request("thread/unsubscribe", params: ["threadId": thread.sessionID])
         return thread
+    }
+
+    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+        try await connect()
+        let data = try await request("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
+              fork.sessionID != thread.sessionID else {
+            throw IntegrationError(message: "Codex did not return a forked thread.")
+        }
+        return fork
     }
 
     func renameThread(_ thread: AgentThread, to title: String) async throws {
