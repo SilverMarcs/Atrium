@@ -112,9 +112,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
               let row = result["thread"] as? [String: Any], let thread = Self.thread(row) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
-        // Naming persists an empty thread so the terminal UI can resume it.
-        _ = try await request("thread/name/set", params: ["threadId": thread.sessionID, "name": "New Codex thread"])
-        _ = try await request("thread/unsubscribe", params: ["threadId": thread.sessionID])
+        // Archiving persists and unloads the empty thread; restore it for CLI resume.
+        // Leave its name unset so Codex can generate a title after the first prompt.
+        _ = try await request("thread/archive", params: ["threadId": thread.sessionID])
+        _ = try await request("thread/unarchive", params: ["threadId": thread.sessionID])
         return thread
     }
 

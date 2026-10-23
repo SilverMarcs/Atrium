@@ -76,6 +76,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
         func createTerminalView(for terminal: Terminal, appState: AppState, isDark: Bool) -> LocalProcessTerminalView {
             self.appState = appState
             let tv = AppTerminalView(frame: .zero)
+            tv.prepareProcessResponses()
             // Install colors and theme reporting before any shell, agent, or command starts.
             tv.applyAppearance(isDark: isDark)
             // Agent attention comes from provider state, so discard their bells.

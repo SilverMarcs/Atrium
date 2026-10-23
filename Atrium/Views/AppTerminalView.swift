@@ -1,10 +1,27 @@
 import AppKit
 import SwiftTerm
+import Synchronization
 
 /// Keeps terminal colors and the theme reported to programs in sync.
 @MainActor
 final class AppTerminalView: LocalProcessTerminalView {
     private var appliedIsDark: Bool?
+    nonisolated private let responseWriter = Mutex<TerminalResponseWriter?>(nil)
+
+    /// Install before launch: startup color probes must not wait for UI work.
+    func prepareProcessResponses() {
+        let writer = TerminalResponseWriter(process: process)
+        responseWriter.withLock { $0 = writer }
+    }
+
+    nonisolated override func send(source: SwiftTerm.Terminal, data: ArraySlice<UInt8>) {
+        let writer = responseWriter.withLock { $0 }
+        if let writer {
+            writer.send(data)
+        } else {
+            super.send(source: source, data: data)
+        }
+    }
 
     /// Use the host's scheme even before this retained view belongs to a window.
     func applyAppearance(isDark: Bool) {
