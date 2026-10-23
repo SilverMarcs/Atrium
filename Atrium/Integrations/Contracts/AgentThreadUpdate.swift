@@ -5,6 +5,7 @@ struct AgentThreadUpdate: Sendable {
     var readState: AgentReadState?
     var title: String?
     var updatedAt: Date?
+    var startsNewTurn = false
 
     func applying(to source: AgentThread) -> AgentThread {
         var thread = source

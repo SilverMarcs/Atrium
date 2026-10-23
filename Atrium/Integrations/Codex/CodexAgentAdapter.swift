@@ -289,7 +289,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             guard let id = params["threadId"] as? String else { return }
-            if method == "thread/status/changed" {
+            if method == "turn/started" {
+                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
+                onEvent?(.threadInvalidated(sessionID: id))
+            } else if method == "thread/status/changed" {
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: Self.status(params["status"] as? [String: Any]))))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/name/updated" {

@@ -188,6 +188,13 @@ final class AgentIntegrationStore {
         case .threadUpdated(let sessionID, let update):
             guard enabled.contains(provider) else { return }
             guard let index = threads.firstIndex(where: { $0.provider == provider && $0.sessionID == sessionID }) else { return }
+            let previous = threads[index]
+            // A new turn can start while a snoozed chat is already processing.
+            // Status transitions also cover providers that only report activity.
+            if update.startsNewTurn || (update.status == .processing && previous.status != .processing && previous.status != .waiting) {
+                if settledThreadIDs.contains(previous.id) { restore(previous) }
+                if snoozedUntil[previous.id] != nil { unsnooze(previous) }
+            }
             let thread = reconcile(update.applying(to: threads[index]))
             threads[index] = thread
             if drafts[thread.id] != nil { drafts[thread.id] = thread }
