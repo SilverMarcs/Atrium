@@ -15,19 +15,30 @@ final class GitInspectorModel {
         snapshots.contains { !$0.stagedFiles.isEmpty || !$0.unstagedFiles.isEmpty }
     }
 
-    func refresh(directoryURL: URL, worktreeOverrides: [URL: URL] = [:]) async {
-        isLoading = snapshots.isEmpty
-        errorMessage = nil
+    /// Refreshes overlap (scan task, file watcher, post-action), and a worktree switch
+    /// cancels the scan in flight while its Git processes still finish. Only the newest
+    /// refresh may publish: a stale one would restore the context just switched away
+    /// from, and a cancelled one would surface a bogus failure.
+    @ObservationIgnored private var refreshGeneration = 0
 
+    func refresh(directoryURL: URL, worktreeOverrides: [URL: URL] = [:]) async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        isLoading = snapshots.isEmpty
+
+        // Never clears `errorMessage`: yanking an error alert away mid-presentation crashes
+        // AppKit's sheet animation. The alert clears it when dismissed.
         do {
             let newSnapshots = Self.collapseWorktreeSiblings(
                 try await GitRepository.shared.statusSnapshots(in: directoryURL, worktreeOverrides: worktreeOverrides),
                 overrides: worktreeOverrides
             )
+            guard generation == refreshGeneration, !Task.isCancelled else { return }
             if newSnapshots != snapshots {
                 snapshots = newSnapshots
             }
         } catch {
+            guard generation == refreshGeneration, !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
 

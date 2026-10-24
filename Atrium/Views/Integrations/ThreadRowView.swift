@@ -6,8 +6,7 @@ struct ThreadRowView: View {
     let thread: AgentThread
 
     private var workspace: Workspace? {
-        let url = URL(fileURLWithPath: thread.directory).standardizedFileURL
-        return workspaces.workspaces.first { $0.url.standardizedFileURL == url }
+        workspaces.workspace(for: thread)
     }
 
     var body: some View {

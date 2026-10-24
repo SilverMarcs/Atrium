@@ -114,6 +114,42 @@ final class WorkspaceStore {
         }
     }
 
+    // MARK: - Lookup
+
+    /// The project a task belongs to. A task that relocated into a linked worktree
+    /// stays with the project of its original folder, or of the worktree's main checkout.
+    func workspace(for thread: AgentThread) -> Workspace? {
+        for directory in [thread.projectDirectory, thread.directory].compactMap(\.self) {
+            let url = URL(fileURLWithPath: directory)
+            if let workspace = workspace(at: url) { return workspace }
+            if let checkout = GitCheckout(containing: url), checkout.linkedWorktreeURL != nil,
+               let workspace = workspace(at: checkout.mainCheckoutURL) {
+                return workspace
+            }
+        }
+        return nil
+    }
+
+    /// The folder a project for a task without one should open: never a linked worktree,
+    /// which would otherwise appear as a separate project lacking the real one's commands.
+    static func projectDirectory(for thread: AgentThread) -> String {
+        let directory = thread.projectDirectory ?? thread.directory
+        guard let checkout = GitCheckout(containing: URL(fileURLWithPath: directory)),
+              checkout.linkedWorktreeURL != nil else { return directory }
+        return Self.path(of: checkout.mainCheckoutURL)
+    }
+
+    private func workspace(at url: URL) -> Workspace? {
+        let path = Self.path(of: url)
+        return workspaces.first { Self.path(of: $0.url) == path }
+    }
+
+    /// Directory URLs may or may not carry a trailing slash; compare paths without it.
+    private static func path(of url: URL) -> String {
+        let path = url.standardizedFileURL.path(percentEncoded: false)
+        return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
     // MARK: - CRUD
 
     func addWorkspace(_ workspace: Workspace) {

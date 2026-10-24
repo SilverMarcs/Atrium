@@ -94,6 +94,19 @@ extension GitInspectorState {
         selectedRepoURL = rootURL
     }
 
+    /// Views the checkout a task runs in: the linked worktree it relocated into, or
+    /// its repository's main checkout. Like a picker switch, the user can move away.
+    func showCheckout(containing directoryURL: URL) {
+        guard let checkout = GitCheckout(containing: directoryURL) else { return }
+        let rootURL = checkout.mainCheckoutURL
+        if worktreeOverrides[rootURL] != checkout.linkedWorktreeURL {
+            worktreeOverrides[rootURL] = checkout.linkedWorktreeURL
+        }
+        if selectedRepoURL != rootURL {
+            selectedRepoURL = rootURL
+        }
+    }
+
     /// After a switch that leaves a linked worktree, dropping the override hands the
     /// refresh to the view's scan task; an in-place switch refreshes here, with a
     /// best-effort quiet fetch so the new branch's upstream state reflects reality.

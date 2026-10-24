@@ -59,7 +59,7 @@ final class TaskSessionController {
             let launch = try await integrations.prepareLaunch(for: fork)
             try Task.checkCancellation()
             guard canOpen(fork) else { return }
-            launchSession(fork, configuration: launch, workspace: workspace(for: fork.directory))
+            launchSession(fork, configuration: launch, workspace: workspace(for: fork))
         } catch is CancellationError {
         } catch {
             integrations.actionError = error.localizedDescription
@@ -75,6 +75,7 @@ final class TaskSessionController {
         appState.selectThread(thread.id)
         if let session = appState.sessions[thread.id], !session.terminal.hasExited {
             session.thread = thread
+            showCheckout(of: session)
             appState.show(session)
             integrations.setViewedThread(thread.id)
             return
@@ -92,11 +93,12 @@ final class TaskSessionController {
                 let launch = try await integrations.prepareLaunch(for: thread)
                 try Task.checkCancellation()
                 guard canOpen(thread), appState.selectedThreadID == thread.id else { return }
-                let workspace = workspace(for: thread.directory)
+                let workspace = workspace(for: thread)
                 if let session = appState.sessions[thread.id] {
                     session.thread = thread
                     session.restart(launch: launch)
                     observeTerminal(of: session)
+                    showCheckout(of: session)
                     appState.show(session)
                 } else {
                     launchSession(thread, configuration: launch, workspace: workspace)
@@ -189,7 +191,14 @@ final class TaskSessionController {
     private func launchSession(_ thread: AgentThread, configuration: AgentLaunch, workspace: Workspace) {
         let session = TaskSession(thread: thread, workspace: workspace, launch: configuration)
         observeTerminal(of: session)
+        showCheckout(of: session)
         appState.show(session)
+    }
+
+    /// Points the inspector at the checkout the task works in, so a task that moved
+    /// into a worktree shows that worktree while staying in its project.
+    private func showCheckout(of session: TaskSession) {
+        session.workspace.inspectorState.git.showCheckout(containing: URL(fileURLWithPath: session.thread.directory))
     }
 
     private func observeTerminal(of session: TaskSession) {
@@ -201,12 +210,12 @@ final class TaskSessionController {
         }
     }
 
-    private func workspace(for directory: String) -> Workspace {
-        let url = URL(fileURLWithPath: directory).standardizedFileURL
-        if let existing = workspaces.workspaces.first(where: { $0.url.standardizedFileURL == url }) {
+    private func workspace(for thread: AgentThread) -> Workspace {
+        if let existing = workspaces.workspace(for: thread) {
             return existing
         }
-        let workspace = Workspace(name: url.lastPathComponent, directory: directory)
+        let directory = WorkspaceStore.projectDirectory(for: thread)
+        let workspace = Workspace(name: URL(fileURLWithPath: directory).lastPathComponent, directory: directory)
         workspace.detectProjectType()
         workspaces.addWorkspace(workspace)
         return workspace
