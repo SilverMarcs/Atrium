@@ -15,10 +15,13 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             ?? string("aiTitle", in: tail, last: true) ?? string("aiTitle", in: head, last: true)
         guard let title = name ?? string("lastPrompt", in: tail, last: true)
             ?? string("summary", in: tail, last: true) ?? firstPrompt(in: head) else { return nil }
+        // A large first prompt can push its cwd beyond the bounded head window.
+        let originalDirectory = string("cwd", in: head)
         return Self(
             title: title,
-            directory: string("relocatedCwd", in: tail, last: true) ?? string("cwd", in: head) ?? "",
-            projectDirectory: string("cwd", in: head),
+            directory: string("relocatedCwd", in: tail, last: true) ?? originalDirectory
+                ?? string("cwd", in: tail, last: true) ?? "",
+            projectDirectory: originalDirectory,
             continuedIn: continuation(in: tail),
             lastActivity: lastActivity(in: tail)
         )

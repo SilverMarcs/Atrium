@@ -294,7 +294,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     private func withStatus(_ source: AgentThread) -> AgentThread {
         var thread = source
-        thread.status = backgroundSessions[thread.sessionID]?.threadStatus ?? .unknown
+        let session = backgroundSessions[thread.sessionID]
+        thread.status = session?.threadStatus ?? .unknown
+        // Background metadata also covers transcripts whose bounded windows omit cwd.
+        if let directory = session?.cwd, !directory.isEmpty {
+            if thread.directory.isEmpty { thread.directory = directory }
+            if thread.projectDirectory == nil { thread.projectDirectory = directory }
+        }
         return thread
     }
 
