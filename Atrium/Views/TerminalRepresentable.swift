@@ -118,6 +118,9 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             )
 
             terminal.pendingLaunch = nil
+            if !terminal.isTaskTerminal {
+                terminal.trackForegroundJob(in: tv)
+            }
 
             return tv
         }
@@ -159,9 +162,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
             guard let local = source as? LocalProcessTerminalView,
                   let terminal = viewMap[ObjectIdentifier(local)]?.value else { return }
             Task { @MainActor in
-                terminal.lastExitCode = exitCode
-                terminal.hasExited = true
-                terminal.onProcessExit?(exitCode)
+                terminal.processDidExit(exitCode: exitCode)
             }
             viewMap.removeValue(forKey: ObjectIdentifier(local))
         }

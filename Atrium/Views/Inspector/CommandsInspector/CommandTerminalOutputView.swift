@@ -6,7 +6,6 @@ struct CommandTerminalOutputView: View {
 
     private let barHeight: CGFloat = 26
 
-    private var isRunning: Bool { terminal.hasChildProcess }
     private var hasScript: Bool {
         !(terminal.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
     }
@@ -30,19 +29,19 @@ struct CommandTerminalOutputView: View {
                     .frame(width: barHeight, height: barHeight)
                     .background(.secondary.opacity(0.15), in: Circle())
 
-                    if isRunning || hasScript {
+                    if terminal.isRunning || hasScript {
                         Button {
-                            if isRunning {
-                                terminal.interrupt()
+                            if terminal.isRunning {
+                                terminal.stop()
                             } else {
                                 terminal.workspace?.runCommand(terminal)
                             }
                         } label: {
-                            Image(systemName: isRunning ? "stop.fill" : "play.fill")
+                            Image(systemName: terminal.isRunning ? "stop.fill" : "play.fill")
                                 .font(.caption2)
                                 .contentTransition(.symbolEffect(.replace))
                         }
-                        .help(isRunning ? "Stop" : "Run")
+                        .help(terminal.isRunning ? "Stop" : "Run")
                         .frame(width: barHeight, height: barHeight)
                         .background(.secondary.opacity(0.15), in: Circle())
                     }

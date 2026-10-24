@@ -71,7 +71,7 @@ struct InspectorView: View {
             .labelsHidden()
             .pickerStyle(.inline)
         } label: {
-            Image(systemName: (defaultCommand?.hasChildProcess ?? false) ? "stop.fill" : "play.fill")
+            Image(systemName: (defaultCommand?.isRunning ?? false) ? "stop.fill" : "play.fill")
                 .contentTransition(.symbolEffect(.replace))
         } primaryAction: {
             if let defaultCommand {
@@ -83,15 +83,15 @@ struct InspectorView: View {
     }
 
     private func trigger(_ cmd: Terminal) {
-        if cmd.hasChildProcess {
-            cmd.interrupt()
+        if cmd.isRunning {
+            cmd.stop()
         } else {
             workspace.runCommand(cmd)
         }
     }
 
     private func iconName(for tab: InspectorTab) -> String {
-        if tab == .commands && workspace.commands.contains(where: { $0.hasChildProcess }) {
+        if tab == .commands && workspace.commands.contains(where: { $0.isRunning }) {
             return "terminal.fill"
         }
         return tab.icon

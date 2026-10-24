@@ -123,21 +123,66 @@ final class Terminal: Identifiable, Hashable, Codable {
             : currentDirectory
     }
 
-    var hasChildProcess: Bool {
-        guard let process = localProcessTerminalView?.process, process.running else { return false }
-        // Query the PTY's foreground job on demand; no injected shell hooks.
-        let foregroundGroup = tcgetpgrp(process.childfd)
-        return foregroundGroup > 0 && foregroundGroup != process.shellPid
+    /// Whether a job other than the shell owns the PTY. Only tracked for commands.
+    private(set) var isRunning = false
+
+    @ObservationIgnored
+    private var jobMonitor: ForegroundJobMonitor?
+
+    /// The job the last stop request targeted and how many times it was asked.
+    @ObservationIgnored
+    private var stopRequest: (job: pid_t, attempts: Int)?
+
+    /// Set by `restart()` to run the script once the interrupted job has ended.
+    @ObservationIgnored
+    private var runsWhenIdle = false
+
+    /// Starts tracking the shell's foreground job; call once its process is launched.
+    func trackForegroundJob(in view: AppTerminalView) {
+        jobMonitor?.cancel()
+        let monitor = ForegroundJobMonitor(process: view.process) { [weak self] job in
+            self?.foregroundJobChanged(to: job)
+        }
+        view.onOutput = { [weak monitor] in monitor?.refresh() }
+        jobMonitor = monitor
+    }
+
+    private func foregroundJobChanged(to job: pid_t?) {
+        isRunning = job != nil
+        if stopRequest?.job != job {
+            stopRequest = nil
+        }
+        if job == nil, runsWhenIdle {
+            runsWhenIdle = false
+            workspace?.runCommand(self)
+        }
+    }
+
+    private func stopTrackingForegroundJob() {
+        jobMonitor?.cancel()
+        jobMonitor = nil
+        isRunning = false
+        stopRequest = nil
+        runsWhenIdle = false
+    }
+
+    /// Records the shell's exit and retires anything tied to its process.
+    func processDidExit(exitCode: Int32?) {
+        stopTrackingForegroundJob()
+        lastExitCode = exitCode
+        hasExited = true
+        onProcessExit?(exitCode)
     }
 
     func terminate() {
         // An intentional close must not report a late process exit as task activity.
         onProcessExit = nil
+        stopTrackingForegroundJob()
         if let tv = localProcessTerminalView {
             tv.processDelegate = nil
             if tv.process.running {
-                for child in childProcesses() {
-                    kill(child.pid, SIGHUP)
+                for child in ProcessTable.children(of: tv.process.shellPid) {
+                    kill(child, SIGHUP)
                 }
                 tv.terminate()
             }
@@ -193,31 +238,32 @@ final class Terminal: Identifiable, Hashable, Codable {
         localProcessTerminalView?.send(txt: "\u{03}")
     }
 
-    func childProcesses() -> [(pid: pid_t, name: String)] {
-        guard let tv = localProcessTerminalView else { return [] }
-        let shellPid = tv.process.shellPid
-        guard shellPid > 0 else { return [] }
-
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
-        var size: Int = 0
-        sysctl(&mib, 3, nil, &size, nil, 0)
-        let count = size / MemoryLayout<kinfo_proc>.stride
-        let procs = UnsafeMutablePointer<kinfo_proc>.allocate(capacity: count)
-        defer { procs.deallocate() }
-        sysctl(&mib, 3, procs, &size, nil, 0)
-        let actualCount = size / MemoryLayout<kinfo_proc>.stride
-
-        var children: [(pid: pid_t, name: String)] = []
-        for i in 0..<actualCount {
-            if procs[i].kp_eproc.e_ppid == shellPid {
-                let name = withUnsafePointer(to: procs[i].kp_proc.p_comm) { ptr in
-                    ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) + 1) {
-                        String(cString: $0)
-                    }
-                }
-                children.append((procs[i].kp_proc.p_pid, name))
-            }
+    /// Stops the foreground job, escalating on repeated requests for the same job:
+    /// Ctrl+C first, then SIGTERM, then SIGKILL to its process group. Tools such as
+    /// `devicectl` trap SIGINT and can linger, so a second press must still work.
+    func stop() {
+        jobMonitor?.refresh()
+        guard let job = jobMonitor?.job else { return }
+        let attempts = stopRequest?.job == job ? stopRequest?.attempts ?? 0 : 0
+        switch attempts {
+        case 0:
+            interrupt()
+        case 1:
+            killpg(job, SIGTERM)
+        default:
+            killpg(job, SIGKILL)
         }
-        return children
+        stopRequest = (job, attempts + 1)
+    }
+
+    /// Interrupts the running job and runs the script again once the shell is back
+    /// at its prompt, so the script is never typed into a job that is still exiting.
+    func restart() {
+        guard isRunning else {
+            workspace?.runCommand(self)
+            return
+        }
+        runsWhenIdle = true
+        interrupt()
     }
 }

@@ -6,7 +6,6 @@ struct CommandEntryRow: View {
 
     @State private var showEditSheet = false
 
-    private var isRunning: Bool { terminal.hasChildProcess }
     private var hasScript: Bool {
         !(terminal.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
     }
@@ -61,7 +60,7 @@ struct CommandEntryRow: View {
 
     @ViewBuilder
     private var statusIndicator: some View {
-        if isRunning {
+        if terminal.isRunning {
             ProgressView()
                 .controlSize(.mini)
                 .frame(width: 14, height: 14)
@@ -70,9 +69,9 @@ struct CommandEntryRow: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        if isRunning {
+        if terminal.isRunning {
             Button {
-                terminal.interrupt()
+                terminal.stop()
             } label: {
                 Image(systemName: "stop.fill")
                     .contentTransition(.symbolEffect(.replace))
@@ -91,9 +90,9 @@ struct CommandEntryRow: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
-        if isRunning {
-            Button { terminal.interrupt() } label: {
-                Label("Interrupt", systemImage: "stop.fill")
+        if terminal.isRunning {
+            Button { terminal.stop() } label: {
+                Label("Stop", systemImage: "stop.fill")
             }
         } else if hasScript {
             Button {

@@ -8,6 +8,14 @@ final class AppTerminalView: LocalProcessTerminalView {
     private var appliedIsDark: Bool?
     nonisolated private let responseWriter = Mutex<TerminalResponseWriter?>(nil)
 
+    /// Called after each chunk of process output is fed to the terminal.
+    var onOutput: (() -> Void)?
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        onOutput?()
+    }
+
     /// Install before launch: startup color probes must not wait for UI work.
     func prepareProcessResponses() {
         let writer = TerminalResponseWriter(process: process)

@@ -71,11 +71,7 @@ struct ContentView: View {
             presenting: appState.pendingRunReplacement
         ) { command in
             Button("Replace", role: .confirm) {
-                command.interrupt()
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(300))
-                    command.workspace?.runCommand(command)
-                }
+                command.restart()
             }
             Button("Cancel", role: .cancel) { }
         } message: { command in

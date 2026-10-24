@@ -134,7 +134,7 @@ struct AppCommands: Commands {
                     guard let workspace = appState.selectedWorkspace,
                           let command = workspace.defaultCommand else { return }
                     appState.showingInspector = true
-                    if command.hasChildProcess {
+                    if command.isRunning {
                         appState.pendingRunReplacement = command
                     } else {
                         workspace.runCommand(command)
@@ -148,12 +148,12 @@ struct AppCommands: Commands {
                 Button {
                     guard let workspace = appState.selectedWorkspace,
                           let command = workspace.defaultCommand else { return }
-                    command.interrupt()
+                    command.stop()
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
                 }
                 .keyboardShortcut("d", modifiers: .command)
-                .disabled(appState.selectedWorkspace?.defaultCommand?.hasChildProcess != true)
+                .disabled(appState.selectedWorkspace?.defaultCommand?.isRunning != true)
 
                 Divider()
 
