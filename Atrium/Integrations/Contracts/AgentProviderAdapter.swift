@@ -15,6 +15,7 @@ protocol AgentProviderAdapter: AnyObject {
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch
     func stopThread(_ thread: AgentThread) async throws
     func renameThread(_ thread: AgentThread, to title: String) async throws
+    func markRead(_ thread: AgentThread) async throws -> AgentReadState
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState
     func deleteThread(_ thread: AgentThread) async throws
     func didExit(_ thread: AgentThread)
@@ -27,6 +28,10 @@ extension AgentProviderAdapter {
 
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         throw IntegrationError(message: "\(provider.name) does not support forking a thread.")
+    }
+
+    func markRead(_ thread: AgentThread) async throws -> AgentReadState {
+        throw IntegrationError(message: "\(provider.name) does not support marking a thread read.")
     }
 
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState {

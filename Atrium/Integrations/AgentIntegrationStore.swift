@@ -94,8 +94,14 @@ final class AgentIntegrationStore {
         }
     }
 
+    func canMarkRead(_ thread: AgentThread) -> Bool {
+        thread.hasUnreadResult && enabled.contains(thread.provider) && thread.readState != nil
+            && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
+            && adapters[thread.provider]?.capabilities.contains(.markRead) == true
+    }
+
     func canMarkUnread(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && thread.readState != nil && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
+        !thread.hasUnreadResult && enabled.contains(thread.provider) && thread.readState != nil && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
             && adapters[thread.provider]?.capabilities.contains(.markUnread) == true
     }
 
@@ -374,17 +380,30 @@ final class AgentIntegrationStore {
         defaults.set(snoozedUntil, forKey: "integration.snoozedThreads")
     }
 
+    func markRead(_ thread: AgentThread) async {
+        guard canMarkRead(thread) else { return }
+        await updateReadState(thread, unread: false)
+    }
+
     func markUnread(_ thread: AgentThread) async {
-        guard canMarkUnread(thread), let adapter = adapters[thread.provider] else { return }
+        guard canMarkUnread(thread) else { return }
+        await updateReadState(thread, unread: true)
+    }
+
+    private func updateReadState(_ thread: AgentThread, unread: Bool) async {
+        guard let adapter = adapters[thread.provider] else { return }
         let generation = generations[thread.provider, default: 0]
         do {
-            let updated = try await adapter.markUnread(thread)
+            let updated = try await (unread ? adapter.markUnread(thread) : adapter.markRead(thread))
             guard isCurrent(thread.provider, generation: generation),
                   let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
-            if viewedThreadID == thread.id { viewedThreadID = nil }
-            activity[thread.id]?.clearReadRevision()
+            if unread {
+                if viewedThreadID == thread.id { viewedThreadID = nil }
+                activity[thread.id]?.clearReadRevision()
+            }
             var latest = threads[index]
             latest.readState = updated
+            if !unread { activity[thread.id]?.markRead(latest) }
             threads[index] = reconcile(latest)
             revisions[thread.id, default: 0] += 1
             saveActivity()

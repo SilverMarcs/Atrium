@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ComposeProjectPickerView: View {
     let workspaces: [Workspace]
@@ -30,15 +31,49 @@ struct ComposeProjectPickerView: View {
                     .padding(.leading, 8)
                     .tag(workspace.id)
                     .contextMenu {
-                        Button("Delete Project", systemImage: "trash", role: .destructive) {
+                        Menu {
+                            Picker("Project Type", selection: Bindable(workspace).projectType) {
+                                ForEach(ProjectType.allCases, id: \.self) { type in
+                                    Label {
+                                        Text(type.displayName)
+                                    } icon: {
+                                        if !type.iconName.isEmpty {
+                                            Image(type.iconName)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fit)
+                                                .frame(width: 18, height: 18)
+                                        }
+                                    }
+                                    .tag(type)
+                                }
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
+
+                            Divider()
+
+                            Button("Auto-Detect") {
+                                workspace.detectProjectType()
+                            }
+                        } label: {
+                            Label("Project Type", systemImage: "shippingbox")
+                        }
+
+                        Button("Choose Icon…", systemImage: "photo") {
+                            model.iconWorkspace = workspace
+                            model.showingIconImporter = true
+                        }
+
+                        if workspace.customIconFilename != nil {
+                            Button("Reset Icon", systemImage: "arrow.uturn.backward") {
+                                workspace.clearCustomIcon()
+                            }
+                        }
+
+                        Divider()
+                        Button("Delete", systemImage: "trash", role: .destructive) {
                             onDelete(workspace)
                         }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button("Delete Project", systemImage: "trash", role: .destructive) {
-                            onDelete(workspace)
-                        }
-                        .labelStyle(.iconOnly)
                     }
                 }
             }
@@ -93,6 +128,17 @@ struct ComposeProjectPickerView: View {
                 }
                 proxy.scrollTo(workspaceID)
             }
+        }
+        .fileImporter(
+            isPresented: $model.showingIconImporter,
+            allowedContentTypes: [.png, .jpeg, .icns]
+        ) { result in
+            model.importIcon(result)
+        }
+        .alert("Couldn’t Set Project Icon", isPresented: $model.showingIconError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(model.iconError)
         }
         .defaultFocus($isProjectListFocused, true)
         .onAppear { isProjectListFocused = true }

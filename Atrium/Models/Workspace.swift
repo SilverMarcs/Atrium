@@ -78,17 +78,15 @@ final class Workspace: Identifiable, Hashable, Codable {
         let allowed: Set<String> = ["icns", "png", "jpg", "jpeg"]
         let ext = sourceURL.pathExtension.lowercased()
         let safeExt = allowed.contains(ext) ? ext : "png"
-        let filename = "\(id.uuidString).\(safeExt)"
-        let dest = dir.appendingPathComponent(filename)
-
-        if let prior = customIconFilename {
-            try? fm.removeItem(at: dir.appendingPathComponent(prior))
-        }
-        if fm.fileExists(atPath: dest.path) {
-            try fm.removeItem(at: dest)
-        }
+        // A new URL refreshes image views even when replacing an image of the same type.
+        let filename = "\(id.uuidString)-\(UUID().uuidString).\(safeExt)"
+        let dest = dir.appending(path: filename)
         try fm.copyItem(at: sourceURL, to: dest)
+        let prior = customIconFilename
         customIconFilename = filename
+        if let prior {
+            try? fm.removeItem(at: dir.appending(path: prior))
+        }
         store?.scheduleSave()
     }
 

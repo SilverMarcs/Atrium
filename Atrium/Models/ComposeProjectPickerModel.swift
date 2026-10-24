@@ -5,6 +5,29 @@ import Observation
 @Observable
 final class ComposeProjectPickerModel {
     var searchText = ""
+    var iconWorkspace: Workspace?
+    var showingIconImporter = false
+    var showingIconError = false
+    var iconError = ""
+
+    func importIcon(_ result: Result<URL, any Error>) {
+        defer { iconWorkspace = nil }
+        do {
+            let url = try result.get()
+            guard let workspace = iconWorkspace else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            try workspace.setCustomIcon(from: url)
+            if workspace.projectType == .none {
+                workspace.detectProjectType()
+            }
+        } catch CocoaError.userCancelled {
+            return
+        } catch {
+            iconError = error.localizedDescription
+            showingIconError = true
+        }
+    }
 
     func filteredWorkspaces(in workspaces: [Workspace]) -> [Workspace] {
         guard !searchText.isEmpty else { return workspaces }

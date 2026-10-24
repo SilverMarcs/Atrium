@@ -19,9 +19,7 @@ struct ThreadListRows: View {
                     ForkThreadButton(thread: thread)
                     RenameThreadButton(thread: thread) { requestRename(thread) }
 
-                    if integrations.canMarkUnread(thread) {
-                        MarkThreadUnreadButton(thread: thread)
-                    }
+                    MarkThreadReadStateButton(thread: thread)
                     if integrations.supportsDeletion(thread) {
                         Divider()
                         DeleteThreadButton(thread: thread) { requestDeletion(thread) }
@@ -37,6 +35,8 @@ struct ThreadListRows: View {
                     // Keep the row visible until confirmation; a destructive swipe role
                     // would optimistically animate it away before the alert is answered.
                     DeleteThreadButton(thread: thread, role: nil) { requestDeletion(thread) }
+                        .labelStyle(.iconOnly)
+                    MarkThreadReadStateButton(thread: thread)
                         .labelStyle(.iconOnly)
                 }
         }

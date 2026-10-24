@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .markUnread, .deleteThread, .deleteDescendants, .renameThread]
+    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let defaults: UserDefaults
@@ -90,13 +90,21 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return thread
     }
 
+    func markRead(_ thread: AgentThread) async throws -> AgentReadState {
+        try await updateReadState(thread, operation: "read")
+    }
+
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState {
+        try await updateReadState(thread, operation: "unread")
+    }
+
+    private func updateReadState(_ thread: AgentThread, operation: String) async throws -> AgentReadState {
         guard let revision = thread.readState?.revision else {
             throw IntegrationError(message: "This thread does not have a read state yet.")
         }
         try await connect()
         let data = try await request("thread/readState/update", params: [
-            "threadId": thread.sessionID, "expectedRevision": revision, "operation": ["type": "unread"]
+            "threadId": thread.sessionID, "expectedRevision": revision, "operation": ["type": operation]
         ])
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let state = Self.readState(result["readState"] as? [String: Any]) else {

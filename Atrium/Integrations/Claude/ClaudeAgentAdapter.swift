@@ -119,6 +119,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false) async throws -> ClaudeBackgroundSession {
+        try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settings = #"{"env":{"CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF":"1"}}"#
         var arguments = ["--bg", "--settings", settings]
         if let sessionID { arguments += ["--resume", sessionID] }

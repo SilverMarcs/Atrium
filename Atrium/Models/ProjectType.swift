@@ -17,6 +17,7 @@ enum ProjectType: String, Codable, CaseIterable {
     case android
     case git
     case unknown
+    case none
 
     var displayName: String {
         switch self {
@@ -36,6 +37,7 @@ enum ProjectType: String, Codable, CaseIterable {
         case .android:      "Android"
         case .git:          "Git"
         case .unknown:      "Unknown"
+        case .none:         "Don’t Show Icon"
         }
     }
 
@@ -56,7 +58,7 @@ enum ProjectType: String, Codable, CaseIterable {
         case .ruby:         "ruby"
         case .android:      "android"
         case .git:          "git"
-        case .unknown:      ""
+        case .unknown, .none: ""
         }
     }
 
