@@ -7,8 +7,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let defaults: UserDefaults
+    // Keep threads archived by older Atrium versions available for restoration.
     private var archivedThreadIDs: Set<String>
-    private var archivingThreadIDs: Set<String> = []
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
@@ -169,18 +169,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func stopThread(_ thread: AgentThread) async throws {
-        guard !archivedThreadIDs.contains(thread.sessionID) else { return }
-        try await connect()
-        archivingThreadIDs.insert(thread.sessionID)
-        defer { archivingThreadIDs.remove(thread.sessionID) }
-        do {
-            _ = try await request("thread/archive", params: ["threadId": thread.sessionID])
-        } catch {
-            if !archivedThreadIDs.contains(thread.sessionID) { throw error }
-        }
-        archivedThreadIDs.insert(thread.sessionID)
-        saveArchivedThreadIDs()
-        onEvent?(.listInvalidated)
+        // Settling is local to Atrium; the controller closes its terminal session.
     }
 
     func didExit(_ thread: AgentThread) {
@@ -285,10 +274,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if ["thread/started", "thread/archived", "thread/unarchived"].contains(method) {
                 if let id = params["threadId"] as? String {
-                    if method == "thread/archived", archivingThreadIDs.contains(id) {
-                        archivedThreadIDs.insert(id)
-                        saveArchivedThreadIDs()
-                    } else if method == "thread/unarchived" {
+                    if method == "thread/unarchived" {
                         archivedThreadIDs.remove(id)
                         saveArchivedThreadIDs()
                     }
