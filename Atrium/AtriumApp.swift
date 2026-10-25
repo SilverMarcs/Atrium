@@ -9,6 +9,7 @@ struct AtriumApp: App {
     @State private var updater = UpdaterManager()
     @State private var integrations: AgentIntegrationStore
     @State private var sessions: TaskSessionController
+    @State private var companion: CompanionServer
 
     init() {
         let workspaceStore = WorkspaceStore()
@@ -17,8 +18,10 @@ struct AtriumApp: App {
         _workspaceStore = State(initialValue: workspaceStore)
         _appState = State(initialValue: appState)
         _integrations = State(initialValue: integrations)
-        _sessions = State(initialValue: TaskSessionController(
-            integrations: integrations, appState: appState, workspaces: workspaceStore
+        let sessions = TaskSessionController(integrations: integrations, appState: appState, workspaces: workspaceStore)
+        _sessions = State(initialValue: sessions)
+        _companion = State(initialValue: CompanionServer(
+            integrations: integrations, sessions: sessions, workspaces: workspaceStore
         ))
     }
 
@@ -59,6 +62,7 @@ struct AtriumApp: App {
             SettingsView()
                 .environment(updater)
                 .environment(integrations)
+                .environment(companion)
         }
     }
 }

@@ -17,10 +17,7 @@ enum GitDiffStage: Hashable, Codable {
     }
 }
 
-enum GitDiffLineKind: Hashable {
-    case added
-    case removed
-
+extension GitDiffLineKind {
     var color: NSColor {
         switch self {
             case .added: NSColor.systemGreen
@@ -335,128 +332,6 @@ private struct DiffHunkHeader {
         guard component.first == expectedPrefix else { return nil }
         let numbers = component.dropFirst().split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
         return numbers.first.flatMap { Int(String($0)) }
-    }
-}
-
-// MARK: - Hunk-based Diff (for SwiftUI rendering)
-
-struct DiffHunkLine: Identifiable {
-    let id = UUID()
-    var content: String
-    var kind: GitDiffLineKind?  // nil = context line
-    var oldLineNumber: Int?
-    var newLineNumber: Int?
-}
-
-struct DiffHunk: Identifiable {
-    let id = UUID()
-    var header: String           // e.g. "@@ -445,15 +439,15 @@ ResourceName"
-    var lines: [DiffHunkLine]
-    /// The raw patch text for this hunk (header + diff lines), used for git apply
-    var patchText: String
-}
-
-struct DiffFilePresentation {
-    var hunks: [DiffHunk]
-    var message: String?
-
-    init(raw: String, fileHeader: String) {
-        let parsed = Self.parse(raw, fileHeader: fileHeader)
-        self.hunks = parsed
-        self.message = parsed.isEmpty ? "No diff available." : nil
-    }
-
-    init(message: String) {
-        self.hunks = []
-        self.message = message
-    }
-
-    private static func parse(_ raw: String, fileHeader: String) -> [DiffHunk] {
-        guard !raw.isEmpty else { return [] }
-
-        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var hunks: [DiffHunk] = []
-        var index = 0
-
-        // Skip file-level headers to find first hunk
-        while index < lines.count && !lines[index].hasPrefix("@@") {
-            index += 1
-        }
-
-        while index < lines.count {
-            let line = lines[index]
-            guard line.hasPrefix("@@") else { index += 1; continue }
-
-            let headerLine = line
-            index += 1
-
-            // Parse hunk header for line numbers
-            let hunkHeader = DiffHunkHeaderParser(headerLine)
-            var oldLine = hunkHeader?.oldStart ?? 1
-            var newLine = hunkHeader?.newStart ?? 1
-
-            var hunkLines: [DiffHunkLine] = []
-            var rawHunkLines: [String] = [headerLine]
-
-            while index < lines.count && !lines[index].hasPrefix("@@") && !lines[index].hasPrefix("diff ") {
-                let l = lines[index]
-                rawHunkLines.append(l)
-
-                if l.hasPrefix("+") && !l.hasPrefix("+++") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: .added, oldLineNumber: nil, newLineNumber: newLine))
-                    newLine += 1
-                } else if l.hasPrefix("-") && !l.hasPrefix("---") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: .removed, oldLineNumber: oldLine, newLineNumber: nil))
-                    oldLine += 1
-                } else if l.hasPrefix(" ") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
-                    oldLine += 1
-                    newLine += 1
-                } else if l.hasPrefix("\\ No newline") {
-                    // skip
-                } else {
-                    hunkLines.append(DiffHunkLine(content: l, kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
-                }
-
-                index += 1
-            }
-
-            let patchText = fileHeader + "\n" + rawHunkLines.joined(separator: "\n") + "\n"
-
-            hunks.append(DiffHunk(
-                header: headerLine,
-                lines: hunkLines,
-                patchText: patchText
-            ))
-        }
-
-        return hunks
-    }
-}
-
-private struct DiffHunkHeaderParser {
-    let oldStart: Int
-    let oldCount: Int
-    let newStart: Int
-    let newCount: Int
-
-    init?(_ line: String) {
-        guard line.hasPrefix("@@ -") else { return nil }
-        let components = line.split(separator: " ").filter { $0 != "@@" }
-        guard components.count >= 2 else { return nil }
-        guard let (os, oc) = Self.parseRange(components[0], expectedPrefix: "-"),
-              let (ns, nc) = Self.parseRange(components[1], expectedPrefix: "+")
-        else { return nil }
-        self.oldStart = os; self.oldCount = oc
-        self.newStart = ns; self.newCount = nc
-    }
-
-    private static func parseRange(_ component: Substring, expectedPrefix: Character) -> (Int, Int)? {
-        guard component.first == expectedPrefix else { return nil }
-        let numbers = component.dropFirst().split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
-        guard let start = numbers.first.flatMap({ Int(String($0)) }) else { return nil }
-        let count = numbers.count > 1 ? (Int(String(numbers[1])) ?? 1) : 1
-        return (start, count)
     }
 }
 

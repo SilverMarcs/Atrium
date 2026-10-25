@@ -11,6 +11,10 @@ struct SettingsView: View {
                 IntegrationsSettingsView()
             }
 
+            Tab("Companion", systemImage: "iphone") {
+                CompanionSettingsView()
+            }
+
             Tab("Updates", systemImage: "arrow.down.circle") {
                 UpdatesSettingsView()
             }
@@ -28,7 +32,12 @@ struct SettingsView: View {
 }
 
 #Preview {
+    let integrations = AgentIntegrationStore(adapters: [])
+    let appState = AppState()
+    let workspaces = WorkspaceStore()
+    let sessions = TaskSessionController(integrations: integrations, appState: appState, workspaces: workspaces)
     SettingsView()
         .environment(UpdaterManager())
-        .environment(AgentIntegrationStore(adapters: []))
+        .environment(integrations)
+        .environment(CompanionServer(integrations: integrations, sessions: sessions, workspaces: workspaces))
 }

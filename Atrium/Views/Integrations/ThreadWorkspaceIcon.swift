@@ -7,21 +7,10 @@ struct ThreadWorkspaceIcon: View {
 
     var body: some View {
         if workspace?.projectType != ProjectType.none {
-            Group {
-                if let customImage {
-                    Image(nsImage: customImage)
-                        .resizable()
-                        .scaledToFit()
-                } else if let workspace, workspace.projectType != .unknown {
-                    Image(workspace.projectType.iconName)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "folder")
-                        .resizable()
-                        .scaledToFit()
-                }
-            }
+            ProjectIconImage(
+                customImage: customImage.map { Image(nsImage: $0) },
+                typeIconName: workspace.flatMap { $0.projectType == .unknown ? nil : $0.projectType.iconName }
+            )
             .frame(width: iconSize, height: iconSize)
             .task(id: workspace?.customIconURL) {
                 customImage = nil

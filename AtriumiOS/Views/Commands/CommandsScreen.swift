@@ -1,0 +1,35 @@
+import SwiftUI
+
+/// A remote control for the project's saved commands on the Mac. Output stays
+/// in the Mac's Commands inspector.
+struct CommandsScreen: View {
+    @Environment(CompanionClient.self) private var client
+    let workspaceID: UUID
+
+    private var commands: [WireCommand]? { client.commands[workspaceID] }
+
+    var body: some View {
+        Group {
+            if let commands, !commands.isEmpty {
+                List(commands) { command in
+                    CommandRow(workspaceID: workspaceID, command: command)
+                }
+                .contentMargins(.top, 10)
+            } else if commands == nil {
+                ProgressView()
+                    .controlSize(.large)
+            } else {
+                ContentUnavailableView(
+                    "No Commands",
+                    systemImage: "terminal",
+                    description: Text("Add commands in the Commands inspector on your Mac.")
+                )
+            }
+        }
+        .navigationTitle(client.workspace(workspaceID)?.name ?? "Commands")
+        .toolbarTitleDisplayMode(.inline)
+        .task(id: workspaceID) {
+            await client.follow(.commands(workspaceID: workspaceID))
+        }
+    }
+}

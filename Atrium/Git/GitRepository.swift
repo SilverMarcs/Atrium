@@ -154,39 +154,27 @@ actor GitRepository {
         return .empty
     }
 
+    /// Unified diff text for one file. Untracked files get a synthetic all-added diff.
+    func rawDiff(for reference: GitDiffReference) async throws -> String {
+        guard reference.kind == .untracked else {
+            return try await self.executor.execute(GitDiffCommand(reference: reference), at: reference.repositoryRootURL)
+        }
+        let pres = try self.presentationForUntrackedFile(reference)
+        let header = """
+        diff --git a/\(reference.repositoryRelativePath) b/\(reference.repositoryRelativePath)
+        new file mode 100644
+        --- /dev/null
+        +++ b/\(reference.repositoryRelativePath)
+        """
+        let lines = pres.string.split(separator: "\n", omittingEmptySubsequences: false)
+        let hunkHeader = "@@ -0,0 +1,\(max(lines.count, 1)) @@"
+        let hunkLines = lines.map { "+" + $0 }
+        return header + "\n" + hunkHeader + "\n" + hunkLines.joined(separator: "\n") + "\n"
+    }
+
     func diffFilePresentation(for reference: GitDiffReference) async throws -> DiffFilePresentation {
-        if reference.kind == .untracked {
-            // For untracked files, generate a synthetic diff
-            let pres = try self.presentationForUntrackedFile(reference)
-            let raw = """
-            diff --git a/\(reference.repositoryRelativePath) b/\(reference.repositoryRelativePath)
-            new file mode 100644
-            --- /dev/null
-            +++ b/\(reference.repositoryRelativePath)
-            """
-            let lines = pres.string.split(separator: "\n", omittingEmptySubsequences: false)
-            let hunkHeader = "@@ -0,0 +1,\(max(lines.count, 1)) @@"
-            let hunkLines = lines.map { "+" + $0 }
-            let fullRaw = raw + "\n" + hunkHeader + "\n" + hunkLines.joined(separator: "\n") + "\n"
-            let fileHeader = raw
-            return DiffFilePresentation(raw: fullRaw, fileHeader: fileHeader)
-        }
-
-        let raw = try await self.executor.execute(GitDiffCommand(reference: reference), at: reference.repositoryRootURL)
-        guard !raw.isEmpty else {
-            return DiffFilePresentation(message: "No diff available.")
-        }
-
-        // Extract file header (everything before first @@)
-        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var headerLines: [String] = []
-        for line in lines {
-            if line.hasPrefix("@@") { break }
-            headerLines.append(line)
-        }
-        let fileHeader = headerLines.joined(separator: "\n")
-
-        return DiffFilePresentation(raw: raw, fileHeader: fileHeader)
+        let raw = try await rawDiff(for: reference)
+        return raw.isEmpty ? DiffFilePresentation(message: "No diff available.") : DiffFilePresentation(raw: raw)
     }
 
     func applyPatch(_ patchText: String, reverse: Bool = false, cached: Bool = false, at repositoryRootURL: URL) async throws {
@@ -877,30 +865,6 @@ struct GitChangedFile: Equatable, Hashable, Codable {
     var fileURL: URL
     var repositoryRelativePath: String
     var kind: GitChangeKind
-}
-
-enum GitChangeKind: String, Equatable, Hashable, Codable {
-    case added
-    case modified
-    case deleted
-    case renamed
-    case copied
-    case untracked
-    case typeChanged
-    case conflicted
-
-    var statusSymbol: String {
-        switch self {
-            case .added: "A"
-            case .modified: "M"
-            case .deleted: "D"
-            case .renamed: "R"
-            case .copied: "C"
-            case .untracked: "A"
-            case .typeChanged: "T"
-            case .conflicted: "U"
-        }
-    }
 }
 
 // MARK: - Status Parsing

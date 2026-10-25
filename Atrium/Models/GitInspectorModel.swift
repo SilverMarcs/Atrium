@@ -281,7 +281,7 @@ final class GitInspectorModel {
     /// The inspector shows one entry per repository: the overridden context when
     /// set, otherwise the main checkout — switching between them is the branch
     /// picker's job, not the repo picker's.
-    private static func collapseWorktreeSiblings(
+    static func collapseWorktreeSiblings(
         _ snapshots: [GitRepositoryStatusSnapshot],
         overrides: [URL: URL]
     ) -> [GitRepositoryStatusSnapshot] {

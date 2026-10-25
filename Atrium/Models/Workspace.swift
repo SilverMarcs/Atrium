@@ -189,16 +189,13 @@ final class Workspace: Identifiable, Hashable, Codable {
         store?.scheduleSave()
     }
 
-    /// Selects the command in the inspector and sends its `runScript`.
-    /// If the terminal view hasn't been created yet, switches to the Commands
-    /// tab so the view renders and spawns the shell; otherwise runs in place
-    /// without disturbing the user's current tab.
+    /// Selects the command in the inspector and sends its `runScript`, starting its
+    /// shell first if needed. A freshly started shell gets a moment to reach its
+    /// prompt so the script isn't typed into its startup.
     func runCommand(_ entry: Terminal) {
         inspectorState.selectedCommand = entry
         let needsSpawn = entry.localProcessTerminalView == nil
-        if needsSpawn {
-            inspectorState.selectedTab = .commands
-        }
+        entry.ensureProcess()
         Task { @MainActor in
             if needsSpawn {
                 try? await Task.sleep(for: .milliseconds(300))

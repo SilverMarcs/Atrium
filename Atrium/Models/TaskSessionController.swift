@@ -24,45 +24,52 @@ final class TaskSessionController {
         integrations.onAttention = AppDelegate.sendThreadNotification
     }
 
-    func compose(provider: AgentProvider, workspace: Workspace) async -> Bool {
-        guard !isOpening, integrations.enabledProviders.contains(provider) else { return false }
+    /// Creates and opens a task, returning it once its terminal is launching.
+    @discardableResult
+    func compose(provider: AgentProvider, workspace: Workspace) async -> AgentThread? {
+        guard !isOpening, integrations.enabledProviders.contains(provider) else { return nil }
         isComposing = true
         defer { isComposing = false }
         do {
             try validateDirectory(workspace.directory)
             let thread = try await integrations.createThread(provider: provider, directory: workspace.directory)
             try Task.checkCancellation()
-            guard canOpen(thread) else { return false }
+            guard canOpen(thread) else { return nil }
             let launch = try await integrations.prepareLaunch(for: thread, isNew: true)
             try Task.checkCancellation()
-            guard canOpen(thread) else { return false }
+            guard canOpen(thread) else { return nil }
             integrations.registerDraft(thread)
             launchSession(thread, configuration: launch, workspace: workspace)
-            return true
+            return thread
         } catch is CancellationError {
-            return false
+            return nil
         } catch {
             integrations.actionError = error.localizedDescription
-            return false
+            return nil
         }
     }
 
-    func fork(_ thread: AgentThread) async {
-        guard !isOpening, integrations.canFork(thread) else { return }
+    /// Forks a task and opens the fork, returning it once its terminal is launching.
+    @discardableResult
+    func fork(_ thread: AgentThread) async -> AgentThread? {
+        guard !isOpening, integrations.canFork(thread) else { return nil }
         isComposing = true
         defer { isComposing = false }
         do {
             try validateDirectory(thread.directory)
             let fork = try await integrations.forkThread(thread)
             try Task.checkCancellation()
-            guard canOpen(fork) else { return }
+            guard canOpen(fork) else { return nil }
             let launch = try await integrations.prepareLaunch(for: fork)
             try Task.checkCancellation()
-            guard canOpen(fork) else { return }
+            guard canOpen(fork) else { return nil }
             launchSession(fork, configuration: launch, workspace: workspace(for: fork))
+            return fork
         } catch is CancellationError {
+            return nil
         } catch {
             integrations.actionError = error.localizedDescription
+            return nil
         }
     }
 
@@ -168,6 +175,47 @@ final class TaskSessionController {
         }
         if let undoManager, !undoManager.isUndoing, !undoManager.isRedoing {
             undoManager.setActionName("Unsnooze Thread")
+        }
+    }
+
+    /// The sidebar menu for a thread. The companion receives the same state.
+    func menuState(for thread: AgentThread) -> TaskMenuState {
+        let id = thread.id
+        let isChanging = integrations.deletingThreadIDs.contains(id) || integrations.stoppingThreadIDs.contains(id)
+            || integrations.renamingThreadIDs.contains(id)
+        var allowed: TaskActions = []
+        if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
+        if integrations.canSnooze(thread) { allowed.insert(.snooze) }
+        if !integrations.deletingThreadIDs.contains(id) { allowed.insert(.unsnooze) }
+        if !isOpening {
+            if integrations.canFork(thread) { allowed.insert(.fork) }
+            if integrations.canRename(thread) { allowed.insert(.rename) }
+            if integrations.canMarkRead(thread) { allowed.insert(.markRead) }
+            if integrations.canMarkUnread(thread) { allowed.insert(.markUnread) }
+            if integrations.canDelete(thread) { allowed.insert(.delete) }
+        }
+        return TaskMenuState(
+            isSettled: integrations.settledThreadIDs.contains(id),
+            isSnoozed: integrations.snoozedUntil[id] != nil,
+            hasUnreadResult: thread.hasUnreadResult,
+            supportsDeletion: integrations.supportsDeletion(thread),
+            allowed: allowed
+        )
+    }
+
+    /// Performs a menu action that needs no confirmation. Callers prompt for
+    /// rename and delete themselves, so those do nothing here.
+    func perform(_ action: TaskMenuAction, on thread: AgentThread, undoManager: UndoManager? = nil) {
+        guard menuState(for: thread).allowed.allows(action) else { return }
+        switch action {
+        case .settle: settle(thread, undoManager: undoManager)
+        case .restore: restore(thread, undoManager: undoManager)
+        case .snooze: snooze(thread, undoManager: undoManager)
+        case .unsnooze: unsnooze(thread, undoManager: undoManager)
+        case .fork: Task { await fork(thread) }
+        case .markRead: Task { await integrations.markRead(thread) }
+        case .markUnread: Task { await integrations.markUnread(thread) }
+        case .rename, .delete: break
         }
     }
 

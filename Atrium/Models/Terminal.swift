@@ -216,9 +216,16 @@ final class Terminal: Identifiable, Hashable, Codable {
         tv.send(txt: "\u{0C}")
     }
 
+    /// Starts this terminal's shell or agent if it has no process yet. Nothing has to
+    /// be on screen; a view hosting the terminal later adopts the running process.
+    func ensureProcess() {
+        guard localProcessTerminalView == nil else { return }
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        _ = TerminalProcessCoordinator.shared.makeTerminalView(for: self, isDark: isDark)
+    }
+
     /// Sends `runScript` to the shell if one is configured and the terminal is live.
-    /// Caller is responsible for ensuring the view exists first (selecting the terminal
-    /// creates it); see `Workspace.runCommand(_:)` for the full flow.
+    /// See `Workspace.runCommand(_:)`, which starts the shell first.
     func run() {
         guard let script = runScript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !script.isEmpty,

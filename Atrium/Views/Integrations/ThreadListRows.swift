@@ -1,44 +1,29 @@
 import SwiftUI
 
 struct ThreadListRows: View {
-    @Environment(AgentIntegrationStore.self) private var integrations
+    @Environment(TaskSessionController.self) private var sessions
+    @Environment(\.undoManager) private var undoManager
     let threads: [AgentThread]
     let requestDeletion: (AgentThread) -> Void
     let requestRename: (AgentThread) -> Void
 
     var body: some View {
         ForEach(threads) { thread in
+            let state = sessions.menuState(for: thread)
             ThreadRowView(thread: thread)
                 .tag(thread.id)
                 .contextMenu {
-                    SettleThreadButton(thread: thread)
-                    SnoozeThreadButton(thread: thread)
-
-                    Divider()
-
-                    ForkThreadButton(thread: thread)
-                    RenameThreadButton(thread: thread) { requestRename(thread) }
-
-                    MarkThreadReadStateButton(thread: thread)
-                    if integrations.supportsDeletion(thread) {
-                        Divider()
-                        DeleteThreadButton(thread: thread) { requestDeletion(thread) }
-                    }
+                    TaskContextMenu(state: state) { perform($0, on: thread) }
                 }
-                .swipeActions(edge: .leading) {
-                    SettleThreadButton(thread: thread)
-                        .labelStyle(.iconOnly)
-                    SnoozeThreadButton(thread: thread)
-                        .labelStyle(.iconOnly)
-                }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    // Keep the row visible until confirmation; a destructive swipe role
-                    // would optimistically animate it away before the alert is answered.
-                    DeleteThreadButton(thread: thread, role: nil) { requestDeletion(thread) }
-                        .labelStyle(.iconOnly)
-                    MarkThreadReadStateButton(thread: thread)
-                        .labelStyle(.iconOnly)
-                }
+                .taskSwipeActions(state) { perform($0, on: thread) }
+        }
+    }
+
+    private func perform(_ action: TaskMenuAction, on thread: AgentThread) {
+        switch action {
+        case .rename: requestRename(thread)
+        case .delete: requestDeletion(thread)
+        default: sessions.perform(action, on: thread, undoManager: undoManager)
         }
     }
 }

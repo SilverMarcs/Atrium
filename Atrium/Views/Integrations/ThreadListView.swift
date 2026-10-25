@@ -6,12 +6,9 @@ struct ThreadListView: View {
     @Environment(AppState.self) private var appState
     let searchText: String
     @State private var threadToDelete: AgentThread?
-    @State private var showingDeleteConfirmation = false
     @State private var isSettledExpanded = false
     @State private var isSnoozedExpanded = false
     @State private var threadToRename: AgentThread?
-    @State private var showingRename = false
-    @State private var renamedTitle = ""
 
     private var threads: [AgentThread] {
         integrations.visibleThreads(matching: searchText)
@@ -29,9 +26,14 @@ struct ThreadListView: View {
     }
 
     var body: some View {
-        let settledThreads = threads.filter { integrations.settledThreadIDs.contains($0.id) }
-        let snoozedThreads = threads.filter { integrations.snoozedUntil[$0.id] != nil && !integrations.settledThreadIDs.contains($0.id) }
-        let regularThreads = threads.filter { integrations.snoozedUntil[$0.id] == nil && !integrations.settledThreadIDs.contains($0.id) }
+        let sections = TaskSections(
+            threads,
+            isSettled: { integrations.settledThreadIDs.contains($0.id) },
+            isSnoozed: { integrations.snoozedUntil[$0.id] != nil }
+        )
+        let settledThreads = sections.settled
+        let snoozedThreads = sections.snoozed
+        let regularThreads = sections.active
 
         List(selection: Binding<String?>(get: { appState.selectedThreadID }, set: { id in
             guard let thread = threads.first(where: { $0.id == id }) else { return }
@@ -64,7 +66,7 @@ struct ThreadListView: View {
             }
         }
         .listStyle(.sidebar)
-        .animation(.default, value: [regularThreads.map(\.id), snoozedThreads.map(\.id), settledThreads.map(\.id)])
+        .animation(.default, value: sections.ids)
         .environment(\.sidebarRowSize, .medium) //
         .overlay {
             if !unavailableProviderNames.isEmpty {
@@ -102,25 +104,16 @@ struct ThreadListView: View {
             .padding(13)
         }
         .sheet(isPresented: Bindable(appState).showingCompose) { ComposeThreadView() }
-        .alert("Rename Chat", isPresented: $showingRename, presenting: threadToRename) { thread in
-            TextField("Name", text: $renamedTitle)
-            Button("Rename") {
-                let name = renamedTitle
-                Task { await integrations.renameThread(thread, to: name) }
-                threadToRename = nil
-            }
-            .disabled(renamedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !integrations.canRename(thread))
-            Button("Cancel", role: .cancel) { threadToRename = nil }
-        }
-        .alert("Delete Thread?", isPresented: $showingDeleteConfirmation, presenting: threadToDelete) { thread in
-            Button("Delete", role: .destructive) {
-                Task { await sessions.delete(thread) }
-                threadToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { threadToDelete = nil }
-        }
+        .taskConfirmationAlerts(
+            renaming: $threadToRename,
+            deleting: $threadToDelete,
+            currentTitle: \.title,
+            deletionMessage: integrations.deletionMessage,
+            rename: { thread, title in Task { await integrations.renameThread(thread, to: title) } },
+            delete: { thread in Task { await sessions.delete(thread) } }
+        )
         .alert("Couldn’t Update Thread", isPresented: Binding(
-            get: { integrations.actionError != nil && !appState.showingCompose && !showingRename },
+            get: { integrations.actionError != nil && !appState.showingCompose && threadToRename == nil },
             set: { if !$0 { integrations.actionError = nil } }
         )) {
             Button("OK") { integrations.actionError = nil }
@@ -132,14 +125,11 @@ struct ThreadListView: View {
     private func requestDeletion(_ thread: AgentThread) {
         guard !sessions.isOpening, integrations.canDelete(thread) else { return }
         threadToDelete = thread
-        showingDeleteConfirmation = true
     }
 
     private func requestRename(_ thread: AgentThread) {
         guard !sessions.isOpening, integrations.canRename(thread) else { return }
         integrations.actionError = nil
         threadToRename = thread
-        renamedTitle = thread.title
-        showingRename = true
     }
 }

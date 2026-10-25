@@ -18,10 +18,17 @@ struct ComposeThreadView: View {
                 HStack {
                     Picker("Provider", selection: $provider) {
                         ForEach(integrations.enabledProviders) { provider in
-                            Text(provider.name).tag(Optional(provider))
+                            Label {
+                                Text(provider.name)
+                            } icon: {
+                                ProviderIcon(provider: provider)
+                            }
+                            .labelStyle(.titleAndIcon)
+                            .tag(Optional(provider))
                         }
                     }
                     .pickerStyle(.menu)
+                    .labelsHidden()
                     .controlSize(.large)
                     .fixedSize()
                     Spacer()
@@ -77,7 +84,7 @@ struct ComposeThreadView: View {
     private func openTask() {
         guard let provider, let workspace = store.workspaces.first(where: { $0.id == workspaceID }) else { return }
         Task {
-            if await sessions.compose(provider: provider, workspace: workspace) { dismiss() }
+            if await sessions.compose(provider: provider, workspace: workspace) != nil { dismiss() }
         }
     }
 
