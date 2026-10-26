@@ -35,19 +35,38 @@ struct NewTaskSheet: View {
             .searchable(text: $searchText, prompt: "Search projects")
             .navigationTitle(provider?.name ?? "New Task")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleMenu {
-                Picker("Agent", selection: $provider) {
-                    ForEach(providers) { provider in
-                        Label {
-                            Text(provider.provider.name)
-                        } icon: {
-                            ProviderIcon(provider: provider.provider)
-                        }
-                        .tag(Optional(provider.provider))
-                    }
-                }
-            }
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Menu {
+                        Picker("Agent", selection: $provider) {
+                            ForEach(providers) { provider in
+                                Label {
+                                    Text(provider.provider.name)
+                                } icon: {
+                                    ProviderIcon(provider: provider.provider)
+                                }
+                                .tag(Optional(provider.provider))
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            if let provider {
+                                Label {
+                                    Text(provider.name)
+                                } icon: {
+                                    ProviderIcon(provider: provider)
+                                }
+                                .labelStyle(.titleAndIcon)
+                            } else {
+                                Text("New Task")
+                            }
+                            Image(systemName: "chevron.down")
+                                .font(.caption)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button(role: .cancel) { dismiss() }
                 }
