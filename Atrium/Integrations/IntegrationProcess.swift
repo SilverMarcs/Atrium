@@ -25,8 +25,13 @@ enum IntegrationProcess {
         return process
     }
 
-    static func run(_ command: String, arguments: [String], directory: String? = nil, timeout: Duration = .seconds(15)) async throws -> Data {
+    /// Runs a command to completion and returns its output. `input`, when given, is
+    /// written to its standard input, which is then closed.
+    static func run(_ command: String, arguments: [String], directory: String? = nil, input: Data? = nil,
+                    timeout: Duration = .seconds(15)) async throws -> Data {
         let process = make(command, arguments: arguments, directory: directory)
+        let inputPipe = input.map { _ in Pipe() }
+        if let inputPipe { process.standardInput = inputPipe }
         let output = Pipe()
         let errors = Pipe()
         process.standardOutput = output
@@ -42,6 +47,11 @@ enum IntegrationProcess {
             if process.isRunning { process.terminate() }
         }
         defer { deadline.cancel() }
+        if let input, let inputPipe {
+            // Inputs are small enough for the pipe's buffer, so this never waits on the process.
+            try? inputPipe.fileHandleForWriting.write(contentsOf: input)
+            try? inputPipe.fileHandleForWriting.close()
+        }
         return try await withTaskCancellationHandler {
             async let data = Task.detached { output.fileHandleForReading.readDataToEndOfFile() }.value
             async let errorData = Task.detached { errors.fileHandleForReading.readDataToEndOfFile() }.value

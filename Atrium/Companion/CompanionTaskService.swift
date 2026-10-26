@@ -34,6 +34,10 @@ struct CompanionTaskService {
                 if let fork = await sessions.fork(thread) { return .task(id: fork.id) }
             case .delete:
                 await sessions.delete(thread)
+            case .selectModel(let model, let reasoningEffort):
+                return await changeSettings(.model(model, reasoningEffort: reasoningEffort), of: thread)
+            case .setFastMode(let isOn):
+                return await changeSettings(.fastMode(isOn), of: thread)
             }
             return .done
         }
@@ -50,6 +54,15 @@ struct CompanionTaskService {
             // the new turn, matching the companion's optimistic move.
             sessions.restore(thread)
             sessions.unsnooze(thread)
+            return .done
+        } catch {
+            return .failed(message: error.localizedDescription)
+        }
+    }
+
+    private func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async -> CompanionReply {
+        do {
+            try await sessions.changeSettings(change, of: thread)
             return .done
         } catch {
             return .failed(message: error.localizedDescription)

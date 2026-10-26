@@ -18,6 +18,8 @@ nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     static let prompt = Self(rawValue: 1 << 9)
     /// The agent is working and its turn can be stopped.
     static let interrupt = Self(rawValue: 1 << 10)
+    /// The agent's model, reasoning effort and fast mode can be changed right now.
+    static let selectModel = Self(rawValue: 1 << 11)
 
     func allows(_ action: TaskMenuAction) -> Bool {
         switch action {

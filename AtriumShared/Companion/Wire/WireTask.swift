@@ -22,13 +22,23 @@ nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     /// The model the agent last ran with and its reasoning effort, when known.
     var model: String?
     var reasoningEffort: String?
+    /// Whether the agent runs in fast mode, when its provider has one and it's known.
+    var isFastMode: Bool?
 
     var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
 
     /// The model and reasoning effort as one line, such as "gpt-6.1 · High".
-    var modelSummary: String? {
+    var modelSummary: String? { modelSummary(using: []) }
+
+    /// The model and reasoning effort as one line, with the model named as its
+    /// provider lists it, such as "Opus 5.5 · High", and "Fast" in fast mode.
+    func modelSummary(using models: [AgentModel]) -> String? {
         guard let model else { return nil }
-        return [model, reasoningEffort?.capitalized].compactMap(\.self).joined(separator: " · ")
+        return [
+            models.model(running: model)?.name ?? model,
+            reasoningEffort.map(AgentModel.effortName),
+            isFastMode == true ? "Fast" : nil
+        ].compactMap(\.self).joined(separator: " · ")
     }
 
     var menuState: TaskMenuState {

@@ -50,7 +50,8 @@ final class CompanionTasksFeed {
                 WireProvider(
                     provider: provider,
                     isEnabled: integrations.enabledProviders.contains(provider),
-                    error: integrations.errors[provider]
+                    error: integrations.errors[provider],
+                    models: integrations.models[provider]
                 )
             }
         )
@@ -73,7 +74,8 @@ final class CompanionTasksFeed {
             supportsDeletion: menu.supportsDeletion,
             actions: menu.allowed,
             model: thread.model,
-            reasoningEffort: thread.reasoningEffort
+            reasoningEffort: thread.reasoningEffort,
+            isFastMode: thread.isFastMode
         )
     }
 

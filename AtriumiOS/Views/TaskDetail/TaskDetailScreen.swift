@@ -19,6 +19,8 @@ struct TaskDetailScreen: View {
 
     private var task: WireTask? { client.task(taskID) }
 
+    private var models: [AgentModel] { task.map { client.models(for: $0.provider) } ?? [] }
+
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
@@ -51,24 +53,31 @@ struct TaskDetailScreen: View {
         // iPad has no More menu, so its subtitle names the model in its place, and
         // leaves the connection status to the task list beside it.
         .modifier(ConnectionStatusSubtitle(
-            subtitle: (isPhone ? task?.projectName : task.map { $0.modelSummary ?? $0.provider.name }) ?? "",
+            subtitle: (isPhone ? task?.projectName : task.map { $0.modelSummary(using: models) ?? $0.provider.name }) ?? "",
             showsStatus: isPhone
         ))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
                 if isPhone {
-                    if let workspaceID = task.workspaceID {
+                    if task.workspaceID != nil || !models.isEmpty {
                         ToolbarItem(placement: .primaryAction) {
                             Menu {
-                                Section(task.modelSummary ?? task.provider.name) {
-                                    NavigationLink(value: Route.commands(workspaceID)) {
-                                        Label("Commands", systemImage: "terminal")
+                                if !models.isEmpty {
+                                    Section {
+                                        TaskModelMenu(task: task, models: models)
                                     }
-                                    NavigationLink(value: Route.sourceControl(workspaceID)) {
-                                        Label("Source Control", systemImage: "arrow.triangle.branch")
+                                }
+                                if let workspaceID = task.workspaceID {
+                                    Section {
+                                        NavigationLink(value: Route.commands(workspaceID)) {
+                                            Label("Commands", systemImage: "terminal")
+                                        }
+                                        NavigationLink(value: Route.sourceControl(workspaceID)) {
+                                            Label("Source Control", systemImage: "arrow.triangle.branch")
+                                        }
+                                        Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                                     }
-                                    Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                                 }
                             } label: {
                                 Label("More", systemImage: "ellipsis")
@@ -76,8 +85,16 @@ struct TaskDetailScreen: View {
                         }
                     }
                 } else {
-                    // iPad has room for the workspace links and scratch pad
-                    // in place of the More menu.
+                    // iPad has room for the model picker, workspace links and
+                    // scratch pad in place of the More menu.
+                    if !models.isEmpty {
+                        ToolbarItem(placement: .primaryAction) {
+                            TaskModelMenu(task: task, models: models)
+                        }
+                        if task.workspaceID != nil {
+                            ToolbarSpacer(.fixed, placement: .primaryAction)
+                        }
+                    }
                     if let workspaceID = task.workspaceID {
                         ToolbarItem(placement: .navigation) {
                             Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
@@ -113,7 +130,6 @@ struct TaskDetailScreen: View {
                 }
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     ComposerDictationButton()
                 }

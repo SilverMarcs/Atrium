@@ -16,6 +16,8 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     /// The model the agent last ran with and its reasoning effort, when the provider records them.
     var model: String?
     var reasoningEffort: String?
+    /// Whether the agent runs in fast mode, when the provider has one and reports it.
+    var isFastMode: Bool?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }

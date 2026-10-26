@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread, .prompt]
+    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let defaults: UserDefaults
@@ -30,6 +30,19 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// overrode them leave unset.
     private var defaultModel: String?
     private var defaultReasoningEffort: String?
+    private var defaultServiceTier: String?
+    /// The service tier that makes each model fast, for models that have one.
+    private var fastServiceTiers: [String: String] = [:]
+    /// Model settings chosen in Atrium for each thread, sent with the next turn
+    /// Atrium starts. Codex has no way to change them between turns.
+    private var pendingSettings: [String: [String: String]] = [:]
+    /// The service tier chosen in Atrium for each thread. Codex doesn't report
+    /// a thread's tier, so threads without one run at the configured default.
+    private var serviceTiers: [String: String] = [:]
+    /// Turns Atrium started, to tell them apart from turns started on the Mac:
+    /// by thread until Codex returns the turn's ID, which it may announce first.
+    private var startingTurnThreadIDs: Set<String> = []
+    private var startedTurnIDs: Set<String> = []
     /// Prompts waiting for the Mac's terminal to load their thread.
     private var loadWaiters: [String: [CheckedContinuation<Void, Error>]] = [:]
 
@@ -175,10 +188,41 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
         if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
         if let turnID = try await activeTurnID(of: thread.sessionID) {
+            // A steered turn keeps its settings; any chosen ones wait for the next turn.
             _ = try await request("turn/steer", params: ["threadId": thread.sessionID, "input": input, "expectedTurnId": turnID])
         } else {
-            _ = try await request("turn/start", params: ["threadId": thread.sessionID, "input": input])
+            let settings = pendingSettings[thread.sessionID] ?? [:]
+            var params: [String: Any] = ["threadId": thread.sessionID, "input": input]
+            params.merge(settings) { $1 }
+            startingTurnThreadIDs.insert(thread.sessionID)
+            defer { startingTurnThreadIDs.remove(thread.sessionID) }
+            let data = try await request("turn/start", params: params)
+            let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if let turnID = (result?["turn"] as? [String: Any])?["id"] as? String { startedTurnIDs.insert(turnID) }
+            if pendingSettings[thread.sessionID] == settings { pendingSettings[thread.sessionID] = nil }
         }
+    }
+
+    func models() async throws -> [AgentModel] {
+        try await connect()
+        return try await listModels()
+    }
+
+    func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
+        var settings = pendingSettings[thread.sessionID] ?? [:]
+        switch change {
+        case .model(let model, let reasoningEffort):
+            settings["model"] = model
+            settings["effort"] = reasoningEffort
+        case .fastMode(let isOn):
+            let model = settings["model"] ?? thread.model
+            guard let tier = isOn ? model.flatMap({ fastServiceTiers[$0] }) : "default" else {
+                throw IntegrationError(message: "Fast mode isn’t available with this model.")
+            }
+            settings["serviceTier"] = tier
+            serviceTiers[thread.sessionID] = tier
+        }
+        pendingSettings[thread.sessionID] = settings
     }
 
     func interrupt(_ thread: AgentThread) async throws {
@@ -423,7 +467,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             if method == "turn/started" {
-                activeTurnIDs[id] = (params["turn"] as? [String: Any])?["id"] as? String
+                let turnID = (params["turn"] as? [String: Any])?["id"] as? String
+                activeTurnIDs[id] = turnID
+                if !startingTurnThreadIDs.contains(id), !startedTurnIDs.contains(turnID ?? "") {
+                    // The Mac's terminal started this turn with its own settings.
+                    pendingSettings[id] = nil
+                    serviceTiers[id] = nil
+                }
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -442,6 +492,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(readState: state)))
             } else if method == "turn/completed" {
                 activeTurnIDs[id] = nil
+                if let turnID = (params["turn"] as? [String: Any])?["id"] as? String { startedTurnIDs.remove(turnID) }
                 onEvent?(.transcriptChanged(sessionID: id))
                 let turn = params["turn"] as? [String: Any]
                 switch turn?["status"] as? String {
@@ -489,12 +540,62 @@ final class CodexAgentAdapter: AgentProviderAdapter {
               let config = result["config"] as? [String: Any] else { return }
         defaultModel = config["model"] as? String
         defaultReasoningEffort = config["model_reasoning_effort"] as? String
+        defaultServiceTier = config["service_tier"] as? String
+        // Fast mode is reported from each model's service tiers.
+        _ = try? await listModels()
     }
 
+    /// The models Codex's picker offers, noting each one's fast service tier.
+    private func listModels() async throws -> [AgentModel] {
+        var rows: [[String: Any]] = []
+        var cursor: String?
+        repeat {
+            var params: [String: Any] = ["limit": 100]
+            if let cursor { params["cursor"] = cursor }
+            let data = try await request("model/list", params: params)
+            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let page = result["data"] as? [[String: Any]] else {
+                throw IntegrationError(message: "Codex returned an invalid model list.")
+            }
+            rows += page
+            cursor = result["nextCursor"] as? String
+        } while cursor != nil
+        var tiers: [String: String] = [:]
+        let models: [AgentModel] = rows.compactMap { row in
+            guard row["hidden"] as? Bool != true, let id = row["id"] as? String else { return nil }
+            let resolvedID = row["model"] as? String ?? id
+            let serviceTiers = row["serviceTiers"] as? [[String: Any]] ?? []
+            let fastTier = serviceTiers.first {
+                ($0["name"] as? String)?.localizedCaseInsensitiveCompare("Fast") == .orderedSame
+            }?["id"] as? String
+            if let fastTier {
+                tiers[id] = fastTier
+                tiers[resolvedID] = fastTier
+            }
+            let efforts = row["supportedReasoningEfforts"] as? [[String: Any]] ?? []
+            return AgentModel(
+                id: id,
+                resolvedID: resolvedID,
+                name: row["displayName"] as? String ?? id,
+                summary: row["description"] as? String ?? "",
+                reasoningEfforts: efforts.compactMap { $0["reasoningEffort"] as? String },
+                supportsFastMode: fastTier != nil
+            )
+        }
+        fastServiceTiers = tiers
+        return models
+    }
+
+    /// Fills in the configured settings a thread didn't override, and shows the
+    /// settings chosen in Atrium until its next turn.
     private func withDefaults(_ thread: AgentThread?) -> AgentThread? {
         guard var thread else { return nil }
-        thread.model = thread.model ?? defaultModel
-        thread.reasoningEffort = thread.reasoningEffort ?? defaultReasoningEffort
+        let pending = pendingSettings[thread.sessionID] ?? [:]
+        thread.model = pending["model"] ?? thread.model ?? defaultModel
+        thread.reasoningEffort = pending["effort"] ?? thread.reasoningEffort ?? defaultReasoningEffort
+        if let fastTier = thread.model.flatMap({ fastServiceTiers[$0] }) {
+            thread.isFastMode = (serviceTiers[thread.sessionID] ?? defaultServiceTier) == fastTier
+        }
         return thread
     }
 

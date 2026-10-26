@@ -273,6 +273,6 @@ actor ClaudeSessionHistory {
         // The previous SDK helper treated its summary (including a prompt fallback) as an authoritative title.
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
                     updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, hasProviderTitle: true, projectDirectory: metadata.projectDirectory,
-                    model: metadata.model, reasoningEffort: metadata.reasoningEffort)
+                    model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode)
     }
 }

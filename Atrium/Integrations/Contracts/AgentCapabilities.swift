@@ -12,4 +12,7 @@ struct AgentCapabilities: OptionSet, Sendable {
     static let prompt = Self(rawValue: 1 << 6)
     /// Prompts are typed into the thread's attached terminal instead.
     static let terminalPrompt = Self(rawValue: 1 << 7)
+    /// The model, reasoning effort and fast mode can be changed, through the
+    /// adapter with `.prompt` or by typing commands with `.terminalPrompt`.
+    static let selectModel = Self(rawValue: 1 << 8)
 }

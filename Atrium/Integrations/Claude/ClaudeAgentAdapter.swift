@@ -3,10 +3,12 @@ import Foundation
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .terminalPrompt]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .terminalPrompt, .selectModel]
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
     private let configDirectory: URL
+    /// Claude's global config, where it caches account state such as whether fast mode is allowed.
+    private let globalConfigFile: URL
     private let defaults: UserDefaults
     private var backgroundIDs: [String: String]
     private var backgroundSessions: [String: ClaudeBackgroundSession] = [:]
@@ -17,6 +19,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var backgroundListTask: Task<[ClaudeBackgroundSession], Error>?
     private var historyTask: Task<Void, Never>?
     private var needsStatusRefresh = true
+    /// Settings typed into each thread's terminal that its transcript doesn't show yet.
+    private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
 
     init(defaults: UserDefaults = .standard, configDirectory: URL? = nil) {
         self.defaults = defaults
@@ -25,6 +29,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let directory = configDirectory ?? configured
             ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude")
         self.configDirectory = directory.standardizedFileURL.resolvingSymlinksInPath()
+        // The global config sits beside the default config directory, or inside a custom one.
+        globalConfigFile = (configDirectory ?? configured)?.appending(path: ".claude.json")
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude.json")
         history = ClaudeSessionHistory(configDirectory: self.configDirectory)
         backgroundIDs = defaults.dictionary(forKey: "integration.claude.backgroundIDs") as? [String: String] ?? [:]
     }
@@ -46,6 +53,45 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try await history.transcript(thread.sessionID)
     }
 
+    /// Lists models the way the SDK does: Claude answers an `initialize` request
+    /// with its picker's rows, without starting a conversation.
+    func models() async throws -> [AgentModel] {
+        let request = #"{"type":"control_request","request_id":"atrium","request":{"subtype":"initialize"}}"# + "\n"
+        let output = try await IntegrationProcess.run("claude", arguments: [
+            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"
+        ], input: Data(request.utf8), timeout: .seconds(30))
+        let response = output.split(separator: UInt8(ascii: "\n")).lazy
+            .compactMap { try? JSONDecoder().decode(ClaudeInitializeResponse.self, from: Data($0)) }
+            .first { $0.type == "control_response" }
+        guard let options = response?.models else {
+            throw IntegrationError(message: "Claude did not list its models.")
+        }
+        let file = globalConfigFile
+        let allowsFastMode = await Task.detached { Self.organizationAllowsFastMode(configFile: file) }.value
+        // "default" stands for one of the other rows, which tasks report running instead.
+        return options.filter { $0.value != "default" }.map { $0.model(allowingFastMode: allowsFastMode) }
+    }
+
+    /// Whether the account's organization allows fast mode, as Claude last checked.
+    nonisolated private static func organizationAllowsFastMode(configFile: URL) -> Bool {
+        guard let data = try? Data(contentsOf: configFile),
+              let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return config["penguinModeOrgEnabled"] as? Bool == true
+    }
+
+    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String] {
+        var override = settingsOverrides[thread.sessionID] ?? ClaudeSettingsOverride(reportedBy: thread)
+        override.append(change)
+        settingsOverrides[thread.sessionID] = override
+        switch change {
+        case .model(let model, let reasoningEffort):
+            // The model goes first, as switching models restores that model's own effort.
+            return ["/model \(model)"] + (reasoningEffort.map { ["/effort \($0)"] } ?? [])
+        case .fastMode(let isOn):
+            return ["/fast \(isOn ? "on" : "off")"]
+        }
+    }
+
     func renameThread(_ thread: AgentThread, to title: String) async throws {
         try await history.renameThread(thread.sessionID, to: title, directory: thread.directory)
     }
@@ -55,6 +101,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try await history.deleteThread(thread.sessionID, directory: thread.directory)
         backgroundIDs[thread.sessionID] = nil
         backgroundSessions[thread.sessionID] = nil
+        settingsOverrides[thread.sessionID] = nil
         saveBackgroundIDs()
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
@@ -305,6 +352,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let directory = session?.cwd, !directory.isEmpty {
             if thread.directory.isEmpty { thread.directory = directory }
             if thread.projectDirectory == nil { thread.projectDirectory = directory }
+        }
+        if let override = settingsOverrides[thread.sessionID] {
+            if let applied = override.applied(to: thread) { thread = applied }
+            else { settingsOverrides[thread.sessionID] = nil }
         }
         return thread
     }

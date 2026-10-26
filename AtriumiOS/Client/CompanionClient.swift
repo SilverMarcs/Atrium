@@ -413,6 +413,11 @@ final class CompanionClient {
         tasks?.tasks.first { $0.id == id }
     }
 
+    /// The models a provider's tasks can switch to, as the host lists them.
+    func models(for provider: AgentProvider) -> [AgentModel] {
+        tasks?.providers.first { $0.provider == provider }?.models ?? []
+    }
+
     // MARK: - Connection
 
     private enum Authentication {

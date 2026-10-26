@@ -191,6 +191,10 @@ final class TaskSessionController {
         if integrations.enabledProviders.contains(thread.provider), !capabilities.isDisjoint(with: [.prompt, .terminalPrompt]) {
             if thread.status != .waiting { allowed.insert(.prompt) }
             if thread.status == .processing { allowed.insert(.interrupt) }
+            if thread.status != .waiting, capabilities.contains(.selectModel),
+               integrations.models[thread.provider]?.isEmpty == false {
+                allowed.insert(.selectModel)
+            }
         }
         if !isOpening {
             if integrations.canFork(thread) { allowed.insert(.fork) }
@@ -251,6 +255,27 @@ final class TaskSessionController {
             try await integrations.interrupt(thread)
         } else if capabilities.contains(.terminalPrompt) {
             try await attachedSession(for: thread).terminal.sendEscape()
+        }
+    }
+
+    /// Changes the model, reasoning effort or fast mode a thread's next turns use, as if
+    /// chosen on the Mac. A terminal provider gets the change typed into the thread's
+    /// terminal, attached first as for a prompt.
+    func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
+        guard menuState(for: thread).allowed.contains(.selectModel) else {
+            throw IntegrationError(message: thread.status == .waiting
+                ? "\(thread.provider.name) is waiting for an answer. Reply on your Mac."
+                : "\(thread.provider.name) can’t change models right now.")
+        }
+        try integrations.validate(change, for: thread)
+        let capabilities = integrations.capabilities(of: thread.provider)
+        if capabilities.contains(.prompt) {
+            try await integrations.changeSettings(change, of: thread)
+        } else if capabilities.contains(.terminalPrompt) {
+            let session = try await attachedSession(for: thread)
+            for command in try integrations.terminalCommands(for: change, of: thread) {
+                await session.terminal.submit(command)
+            }
         }
     }
 

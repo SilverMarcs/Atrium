@@ -44,6 +44,11 @@ struct OptimisticTaskUpdate: Identifiable {
             snapshot.tasks[index].hasUnreadResult = true
         case .rename(let title):
             snapshot.tasks[index].title = title
+        case .selectModel(let model, let reasoningEffort):
+            snapshot.tasks[index].model = model
+            if let reasoningEffort { snapshot.tasks[index].reasoningEffort = reasoningEffort }
+        case .setFastMode(let isOn):
+            snapshot.tasks[index].isFastMode = isOn
         case .delete:
             snapshot.tasks.remove(at: index)
         case .fork:

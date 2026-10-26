@@ -11,6 +11,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     let lastActivity: Date?
     let model: String?
     let reasoningEffort: String?
+    let isFastMode: Bool?
 
     static func parse(head: String, tail: String, renamedTitle: String?) -> Self? {
         // Claude has used transcript records for names and, more recently, a separate rename file.
@@ -31,18 +32,20 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             continuedIn: continuation(in: tail),
             lastActivity: lastActivity(in: tail),
             model: reply?.model,
-            reasoningEffort: reply?.effort
+            reasoningEffort: reply?.effort,
+            isFastMode: reply?.speed.map { $0 == "fast" }
         )
     }
 
-    /// The model and reasoning effort of the newest reply. API errors are
+    /// The model, reasoning effort and speed of the newest reply. API errors are
     /// recorded as replies from a placeholder model.
-    private static func latestReply(in tail: String) -> (model: String, effort: String?)? {
+    private static func latestReply(in tail: String) -> (model: String, effort: String?, speed: String?)? {
         for line in tail.split(separator: "\n").reversed() where line.contains("\"model\"") {
             guard let record = object(line), record["type"] as? String == "assistant",
-                  let model = (record["message"] as? [String: Any])?["model"] as? String,
-                  !model.hasPrefix("<") else { continue }
-            return (model, record["effort"] as? String)
+                  let message = record["message"] as? [String: Any],
+                  let model = message["model"] as? String, !model.hasPrefix("<") else { continue }
+            let usage = message["usage"] as? [String: Any]
+            return (model, record["effort"] as? String, usage?["speed"] as? String)
         }
         return nil
     }

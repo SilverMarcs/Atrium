@@ -24,6 +24,13 @@ protocol AgentProviderAdapter: AnyObject {
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
     /// Requires `.prompt`.
     func interrupt(_ thread: AgentThread) async throws
+    /// Requires `.selectModel`. The models threads can switch to, as the provider's own picker lists them.
+    func models() async throws -> [AgentModel]
+    /// Requires `.selectModel` and `.prompt`. Applies the change from the thread's next turn.
+    func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws
+    /// Requires `.selectModel` and `.terminalPrompt`. The commands that make the change when typed
+    /// into the thread's terminal. The adapter reports the change from then on, until the provider does.
+    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String]
     func didExit(_ thread: AgentThread)
     /// Suspend background work when hidden, preserving resources needed by retained terminals.
     func setEnabled(_ isEnabled: Bool)
@@ -62,6 +69,16 @@ extension AgentProviderAdapter {
 
     func interrupt(_ thread: AgentThread) async throws {
         throw IntegrationError(message: "\(provider.name) cannot be stopped from Atrium.")
+    }
+
+    func models() async throws -> [AgentModel] { [] }
+
+    func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
+        throw IntegrationError(message: "\(provider.name) can’t change models from Atrium.")
+    }
+
+    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String] {
+        throw IntegrationError(message: "\(provider.name) can’t change models from Atrium.")
     }
 
     func didExit(_ thread: AgentThread) {}

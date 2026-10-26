@@ -16,6 +16,8 @@ final class AgentIntegrationStore {
     var actionError: String?
     private(set) var settledThreadIDs: Set<String>
     private(set) var snoozedUntil: [String: Date]
+    /// The models each provider's threads can switch to, once listed.
+    private(set) var models: [AgentProvider: [AgentModel]] = [:]
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
@@ -35,6 +37,9 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var drafts: [String: AgentThread] = [:]
     @ObservationIgnored private var stopTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var snoozeTask: Task<Void, Never>?
+    /// When each provider's models are next listed: model catalogs rarely change.
+    @ObservationIgnored private var modelsRefreshDates: [AgentProvider: Date] = [:]
+    @ObservationIgnored private var listingModels: Set<AgentProvider> = []
 
     var enabledProviders: [AgentProvider] { providers.filter { enabled.contains($0) } }
     var isEnabled: Bool { !enabled.isEmpty }
@@ -83,6 +88,8 @@ final class AgentIntegrationStore {
             defaults.set(newValue, forKey: provider.settingsKey)
             generations[provider, default: 0] += 1
             errors[provider] = nil
+            models[provider] = nil
+            modelsRefreshDates[provider] = nil
             adapters[provider]?.setEnabled(newValue)
             if !newValue {
                 for index in threads.indices where threads[index].provider == provider {
@@ -523,6 +530,7 @@ final class AgentIntegrationStore {
             threads.append(contentsOf: reconciled)
             saveActivity()
             errors[provider] = nil
+            refreshModelsIfNeeded(provider)
         } catch is CancellationError {
         } catch {
             guard isCurrent(provider, generation: generation) else { return }
@@ -597,6 +605,64 @@ final class AgentIntegrationStore {
 
     func interrupt(_ thread: AgentThread) async throws {
         try await enabledAdapter(for: thread.provider).interrupt(thread)
+    }
+
+    private func refreshModelsIfNeeded(_ provider: AgentProvider) {
+        guard let adapter = adapters[provider], adapter.capabilities.contains(.selectModel),
+              !listingModels.contains(provider), modelsRefreshDates[provider].map({ $0 <= .now }) ?? true else { return }
+        listingModels.insert(provider)
+        let generation = generations[provider, default: 0]
+        Task {
+            defer { listingModels.remove(provider) }
+            do {
+                let listed = try await adapter.models()
+                guard isCurrent(provider, generation: generation) else { return }
+                models[provider] = listed
+                modelsRefreshDates[provider] = .now.addingTimeInterval(30 * 60)
+            } catch {
+                guard isCurrent(provider, generation: generation) else { return }
+                modelsRefreshDates[provider] = .now.addingTimeInterval(2 * 60)
+            }
+        }
+    }
+
+    /// Checks a settings change against the models the provider lists, so only
+    /// a choice its own picker offers reaches it.
+    func validate(_ change: AgentSettingsChange, for thread: AgentThread) throws {
+        let models = models[thread.provider] ?? []
+        switch change {
+        case .model(let id, let reasoningEffort):
+            guard let model = models.first(where: { $0.id == id }) else {
+                throw IntegrationError(message: "\(thread.provider.name) doesn’t offer that model.")
+            }
+            if let reasoningEffort, !model.reasoningEfforts.contains(reasoningEffort) {
+                throw IntegrationError(message: "\(model.name) doesn’t offer that reasoning effort.")
+            }
+        case .fastMode(let isOn):
+            if isOn, models.model(running: thread.model)?.supportsFastMode != true {
+                throw IntegrationError(message: "Fast mode isn’t available with this model.")
+            }
+        }
+    }
+
+    func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
+        try await enabledAdapter(for: thread.provider).changeSettings(change, of: thread)
+        record(change, for: thread.id)
+    }
+
+    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String] {
+        let commands = try enabledAdapter(for: thread.provider).terminalCommands(for: change, of: thread)
+        record(change, for: thread.id)
+        return commands
+    }
+
+    /// Shows a settings change right away. Its adapter reports it from then on,
+    /// until the provider reports the thread's settings itself.
+    private func record(_ change: AgentSettingsChange, for id: String) {
+        guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
+        threads[index] = change.applying(to: threads[index])
+        if drafts[id] != nil { drafts[id] = threads[index] }
+        revisions[id, default: 0] += 1
     }
 
     func recordProcessExit(threadID: String, code: Int32?) {

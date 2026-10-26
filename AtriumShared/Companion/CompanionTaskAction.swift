@@ -12,4 +12,9 @@ nonisolated enum CompanionTaskAction: Codable, Sendable {
     case rename(title: String)
     case fork
     case delete
+    /// Switches the model, and its reasoning effort when it has one, for the
+    /// agent's next turns. The model is one its provider lists.
+    case selectModel(id: String, reasoningEffort: String?)
+    /// Turns fast mode on or off for the agent's next turns.
+    case setFastMode(Bool)
 }
