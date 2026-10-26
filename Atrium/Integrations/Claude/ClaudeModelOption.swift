@@ -4,8 +4,8 @@ import Foundation
 struct ClaudeModelOption: Decodable, Sendable {
     let value: String
     let resolvedModel: String?
-    let displayName: String
-    let description: String
+    let displayName: String?
+    let description: String?
     let supportsEffort: Bool?
     let supportedEffortLevels: [String]?
     let supportsFastMode: Bool?
@@ -15,8 +15,8 @@ struct ClaudeModelOption: Decodable, Sendable {
         AgentModel(
             id: value,
             resolvedID: resolvedModel ?? value,
-            name: displayName,
-            summary: description,
+            name: displayName ?? value,
+            summary: description ?? "",
             reasoningEfforts: supportsEffort == true ? supportedEffortLevels ?? [] : [],
             supportsFastMode: allowingFastMode && supportsFastMode == true
         )
