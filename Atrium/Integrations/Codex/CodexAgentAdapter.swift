@@ -18,6 +18,20 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var historyTask: Task<Void, Never>?
     /// The turn in progress for each thread, from `turn/started` notifications.
     private var activeTurnIDs: [String: String] = [:]
+    /// Each thread's rollout file, where Codex appends every step as it works.
+    private var rolloutPaths: [String: String] = [:]
+    /// Threads Codex is working on, whose rollout files are followed so the
+    /// transcript changes with each step. Item notifications only reach the
+    /// thread's own clients, and FSEvents reports the appends only once Codex
+    /// closes the file.
+    private var workingThreadIDs: Set<String> = []
+    private var rolloutWatchers: [String: FileWriteWatcher] = [:]
+    /// The configured model and reasoning effort, which threads that never
+    /// overrode them leave unset.
+    private var defaultModel: String?
+    private var defaultReasoningEffort: String?
+    /// Prompts waiting for the Mac's terminal to load their thread.
+    private var loadWaiters: [String: [CheckedContinuation<Void, Error>]] = [:]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -48,6 +62,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             _ = try await request("initialize", params: ["clientInfo": ["name": "atrium", "title": "Atrium", "version": "1.0"], "capabilities": ["experimentalApi": true]])
             socket.send(try JSONSerialization.data(withJSONObject: ["method": "initialized"]))
             connected = true
+            await readDefaults()
         } catch {
             disconnect(error: error)
             throw error
@@ -74,10 +89,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         let readStates = result["readStates"] as? [String: [String: Any]] ?? [:]
         let threads: [AgentThread] = rows.compactMap { row in
-            guard var thread = Self.thread(row) else { return nil }
+            guard var thread = withDefaults(Self.thread(row)) else { return nil }
             thread.readState = Self.readState(readStates[thread.sessionID])
+            rolloutPaths[thread.sessionID] = row["path"] as? String
             return thread
         }
+        for thread in threads { followRollout(of: thread.sessionID, status: thread.status) }
         return AgentThread.unique(threads)
     }
 
@@ -85,10 +102,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await connect()
         let data = try await request("thread/read", params: ["threadId": id, "includeTurns": false])
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let row = result["thread"] as? [String: Any], var thread = Self.thread(row) else {
+              let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
+        rolloutPaths[id] = row["path"] as? String ?? rolloutPaths[id]
         return thread
     }
 
@@ -151,10 +169,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     /// Starts a turn, or steers the one in progress so the prompt joins it as Codex does mid-turn.
-    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+    func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
         try await connect()
         try await waitUntilLoaded(thread.sessionID)
-        let input: [[String: Any]] = [["type": "text", "text": text, "text_elements": []]]
+        var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
+        if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
         if let turnID = try await activeTurnID(of: thread.sessionID) {
             _ = try await request("turn/steer", params: ["threadId": thread.sessionID, "input": input, "expectedTurnId": turnID])
         } else {
@@ -182,17 +201,28 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     /// The Mac attaches a terminal before a remote prompt, so approvals have somewhere to
-    /// appear; its resume loads the thread. A thread that never loads is resumed here.
+    /// appear; its resume loads the thread, which Codex announces to every connection.
+    /// A thread loaded already is never announced again, so it's looked up once, after
+    /// waiting starts so an announcement in between isn't missed.
     private func waitUntilLoaded(_ threadID: String) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now + .seconds(10)
-        while clock.now < deadline {
-            let data = try await request("thread/loaded/list", params: [:])
-            let loaded = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [String] ?? []
-            if loaded.contains(threadID) { return }
-            try await Task.sleep(for: .milliseconds(250))
+        try await withCheckedThrowingContinuation { continuation in
+            loadWaiters[threadID, default: []].append(continuation)
+            Task {
+                do {
+                    let data = try await request("thread/loaded/list", params: [:])
+                    let loaded = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [String] ?? []
+                    if loaded.contains(threadID) { finishWaiting(for: threadID) }
+                } catch {
+                    finishWaiting(for: threadID, throwing: error)
+                }
+            }
         }
-        _ = try await request("thread/resume", params: ["threadId": threadID])
+    }
+
+    private func finishWaiting(for threadID: String, throwing error: Error? = nil) {
+        for waiter in loadWaiters.removeValue(forKey: threadID) ?? [] {
+            if let error { waiter.resume(throwing: error) } else { waiter.resume() }
+        }
     }
 
     private func activeTurnID(of threadID: String) async throws -> String? {
@@ -236,6 +266,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func didExit(_ thread: AgentThread) {
+        finishWaiting(for: thread.sessionID, throwing: IntegrationError(message: "Codex closed before it opened the task."))
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
     }
 
@@ -247,6 +278,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         guard !isEnabled else { return }
         watchers.forEach { $0.stop() }
         watchers.removeAll()
+        rolloutWatchers.values.forEach { $0.stop() }
+        rolloutWatchers.removeAll()
+        workingThreadIDs.removeAll()
         historyTask?.cancel()
         connectionTask?.cancel()
         disconnect(error: CancellationError())
@@ -278,6 +312,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 let id = String(url.deletingPathExtension().lastPathComponent.suffix(36))
                 guard UUID(uuidString: id) != nil else { continue }
                 if FileManager.default.fileExists(atPath: path) {
+                    // A new thread's rollout file appears once its first turn starts.
+                    rolloutPaths[id] = path
+                    watchRolloutIfWorking(id)
                     onEvent?(.threadInvalidated(sessionID: id))
                     // Item notifications only reach clients subscribed to the thread, such as
                     // its terminal; the rollout file changes for every turn regardless.
@@ -297,6 +334,38 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 try await Task.sleep(for: .milliseconds(300))
                 self?.onEvent?(.listInvalidated)
             } catch {}
+        }
+    }
+
+    // MARK: - Rollout files
+
+    /// Follows a thread's rollout file while Codex works on it.
+    private func followRollout(of id: String, status: AgentThreadStatus) {
+        guard !watchers.isEmpty, status == .processing || status == .waiting else {
+            workingThreadIDs.remove(id)
+            rolloutWatchers.removeValue(forKey: id)?.stop()
+            return
+        }
+        workingThreadIDs.insert(id)
+        if rolloutPaths[id] == nil {
+            // Not in the last listing; its row names the file.
+            Task {
+                guard (try? await readThread(id)) != nil else { return }
+                watchRolloutIfWorking(id)
+            }
+        } else {
+            watchRolloutIfWorking(id)
+        }
+    }
+
+    private func watchRolloutIfWorking(_ id: String) {
+        guard workingThreadIDs.contains(id), rolloutWatchers[id] == nil, let path = rolloutPaths[id] else { return }
+        rolloutWatchers[id] = FileWriteWatcher(path: path) { [weak self] in
+            self?.onEvent?(.transcriptChanged(sessionID: id))
+        } onRemove: { [weak self] in
+            // Archiving moves the file; the next listing names its new place.
+            self?.rolloutPaths[id] = nil
+            self?.rolloutWatchers.removeValue(forKey: id)?.stop()
         }
     }
 
@@ -359,8 +428,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/status/changed" {
+                if (params["status"] as? [String: Any])?["type"] as? String != "notLoaded" {
+                    finishWaiting(for: id)
+                }
+                let status = Self.status(params["status"] as? [String: Any])
+                followRollout(of: id, status: status)
                 onEvent?(.transcriptChanged(sessionID: id))
-                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: Self.status(params["status"] as? [String: Any]))))
+                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status)))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/name/updated" {
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -389,6 +463,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let requests = pending.values
         pending.removeAll()
         for continuation in requests { continuation.resume(throwing: error) }
+        for threadID in Array(loadWaiters.keys) { finishWaiting(for: threadID, throwing: error) }
         if wasConnected { onEvent?(.listInvalidated) }
     }
 
@@ -408,6 +483,21 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
     }
 
+    private func readDefaults() async {
+        guard let data = try? await request("config/read", params: [:]),
+              let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let config = result["config"] as? [String: Any] else { return }
+        defaultModel = config["model"] as? String
+        defaultReasoningEffort = config["model_reasoning_effort"] as? String
+    }
+
+    private func withDefaults(_ thread: AgentThread?) -> AgentThread? {
+        guard var thread else { return nil }
+        thread.model = thread.model ?? defaultModel
+        thread.reasoningEffort = thread.reasoningEffort ?? defaultReasoningEffort
+        return thread
+    }
+
     private static func thread(_ row: [String: Any]) -> AgentThread? {
         guard let id = row["id"] as? String, let directory = row["cwd"] as? String else { return nil }
         let name = (row["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -417,7 +507,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             sessionID: id, provider: .codex,
             title: hasProviderTitle ? name : (preview.isEmpty ? "New Codex thread" : String(preview.prefix(160))),
             directory: directory, updatedAt: Date(timeIntervalSince1970: row["recencyAt"] as? Double ?? row["updatedAt"] as? Double ?? 0),
-            status: status(row["status"] as? [String: Any]), hasProviderTitle: hasProviderTitle
+            status: status(row["status"] as? [String: Any]), hasProviderTitle: hasProviderTitle,
+            model: row["model"] as? String, reasoningEffort: row["reasoningEffort"] as? String
         )
     }
 }

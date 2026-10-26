@@ -26,6 +26,7 @@ actor ClaudeSessionHistory {
     private let projects: URL
     private var cache: [URL: Cached] = [:]
     private var locations: [String: URL] = [:]
+    private var readableTitles: [URL: (agentName: String, title: String)] = [:]
 
     init(configDirectory: URL? = nil) {
         let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
@@ -61,6 +62,7 @@ actor ClaudeSessionHistory {
         // A fixed 50-entry limit caused larger histories to be reparsed on every refresh.
         let existing = Set(files.map(\.url))
         cache = cache.filter { existing.contains($0.key) }
+        readableTitles = readableTitles.filter { existing.contains($0.key) }
         locations = locations.filter { seen.contains($0.key) }
         return threads
     }
@@ -107,23 +109,61 @@ actor ClaudeSessionHistory {
         locations[id] = nil
     }
 
-    /// The end of a session's transcript. Transcripts can grow to many megabytes of
-    /// request records, so only the most recent part is read.
+    /// The last turns of a session's transcript. Transcripts can grow to many
+    /// megabytes of request records, so they're read backwards a window at a time
+    /// and only until the prompt opening the oldest turn shown.
     func transcript(_ id: String) throws -> [TranscriptMessage] {
         guard let file = locate(id) else { return [] }
         let handle = try FileHandle(forReadingFrom: file.url)
         defer { try? handle.close() }
-        let window = Self.transcriptWindowSize
-        let start = file.stamp.size > window ? UInt64(file.stamp.size - window) : 0
-        try handle.seek(toOffset: start)
-        let data = try handle.readToEnd() ?? Data()
-        var lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
-        // A window that starts mid-file begins with a partial line.
-        if start > 0, !lines.isEmpty { lines.removeFirst() }
-        return ClaudeTranscript.messages(fromLines: lines)
+        var lines: [Data] = []
+        var prompts = 0
+        var offset = UInt64(file.stamp.size)
+        // The pieces read so far of a line that starts in an earlier window, in
+        // file order. They're joined once the line is whole, as a tool result can
+        // span many windows.
+        var partialLine: [Data] = []
+        /// Adds a whole line, newest first, and returns whether the oldest turn shown has begun.
+        func add(_ line: Data) -> Bool {
+            guard !line.isEmpty else { return false }
+            lines.append(line)
+            guard ClaudeTranscript.startsTurn(line) else { return false }
+            prompts += 1
+            return prompts == ClaudeTranscript.turnLimit
+        }
+        scan: while offset > 0, file.stamp.size - Int(offset) < Self.transcriptScanLimit {
+            try Task.checkCancellation()
+            let count = min(UInt64(Self.windowSize), offset)
+            offset -= count
+            try handle.seek(toOffset: offset)
+            let data = try handle.read(upToCount: Int(count)) ?? Data()
+            var pieces = data.split(separator: 10, omittingEmptySubsequences: false)
+            guard pieces.count > 1 else {
+                partialLine.insert(data, at: 0)
+                continue
+            }
+            // The window's last piece finishes the line carried over from later windows.
+            if add(Data(pieces.removeLast()) + partialLine.joined()) { break }
+            partialLine = [Data(pieces.removeFirst())]
+            for piece in pieces.reversed() {
+                if add(Data(piece)) { break scan }
+            }
+        }
+        if offset == 0, prompts < ClaudeTranscript.turnLimit {
+            _ = add(Data(partialLine.joined()))
+        }
+        let messages = ClaudeTranscript.messages(fromLines: lines.reversed())
+        // A read cut short by the limit starts partway through a turn. That reply
+        // takes its ID from whichever of its records was read first, which changes
+        // as the session grows, so it's left out while a whole turn follows.
+        guard offset > 0, prompts < ClaudeTranscript.turnLimit, messages.contains(where: { $0.role == .user }) else {
+            return messages
+        }
+        return Array(messages.drop { $0.role != .user })
     }
 
-    private static let transcriptWindowSize = 4 * 1024 * 1024
+    /// Bounds the read for a session whose recent turns hold a lot of output.
+    private static let transcriptScanLimit = 4 * 1024 * 1024
 
     private static let fileKeys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
 
@@ -178,16 +218,61 @@ actor ClaudeSessionHistory {
         }
         let firstLine = head.prefix { $0 != 10 }
         let sidechain = ((try? JSONSerialization.jsonObject(with: Data(firstLine))) as? [String: Any])?["isSidechain"] as? Bool == true
-        let metadata = sidechain ? nil : ClaudeSessionMetadata.parse(
+        var metadata = sidechain ? nil : ClaudeSessionMetadata.parse(
             head: String(decoding: head, as: UTF8.self), tail: String(decoding: tail, as: UTF8.self), renamedTitle: renamedTitle
         )
+        // Names with spaces were chosen by a person rather than generated, so they are kept.
+        if let agentName = metadata?.agentName, metadata?.title == agentName, !agentName.contains(where: \.isWhitespace) {
+            metadata?.title = try readableTitle(of: file, agentName: agentName)
+        }
         cache[file.url] = Cached(transcript: file.stamp, rename: renameStamp, metadata: metadata)
         return metadata
     }
 
+    /// Background sessions first record a readable AI title, then replace it with their kebab-case agent name.
+    /// The readable one follows the opening turn, often beyond the head window, so it is found once per name.
+    private func readableTitle(of file: File, agentName: String) throws -> String {
+        if let cached = readableTitles[file.url], cached.agentName == agentName { return cached.title }
+        var title: String?
+        if let handle = try? FileHandle(forReadingFrom: file.url) {
+            defer { try? handle.close() }
+            let marker = Data(#"{"type":"ai-title""#.utf8)
+            var pending = Data()
+            var scanned = 0
+            scan: while scanned < Self.readableTitleScanLimit,
+                        let chunk = try handle.read(upToCount: Self.windowSize), !chunk.isEmpty {
+                try Task.checkCancellation()
+                scanned += chunk.count
+                pending.append(chunk)
+                // Only whole lines are examined; the partial last line waits for the next chunk.
+                guard let end = pending.lastIndex(of: 10) else { continue }
+                for line in pending[..<end].split(separator: 10) where line.starts(with: marker) {
+                    guard let record = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                          let value = (record["aiTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !value.isEmpty else { continue }
+                    if value != agentName { title = value }
+                    break scan
+                }
+                pending = Data(pending[pending.index(after: end)...])
+            }
+        }
+        let resolved = title ?? Self.humanized(agentName)
+        readableTitles[file.url] = (agentName, resolved)
+        return resolved
+    }
+
+    /// Turns a kebab-case agent name into sentence case when no readable title was recorded.
+    private static func humanized(_ agentName: String) -> String {
+        let words = agentName.replacing("-", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
+    private static let readableTitleScanLimit = 8 * 1024 * 1024
+
     private func thread(_ file: File, metadata: ClaudeSessionMetadata) -> AgentThread {
         // The previous SDK helper treated its summary (including a prompt fallback) as an authoritative title.
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
-                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, hasProviderTitle: true, projectDirectory: metadata.projectDirectory)
+                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, hasProviderTitle: true, projectDirectory: metadata.projectDirectory,
+                    model: metadata.model, reasoningEffort: metadata.reasoningEffort)
     }
 }

@@ -259,8 +259,15 @@ final class Terminal: Identifiable, Hashable, Codable {
 
     /// Pastes text into the running program and presses Return, as if the user typed it.
     /// Bracketed paste keeps line breaks inside the prompt instead of submitting early.
-    func submit(_ text: String) async {
+    func submit(_ text: String, attaching images: [URL] = []) async {
         guard let view = localProcessTerminalView else { return }
+        // Each image's path is pasted on its own, as dropping the file would,
+        // so an agent such as Claude Code attaches it as an image.
+        for image in images {
+            view.send(txt: "\u{1b}[200~" + image.path(percentEncoded: false) + "\u{1b}[201~")
+            try? await Task.sleep(for: .milliseconds(150))
+            view.send(txt: " ")
+        }
         view.send(txt: "\u{1b}[200~" + text + "\u{1b}[201~")
         try? await Task.sleep(for: .milliseconds(150))
         view.send(txt: "\r")

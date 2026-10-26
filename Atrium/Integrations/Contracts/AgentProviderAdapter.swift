@@ -20,8 +20,8 @@ protocol AgentProviderAdapter: AnyObject {
     func deleteThread(_ thread: AgentThread) async throws
     /// The most recent part of the conversation, oldest first.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
-    /// Requires `.prompt`.
-    func sendPrompt(_ text: String, to thread: AgentThread) async throws
+    /// Requires `.prompt`. Images are local files attached to the prompt.
+    func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
     /// Requires `.prompt`.
     func interrupt(_ thread: AgentThread) async throws
     func didExit(_ thread: AgentThread)
@@ -56,7 +56,7 @@ extension AgentProviderAdapter {
         throw IntegrationError(message: "\(provider.name) does not provide conversation history.")
     }
 
-    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+    func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
         throw IntegrationError(message: "\(provider.name) does not accept prompts from Atrium.")
     }
 

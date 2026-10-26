@@ -2,11 +2,15 @@ import Foundation
 
 /// The small part of a Claude transcript needed by the sidebar, read from bounded head/tail windows.
 nonisolated struct ClaudeSessionMetadata: Sendable {
-    let title: String
+    var title: String
+    /// The kebab-case name Claude gives a background session, which also replaces its readable title.
+    let agentName: String?
     let directory: String
     let projectDirectory: String?
     let continuedIn: String?
     let lastActivity: Date?
+    let model: String?
+    let reasoningEffort: String?
 
     static func parse(head: String, tail: String, renamedTitle: String?) -> Self? {
         // Claude has used transcript records for names and, more recently, a separate rename file.
@@ -17,14 +21,30 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             ?? string("summary", in: tail, last: true) ?? firstPrompt(in: head) else { return nil }
         // A large first prompt can push its cwd beyond the bounded head window.
         let originalDirectory = string("cwd", in: head)
+        let reply = latestReply(in: tail)
         return Self(
             title: title,
+            agentName: string("agentName", in: tail, last: true) ?? string("agentName", in: head, last: true),
             directory: string("relocatedCwd", in: tail, last: true) ?? originalDirectory
                 ?? string("cwd", in: tail, last: true) ?? "",
             projectDirectory: originalDirectory,
             continuedIn: continuation(in: tail),
-            lastActivity: lastActivity(in: tail)
+            lastActivity: lastActivity(in: tail),
+            model: reply?.model,
+            reasoningEffort: reply?.effort
         )
+    }
+
+    /// The model and reasoning effort of the newest reply. API errors are
+    /// recorded as replies from a placeholder model.
+    private static func latestReply(in tail: String) -> (model: String, effort: String?)? {
+        for line in tail.split(separator: "\n").reversed() where line.contains("\"model\"") {
+            guard let record = object(line), record["type"] as? String == "assistant",
+                  let model = (record["message"] as? [String: Any])?["model"] as? String,
+                  !model.hasPrefix("<") else { continue }
+            return (model, record["effort"] as? String)
+        }
+        return nil
     }
 
     /// Claude appends bookkeeping records to old transcripts on resume and reconnect,

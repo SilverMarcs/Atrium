@@ -19,8 +19,17 @@ nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     var supportsDeletion: Bool
     /// Actions the Mac currently allows, so the companion never offers one it would reject.
     var actions: TaskActions
+    /// The model the agent last ran with and its reasoning effort, when known.
+    var model: String?
+    var reasoningEffort: String?
 
     var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
+
+    /// The model and reasoning effort as one line, such as "gpt-6.1 · High".
+    var modelSummary: String? {
+        guard let model else { return nil }
+        return [model, reasoningEffort?.capitalized].compactMap(\.self).joined(separator: " · ")
+    }
 
     var menuState: TaskMenuState {
         TaskMenuState(

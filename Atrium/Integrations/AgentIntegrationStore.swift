@@ -416,6 +416,12 @@ final class AgentIntegrationStore {
 
     func setViewedThread(_ id: String?) {
         viewedThreadID = id
+        guard let id else { return }
+        acknowledgeResult(for: id)
+    }
+
+    /// Opening a task reads its result in Atrium independently of provider read support.
+    func acknowledgeResult(for id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         activity[threads[index].id]?.markRead(threads[index])
         threads[index].hasUnreadResult = false
@@ -585,8 +591,8 @@ final class AgentIntegrationStore {
         try await enabledAdapter(for: thread.provider).transcript(for: thread)
     }
 
-    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
-        try await enabledAdapter(for: thread.provider).sendPrompt(text, to: thread)
+    func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
+        try await enabledAdapter(for: thread.provider).sendPrompt(text, images: images, to: thread)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

@@ -13,6 +13,9 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var hasUnreadResult = false
     /// Original project identity, independent of a provider relocating into a worktree.
     var projectDirectory: String?
+    /// The model the agent last ran with and its reasoning effort, when the provider records them.
+    var model: String?
+    var reasoningEffort: String?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }

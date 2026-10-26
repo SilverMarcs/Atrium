@@ -71,7 +71,9 @@ final class CompanionTasksFeed {
             isSettled: integrations.settledThreadIDs.contains(thread.id),
             snoozedUntil: integrations.snoozedUntil[thread.id],
             supportsDeletion: menu.supportsDeletion,
-            actions: menu.allowed
+            actions: menu.allowed,
+            model: thread.model,
+            reasoningEffort: thread.reasoningEffort
         )
     }
 

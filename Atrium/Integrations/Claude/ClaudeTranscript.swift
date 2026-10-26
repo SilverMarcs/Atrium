@@ -4,9 +4,17 @@ import Foundation
 /// transcript messages. Each user prompt starts a message; everything the agent
 /// writes or runs until the next prompt joins one assistant message.
 nonisolated enum ClaudeTranscript {
-    static let messageLimit = 120
+    /// Older turns are dropped to keep transcripts small enough to send often,
+    /// matching Codex's limit. A turn starts with each prompt.
+    static let turnLimit = 20
 
-    static func messages(fromLines lines: some Sequence<Substring>) -> [TranscriptMessage] {
+    private static let userMarker = Data(#""type":"user""#.utf8)
+    private static let toolResultMarker = Data(#""type":"tool_result""#.utf8)
+    private static let attachmentMarker = Data(#""type":"attachment""#.utf8)
+    private static let queuedCommandMarker = Data(#""type":"queued_command""#.utf8)
+
+    /// The last `turnLimit` turns of the lines, oldest first.
+    static func messages(fromLines lines: some Sequence<Data>) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
         var assistant: TranscriptMessage?
         func flushAssistant() {
@@ -14,17 +22,20 @@ nonisolated enum ClaudeTranscript {
             assistant = nil
         }
         for line in lines {
-            guard let record = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
-                  let uuid = record["uuid"] as? String,
-                  record["isSidechain"] as? Bool != true, record["isMeta"] as? Bool != true,
-                  let message = record["message"] as? [String: Any] else { continue }
+            guard let record = record(in: line), let uuid = record["uuid"] as? String else { continue }
+            let message = record["message"] as? [String: Any]
             switch record["type"] as? String {
             case "user":
-                guard let text = promptText(message["content"]) else { continue }
+                guard let text = promptText(message?["content"]) else { continue }
+                flushAssistant()
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)]))
+            case "attachment":
+                // A prompt sent while the agent works joins its turn as an attachment.
+                guard let text = steeringText(record["attachment"]) else { continue }
                 flushAssistant()
                 messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)]))
             case "assistant":
-                let blocks = (message["content"] as? [[String: Any]] ?? []).enumerated().compactMap { index, content in
+                let blocks = (message?["content"] as? [[String: Any]] ?? []).enumerated().compactMap { index, content in
                     block(for: content, id: "\(uuid).\(index)")
                 }
                 guard !blocks.isEmpty else { continue }
@@ -35,7 +46,38 @@ nonisolated enum ClaudeTranscript {
             }
         }
         flushAssistant()
-        return Array(messages.suffix(messageLimit))
+        let prompts = messages.indices.filter { messages[$0].role == .user }
+        guard prompts.count > turnLimit else { return messages }
+        return Array(messages[prompts[prompts.count - turnLimit]...])
+    }
+
+    /// Whether the line is a prompt, which starts a turn. Most lines are agent
+    /// output or tool results, which are ruled out without decoding them.
+    static func startsTurn(_ line: Data) -> Bool {
+        let isPrompt = contains(userMarker, in: line) && !contains(toolResultMarker, in: line)
+        let isSteering = contains(attachmentMarker, in: line) && contains(queuedCommandMarker, in: line)
+        guard isPrompt || isSteering, let record = record(in: line) else { return false }
+        switch record["type"] as? String {
+        case "user": return promptText((record["message"] as? [String: Any])?["content"]) != nil
+        case "attachment": return steeringText(record["attachment"]) != nil
+        default: return false
+        }
+    }
+
+    /// A byte search, since tool results can make a line megabytes long.
+    private static func contains(_ marker: Data, in line: Data) -> Bool {
+        line.withUnsafeBytes { line in
+            marker.withUnsafeBytes { marker in
+                memmem(line.baseAddress, line.count, marker.baseAddress, marker.count) != nil
+            }
+        }
+    }
+
+    /// The line's record, unless it belongs to a sub-agent or was injected.
+    private static func record(in line: Data) -> [String: Any]? {
+        guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+              record["isSidechain"] as? Bool != true, record["isMeta"] as? Bool != true else { return nil }
+        return record
     }
 
     /// A typed prompt, or nil for tool results, slash-command output and injected context.
@@ -54,6 +96,15 @@ nonisolated enum ClaudeTranscript {
         return trimmed
     }
 
+    /// A prompt typed mid-turn, or nil for task notifications and messages from other sessions.
+    private static func steeringText(_ attachment: Any?) -> String? {
+        guard let attachment = attachment as? [String: Any],
+              attachment["type"] as? String == "queued_command",
+              attachment["commandMode"] as? String == "prompt",
+              ((attachment["origin"] as? [String: Any])?["kind"] as? String ?? "human") == "human" else { return nil }
+        return promptText(attachment["prompt"])
+    }
+
     private static func block(for content: [String: Any], id: String) -> TranscriptBlock? {
         switch content["type"] as? String {
         case "text":
@@ -67,6 +118,9 @@ nonisolated enum ClaudeTranscript {
         }
     }
 
+    /// The inputs that best describe a tool not summarized by name, in order.
+    private static let summaryKeys = ["description", "summary", "prompt", "message", "query", "command", "url", "file_path", "path"]
+
     private static func summary(of tool: String, input: [String: Any]) -> String {
         func string(_ key: String) -> String? { (input[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let value: String? = switch tool {
@@ -78,7 +132,9 @@ nonisolated enum ClaudeTranscript {
         case "WebSearch": string("query")
         case "Task", "Agent": string("description")
         case "TodoWrite": "Updated the plan"
-        default: input.values.lazy.compactMap { $0 as? String }.first
+        // A dictionary's order differs between reads, and a summary that changed
+        // would resend the message to the companion on every reload.
+        default: (summaryKeys + input.keys.sorted()).lazy.compactMap(string).first
         }
         let line = value?.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? tool
         return String(line.prefix(200))

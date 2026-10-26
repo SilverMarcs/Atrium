@@ -227,18 +227,19 @@ final class TaskSessionController {
     /// Sends a prompt to a thread's agent as if typed on the Mac. The thread gets a live
     /// terminal first, out of sight if the Mac hasn't opened it, so the conversation and any
     /// question the agent asks back are there when the user returns to the Mac.
-    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+    /// Images are files the agent attaches to the prompt.
+    func sendPrompt(_ text: String, images: [URL] = [], to thread: AgentThread) async throws {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !images.isEmpty else { return }
         guard thread.status != .waiting else {
             throw IntegrationError(message: "\(thread.provider.name) is waiting for an answer. Reply on your Mac.")
         }
         let capabilities = integrations.capabilities(of: thread.provider)
         let session = try await attachedSession(for: thread)
         if capabilities.contains(.prompt) {
-            try await integrations.sendPrompt(text, to: thread)
+            try await integrations.sendPrompt(text, images: images, to: thread)
         } else if capabilities.contains(.terminalPrompt) {
-            await session.terminal.submit(text)
+            await session.terminal.submit(text, attaching: images)
         } else {
             throw IntegrationError(message: "\(thread.provider.name) doesn’t accept prompts from Atrium.")
         }
