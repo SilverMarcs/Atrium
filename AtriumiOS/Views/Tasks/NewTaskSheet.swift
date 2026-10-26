@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Starts a task on the Mac in a chosen project with a chosen agent, then opens it.
+/// Starts a task on the host in a chosen project with a chosen agent, then opens it.
 struct NewTaskSheet: View {
     @Environment(CompanionClient.self) private var client
     @Environment(\.dismiss) private var dismiss
@@ -31,7 +31,7 @@ struct NewTaskSheet: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search projects")
-            .navigationTitle(provider.map { "New \($0.name) Task" } ?? "New Task")
+            .navigationTitle(provider?.name ?? "New Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu {
                 Picker("Agent", selection: $provider) {

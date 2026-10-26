@@ -3,8 +3,11 @@ import SwiftUI
 struct CompanionRootView: View {
     @Environment(CompanionClient.self) private var client
     @State private var selectedTaskID: String?
+    /// The task the detail column keeps showing once going back on iPhone has
+    /// cleared the selection. See `detailTaskID`.
+    @State private var lastSelectedTaskID: String?
     @State private var detailPath: [Route] = []
-    @State private var showingMacs = false
+    @State private var showingHosts = false
 
     var body: some View {
         Group {
@@ -12,13 +15,13 @@ struct CompanionRootView: View {
                 // Tasks in the sidebar and the selected task in the detail column on
                 // iPad; on iPhone the split view collapses into a single stack.
                 NavigationSplitView {
-                    TasksScreen(selection: $selectedTaskID) { showingMacs = true }
+                    TasksScreen(selection: $selectedTaskID) { showingHosts = true }
                         .navigationSplitViewColumnWidth(min: 300, ideal: 340)
                 } detail: {
                     NavigationStack(path: $detailPath) {
                         Group {
-                            if let selectedTaskID {
-                                TaskDetailScreen(taskID: selectedTaskID)
+                            if let detailTaskID {
+                                TaskDetailScreen(taskID: detailTaskID)
                             } else {
                                 ContentUnavailableView("No Task Selected", systemImage: "sidebar.left")
                             }
@@ -46,7 +49,8 @@ struct CompanionRootView: View {
             guard client.isPaired else { return }
             await client.follow(.tasks)
         }
-        .onChange(of: selectedTaskID) {
+        .onChange(of: selectedTaskID) { _, id in
+            if let id { lastSelectedTaskID = id }
             detailPath = []
         }
         .onChange(of: client.pendingTaskID) { _, id in
@@ -54,12 +58,13 @@ struct CompanionRootView: View {
             selectedTaskID = id
             client.pendingTaskID = nil
         }
-        .onChange(of: client.currentMac) {
-            // Another Mac's tasks replace this one's.
+        .onChange(of: client.currentHost) {
+            // Another host's tasks replace this one's.
             selectedTaskID = nil
+            lastSelectedTaskID = nil
         }
-        .sheet(isPresented: $showingMacs) {
-            MacsSheet()
+        .sheet(isPresented: $showingHosts) {
+            HostsSheet()
         }
         .alert(
             "Couldn’t Complete Action",
@@ -69,5 +74,16 @@ struct CompanionRootView: View {
         } message: {
             Text(client.actionError ?? "")
         }
+    }
+
+    /// Going back on iPhone clears the selection, but the detail column keeps
+    /// the last task's screen rather than swapping in a placeholder. Opening a
+    /// task then updates that screen in place: a screen swapped in while the
+    /// collapsed split view pushes the column is attached twice, so its tasks
+    /// run twice (subscribing, unsubscribing and resubscribing to the
+    /// transcript, and marking it read twice) and its search-field composer is
+    /// installed twice, bouncing the bottom bar.
+    private var detailTaskID: String? {
+        selectedTaskID ?? lastSelectedTaskID
     }
 }

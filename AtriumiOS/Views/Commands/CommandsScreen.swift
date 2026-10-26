@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A remote control for the project's saved commands on the Mac. Output stays
-/// in the Mac's Commands inspector.
+/// A remote control for the project's saved commands on the host. Output stays
+/// in the host's Commands inspector.
 struct CommandsScreen: View {
     @Environment(CompanionClient.self) private var client
     let workspaceID: UUID
@@ -21,7 +21,7 @@ struct CommandsScreen: View {
                 ContentUnavailableView(
                     "No Commands",
                     systemImage: "terminal",
-                    description: Text("Add commands in the Commands inspector on your Mac.")
+                    description: Text("Add commands in the Commands inspector on your host.")
                 )
             }
         }

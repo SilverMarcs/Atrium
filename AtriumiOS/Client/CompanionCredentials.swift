@@ -2,12 +2,13 @@ import Foundation
 import Security
 import UIKit
 
-/// The Macs this phone is paired with, which one it's using, and the token each
-/// issued. Tokens live in the Keychain; the Macs' addresses and public keys and
+/// The hosts this phone is paired with, which one it's using, and the token each
+/// issued. Tokens live in the Keychain; the hosts' addresses and public keys and
 /// this install's device id are not secret.
 enum CompanionCredentials {
-    private static let pairedMacsKey = "companion.pairedMacs"
-    private static let currentMacKey = "companion.currentMacID"
+    // Keep existing storage keys so saved pairings and the selected host survive updates.
+    private static let pairedHostsKey = "companion.pairedMacs"
+    private static let currentHostKey = "companion.currentMacID"
     private static let deviceIDKey = "companion.deviceID"
     private static let keychainService = "com.SilverMarcs.Atrium.companion"
 
@@ -15,23 +16,23 @@ enum CompanionCredentials {
         CompanionDevice(id: deviceID, name: UIDevice.current.name)
     }
 
-    static var pairedMacs: [PairedMac] {
-        UserDefaults.standard.data(forKey: pairedMacsKey).flatMap { try? JSONDecoder().decode([PairedMac].self, from: $0) } ?? []
+    static var pairedHosts: [PairedHost] {
+        UserDefaults.standard.data(forKey: pairedHostsKey).flatMap { try? JSONDecoder().decode([PairedHost].self, from: $0) } ?? []
     }
 
-    /// The Mac in use, or the first paired one if the choice was forgotten.
-    static var currentMac: PairedMac? {
-        let macs = pairedMacs
-        let id = UserDefaults.standard.string(forKey: currentMacKey)
-        return macs.first { $0.id == id } ?? macs.first
+    /// The host in use, or the first paired one if the choice was forgotten.
+    static var currentHost: PairedHost? {
+        let hosts = pairedHosts
+        let id = UserDefaults.standard.string(forKey: currentHostKey)
+        return hosts.first { $0.id == id } ?? hosts.first
     }
 
-    static func select(_ mac: PairedMac) {
-        UserDefaults.standard.set(mac.id, forKey: currentMacKey)
+    static func select(_ host: PairedHost) {
+        UserDefaults.standard.set(host.id, forKey: currentHostKey)
     }
 
-    static func token(for mac: PairedMac) -> String? {
-        var query = keychainQuery(for: mac)
+    static func token(for host: PairedHost) -> String? {
+        var query = keychainQuery(for: host)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
@@ -40,46 +41,46 @@ enum CompanionCredentials {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Adds or updates a Mac with its new token and makes it the one in use.
-    static func save(_ mac: PairedMac, token: String) {
-        SecItemDelete(keychainQuery(for: mac) as CFDictionary)
-        var item = keychainQuery(for: mac)
+    /// Adds or updates a host with its new token and makes it the one in use.
+    static func save(_ host: PairedHost, token: String) {
+        SecItemDelete(keychainQuery(for: host) as CFDictionary)
+        var item = keychainQuery(for: host)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         item[kSecValueData as String] = Data(token.utf8)
         SecItemAdd(item as CFDictionary, nil)
-        var mac = mac
-        var macs = pairedMacs
-        if let index = macs.firstIndex(where: { $0.id == mac.id }) {
-            // Pairing the same Mac again keeps its place and the name chosen for it.
-            mac.customName = mac.customName ?? macs[index].customName
-            macs[index] = mac
+        var host = host
+        var hosts = pairedHosts
+        if let index = hosts.firstIndex(where: { $0.id == host.id }) {
+            // Pairing the same host again keeps its place and the name chosen for it.
+            host.customName = host.customName ?? hosts[index].customName
+            hosts[index] = host
         } else {
-            macs.append(mac)
+            hosts.append(host)
         }
-        store(macs)
-        select(mac)
+        store(hosts)
+        select(host)
     }
 
-    static func rename(_ mac: PairedMac, to name: String?) {
-        store(pairedMacs.map { $0.id == mac.id ? PairedMac(mac, customName: name) : $0 })
+    static func rename(_ host: PairedHost, to name: String?) {
+        store(pairedHosts.map { $0.id == host.id ? PairedHost(host, customName: name) : $0 })
     }
 
-    static func forget(_ mac: PairedMac) {
-        SecItemDelete(keychainQuery(for: mac) as CFDictionary)
-        store(pairedMacs.filter { $0.id != mac.id })
+    static func forget(_ host: PairedHost) {
+        SecItemDelete(keychainQuery(for: host) as CFDictionary)
+        store(pairedHosts.filter { $0.id != host.id })
     }
 
-    private static func store(_ macs: [PairedMac]) {
-        if let data = try? JSONEncoder().encode(macs) {
-            UserDefaults.standard.set(data, forKey: pairedMacsKey)
+    private static func store(_ hosts: [PairedHost]) {
+        if let data = try? JSONEncoder().encode(hosts) {
+            UserDefaults.standard.set(data, forKey: pairedHostsKey)
         }
     }
 
-    private static func keychainQuery(for mac: PairedMac) -> [String: Any] {
+    private static func keychainQuery(for host: PairedHost) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: "deviceToken.\(mac.id)",
+            kSecAttrAccount as String: "deviceToken.\(host.id)",
         ]
     }
 

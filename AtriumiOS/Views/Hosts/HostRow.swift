@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct MacRow: View {
-    let mac: PairedMac
+struct HostRow: View {
+    let host: PairedHost
     let isCurrent: Bool
     let onRename: () -> Void
 
@@ -9,10 +9,10 @@ struct MacRow: View {
         Button(action: onRename) {
             HStack {
                 Label {
-                    Text(mac.displayName)
+                    Text(host.displayName)
                         .foregroundStyle(.primary)
-                    if mac.customName != nil {
-                        Text(mac.hostName)
+                    if host.customName != nil {
+                        Text(host.hostName)
                     }
                 } icon: {
                     Image(systemName: "macbook")

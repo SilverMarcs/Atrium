@@ -1,5 +1,5 @@
 import Foundation
 
-enum MacsRoute: Hashable {
+enum HostsRoute: Hashable {
     case pair
 }

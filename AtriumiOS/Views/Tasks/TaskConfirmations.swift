@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The shared rename and delete prompts, sending the result to the Mac.
+/// The shared rename and delete prompts, sending the result to the host.
 struct TaskConfirmations: ViewModifier {
     @Environment(CompanionClient.self) private var client
     @Binding var taskToRename: WireTask?
@@ -11,7 +11,7 @@ struct TaskConfirmations: ViewModifier {
             renaming: $taskToRename,
             deleting: $taskToDelete,
             currentTitle: \.title,
-            deletionMessage: { _ in "This permanently deletes the thread and its agent history on your Mac. This cannot be undone." },
+            deletionMessage: { _ in "This permanently deletes the thread and its agent history on your host. This cannot be undone." },
             rename: { task, title in client.send(.task(id: task.id, action: .rename(title: title))) },
             delete: { task in client.send(.task(id: task.id, action: .delete)) }
         )

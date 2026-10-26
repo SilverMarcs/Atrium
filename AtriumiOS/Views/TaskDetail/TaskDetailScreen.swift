@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One task's conversation, with a prompt field that sends to its agent on the Mac.
+/// One task's conversation, with a prompt field that sends to its agent on the host.
 struct TaskDetailScreen: View {
     @Environment(CompanionClient.self) private var client
     let taskID: String
@@ -8,10 +8,16 @@ struct TaskDetailScreen: View {
     @State private var showingDetails = false
     @State private var taskToRename: WireTask?
     @State private var taskToDelete: WireTask?
-    @State private var draft = ""
-    @State private var isComposing = false
+    @State private var composer = TaskComposer()
+    /// Drafts left in other tasks, restored when their task opens again.
+    @State private var stashedComposers: [String: TaskComposer] = [:]
+
+    /// The task's info menu is hidden for now; its actions stay wired up.
+    private static let showsInfoMenu = false
 
     private var task: WireTask? { client.task(taskID) }
+
+    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         Group {
@@ -24,7 +30,7 @@ struct TaskDetailScreen: View {
                 ContentUnavailableView(
                     "Task Unavailable",
                     systemImage: "questionmark.bubble",
-                    description: Text("It may still be starting, or it was deleted on your Mac.")
+                    description: Text("It may still be starting, or it was deleted on your host.")
                 )
             }
         }
@@ -33,54 +39,79 @@ struct TaskDetailScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        TaskContextMenu(state: task.menuState) { action in
-                            switch action {
-                            case .rename: taskToRename = task
-                            case .delete: taskToDelete = task
-                            default: client.perform(action, on: task)
+                if isPhone {
+                    if let workspaceID = task.workspaceID {
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu {
+                                Section(task.modelSummary ?? task.provider.name) {
+                                    NavigationLink(value: Route.commands(workspaceID)) {
+                                        Label("Commands", systemImage: "terminal")
+                                    }
+                                    NavigationLink(value: Route.sourceControl(workspaceID)) {
+                                        Label("Source Control", systemImage: "arrow.triangle.branch")
+                                    }
+                                    Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
+                                }
+                            } label: {
+                                Label("More", systemImage: "ellipsis")
                             }
                         }
-                        Divider()
-                        Button("Details", systemImage: "info.circle") { showingDetails = true }
-                        if task.workspaceID != nil {
+                    }
+                } else {
+                    // iPad has room for the workspace links and scratch pad
+                    // in place of the More menu.
+                    if let workspaceID = task.workspaceID {
+                        ToolbarItem(placement: .navigation) {
                             Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                         }
-                    } label: {
-                        Label("Info", systemImage: "info")
+                        ToolbarItemGroup(placement: .primaryAction) {
+                            NavigationLink(value: Route.commands(workspaceID)) {
+                                Label("Commands", systemImage: "terminal")
+                            }
+                            NavigationLink(value: Route.sourceControl(workspaceID)) {
+                                Label("Source Control", systemImage: "arrow.triangle.branch")
+                            }
+                        }
+                    }
+                    if Self.showsInfoMenu {
+                        if task.workspaceID != nil {
+                            ToolbarSpacer(.fixed, placement: .primaryAction)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            TaskInfoMenu(
+                                task: task,
+                                taskToRename: $taskToRename,
+                                taskToDelete: $taskToDelete,
+                                showingDetails: $showingDetails
+                            )
+                        }
                     }
                 }
             }
-            if let workspaceID = task?.workspaceID {
+            // iPad has no bottom bar; its inline input bar carries these.
+            if isPhone {
                 ToolbarItem(placement: .bottomBar) {
-                    NavigationLink(value: Route.commands(workspaceID)) {
-                        Label("Commands", systemImage: "terminal")
-                    }
+                    ComposerAttachmentMenu()
                 }
                 ToolbarSpacer(.fixed, placement: .bottomBar)
-            }
-            DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            if let task, task.actions.contains(.interrupt) {
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Stop", systemImage: "stop.fill", role: .destructive) {
-                        client.send(.interrupt(taskID: task.id))
-                    }
-                    .tint(.red)
-                }
-            } else if let workspaceID = task?.workspaceID {
-                ToolbarSpacer(.fixed, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    NavigationLink(value: Route.sourceControl(workspaceID)) {
-                        Label("Source Control", systemImage: "arrow.triangle.branch")
+                    // A running agent can be stopped from where dictation sits.
+                    if let task, task.actions.contains(.interrupt) {
+                        Button("Stop", systemImage: "stop.fill", role: .destructive) {
+                            client.send(.interrupt(taskID: task.id))
+                        }
+                        .tint(.red)
+                    } else {
+                        ComposerDictationButton()
                     }
                 }
             }
         }
-        .searchable(text: $draft, isPresented: $isComposing, prompt: "Ask anything…")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .onSubmit(of: .search, sendDraft)
+        .taskComposer(composer, task: task, prompt: "Ask anything…", submit: sendDraft)
+        .composerAttachmentPickers(composer)
+        .environment(composer)
         .sheet(isPresented: $showingDetails) {
             if let task { TaskDetailsSheet(task: task) }
         }
@@ -90,28 +121,28 @@ struct TaskDetailScreen: View {
             }
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
+        // The screen outlives its task when another opens, so each task keeps
+        // its own draft and images, waiting for it to open again.
+        .onChange(of: taskID) { oldID, newID in
+            composer.isFocused = false
+            if composer.hasContent {
+                stashedComposers[oldID] = composer
+            }
+            composer = stashedComposers.removeValue(forKey: newID) ?? TaskComposer()
+        }
         .task(id: taskID) {
             await client.follow(.transcript(taskID: taskID))
         }
-        .task(id: task?.hasUnreadResult) {
-            // Viewing a finished task reads it, as selecting it does on the Mac.
-            if let task, task.hasUnreadResult, task.actions.contains(.markRead) {
-                client.send(.task(id: task.id, action: .markRead))
+        .task(id: task) {
+            // Viewing a finished task reads it, as selecting it does on the host.
+            if let task, task.hasUnreadResult {
+                client.send(.task(id: task.id, action: .viewed))
             }
         }
     }
 
-    private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let task, !text.isEmpty else { return }
-        guard task.actions.contains(.prompt) else {
-            client.actionError = task.status == .waiting
-                ? "\(task.provider.name) is waiting for an answer. Reply on your Mac."
-                : "\(task.provider.name) can’t take a prompt right now."
-            return
-        }
-        draft = ""
-        isComposing = false
-        client.send(.prompt(taskID: task.id, text: text))
+    private func sendDraft() -> Bool {
+        guard let task else { return false }
+        return composer.submit(to: task, using: client)
     }
 }

@@ -1,36 +1,49 @@
 import CryptoKit
 import Foundation
 import Observation
+import UIKit
+import UserNotifications
 
-/// The companion's connection to a paired Mac, through the relay with end-to-end
+/// The companion's connection to a paired host, through the relay with end-to-end
 /// encryption, and the state it mirrors.
 ///
 /// Views declare what they need with `follow(_:)`; the client subscribes while
 /// any view follows a topic and resubscribes after reconnecting, so screens
 /// never manage the connection themselves. Requests are async and resolve
-/// with the Mac's reply.
+/// with the host's reply.
 @MainActor
 @Observable
 final class CompanionClient {
     private(set) var state: CompanionConnectionState = .idle
-    private(set) var pairedMacs: [PairedMac] = []
-    /// The Mac whose tasks are shown and that requests go to.
-    private(set) var currentMac: PairedMac?
+    private(set) var pairedHosts: [PairedHost] = []
+    /// The host whose tasks are shown and that requests go to.
+    private(set) var currentHost: PairedHost?
     private(set) var isPairing = false
     private(set) var pairingError: String?
     /// Changes each time a pairing succeeds, so a pairing sheet knows to close.
     private(set) var pairingCount = 0
-    private(set) var tasks: WireTasksSnapshot?
+    private var hostTasks: WireTasksSnapshot?
+    private var taskUpdates: [OptimisticTaskUpdate] = []
+    var tasks: WireTasksSnapshot? {
+        guard var snapshot = hostTasks else { return nil }
+        for update in taskUpdates { update.apply(to: &snapshot) }
+        return snapshot
+    }
     private(set) var gitStatuses: [UUID: WireGitStatus] = [:]
     private(set) var commands: [UUID: [WireCommand]] = [:]
     private(set) var transcripts: [String: [TranscriptMessage]] = [:]
+    /// Prompts sent from this phone that each task's transcript doesn't show yet.
+    private(set) var pendingPrompts: [String: [PendingPrompt]] = [:]
+    /// Tasks just sent a prompt whose agent hasn't reported working yet, by the
+    /// latest prompt's ID, so their timelines show it working right away.
+    private(set) var tasksAwaitingAgent: [String: UUID] = [:]
     /// The latest failed action, shown as an alert.
     var actionError: String?
     /// A task to navigate to, from a notification tap or a task just created.
     var pendingTaskID: String?
 
-    var isPaired: Bool { currentMac != nil }
-    var pairedHostName: String? { currentMac?.displayName }
+    var isPaired: Bool { currentHost != nil }
+    var pairedHostName: String? { currentHost?.displayName }
     var isConnected: Bool {
         if case .connected = state { return true }
         return false
@@ -39,7 +52,8 @@ final class CompanionClient {
     /// Paired but without a live connection, so screens show cached state.
     var isReconnecting: Bool { isPaired && !isConnected }
 
-    @ObservationIgnored private let notifier = TaskAttentionNotifier()
+    /// This install's APNs token, sent to each host so it can alert this phone.
+    @ObservationIgnored private var pushRegistration: CompanionPushRegistration?
     @ObservationIgnored private var channel: (any CompanionChannel)?
     @ObservationIgnored private var pending: [UInt32: CheckedContinuation<CompanionReply, any Error>] = [:]
     @ObservationIgnored private var nextRequestID: UInt32 = 0
@@ -49,20 +63,20 @@ final class CompanionClient {
     @ObservationIgnored private var failedAttempts = 0
 
     init() {
-        pairedMacs = CompanionCredentials.pairedMacs
-        currentMac = CompanionCredentials.currentMac
+        pairedHosts = CompanionCredentials.pairedHosts
+        currentHost = CompanionCredentials.currentHost
     }
 
     func start() {
-        connectToPairedMac()
+        connectToPairedHost()
     }
 
-    /// Pairs with a link from a Mac's QR code, scanned with the Camera app or pasted,
-    /// and switches to that Mac.
+    /// Pairs with a link from a host's QR code, scanned with the Camera app or pasted,
+    /// and switches to that host.
     func pair(with link: CompanionPairingLink) {
         isPairing = true
         pairingError = nil
-        connect(to: PairedMac(link: link), authentication: .pair(secret: link.secret))
+        connect(to: PairedHost(link: link), authentication: .pair(secret: link.secret))
     }
 
     func handle(_ url: URL) {
@@ -70,54 +84,57 @@ final class CompanionClient {
         pair(with: link)
     }
 
-    func select(_ mac: PairedMac) {
-        guard mac.id != currentMac?.id else { return }
-        CompanionCredentials.select(mac)
-        currentMac = mac
+    func select(_ host: PairedHost) {
+        guard host.id != currentHost?.id else { return }
+        CompanionCredentials.select(host)
+        currentHost = host
         closeChannel()
         clearMirroredState()
         failedAttempts = 0
-        connectToPairedMac()
+        connectToPairedHost()
     }
 
-    /// Forgets a Mac. Pairing it again needs a fresh QR code from its Settings.
-    func forget(_ mac: PairedMac) {
-        CompanionCredentials.forget(mac)
-        pairedMacs = CompanionCredentials.pairedMacs
-        guard mac.id == currentMac?.id else { return }
-        currentMac = nil
+    /// Forgets a host. Pairing it again needs a fresh QR code from its Settings.
+    func forget(_ host: PairedHost) {
+        CompanionCredentials.forget(host)
+        pairedHosts = CompanionCredentials.pairedHosts
+        guard host.id == currentHost?.id else { return }
+        currentHost = nil
         closeChannel()
         clearMirroredState()
         state = .idle
-        if let next = CompanionCredentials.currentMac { select(next) }
+        if let next = CompanionCredentials.currentHost { select(next) }
     }
 
-    /// Names a Mac on this phone only; an empty name goes back to the Mac's own.
-    func rename(_ mac: PairedMac, to name: String) {
+    /// Names a host on this phone only; an empty name goes back to the host's own.
+    func rename(_ host: PairedHost, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        CompanionCredentials.rename(mac, to: name.isEmpty ? nil : name)
-        pairedMacs = CompanionCredentials.pairedMacs
-        if mac.id == currentMac?.id { currentMac = pairedMacs.first { $0.id == mac.id } }
+        CompanionCredentials.rename(host, to: name.isEmpty ? nil : name)
+        pairedHosts = CompanionCredentials.pairedHosts
+        if host.id == currentHost?.id { currentHost = pairedHosts.first { $0.id == host.id } }
     }
 
     private func clearMirroredState() {
-        tasks = nil
+        hostTasks = nil
+        taskUpdates.removeAll()
         gitStatuses = [:]
         commands = [:]
         transcripts = [:]
+        pendingPrompts = [:]
+        tasksAwaitingAgent = [:]
         icons = [:]
     }
 
-    /// Tries the Mac again now instead of waiting out the retry delay.
+    /// Tries the host again now instead of waiting out the retry delay.
     func retryNow() {
         guard !isConnected else { return }
         closeChannel()
         failedAttempts = 0
-        connectToPairedMac()
+        connectToPairedHost()
     }
 
     func sceneDidBecomeActive() {
-        connectToPairedMac()
+        connectToPairedHost()
     }
 
     // MARK: - Topics
@@ -147,6 +164,11 @@ final class CompanionClient {
         nextRequestID &+= 1
         let id = nextRequestID
         let data = try CompanionCodec.encode(ClientFrame(id: id, request: request))
+        let update = OptimisticTaskUpdate(request)
+        if let update { taskUpdates.append(update) }
+        defer {
+            if let update { taskUpdates.removeAll { $0.id == update.id } }
+        }
         let reply = try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             channel.send(data)
@@ -168,6 +190,161 @@ final class CompanionClient {
             actionError = error.localizedDescription
             return nil
         }
+    }
+
+    // MARK: - Push notifications
+
+    /// Records this install's APNs token and gives it to the connected host.
+    func didRegisterForPush(token: Data) {
+        #if DEBUG
+        let environment = CompanionPushRegistration.Environment.sandbox
+        #else
+        let environment = CompanionPushRegistration.Environment.production
+        #endif
+        let registration = CompanionPushRegistration(
+            token: token.map { ($0 < 16 ? "0" : "") + String($0, radix: 16) }.joined(),
+            environment: environment
+        )
+        pushRegistration = registration
+        if isConnected { send(.registerPush(registration)) }
+    }
+
+    /// Asks once to show alerts, then registers with APNs, which answers
+    /// through `didRegisterForPush(token:)` on every launch.
+    private func registerForPush() {
+        if let pushRegistration { send(.registerPush(pushRegistration)) }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) == true else { return }
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    // MARK: - Prompts
+
+    /// Sends a prompt to a task's agent, showing it in the timeline at once.
+    /// A failed send stays there with a retry button instead of an alert.
+    func sendPrompt(_ text: String, images: [Data] = [], to taskID: String) {
+        let prompt = PendingPrompt(
+            text: text,
+            images: images,
+            anchorUserMessageID: newestUserMessageID(in: taskID),
+            expectedUserMessagesAfterAnchor: nextExpectedUserMessageCount(for: taskID)
+        )
+        pendingPrompts[taskID, default: []].append(prompt)
+        deliver(prompt.id, to: taskID)
+    }
+
+    func retryPrompt(_ id: UUID, in taskID: String) {
+        let anchor = newestUserMessageID(in: taskID)
+        let expected = nextExpectedUserMessageCount(for: taskID)
+        updatePendingPrompt(id, in: taskID) {
+            $0.state = .sending
+            $0.anchorUserMessageID = anchor
+            $0.expectedUserMessagesAfterAnchor = expected
+        }
+        deliver(id, to: taskID)
+    }
+
+    private func deliver(_ id: UUID, to taskID: String) {
+        guard let prompt = pendingPrompts[taskID]?.first(where: { $0.id == id }) else { return }
+        tasksAwaitingAgent[taskID] = id
+        Task {
+            do {
+                _ = try await request(.prompt(taskID: taskID, text: prompt.text, images: prompt.images))
+                updatePendingPrompt(id, in: taskID) { $0.state = .sent }
+                // An agent whose transcript never shows the prompt, or that
+                // never reports working, mustn't leave either pending forever.
+                try? await Task.sleep(for: .seconds(20))
+                if task(taskID)?.status == .processing {
+                    // A working agent takes a prompt sent mid-turn only between
+                    // steps, so it stays until the agent stops.
+                    updatePendingPrompt(id, in: taskID) { $0.isOverdue = true }
+                } else {
+                    pendingPrompts[taskID]?.removeAll { $0.id == id && $0.state == .sent }
+                }
+                stopAwaitingAgent(for: taskID, after: id)
+            } catch {
+                markPendingPromptFailed(id, in: taskID)
+                stopAwaitingAgent(for: taskID, after: id)
+            }
+        }
+    }
+
+    private func updatePendingPrompt(_ id: UUID, in taskID: String, _ update: (inout PendingPrompt) -> Void) {
+        guard var prompts = pendingPrompts[taskID],
+              let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        update(&prompts[index])
+        pendingPrompts[taskID] = prompts
+    }
+
+    /// A failed prompt never reaches the transcript, so prompts sent after it
+    /// expect one user message fewer.
+    private func markPendingPromptFailed(_ id: UUID, in taskID: String) {
+        guard var prompts = pendingPrompts[taskID],
+              let index = prompts.firstIndex(where: { $0.id == id }) else { return }
+        prompts[index].state = .failed
+        for later in prompts.indices.dropFirst(index + 1) where prompts[later].state != .failed {
+            prompts[later].expectedUserMessagesAfterAnchor -= 1
+        }
+        pendingPrompts[taskID] = prompts
+    }
+
+    /// Stops showing the task working for a prompt, unless a later one has
+    /// taken over.
+    private func stopAwaitingAgent(for taskID: String, after id: UUID) {
+        if tasksAwaitingAgent[taskID] == id {
+            tasksAwaitingAgent[taskID] = nil
+        }
+    }
+
+    /// Hands over to the agent's own status once it reports working or
+    /// needing input.
+    private func settleTasksAwaitingAgent() {
+        guard !tasksAwaitingAgent.isEmpty else { return }
+        tasksAwaitingAgent = tasksAwaitingAgent.filter { taskID, _ in
+            guard let status = task(taskID)?.status else { return false }
+            return status != .processing && status != .waiting
+        }
+    }
+
+    /// Drops overdue prompts once their agent stops without showing them.
+    private func dropOverduePrompts() {
+        for (taskID, prompts) in pendingPrompts where prompts.contains(where: \.isOverdue) {
+            guard task(taskID)?.status != .processing else { continue }
+            pendingPrompts[taskID]?.removeAll { $0.isOverdue && $0.state == .sent }
+            if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
+        }
+    }
+
+    /// The user messages the transcript holds after its newest one once it
+    /// shows the next prompt: one past what's already on its way.
+    private func nextExpectedUserMessageCount(for taskID: String) -> Int {
+        pendingPrompts[taskID, default: []].filter { $0.state != .failed }.count + 1
+    }
+
+    private func newestUserMessageID(in taskID: String) -> String? {
+        transcripts[taskID]?.last { $0.role == .user }?.id
+    }
+
+    /// User messages after the anchor. An anchor that has dropped out of the
+    /// transcript's window is older than everything left in it.
+    private func userMessageCount(in taskID: String, after anchorID: String?) -> Int {
+        let messages = transcripts[taskID, default: []]
+        let start = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }.map { $0 + 1 } ?? 0
+        return messages[start...].count { $0.role == .user }
+    }
+
+    /// Drops prompts the transcript now shows.
+    private func reconcilePendingPrompts(for taskID: String) {
+        guard let prompts = pendingPrompts[taskID] else { return }
+        let shown = prompts.filter {
+            $0.state != .failed
+                && $0.expectedUserMessagesAfterAnchor <= userMessageCount(in: taskID, after: $0.anchorUserMessageID)
+        }
+        guard !shown.isEmpty else { return }
+        pendingPrompts[taskID]?.removeAll { prompt in shown.contains { $0.id == prompt.id } }
+        if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
     }
 
     /// Performs a task menu action. Rename and delete need confirmation first,
@@ -217,27 +394,27 @@ final class CompanionClient {
         case token(String)
     }
 
-    private func connectToPairedMac() {
-        guard channel == nil, reconnectTask == nil, let currentMac, let token = CompanionCredentials.token(for: currentMac) else { return }
-        connect(to: currentMac, authentication: .token(token))
+    private func connectToPairedHost() {
+        guard channel == nil, reconnectTask == nil, let currentHost, let token = CompanionCredentials.token(for: currentHost) else { return }
+        connect(to: currentHost, authentication: .token(token))
     }
 
-    /// Opens an encrypted channel through the relay, bound to the Mac's key from its QR code.
-    private func connect(to mac: PairedMac, authentication: Authentication) {
+    /// Opens an encrypted channel through the relay, bound to the host's key from its QR code.
+    private func connect(to host: PairedHost, authentication: Authentication) {
         closeChannel()
-        state = .connecting(hostName: mac.displayName)
-        guard let key = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: mac.publicKey) else {
+        state = .connecting(hostName: host.displayName)
+        guard let key = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: host.publicKey) else {
             state = .failed("This pairing QR code isn’t valid.")
             return
         }
         let channel = NoiseChannel(
-            inner: RelayClientChannel(relay: mac.relay, macID: mac.macID),
+            inner: RelayClientChannel(macID: host.hostID),
             role: .initiator(responderStatic: key),
-            prologue: CompanionPairingLink.prologue(macID: mac.macID)
+            prologue: CompanionPairingLink.prologue(macID: host.hostID)
         )
         self.channel = channel
         channel.onReady = { [weak self] in
-            Task { await self?.authenticate(authentication, mac: mac) }
+            Task { await self?.authenticate(authentication, host: host) }
         }
         channel.onMessage = { [weak self] data in self?.receive(data) }
         channel.onClose = { [weak self, weak channel] reason in
@@ -247,41 +424,41 @@ final class CompanionClient {
         channel.start()
     }
 
-    private func authenticate(_ authentication: Authentication, mac: PairedMac) async {
+    private func authenticate(_ authentication: Authentication, host: PairedHost) async {
         do {
             switch authentication {
             case .pair(let secret):
                 guard case .paired(let token) = try await request(.pair(secret: secret, device: CompanionCredentials.device)) else {
                     throw CompanionClientError.unexpectedReply
                 }
-                CompanionCredentials.save(mac, token: token)
-                pairedMacs = CompanionCredentials.pairedMacs
-                if mac.id != currentMac?.id { clearMirroredState() }
-                currentMac = CompanionCredentials.currentMac
+                CompanionCredentials.save(host, token: token)
+                pairedHosts = CompanionCredentials.pairedHosts
+                if host.id != currentHost?.id { clearMirroredState() }
+                currentHost = CompanionCredentials.currentHost
                 isPairing = false
                 pairingCount += 1
             case .token(let token):
                 _ = try await request(.authenticate(token: token, deviceID: CompanionCredentials.device.id))
             }
-            state = .connected(hostName: mac.displayName)
+            state = .connected(hostName: host.displayName)
             failedAttempts = 0
-            notifier.requestAuthorization()
+            registerForPush()
             for topic in topicCounts.keys { subscribe(topic) }
         } catch {
             switch (authentication, error) {
             case (.token, CompanionClientError.rejected):
-                // The Mac revoked this phone; staying paired would retry forever.
-                forget(mac)
+                // The host revoked this phone; staying paired would retry forever.
+                forget(host)
                 state = .failed(error.localizedDescription)
             case (.token, _):
                 channelDidClose(error.localizedDescription)
             case (.pair, _):
-                // Go back to the Mac in use, if any, and report why pairing failed.
+                // Go back to the host in use, if any, and report why pairing failed.
                 closeChannel()
                 isPairing = false
                 pairingError = error.localizedDescription
                 state = .idle
-                connectToPairedMac()
+                connectToPairedHost()
             }
         }
     }
@@ -289,22 +466,22 @@ final class CompanionClient {
     private func channelDidClose(_ reason: String?) {
         closeChannel()
         if isPairing {
-            // The new Mac couldn't be reached; stay with the one in use.
+            // The new host couldn't be reached; stay with the one in use.
             isPairing = false
             pairingError = reason ?? CompanionClientError.disconnected.localizedDescription
             state = .idle
-            connectToPairedMac()
+            connectToPairedHost()
             return
         }
         state = .failed(reason ?? CompanionClientError.disconnected.localizedDescription)
         guard isPaired else { return }
-        // Back off while the Mac stays unreachable, up to half a minute between tries.
+        // Back off while the host stays unreachable, up to half a minute between tries.
         failedAttempts += 1
         let delay = Duration.seconds(min(2 << min(failedAttempts - 1, 4), 30))
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             self?.reconnectTask = nil
-            self?.connectToPairedMac()
+            self?.connectToPairedHost()
         }
     }
 
@@ -335,21 +512,25 @@ final class CompanionClient {
         case .hello:
             break
         case .tasks(let snapshot):
-            notifier.notify(from: tasks, to: snapshot)
-            tasks = snapshot
+            hostTasks = snapshot
+            settleTasksAwaitingAgent()
+            dropOverduePrompts()
         case .tasksChanged(let delta):
-            guard var snapshot = tasks else { return }
+            guard var snapshot = hostTasks else { return }
             snapshot.apply(delta)
-            notifier.notify(from: tasks, to: snapshot)
-            tasks = snapshot
+            hostTasks = snapshot
+            settleTasksAwaitingAgent()
+            dropOverduePrompts()
         case .git(let workspaceID, let status):
             gitStatuses[workspaceID] = status
         case .commands(let workspaceID, let commands):
             self.commands[workspaceID] = commands
         case .transcript(let taskID, let messages):
             transcripts[taskID] = messages
+            reconcilePendingPrompts(for: taskID)
         case .transcriptChanged(let taskID, let delta):
             transcripts[taskID, default: []].apply(delta)
+            reconcilePendingPrompts(for: taskID)
         }
     }
 }

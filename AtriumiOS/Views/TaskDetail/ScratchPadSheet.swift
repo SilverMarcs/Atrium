@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The project's scratch pad, shared with the Mac's.
+/// The project's scratch pad, shared with the host's.
 struct ScratchPadSheet: View {
     @Environment(CompanionClient.self) private var client
     @Environment(\.dismiss) private var dismiss
@@ -39,7 +39,7 @@ struct ScratchPadSheet: View {
         }
     }
 
-    /// Typing is coalesced so the Mac isn't updated on every keystroke.
+    /// Typing is coalesced so the host isn't updated on every keystroke.
     private func scheduleSend(_ text: String) {
         sendTask?.cancel()
         sendTask = Task {

@@ -3,18 +3,21 @@ import SwiftUI
 /// Source control for one project: unpushed commits, staged and working
 /// changes, each shown only when non-empty. The list and toolbars stay in place
 /// while loading, so only the list's contents change when the status arrives.
-/// The title menu switches branches; the bottom bar holds the commit field,
-/// remote operations and the project's commands.
+/// The title menu switches branches; the actions menu commits and runs remote
+/// operations.
 struct SourceControlScreen: View {
     @Environment(CompanionClient.self) private var client
     let workspaceID: UUID
 
     @State private var commitMessage = ""
-    @State private var isCommitFieldFocused = false
+    @State private var showingCommit = false
     @State private var showingNewBranch = false
     @State private var newBranchName = ""
     @State private var showingInfo = false
     @State private var pendingDiscard: SourceControlDiscard?
+
+    /// The repository info button is hidden for now; its sheet stays wired up.
+    private static let showsInfoButton = false
 
     private var status: WireGitStatus? { client.gitStatuses[workspaceID] }
 
@@ -28,28 +31,26 @@ struct SourceControlScreen: View {
                 BranchMenuItems(workspaceID: workspaceID, status: status) { showingNewBranch = true }
             }
         }
-        .searchable(text: $commitMessage, isPresented: $isCommitFieldFocused, prompt: "Commit message")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .onSubmit(of: .search, commit)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Info", systemImage: "info") { showingInfo = true }
-                    .disabled(status?.hasRepository != true)
-            }
-            ToolbarItem(placement: .bottomBar) {
-                NavigationLink(value: Route.commands(workspaceID)) {
-                    Label("Commands", systemImage: "terminal")
+            if Self.showsInfoButton {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Info", systemImage: "info") { showingInfo = true }
+                        .disabled(status?.hasRepository != true)
                 }
             }
-            ToolbarSpacer(.fixed, placement: .bottomBar)
-            DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            ToolbarSpacer(.fixed, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                SourceControlActionsMenu(workspaceID: workspaceID, status: status)
+            ToolbarItem(placement: .topBarTrailing) {
+                SourceControlActionsMenu(workspaceID: workspaceID, status: status) { showingCommit = true }
             }
         }
         .sheet(isPresented: $showingInfo) {
             if let status { SourceControlInfoSheet(status: status) }
+        }
+        .alert("Commit", isPresented: $showingCommit) {
+            TextField("Commit message", text: $commitMessage)
+            Button("Commit", action: commit)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Commit the staged changes to “\(status?.branchName ?? "HEAD")”.")
         }
         .alert("New Branch", isPresented: $showingNewBranch) {
             TextField("Branch name", text: $newBranchName)
@@ -80,7 +81,6 @@ struct SourceControlScreen: View {
         guard !message.isEmpty, status?.stagedFiles.isEmpty == false else { return }
         client.send(.git(workspaceID: workspaceID, action: .commit(message: message)))
         commitMessage = ""
-        isCommitFieldFocused = false
     }
 
     private func createBranch() {

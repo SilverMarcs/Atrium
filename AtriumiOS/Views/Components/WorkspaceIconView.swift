@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// A project's icon, fetching its custom image from the Mac once.
+/// A project's icon, fetching its custom image from the host once.
 struct WorkspaceIconView: View {
     @Environment(CompanionClient.self) private var client
     let workspace: WireWorkspace?

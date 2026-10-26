@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Pairing happens through the Mac's QR code: scanning it with the Camera opens
+/// Pairing happens through the host's QR code: scanning it with the Camera opens
 /// the app with the link, or the link can be pasted here.
 struct PairingScreen: View {
     @Environment(CompanionClient.self) private var client
@@ -9,7 +9,7 @@ struct PairingScreen: View {
         Form {
             Section {
                 Label {
-                    Text("Open Atrium → Settings → Companion on your Mac and turn on the iPhone companion.")
+                    Text("Open Atrium → Settings → Companion on your host and turn on the iPhone companion.")
                 } icon: {
                     Image(systemName: "macbook")
                 }
@@ -19,9 +19,9 @@ struct PairingScreen: View {
                     Image(systemName: "qrcode.viewfinder")
                 }
             } header: {
-                Text("Pair with Your Mac")
+                Text("Pair with Your Host")
             } footer: {
-                Text("Your iPhone reaches the Mac from any network. The connection is end-to-end encrypted.")
+                Text("Your iPhone reaches the host from any network. The connection is end-to-end encrypted.")
             }
 
             Section {

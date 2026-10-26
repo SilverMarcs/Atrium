@@ -3,7 +3,7 @@ import SwiftUI
 struct SourceControlChangesList: View {
     @Environment(CompanionClient.self) private var client
     let workspaceID: UUID
-    /// Nil until the Mac has sent the repository's status.
+    /// Nil until the host has sent the repository's status.
     let status: WireGitStatus?
     let onDiscard: (SourceControlDiscard) -> Void
     @State private var isUnpushedExpanded = true

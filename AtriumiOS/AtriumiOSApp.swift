@@ -3,8 +3,10 @@ import UserNotifications
 
 @main
 struct AtriumiOSApp: App {
-    @State private var client = CompanionClient()
+    @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @Environment(\.scenePhase) private var scenePhase
+
+    private var client: CompanionClient { appDelegate.client }
 
     init() {
         UNUserNotificationCenter.current().delegate = NotificationCoordinator.shared

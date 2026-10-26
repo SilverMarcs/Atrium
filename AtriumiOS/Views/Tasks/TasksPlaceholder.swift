@@ -16,7 +16,7 @@ struct TasksPlaceholder: View {
                 ContentUnavailableView(
                     "No Tasks",
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text("Start a task here or on your Mac.")
+                    description: Text("Start a task here or on your host.")
                 )
             }
         }

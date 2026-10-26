@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Notes a lost connection under the title instead of covering the screen, so
 /// the tasks already loaded stay usable. Quick reconnects show nothing; a longer
-/// one says it's reconnecting, and one that keeps failing says the Mac can't be reached.
+/// one says it's reconnecting, and one that keeps failing says the host can't be reached.
 struct ConnectionStatusSubtitle: ViewModifier {
     @Environment(CompanionClient.self) private var client
     @State private var notice: String?
@@ -18,7 +18,7 @@ struct ConnectionStatusSubtitle: ViewModifier {
                 notice = "Reconnecting…"
                 try? await Task.sleep(for: .seconds(27))
                 guard !Task.isCancelled else { return }
-                notice = "Can’t reach your Mac · Pull to retry"
+                notice = "Can’t reach your host · Pull to retry"
             }
     }
 }

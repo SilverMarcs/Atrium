@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// The Mac sidebar on iPhone: active tasks, then collapsible Snoozed and
+/// The host sidebar on iPhone: active tasks, then collapsible Snoozed and
 /// Settled sections. The filter shows a single section instead.
 struct TasksScreen: View {
     @Environment(CompanionClient.self) private var client
     @Binding var selection: String?
-    let onEditMacs: () -> Void
+    let onEditHosts: () -> Void
     @State private var searchText = ""
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
@@ -13,6 +13,8 @@ struct TasksScreen: View {
     @State private var showingNewTask = false
     @State private var taskToRename: WireTask?
     @State private var taskToDelete: WireTask?
+
+    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         let sections = TaskSections(
@@ -37,9 +39,9 @@ struct TasksScreen: View {
                 collapsibleSection("Settled", tasks: sections.settled, isExpanded: $isSettledExpanded, isSearching: isSearching)
             }
         }
-        .contentMargins(.top, 10)
+        .contentMargins(.top, isPhone ? 10 : 0)
         .listStyle(.sidebar)
-        .animation(.default, value: sections.ids)
+        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id)])
         .animation(.default, value: filter)
         .refreshable {
             if client.isConnected { await client.perform(.refreshTasks) } else { client.retryNow() }
@@ -50,17 +52,25 @@ struct TasksScreen: View {
         .modifier(ConnectionStatusSubtitle())
         .navigationBarTitleDisplayMode(.inline)
         .toolbarTitleMenu {
-            MacSwitcherMenuItems(onEdit: onEditMacs)
+            HostSwitcherMenuItems(onEdit: onEditHosts)
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                TaskFilterMenu(filter: $filter)
+            // iPad leaves out the filter and starts tasks from the top bar.
+            if isPhone {
+                ToolbarItem(placement: .topBarTrailing) {
+                    TaskFilterMenu(filter: $filter)
+                }
+            } else {
+                ToolbarItem(placement: .topBarLeading) {
+                    NewTaskButton { showingNewTask = true }
+                }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            ToolbarSpacer(.fixed, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                Button("New Task", systemImage: "square.and.pencil") { showingNewTask = true }
-                    .disabled(!client.isConnected)
+            if isPhone {
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    NewTaskButton { showingNewTask = true }
+                }
             }
         }
         .overlay {
@@ -73,7 +83,7 @@ struct TasksScreen: View {
     }
 
     /// Searching, or filtering to this section alone, keeps it expanded, as the
-    /// Mac sidebar does while searching.
+    /// host sidebar does while searching.
     @ViewBuilder
     private func collapsibleSection(_ title: String, tasks: [WireTask], isExpanded: Binding<Bool>, isSearching: Bool) -> some View {
         if !tasks.isEmpty {
