@@ -18,6 +18,12 @@ protocol AgentProviderAdapter: AnyObject {
     func markRead(_ thread: AgentThread) async throws -> AgentReadState
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState
     func deleteThread(_ thread: AgentThread) async throws
+    /// The most recent part of the conversation, oldest first.
+    func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
+    /// Requires `.prompt`.
+    func sendPrompt(_ text: String, to thread: AgentThread) async throws
+    /// Requires `.prompt`.
+    func interrupt(_ thread: AgentThread) async throws
     func didExit(_ thread: AgentThread)
     /// Suspend background work when hidden, preserving resources needed by retained terminals.
     func setEnabled(_ isEnabled: Bool)
@@ -44,6 +50,18 @@ extension AgentProviderAdapter {
 
     func renameThread(_ thread: AgentThread, to title: String) async throws {
         throw IntegrationError(message: "\(provider.name) does not support renaming a thread.")
+    }
+
+    func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        throw IntegrationError(message: "\(provider.name) does not provide conversation history.")
+    }
+
+    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+        throw IntegrationError(message: "\(provider.name) does not accept prompts from Atrium.")
+    }
+
+    func interrupt(_ thread: AgentThread) async throws {
+        throw IntegrationError(message: "\(provider.name) cannot be stopped from Atrium.")
     }
 
     func didExit(_ thread: AgentThread) {}

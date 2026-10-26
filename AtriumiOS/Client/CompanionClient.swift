@@ -1,7 +1,9 @@
+import CryptoKit
 import Foundation
 import Observation
 
-/// The companion's connection to a paired Mac and the state it mirrors.
+/// The companion's connection to a paired Mac, through the relay with end-to-end
+/// encryption, and the state it mirrors.
 ///
 /// Views declare what they need with `follow(_:)`; the client subscribes while
 /// any view follows a topic and resubscribes after reconnecting, so screens
@@ -11,17 +13,24 @@ import Observation
 @Observable
 final class CompanionClient {
     private(set) var state: CompanionConnectionState = .idle
-    private(set) var hosts: [DiscoveredHost] = []
-    private(set) var pairedHostName: String?
+    private(set) var pairedMacs: [PairedMac] = []
+    /// The Mac whose tasks are shown and that requests go to.
+    private(set) var currentMac: PairedMac?
+    private(set) var isPairing = false
+    private(set) var pairingError: String?
+    /// Changes each time a pairing succeeds, so a pairing sheet knows to close.
+    private(set) var pairingCount = 0
     private(set) var tasks: WireTasksSnapshot?
     private(set) var gitStatuses: [UUID: WireGitStatus] = [:]
     private(set) var commands: [UUID: [WireCommand]] = [:]
+    private(set) var transcripts: [String: [TranscriptMessage]] = [:]
     /// The latest failed action, shown as an alert.
     var actionError: String?
     /// A task to navigate to, from a notification tap or a task just created.
     var pendingTaskID: String?
 
-    var isPaired: Bool { pairedHostName != nil }
+    var isPaired: Bool { currentMac != nil }
+    var pairedHostName: String? { currentMac?.displayName }
     var isConnected: Bool {
         if case .connected = state { return true }
         return false
@@ -30,7 +39,6 @@ final class CompanionClient {
     /// Paired but without a live connection, so screens show cached state.
     var isReconnecting: Bool { isPaired && !isConnected }
 
-    @ObservationIgnored private let browser = HostBrowser()
     @ObservationIgnored private let notifier = TaskAttentionNotifier()
     @ObservationIgnored private var channel: (any CompanionChannel)?
     @ObservationIgnored private var pending: [UInt32: CheckedContinuation<CompanionReply, any Error>] = [:]
@@ -38,38 +46,78 @@ final class CompanionClient {
     @ObservationIgnored private var topicCounts: [CompanionTopic: Int] = [:]
     @ObservationIgnored private var icons: [String: Data] = [:]
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
-
-    private static let reconnectDelay: Duration = .seconds(2)
+    @ObservationIgnored private var failedAttempts = 0
 
     init() {
-        pairedHostName = CompanionCredentials.hostName
+        pairedMacs = CompanionCredentials.pairedMacs
+        currentMac = CompanionCredentials.currentMac
     }
 
     func start() {
-        browser.onChange = { [weak self] hosts in
-            self?.hosts = hosts
-            self?.connectToPairedHost()
-        }
-        browser.start()
+        connectToPairedMac()
     }
 
-    func pair(with host: DiscoveredHost, code: String) {
-        connect(to: host, authentication: .pair(code: code))
+    /// Pairs with a link from a Mac's QR code, scanned with the Camera app or pasted,
+    /// and switches to that Mac.
+    func pair(with link: CompanionPairingLink) {
+        isPairing = true
+        pairingError = nil
+        connect(to: PairedMac(link: link), authentication: .pair(secret: link.secret))
     }
 
-    /// Forgets the paired Mac. Pairing again needs a fresh code from its Settings.
-    func unpair() {
-        CompanionCredentials.forget()
-        pairedHostName = nil
+    func handle(_ url: URL) {
+        guard let link = CompanionPairingLink(url: url) else { return }
+        pair(with: link)
+    }
+
+    func select(_ mac: PairedMac) {
+        guard mac.id != currentMac?.id else { return }
+        CompanionCredentials.select(mac)
+        currentMac = mac
         closeChannel()
+        clearMirroredState()
+        failedAttempts = 0
+        connectToPairedMac()
+    }
+
+    /// Forgets a Mac. Pairing it again needs a fresh QR code from its Settings.
+    func forget(_ mac: PairedMac) {
+        CompanionCredentials.forget(mac)
+        pairedMacs = CompanionCredentials.pairedMacs
+        guard mac.id == currentMac?.id else { return }
+        currentMac = nil
+        closeChannel()
+        clearMirroredState()
         state = .idle
+        if let next = CompanionCredentials.currentMac { select(next) }
+    }
+
+    /// Names a Mac on this phone only; an empty name goes back to the Mac's own.
+    func rename(_ mac: PairedMac, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        CompanionCredentials.rename(mac, to: name.isEmpty ? nil : name)
+        pairedMacs = CompanionCredentials.pairedMacs
+        if mac.id == currentMac?.id { currentMac = pairedMacs.first { $0.id == mac.id } }
+    }
+
+    private func clearMirroredState() {
         tasks = nil
         gitStatuses = [:]
         commands = [:]
+        transcripts = [:]
+        icons = [:]
+    }
+
+    /// Tries the Mac again now instead of waiting out the retry delay.
+    func retryNow() {
+        guard !isConnected else { return }
+        closeChannel()
+        failedAttempts = 0
+        connectToPairedMac()
     }
 
     func sceneDidBecomeActive() {
-        connectToPairedHost()
+        connectToPairedMac()
     }
 
     // MARK: - Topics
@@ -165,23 +213,31 @@ final class CompanionClient {
     // MARK: - Connection
 
     private enum Authentication {
-        case pair(code: String)
+        case pair(secret: String)
         case token(String)
     }
 
-    private func connectToPairedHost() {
-        guard channel == nil, reconnectTask == nil, let pairedHostName, let token = CompanionCredentials.token,
-              let host = hosts.first(where: { $0.name == pairedHostName }) else { return }
-        connect(to: host, authentication: .token(token))
+    private func connectToPairedMac() {
+        guard channel == nil, reconnectTask == nil, let currentMac, let token = CompanionCredentials.token(for: currentMac) else { return }
+        connect(to: currentMac, authentication: .token(token))
     }
 
-    private func connect(to host: DiscoveredHost, authentication: Authentication) {
+    /// Opens an encrypted channel through the relay, bound to the Mac's key from its QR code.
+    private func connect(to mac: PairedMac, authentication: Authentication) {
         closeChannel()
-        state = .connecting(hostName: host.name)
-        let channel = FramedTCPChannel(endpoint: host.endpoint)
+        state = .connecting(hostName: mac.displayName)
+        guard let key = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: mac.publicKey) else {
+            state = .failed("This pairing QR code isn’t valid.")
+            return
+        }
+        let channel = NoiseChannel(
+            inner: RelayClientChannel(relay: mac.relay, macID: mac.macID),
+            role: .initiator(responderStatic: key),
+            prologue: CompanionPairingLink.prologue(macID: mac.macID)
+        )
         self.channel = channel
         channel.onReady = { [weak self] in
-            Task { await self?.authenticate(authentication, hostName: host.name) }
+            Task { await self?.authenticate(authentication, mac: mac) }
         }
         channel.onMessage = { [weak self] data in self?.receive(data) }
         channel.onClose = { [weak self, weak channel] reason in
@@ -191,44 +247,64 @@ final class CompanionClient {
         channel.start()
     }
 
-    private func authenticate(_ authentication: Authentication, hostName: String) async {
+    private func authenticate(_ authentication: Authentication, mac: PairedMac) async {
         do {
             switch authentication {
-            case .pair(let code):
-                guard case .paired(let token) = try await request(.pair(code: code, device: CompanionCredentials.device)) else {
+            case .pair(let secret):
+                guard case .paired(let token) = try await request(.pair(secret: secret, device: CompanionCredentials.device)) else {
                     throw CompanionClientError.unexpectedReply
                 }
-                CompanionCredentials.save(hostName: hostName, token: token)
-                pairedHostName = hostName
+                CompanionCredentials.save(mac, token: token)
+                pairedMacs = CompanionCredentials.pairedMacs
+                if mac.id != currentMac?.id { clearMirroredState() }
+                currentMac = CompanionCredentials.currentMac
+                isPairing = false
+                pairingCount += 1
             case .token(let token):
                 _ = try await request(.authenticate(token: token, deviceID: CompanionCredentials.device.id))
             }
-            state = .connected(hostName: hostName)
+            state = .connected(hostName: mac.displayName)
+            failedAttempts = 0
             notifier.requestAuthorization()
             for topic in topicCounts.keys { subscribe(topic) }
         } catch {
             switch (authentication, error) {
             case (.token, CompanionClientError.rejected):
                 // The Mac revoked this phone; staying paired would retry forever.
-                unpair()
+                forget(mac)
                 state = .failed(error.localizedDescription)
             case (.token, _):
                 channelDidClose(error.localizedDescription)
             case (.pair, _):
+                // Go back to the Mac in use, if any, and report why pairing failed.
                 closeChannel()
-                state = .failed(error.localizedDescription)
+                isPairing = false
+                pairingError = error.localizedDescription
+                state = .idle
+                connectToPairedMac()
             }
         }
     }
 
     private func channelDidClose(_ reason: String?) {
         closeChannel()
+        if isPairing {
+            // The new Mac couldn't be reached; stay with the one in use.
+            isPairing = false
+            pairingError = reason ?? CompanionClientError.disconnected.localizedDescription
+            state = .idle
+            connectToPairedMac()
+            return
+        }
         state = .failed(reason ?? CompanionClientError.disconnected.localizedDescription)
         guard isPaired else { return }
+        // Back off while the Mac stays unreachable, up to half a minute between tries.
+        failedAttempts += 1
+        let delay = Duration.seconds(min(2 << min(failedAttempts - 1, 4), 30))
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.reconnectDelay)
+            try? await Task.sleep(for: delay)
             self?.reconnectTask = nil
-            self?.connectToPairedHost()
+            self?.connectToPairedMac()
         }
     }
 
@@ -270,6 +346,10 @@ final class CompanionClient {
             gitStatuses[workspaceID] = status
         case .commands(let workspaceID, let commands):
             self.commands[workspaceID] = commands
+        case .transcript(let taskID, let messages):
+            transcripts[taskID] = messages
+        case .transcriptChanged(let taskID, let delta):
+            transcripts[taskID, default: []].apply(delta)
         }
     }
 }

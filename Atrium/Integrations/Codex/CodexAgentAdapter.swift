@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread]
+    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread, .prompt]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let defaults: UserDefaults
@@ -16,6 +16,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var socketPath: String?
     private var watchers: [FileSystemWatcher] = []
     private var historyTask: Task<Void, Never>?
+    /// The turn in progress for each thread, from `turn/started` notifications.
+    private var activeTurnIDs: [String: String] = [:]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -143,6 +145,67 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         _ = try await request("thread/name/set", params: ["threadId": thread.sessionID, "name": title])
     }
 
+    func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        try await connect()
+        return CodexTranscript.messages(fromTurns: try await turns(of: thread.sessionID))
+    }
+
+    /// Starts a turn, or steers the one in progress so the prompt joins it as Codex does mid-turn.
+    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+        try await connect()
+        try await waitUntilLoaded(thread.sessionID)
+        let input: [[String: Any]] = [["type": "text", "text": text, "text_elements": []]]
+        if let turnID = try await activeTurnID(of: thread.sessionID) {
+            _ = try await request("turn/steer", params: ["threadId": thread.sessionID, "input": input, "expectedTurnId": turnID])
+        } else {
+            _ = try await request("turn/start", params: ["threadId": thread.sessionID, "input": input])
+        }
+    }
+
+    func interrupt(_ thread: AgentThread) async throws {
+        try await connect()
+        guard let turnID = try await activeTurnID(of: thread.sessionID) else { return }
+        _ = try await request("turn/interrupt", params: ["threadId": thread.sessionID, "turnId": turnID])
+    }
+
+    /// Reads a loaded thread's turns directly. An unloaded thread is loaded just long
+    /// enough to read it, so this connection doesn't become a client of its turns.
+    private func turns(of threadID: String) async throws -> [[String: Any]] {
+        do {
+            let data = try await request("thread/read", params: ["threadId": threadID, "includeTurns": true])
+            return Self.turns(in: data)
+        } catch let error as IntegrationError where error.message.localizedStandardContains("not supported") {
+            let data = try await request("thread/resume", params: ["threadId": threadID])
+            _ = try? await request("thread/unsubscribe", params: ["threadId": threadID])
+            return Self.turns(in: data)
+        }
+    }
+
+    /// The Mac attaches a terminal before a remote prompt, so approvals have somewhere to
+    /// appear; its resume loads the thread. A thread that never loads is resumed here.
+    private func waitUntilLoaded(_ threadID: String) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(10)
+        while clock.now < deadline {
+            let data = try await request("thread/loaded/list", params: [:])
+            let loaded = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [String] ?? []
+            if loaded.contains(threadID) { return }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        _ = try await request("thread/resume", params: ["threadId": threadID])
+    }
+
+    private func activeTurnID(of threadID: String) async throws -> String? {
+        if let turnID = activeTurnIDs[threadID] { return turnID }
+        let turn = try await turns(of: threadID).last
+        return turn?["status"] as? String == "inProgress" ? turn?["id"] as? String : nil
+    }
+
+    private static func turns(in data: Data) -> [[String: Any]] {
+        let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return (result?["thread"] as? [String: Any])?["turns"] as? [[String: Any]] ?? []
+    }
+
     func deleteThread(_ thread: AgentThread) async throws {
         try await connect()
         _ = try await request("thread/delete", params: ["threadId": thread.sessionID])
@@ -216,6 +279,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 guard UUID(uuidString: id) != nil else { continue }
                 if FileManager.default.fileExists(atPath: path) {
                     onEvent?(.threadInvalidated(sessionID: id))
+                    // Item notifications only reach clients subscribed to the thread, such as
+                    // its terminal; the rollout file changes for every turn regardless.
+                    onEvent?(.transcriptChanged(sessionID: id))
                 } else {
                     needsListing = true
                 }
@@ -283,10 +349,17 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             guard let id = params["threadId"] as? String else { return }
+            if ["item/started", "item/completed"].contains(method) {
+                onEvent?(.transcriptChanged(sessionID: id))
+                return
+            }
             if method == "turn/started" {
+                activeTurnIDs[id] = (params["turn"] as? [String: Any])?["id"] as? String
+                onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/status/changed" {
+                onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: Self.status(params["status"] as? [String: Any]))))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/name/updated" {
@@ -294,6 +367,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             } else if method == "thread/readState/changed", let state = Self.readState(params["readState"] as? [String: Any]) {
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(readState: state)))
             } else if method == "turn/completed" {
+                activeTurnIDs[id] = nil
+                onEvent?(.transcriptChanged(sessionID: id))
                 let turn = params["turn"] as? [String: Any]
                 switch turn?["status"] as? String {
                 case "completed": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .done)))

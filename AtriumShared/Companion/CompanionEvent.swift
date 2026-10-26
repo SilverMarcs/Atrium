@@ -7,4 +7,6 @@ nonisolated enum CompanionEvent: Codable, Sendable {
     case tasksChanged(WireTasksDelta)
     case git(workspaceID: UUID, status: WireGitStatus)
     case commands(workspaceID: UUID, commands: [WireCommand])
+    case transcript(taskID: String, messages: [TranscriptMessage])
+    case transcriptChanged(taskID: String, delta: WireTranscriptDelta)
 }

@@ -8,4 +8,8 @@ struct AgentCapabilities: OptionSet, Sendable {
     static let deleteDescendants = Self(rawValue: 1 << 2)
     static let forkThread = Self(rawValue: 1 << 4)
     static let renameThread = Self(rawValue: 1 << 3)
+    /// The adapter delivers prompts and interrupts itself, without a terminal.
+    static let prompt = Self(rawValue: 1 << 6)
+    /// Prompts are typed into the thread's attached terminal instead.
+    static let terminalPrompt = Self(rawValue: 1 << 7)
 }

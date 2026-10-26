@@ -10,6 +10,7 @@ final class CompanionConnection {
     private(set) var device: CompanionDevice?
     private(set) var topics: Set<CompanionTopic> = []
     private var sentTasks: WireTasksSnapshot?
+    private var sentTranscripts: [String: [TranscriptMessage]] = [:]
 
     var isAuthenticated: Bool { device != nil }
 
@@ -36,11 +37,29 @@ final class CompanionConnection {
 
     func subscribe(_ topic: CompanionTopic) {
         topics.insert(topic)
-        if topic == .tasks { sentTasks = nil }
+        switch topic {
+        case .tasks: sentTasks = nil
+        case .transcript(let taskID): sentTranscripts[taskID] = nil
+        case .git, .commands: break
+        }
     }
 
     func unsubscribe(_ topic: CompanionTopic) {
         topics.remove(topic)
+        if case .transcript(let taskID) = topic { sentTranscripts[taskID] = nil }
+    }
+
+    /// Sends a task's whole conversation first, then only messages that changed.
+    func push(transcript messages: [TranscriptMessage], of taskID: String) {
+        guard topics.contains(.transcript(taskID: taskID)) else { return }
+        if let sent = sentTranscripts[taskID] {
+            let delta = WireTranscriptDelta(from: sent, to: messages)
+            guard !delta.isEmpty else { return }
+            send(.event(.transcriptChanged(taskID: taskID, delta: delta)))
+        } else {
+            send(.event(.transcript(taskID: taskID, messages: messages)))
+        }
+        sentTranscripts[taskID] = messages
     }
 
     func authenticated(as device: CompanionDevice) {

@@ -1,27 +1,24 @@
 import SwiftUI
 
-/// The in-flight connection or the reason the last attempt failed.
+/// A pairing in progress, or why the last attempt failed.
 struct PairingStatusSection: View {
     @Environment(CompanionClient.self) private var client
 
     var body: some View {
-        switch client.state {
-        case .connecting(let hostName):
+        if client.isPairing {
             Section {
                 Label {
-                    Text("Pairing with \(hostName)…")
+                    Text("Pairing…")
                 } icon: {
                     ProgressView()
                 }
                 .foregroundStyle(.secondary)
             }
-        case .failed(let message):
+        } else if let error = client.pairingError {
             Section {
-                Text(message)
+                Text(error)
                     .foregroundStyle(.red)
             }
-        default:
-            EmptyView()
         }
     }
 }

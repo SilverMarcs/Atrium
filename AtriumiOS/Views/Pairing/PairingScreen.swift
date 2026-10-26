@@ -1,62 +1,40 @@
 import SwiftUI
 
+/// Pairing happens through the Mac's QR code: scanning it with the Camera opens
+/// the app with the link, or the link can be pasted here.
 struct PairingScreen: View {
     @Environment(CompanionClient.self) private var client
-    @State private var code = ""
-    @State private var selectedHost: DiscoveredHost?
 
     var body: some View {
         Form {
             Section {
-                if client.hosts.isEmpty {
-                    Label {
-                        Text("Looking for Atrium on this network…")
-                    } icon: {
-                        ProgressView()
-                    }
-                    .foregroundStyle(.secondary)
-                } else {
-                    ForEach(client.hosts) { host in
-                        HostRow(host: host, isSelected: effectiveHost?.id == host.id) {
-                            selectedHost = host
-                        }
-                    }
+                Label {
+                    Text("Open Atrium → Settings → Companion on your Mac and turn on the iPhone companion.")
+                } icon: {
+                    Image(systemName: "macbook")
+                }
+                Label {
+                    Text("Scan its QR code with the Camera app, or share the pairing link to this iPhone and open it.")
+                } icon: {
+                    Image(systemName: "qrcode.viewfinder")
                 }
             } header: {
-                Text("Your Macs")
+                Text("Pair with Your Mac")
             } footer: {
-                Text("Your Mac must be running Atrium on the same network, with the companion turned on in Settings.")
+                Text("Your iPhone reaches the Mac from any network. The connection is end-to-end encrypted.")
             }
 
             Section {
-                TextField("123456", text: $code)
-                    .keyboardType(.numberPad)
-                    .textContentType(.oneTimeCode)
-                    .font(.title2.monospacedDigit())
-                Button("Pair") {
-                    if let effectiveHost { client.pair(with: effectiveHost, code: code) }
+                PasteButton(payloadType: URL.self) { urls in
+                    if let url = urls.first { client.handle(url) }
                 }
-                .disabled(effectiveHost == nil || code.count != 6 || isConnecting)
-            } header: {
-                Text("Pairing Code")
             } footer: {
-                Text("Find the code in Atrium → Settings → Companion on your Mac.")
+                Text("Copied the pairing link? Paste it here instead.")
             }
 
             PairingStatusSection()
         }
         .navigationTitle("Atrium")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var isConnecting: Bool {
-        if case .connecting = client.state { return true }
-        return false
-    }
-
-    /// With one Mac on the network, it's chosen without a tap.
-    private var effectiveHost: DiscoveredHost? {
-        if let selectedHost, client.hosts.contains(selectedHost) { return selectedHost }
-        return client.hosts.count == 1 ? client.hosts.first : nil
     }
 }

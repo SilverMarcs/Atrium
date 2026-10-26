@@ -40,6 +40,9 @@ final class Terminal: Identifiable, Hashable, Codable {
     /// Not encoded; reset per launch.
     var hasBellNotification = false
 
+    @ObservationIgnored
+    private var lastOutputAt: ContinuousClock.Instant?
+
     var localProcessTerminalView: LocalProcessTerminalView? {
         get { TerminalProcessRegistry.view(for: id) }
         set {
@@ -238,6 +241,34 @@ final class Terminal: Identifiable, Hashable, Codable {
         }
         clearTerminal()
         tv.send(txt: script + "\n")
+    }
+
+    /// Waits until a newly started task terminal has drawn its interface and gone quiet,
+    /// so text typed into it lands in a ready prompt rather than its startup.
+    func waitUntilQuiet(for quietPeriod: Duration = .milliseconds(800), timeout: Duration = .seconds(10)) async {
+        guard isTaskTerminal, let view = localProcessTerminalView as? AppTerminalView else { return }
+        view.onOutput = { [weak self] in self?.lastOutputAt = .now }
+        defer { view.onOutput = nil }
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if let lastOutputAt, clock.now - lastOutputAt >= quietPeriod { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    /// Pastes text into the running program and presses Return, as if the user typed it.
+    /// Bracketed paste keeps line breaks inside the prompt instead of submitting early.
+    func submit(_ text: String) async {
+        guard let view = localProcessTerminalView else { return }
+        view.send(txt: "\u{1b}[200~" + text + "\u{1b}[201~")
+        try? await Task.sleep(for: .milliseconds(150))
+        view.send(txt: "\r")
+    }
+
+    /// Sends Escape, which stops an agent's current turn.
+    func sendEscape() {
+        localProcessTerminalView?.send(txt: "\u{1b}")
     }
 
     /// Sends Ctrl+C to interrupt the running foreground process.

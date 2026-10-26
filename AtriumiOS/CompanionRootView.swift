@@ -4,9 +4,7 @@ struct CompanionRootView: View {
     @Environment(CompanionClient.self) private var client
     @State private var selectedTaskID: String?
     @State private var detailPath: [Route] = []
-    /// Shown only after a short delay, so a quick reconnect after waking
-    /// doesn't flash a spinner over the cached screens.
-    @State private var showReconnecting = false
+    @State private var showingMacs = false
 
     var body: some View {
         Group {
@@ -14,7 +12,7 @@ struct CompanionRootView: View {
                 // Tasks in the sidebar and the selected task in the detail column on
                 // iPad; on iPhone the split view collapses into a single stack.
                 NavigationSplitView {
-                    TasksScreen(selection: $selectedTaskID)
+                    TasksScreen(selection: $selectedTaskID) { showingMacs = true }
                         .navigationSplitViewColumnWidth(min: 300, ideal: 340)
                 } detail: {
                     NavigationStack(path: $detailPath) {
@@ -43,6 +41,7 @@ struct CompanionRootView: View {
                 }
             }
         }
+        .onOpenURL { url in client.handle(url) }
         .task(id: client.isPaired) {
             guard client.isPaired else { return }
             await client.follow(.tasks)
@@ -55,24 +54,12 @@ struct CompanionRootView: View {
             selectedTaskID = id
             client.pendingTaskID = nil
         }
-        .onChange(of: client.isPaired) { _, isPaired in
-            if !isPaired { selectedTaskID = nil }
+        .onChange(of: client.currentMac) {
+            // Another Mac's tasks replace this one's.
+            selectedTaskID = nil
         }
-        .overlay {
-            if showReconnecting {
-                ReconnectingOverlay(hostName: client.pairedHostName ?? "your Mac", onUnpair: client.unpair)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.default, value: showReconnecting)
-        .task(id: client.isReconnecting) {
-            guard client.isReconnecting else {
-                showReconnecting = false
-                return
-            }
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            showReconnecting = true
+        .sheet(isPresented: $showingMacs) {
+            MacsSheet()
         }
         .alert(
             "Couldn’t Complete Action",

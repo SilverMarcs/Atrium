@@ -4,10 +4,11 @@ import SystemConfiguration
 
 /// The Mac side of the iPhone companion.
 ///
-/// Accepts channels from a `CompanionListener`, authenticates them against
-/// paired devices, answers requests through the same stores and controllers
-/// the Mac UI uses, and streams the state each companion subscribes to. Feeds
-/// for a project's Git status and commands run only while someone watches them.
+/// Connects out to the relay, accepts the end-to-end encrypted channels phones
+/// open through it, authenticates them against paired devices, answers requests
+/// through the same stores and controllers the Mac UI uses, and streams the state
+/// each companion subscribes to. Feeds for a project's Git status and commands
+/// run only while someone watches them.
 @MainActor
 @Observable
 final class CompanionServer {
@@ -22,6 +23,7 @@ final class CompanionServer {
     private(set) var connectedDevices: [CompanionDevice] = []
     let pairing = CompanionPairing()
 
+    /// Reachable through the relay from any network. Keeps the Mac awake while on.
     var isEnabled: Bool {
         didSet {
             guard isEnabled != oldValue else { return }
@@ -30,16 +32,49 @@ final class CompanionServer {
         }
     }
 
+    var relayAddress: String {
+        didSet {
+            guard relayAddress != oldValue else { return }
+            UserDefaults.standard.set(relayAddress, forKey: Self.relayAddressKey)
+            guard isEnabled else { return }
+            stop()
+            start()
+        }
+    }
+
+    var relayURL: URL? {
+        URL(string: relayAddress.trimmingCharacters(in: .whitespacesAndNewlines))
+            .flatMap { ["ws", "wss"].contains($0.scheme) && $0.host() != nil ? $0 : nil }
+    }
+
+    /// What the pairing QR code encodes.
+    var pairingLink: CompanionPairingLink? {
+        guard let relayURL else { return nil }
+        return CompanionPairingLink(
+            relay: relayURL,
+            macID: CompanionIdentity.macID,
+            publicKey: CompanionIdentity.publicKey,
+            secret: pairing.secret,
+            hostName: hostName
+        )
+    }
+
     @ObservationIgnored private let workspaces: WorkspaceStore
     @ObservationIgnored private let tasks: CompanionTaskService
     @ObservationIgnored private let tasksFeed: CompanionTasksFeed
     @ObservationIgnored private var listener: (any CompanionListener)?
+    @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
     @ObservationIgnored private var connections: [ObjectIdentifier: CompanionConnection] = [:]
     @ObservationIgnored private var gitFeeds: [UUID: CompanionGitFeed] = [:]
     @ObservationIgnored private var commandFeeds: [UUID: CompanionCommandsFeed] = [:]
+    @ObservationIgnored private var transcriptFeeds: [String: CompanionTranscriptFeed] = [:]
+    @ObservationIgnored private let integrations: AgentIntegrationStore
     @ObservationIgnored private var latestTasks: WireTasksSnapshot?
 
     private static let enabledKey = "companion.enabled"
+    private static let relayAddressKey = "companion.relayAddress"
+    /// The relay phones use unless the user points this Mac at their own.
+    static let defaultRelayAddress = "wss://atrium-relay.zabirraihan.workers.dev"
     /// Unauthenticated connections are dropped after this long.
     private static let authenticationTimeout: Duration = .seconds(30)
 
@@ -50,15 +85,22 @@ final class CompanionServer {
 
     init(integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore) {
         self.workspaces = workspaces
+        self.integrations = integrations
         tasks = CompanionTaskService(integrations: integrations, sessions: sessions, workspaces: workspaces)
         tasksFeed = CompanionTasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces)
-        isEnabled = UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true
+        isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        relayAddress = UserDefaults.standard.string(forKey: Self.relayAddressKey) ?? Self.defaultRelayAddress
+        integrations.onTranscriptChanged = { [weak self] taskID in self?.transcriptFeeds[taskID]?.refresh() }
         if isEnabled { start() }
     }
 
     func start() {
         guard listener == nil else { return }
-        let listener = LocalNetworkListener(serviceName: hostName)
+        guard let relayURL else {
+            status = .failed("Enter a relay address starting with wss://")
+            return
+        }
+        let listener = RelayListener(relay: relayURL, macID: CompanionIdentity.macID)
         listener.onStateChange = { [weak self] state in
             switch state {
             case .starting: self?.status = .starting
@@ -70,11 +112,17 @@ final class CompanionServer {
         self.listener = listener
         listener.start()
         tasksFeed.start { [weak self] snapshot in self?.broadcast(tasks: snapshot) }
+        // A sleeping Mac can't answer the relay.
+        awakeActivity = ProcessInfo.processInfo.beginActivity(
+            options: .idleSystemSleepDisabled, reason: "The Atrium iPhone companion is on"
+        )
     }
 
     func stop() {
         listener?.stop()
         listener = nil
+        if let awakeActivity { ProcessInfo.processInfo.endActivity(awakeActivity) }
+        awakeActivity = nil
         tasksFeed.stop()
         latestTasks = nil
         for connection in connections.values { connection.close() }
@@ -122,9 +170,9 @@ final class CompanionServer {
 
     func handle(_ request: CompanionRequest, from connection: CompanionConnection) async -> CompanionReply {
         switch request {
-        case .pair(let code, let device):
-            guard let token = pairing.pair(code: code, device: device) else {
-                return .failed(message: "That code doesn’t match. Check Atrium Settings on your Mac.")
+        case .pair(let secret, let device):
+            guard let token = pairing.pair(secret: secret, device: device) else {
+                return .failed(message: "That pairing QR code has expired. Scan the current one in Atrium Settings on your Mac.")
             }
             authenticate(connection, as: device)
             return .paired(token: token)
@@ -179,6 +227,10 @@ final class CompanionServer {
             return await tasks.perform(action, onTask: id)
         case .compose(let provider, let workspaceID):
             return await tasks.compose(provider: provider, workspaceID: workspaceID)
+        case .prompt(let taskID, let text):
+            return await tasks.prompt(text, toTask: taskID)
+        case .interrupt(let taskID):
+            return await tasks.interrupt(task: taskID)
         case .updateScratchpad(let workspaceID, let text):
             guard let workspace = workspace(workspaceID) else { return .failed(message: "That project is no longer on your Mac.") }
             workspace.scratchPad = text
@@ -233,6 +285,10 @@ final class CompanionServer {
             if let commands = commandFeeds[workspaceID]?.commands {
                 connection.push(.commands(workspaceID: workspaceID, commands: commands))
             }
+        case .transcript(let taskID):
+            if let messages = transcriptFeeds[taskID]?.messages {
+                connection.push(transcript: messages, of: taskID)
+            }
         }
     }
 
@@ -241,12 +297,30 @@ final class CompanionServer {
         let topics = connections.values.filter(\.isAuthenticated).reduce(into: Set<CompanionTopic>()) { $0.formUnion($1.topics) }
         var gitIDs = Set<UUID>()
         var commandIDs = Set<UUID>()
+        var transcriptIDs = Set<String>()
         for topic in topics {
             switch topic {
             case .tasks: break
             case .git(let id): gitIDs.insert(id)
             case .commands(let id): commandIDs.insert(id)
+            case .transcript(let id): transcriptIDs.insert(id)
             }
+        }
+
+        for (id, feed) in transcriptFeeds where !transcriptIDs.contains(id) {
+            feed.stop()
+            transcriptFeeds[id] = nil
+        }
+        for id in transcriptIDs where transcriptFeeds[id] == nil {
+            let feed = CompanionTranscriptFeed(taskID: id, integrations: integrations)
+            feed.onChange = { [weak self] messages in
+                guard let self else { return }
+                for connection in self.connections.values where connection.isAuthenticated {
+                    connection.push(transcript: messages, of: id)
+                }
+            }
+            transcriptFeeds[id] = feed
+            feed.start()
         }
 
         for (id, feed) in gitFeeds where !gitIDs.contains(id) {
@@ -291,7 +365,7 @@ final class CompanionServer {
 
     private func isValid(_ topic: CompanionTopic) -> Bool {
         switch topic {
-        case .tasks: true
+        case .tasks, .transcript: true
         case .git(let id), .commands(let id): workspace(id) != nil
         }
     }

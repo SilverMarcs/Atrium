@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .terminalPrompt]
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
     private let configDirectory: URL
@@ -40,6 +40,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     func readThread(_ id: String) async throws -> AgentThread? {
         try await history.readThread(id).map(withStatus) ?? backgroundSessions[id]?.thread
+    }
+
+    func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        try await history.transcript(thread.sessionID)
     }
 
     func renameThread(_ thread: AgentThread, to title: String) async throws {
@@ -242,6 +246,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                 if let sessionID, UUID(uuidString: sessionID) != nil {
                     if FileManager.default.fileExists(atPath: path) {
                         onEvent?(.threadInvalidated(sessionID: sessionID))
+                        if url.pathExtension == "jsonl" { onEvent?(.transcriptChanged(sessionID: sessionID)) }
                     } else {
                         historyChanged = true
                     }

@@ -1,14 +1,13 @@
 import SwiftUI
 
-/// One task. The content area summarizes the task for now and is where its
-/// terminal will appear; the toolbars match the companion's other screens.
+/// One task's conversation, with a prompt field that sends to its agent on the Mac.
 struct TaskDetailScreen: View {
     @Environment(CompanionClient.self) private var client
     let taskID: String
     @State private var showingScratchPad = false
+    @State private var showingDetails = false
     @State private var taskToRename: WireTask?
     @State private var taskToDelete: WireTask?
-    /// The prompt field from the legacy chat screen. Sending prompts isn't wired up yet.
     @State private var draft = ""
     @State private var isComposing = false
 
@@ -17,7 +16,7 @@ struct TaskDetailScreen: View {
     var body: some View {
         Group {
             if let task {
-                TaskSummaryView(task: task)
+                TaskChatView(task: task)
             } else if client.tasks == nil || client.isReconnecting {
                 ProgressView()
                     .controlSize(.large)
@@ -43,8 +42,9 @@ struct TaskDetailScreen: View {
                             default: client.perform(action, on: task)
                             }
                         }
+                        Divider()
+                        Button("Details", systemImage: "info.circle") { showingDetails = true }
                         if task.workspaceID != nil {
-                            Divider()
                             Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                         }
                     } label: {
@@ -54,27 +54,35 @@ struct TaskDetailScreen: View {
             }
             if let workspaceID = task?.workspaceID {
                 ToolbarItem(placement: .bottomBar) {
-                    NavigationLink(value: Route.sourceControl(workspaceID)) {
-                        Label("Source Control", systemImage: "arrow.triangle.branch")
+                    NavigationLink(value: Route.commands(workspaceID)) {
+                        Label("Commands", systemImage: "terminal")
                     }
                 }
                 ToolbarSpacer(.fixed, placement: .bottomBar)
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            if let workspaceID = task?.workspaceID {
+            if let task, task.actions.contains(.interrupt) {
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    NavigationLink(value: Route.commands(workspaceID)) {
-                        Label("Commands", systemImage: "terminal")
+                    Button("Stop", systemImage: "stop.fill", role: .destructive) {
+                        client.send(.interrupt(taskID: task.id))
+                    }
+                    .tint(.red)
+                }
+            } else if let workspaceID = task?.workspaceID {
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    NavigationLink(value: Route.sourceControl(workspaceID)) {
+                        Label("Source Control", systemImage: "arrow.triangle.branch")
                     }
                 }
             }
         }
         .searchable(text: $draft, isPresented: $isComposing, prompt: "Ask anything…")
         .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .onSubmit(of: .search) {
-            draft = ""
-            isComposing = false
+        .onSubmit(of: .search, sendDraft)
+        .sheet(isPresented: $showingDetails) {
+            if let task { TaskDetailsSheet(task: task) }
         }
         .sheet(isPresented: $showingScratchPad) {
             if let workspaceID = task?.workspaceID {
@@ -82,11 +90,28 @@ struct TaskDetailScreen: View {
             }
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
+        .task(id: taskID) {
+            await client.follow(.transcript(taskID: taskID))
+        }
         .task(id: task?.hasUnreadResult) {
             // Viewing a finished task reads it, as selecting it does on the Mac.
             if let task, task.hasUnreadResult, task.actions.contains(.markRead) {
                 client.send(.task(id: task.id, action: .markRead))
             }
         }
+    }
+
+    private func sendDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let task, !text.isEmpty else { return }
+        guard task.actions.contains(.prompt) else {
+            client.actionError = task.status == .waiting
+                ? "\(task.provider.name) is waiting for an answer. Reply on your Mac."
+                : "\(task.provider.name) can’t take a prompt right now."
+            return
+        }
+        draft = ""
+        isComposing = false
+        client.send(.prompt(taskID: task.id, text: text))
     }
 }

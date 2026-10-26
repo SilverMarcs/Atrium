@@ -19,6 +19,8 @@ final class AgentIntegrationStore {
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
+    /// Called with a thread's id when its conversation changes.
+    @ObservationIgnored var onTranscriptChanged: ((String) -> Void)?
     @ObservationIgnored private var viewedThreadID: String?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -213,6 +215,9 @@ final class AgentIntegrationStore {
             Task { await refresh(provider: provider) }
         case .threadDeleted(let sessionID):
             removeDeletedThread("\(provider.rawValue):\(sessionID)")
+        case .transcriptChanged(let sessionID):
+            guard enabled.contains(provider) else { return }
+            onTranscriptChanged?("\(provider.rawValue):\(sessionID)")
         }
     }
 
@@ -570,6 +575,22 @@ final class AgentIntegrationStore {
         try Task.checkCancellation()
         guard isCurrent(thread.provider, generation: generation) else { throw CancellationError() }
         return launch
+    }
+
+    func capabilities(of provider: AgentProvider) -> AgentCapabilities {
+        adapters[provider]?.capabilities ?? []
+    }
+
+    func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        try await enabledAdapter(for: thread.provider).transcript(for: thread)
+    }
+
+    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+        try await enabledAdapter(for: thread.provider).sendPrompt(text, to: thread)
+    }
+
+    func interrupt(_ thread: AgentThread) async throws {
+        try await enabledAdapter(for: thread.provider).interrupt(thread)
     }
 
     func recordProcessExit(threadID: String, code: Int32?) {

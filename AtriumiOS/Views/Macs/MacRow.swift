@@ -1,27 +1,30 @@
 import SwiftUI
 
-struct HostRow: View {
-    let host: DiscoveredHost
-    let isSelected: Bool
-    let onSelect: () -> Void
+struct MacRow: View {
+    let mac: PairedMac
+    let isCurrent: Bool
+    let onRename: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: onRename) {
             HStack {
                 Label {
-                    Text(host.name)
+                    Text(mac.displayName)
                         .foregroundStyle(.primary)
+                    if mac.customName != nil {
+                        Text(mac.hostName)
+                    }
                 } icon: {
                     Image(systemName: "macbook")
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if isSelected {
+                if isCurrent {
                     Image(systemName: "checkmark")
                         .foregroundStyle(.tint)
                 }
             }
             .contentShape(.rect)
         }
+        .buttonStyle(.plain)
     }
 }

@@ -3,44 +3,48 @@ import Foundation
 import Observation
 import Security
 
-/// Pairing codes and the devices they admitted.
+/// The pairing secret and the devices it admitted.
 ///
-/// A phone pairs once by entering the 6-digit code shown in Settings and
-/// receives a random device token; later connections authenticate with that
-/// token. The code rotates after use and after repeated wrong guesses, so it
-/// can't be brute-forced, and removing a device revokes its token.
+/// A phone pairs once with the long one-time secret in the Mac's pairing QR code
+/// and receives a random device token; later connections authenticate with that
+/// token. The secret rotates after use and after repeated wrong guesses, and
+/// removing a device revokes its token.
 @MainActor
 @Observable
 final class CompanionPairing {
-    private(set) var code: String
+    /// Kept across launches so a QR code on screen stays valid until it's used.
+    private(set) var secret: String
     private(set) var devices: [CompanionPairedDevice]
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var failedAttempts = 0
 
     private static let devicesKey = "companion.pairedDevices"
+    private static let secretKey = "companion.pairingSecret"
     private static let maxFailedAttempts = 5
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        code = Self.newCode()
+        secret = defaults.string(forKey: Self.secretKey) ?? ""
         devices = defaults.data(forKey: Self.devicesKey)
             .flatMap { try? JSONDecoder().decode([CompanionPairedDevice].self, from: $0) } ?? []
+        if secret.isEmpty { regenerateSecret() }
     }
 
-    func regenerateCode() {
-        code = Self.newCode()
+    func regenerateSecret() {
+        secret = Self.randomToken()
+        defaults.set(secret, forKey: Self.secretKey)
         failedAttempts = 0
     }
 
-    /// Returns a device token when the code matches, replacing any earlier pairing of the same device.
-    func pair(code attempt: String, device: CompanionDevice) -> String? {
-        guard attempt == code else {
+    /// Returns a device token when the secret matches, replacing any earlier pairing of the same device.
+    func pair(secret attempt: String, device: CompanionDevice) -> String? {
+        guard Self.constantTimeEquals(attempt, secret) else {
             failedAttempts += 1
-            if failedAttempts >= Self.maxFailedAttempts { regenerateCode() }
+            if failedAttempts >= Self.maxFailedAttempts { regenerateSecret() }
             return nil
         }
-        regenerateCode()
+        regenerateSecret()
         let token = Self.randomToken()
         devices.removeAll { $0.id == device.id }
         devices.append(CompanionPairedDevice(
@@ -69,8 +73,10 @@ final class CompanionPairing {
         }
     }
 
-    private static func newCode() -> String {
-        Int.random(in: 0..<1_000_000).formatted(.number.grouping(.never).precision(.integerLength(6)))
+    private static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let lhs = Array(lhs.utf8), rhs = Array(rhs.utf8)
+        guard lhs.count == rhs.count, !lhs.isEmpty else { return false }
+        return zip(lhs, rhs).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     private static func randomToken() -> String {
@@ -78,7 +84,7 @@ final class CompanionPairing {
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
             return UUID().uuidString + UUID().uuidString
         }
-        return Data(bytes).base64EncodedString()
+        return Data(bytes).base64URLEncodedString()
     }
 
     private static func hash(_ token: String) -> String {

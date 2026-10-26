@@ -20,18 +20,23 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.SilverMarcs.Atrium.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>atrium</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_atrium._tcp</string>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Atrium finds and connects to your Mac on the local network.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -9,16 +9,15 @@ struct CommandsScreen: View {
     private var commands: [WireCommand]? { client.commands[workspaceID] }
 
     var body: some View {
-        Group {
-            if let commands, !commands.isEmpty {
-                List(commands) { command in
-                    CommandRow(workspaceID: workspaceID, command: command)
-                }
-                .contentMargins(.top, 10)
-            } else if commands == nil {
+        List(commands ?? []) { command in
+            CommandRow(workspaceID: workspaceID, command: command)
+        }
+        .contentMargins(.top, 10)
+        .overlay {
+            if commands == nil {
                 ProgressView()
                     .controlSize(.large)
-            } else {
+            } else if commands?.isEmpty == true {
                 ContentUnavailableView(
                     "No Commands",
                     systemImage: "terminal",

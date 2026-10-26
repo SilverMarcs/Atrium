@@ -107,6 +107,24 @@ actor ClaudeSessionHistory {
         locations[id] = nil
     }
 
+    /// The end of a session's transcript. Transcripts can grow to many megabytes of
+    /// request records, so only the most recent part is read.
+    func transcript(_ id: String) throws -> [TranscriptMessage] {
+        guard let file = locate(id) else { return [] }
+        let handle = try FileHandle(forReadingFrom: file.url)
+        defer { try? handle.close() }
+        let window = Self.transcriptWindowSize
+        let start = file.stamp.size > window ? UInt64(file.stamp.size - window) : 0
+        try handle.seek(toOffset: start)
+        let data = try handle.readToEnd() ?? Data()
+        var lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+        // A window that starts mid-file begins with a partial line.
+        if start > 0, !lines.isEmpty { lines.removeFirst() }
+        return ClaudeTranscript.messages(fromLines: lines)
+    }
+
+    private static let transcriptWindowSize = 4 * 1024 * 1024
+
     private static let fileKeys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
 
     private func projectFolders() -> [URL] {

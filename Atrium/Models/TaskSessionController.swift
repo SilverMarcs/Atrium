@@ -187,6 +187,11 @@ final class TaskSessionController {
         if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
         if integrations.canSnooze(thread) { allowed.insert(.snooze) }
         if !integrations.deletingThreadIDs.contains(id) { allowed.insert(.unsnooze) }
+        let capabilities = integrations.capabilities(of: thread.provider)
+        if integrations.enabledProviders.contains(thread.provider), !capabilities.isDisjoint(with: [.prompt, .terminalPrompt]) {
+            if thread.status != .waiting { allowed.insert(.prompt) }
+            if thread.status == .processing { allowed.insert(.interrupt) }
+        }
         if !isOpening {
             if integrations.canFork(thread) { allowed.insert(.fork) }
             if integrations.canRename(thread) { allowed.insert(.rename) }
@@ -217,6 +222,58 @@ final class TaskSessionController {
         case .markUnread: Task { await integrations.markUnread(thread) }
         case .rename, .delete: break
         }
+    }
+
+    /// Sends a prompt to a thread's agent as if typed on the Mac. The thread gets a live
+    /// terminal first, out of sight if the Mac hasn't opened it, so the conversation and any
+    /// question the agent asks back are there when the user returns to the Mac.
+    func sendPrompt(_ text: String, to thread: AgentThread) async throws {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard thread.status != .waiting else {
+            throw IntegrationError(message: "\(thread.provider.name) is waiting for an answer. Reply on your Mac.")
+        }
+        let capabilities = integrations.capabilities(of: thread.provider)
+        let session = try await attachedSession(for: thread)
+        if capabilities.contains(.prompt) {
+            try await integrations.sendPrompt(text, to: thread)
+        } else if capabilities.contains(.terminalPrompt) {
+            await session.terminal.submit(text)
+        } else {
+            throw IntegrationError(message: "\(thread.provider.name) doesn’t accept prompts from Atrium.")
+        }
+    }
+
+    func interrupt(_ thread: AgentThread) async throws {
+        let capabilities = integrations.capabilities(of: thread.provider)
+        if capabilities.contains(.prompt) {
+            try await integrations.interrupt(thread)
+        } else if capabilities.contains(.terminalPrompt) {
+            try await attachedSession(for: thread).terminal.sendEscape()
+        }
+    }
+
+    private func attachedSession(for thread: AgentThread) async throws -> TaskSession {
+        if let session = appState.sessions[thread.id], !session.terminal.hasExited,
+           session.terminal.localProcessTerminalView != nil {
+            return session
+        }
+        guard canOpen(thread) else { throw IntegrationError(message: "This task can’t be opened right now.") }
+        try validateDirectory(thread.directory)
+        let launch = try await integrations.prepareLaunch(for: thread)
+        let session: TaskSession
+        if let existing = appState.sessions[thread.id] {
+            existing.thread = thread
+            existing.restart(launch: launch)
+            session = existing
+        } else {
+            session = TaskSession(thread: thread, workspace: workspace(for: thread), launch: launch)
+            appState.retain(session)
+        }
+        observeTerminal(of: session)
+        session.terminal.ensureProcess()
+        await session.terminal.waitUntilQuiet()
+        return session
     }
 
     private func canOpen(_ thread: AgentThread) -> Bool {

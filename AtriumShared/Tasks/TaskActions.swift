@@ -14,6 +14,10 @@ nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     static let markRead = Self(rawValue: 1 << 6)
     static let markUnread = Self(rawValue: 1 << 7)
     static let delete = Self(rawValue: 1 << 8)
+    /// The agent can take a prompt right now.
+    static let prompt = Self(rawValue: 1 << 9)
+    /// The agent is working and its turn can be stopped.
+    static let interrupt = Self(rawValue: 1 << 10)
 
     func allows(_ action: TaskMenuAction) -> Bool {
         switch action {

@@ -24,6 +24,11 @@ final class AppState {
         session.terminal.hasBellNotification = false
     }
 
+    /// Keeps a session alive without selecting it, for a task attached out of sight.
+    func retain(_ session: TaskSession) {
+        sessions[session.id] = session
+    }
+
     func closeSession(_ id: String) {
         if selectedThreadID == id {
             selectedThreadID = nil

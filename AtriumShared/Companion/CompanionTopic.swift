@@ -6,4 +6,6 @@ nonisolated enum CompanionTopic: Codable, Sendable, Hashable {
     case tasks
     case git(workspaceID: UUID)
     case commands(workspaceID: UUID)
+    /// A task's conversation.
+    case transcript(taskID: String)
 }

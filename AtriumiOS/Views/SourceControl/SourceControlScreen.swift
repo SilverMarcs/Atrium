@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Source control for one project: unpushed commits, staged and working
-/// changes, each shown only when non-empty. The title menu picks among the
-/// repositories found in the project; the bottom bar holds the commit field,
+/// changes, each shown only when non-empty. The list and toolbars stay in place
+/// while loading, so only the list's contents change when the status arrives.
+/// The title menu switches branches; the bottom bar holds the commit field,
 /// remote operations and the project's commands.
 struct SourceControlScreen: View {
     @Environment(CompanionClient.self) private var client
@@ -18,28 +19,13 @@ struct SourceControlScreen: View {
     private var status: WireGitStatus? { client.gitStatuses[workspaceID] }
 
     var body: some View {
-        Group {
-            if let status, status.hasRepository {
-                SourceControlChangesList(workspaceID: workspaceID, status: status) { pendingDiscard = $0 }
-            } else if status == nil {
-                ProgressView()
-                    .controlSize(.large)
-            } else {
-                ContentUnavailableView(
-                    "No Repository",
-                    systemImage: "arrow.triangle.branch",
-                    description: Text("This project folder isn’t a Git repository.")
-                )
-            }
-        }
+        SourceControlChangesList(workspaceID: workspaceID, status: status) { pendingDiscard = $0 }
         .refreshable { await client.perform(.git(workspaceID: workspaceID, action: .refresh)) }
         .navigationTitle(status?.branchName ?? "Source Control")
         .toolbarTitleDisplayMode(.inline)
         .toolbarTitleMenu {
-            if let status, !status.repositories.isEmpty {
-                RepositoryPicker(status: status) { path in
-                    client.send(.git(workspaceID: workspaceID, action: .selectRepository(path: path)))
-                }
+            if let status, status.hasRepository {
+                BranchMenuItems(workspaceID: workspaceID, status: status) { showingNewBranch = true }
             }
         }
         .searchable(text: $commitMessage, isPresented: $isCommitFieldFocused, prompt: "Commit message")
@@ -57,11 +43,9 @@ struct SourceControlScreen: View {
             }
             ToolbarSpacer(.fixed, placement: .bottomBar)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
-            if let status, status.hasRepository {
-                ToolbarSpacer(.fixed, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    SourceControlActionsMenu(workspaceID: workspaceID, status: status) { showingNewBranch = true }
-                }
+            ToolbarSpacer(.fixed, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                SourceControlActionsMenu(workspaceID: workspaceID, status: status)
             }
         }
         .sheet(isPresented: $showingInfo) {

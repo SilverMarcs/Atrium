@@ -5,6 +5,7 @@ import SwiftUI
 struct TasksScreen: View {
     @Environment(CompanionClient.self) private var client
     @Binding var selection: String?
+    let onEditMacs: () -> Void
     @State private var searchText = ""
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
@@ -40,15 +41,18 @@ struct TasksScreen: View {
         .listStyle(.sidebar)
         .animation(.default, value: sections.ids)
         .animation(.default, value: filter)
-        .refreshable { await client.perform(.refreshTasks) }
+        .refreshable {
+            if client.isConnected { await client.perform(.refreshTasks) } else { client.retryNow() }
+        }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search tasks")
         .searchPresentationToolbarBehavior(.avoidHidingContent)
         .navigationTitle(client.pairedHostName ?? "Tasks")
+        .modifier(ConnectionStatusSubtitle())
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleMenu {
+            MacSwitcherMenuItems(onEdit: onEditMacs)
+        }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Unpair", systemImage: "power", role: .cancel, action: client.unpair)
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 TaskFilterMenu(filter: $filter)
             }

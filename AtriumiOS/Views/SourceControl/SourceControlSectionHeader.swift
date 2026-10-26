@@ -1,20 +1,39 @@
 import SwiftUI
 
-/// Header for a Section in the source control list. Sections are used (not
-/// disclosure groups), so the per-section group action menu lives here on
-/// the trailing edge instead of in a section's context menu.
+/// Header for a section in the source control list: tapping the title folds the
+/// section, and the trailing menu holds actions for every file in it.
 struct SourceControlSectionHeader<Menu: View>: View {
     let title: String
     let systemImage: String
+    @Binding var isExpanded: Bool
     @ViewBuilder var menuItems: () -> Menu
 
     var body: some View {
-        SwiftUI.Menu {
-            menuItems()
-        } label: {
-            Label(title, systemImage: systemImage)
+        HStack {
+            Button {
+                withAnimation { isExpanded.toggle() }
+            } label: {
+                HStack {
+                    Label(title, systemImage: systemImage)
+                    Image(systemName: "chevron.right")
+                        .imageScale(.small)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            Spacer()
+
+            SwiftUI.Menu {
+                menuItems()
+            } label: {
+                Label("Actions", systemImage: "ellipsis")
+                    .labelStyle(.iconOnly)
+            }
+            .menuStyle(.borderlessButton)
         }
         .foregroundStyle(.secondary)
-        .menuStyle(.borderlessButton)
     }
 }
