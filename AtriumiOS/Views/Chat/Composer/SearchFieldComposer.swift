@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The task's composer: the bottom-bar search field, styled for writing
-/// prompts, with Return sending and then closing the composer.
+/// prompts, with Return sending and then closing the composer, and Close
+/// closing it with the draft kept.
 struct SearchFieldComposer: ViewModifier {
     @Bindable var composer: TaskComposer
     let prompt: String
@@ -11,6 +12,7 @@ struct SearchFieldComposer: ViewModifier {
     @FocusState private var isFocused: Bool
     @State private var isPresented = false
     @State private var delegateProxy: TextFieldDelegateProxy?
+    @State private var searchBarDelegateProxy: SearchBarDelegateProxy?
 
     func body(content: Content) -> some View {
         content
@@ -20,7 +22,7 @@ struct SearchFieldComposer: ViewModifier {
             .searchFocused($isFocused)
             .searchPresentationToolbarBehavior(.avoidHidingContent)
             .background(
-                SearchIntrospector { configure($0, referenceView: $1) }
+                SearchIntrospector { configure($0, searchBar: $1, referenceView: $2) }
             )
             .onSubmit(of: .search, send)
             .task(id: composer.focusRequestID) {
@@ -51,8 +53,24 @@ struct SearchFieldComposer: ViewModifier {
         }
     }
 
-    /// Makes Return send, by intercepting it through a delegate proxy.
-    private func configure(_ textField: UISearchTextField, referenceView: UIView) {
+    /// Closes the composer and its keyboard, keeping the draft for later.
+    ///
+    /// SwiftUI's own Close handling empties the search text, so this stands in
+    /// for it. UIKit still empties the field as the search deactivates, and
+    /// SwiftUI only pushes the draft into it when the draft changes, so the
+    /// draft is put back once UIKit is done.
+    private func close(_ textField: UISearchTextField, referenceView: UIView) {
+        withAnimation {
+            isPresented = false
+        }
+        Task {
+            restoreDraft(in: textField, referenceView: referenceView)
+        }
+    }
+
+    /// Makes Return send and Close keep the draft, by intercepting them
+    /// through delegate proxies.
+    private func configure(_ textField: UISearchTextField, searchBar: UISearchBar?, referenceView: UIView) {
         if textField.returnKeyType != .send {
             textField.returnKeyType = .send
             if textField.isFirstResponder {
@@ -69,6 +87,27 @@ struct SearchFieldComposer: ViewModifier {
             send()
             return false
         }
+        if let searchBar {
+            if searchBarDelegateProxy == nil || searchBar.delegate !== searchBarDelegateProxy {
+                let proxy = SearchBarDelegateProxy(originalDelegate: searchBar.delegate)
+                searchBar.delegate = proxy
+                searchBarDelegateProxy = proxy
+            }
+            searchBarDelegateProxy?.cancelButtonClicked = { [weak textField, weak referenceView] _ in
+                guard let textField, let referenceView else { return }
+                close(textField, referenceView: referenceView)
+            }
+        }
+        restoreDraft(in: textField, referenceView: referenceView)
+    }
+
+    /// Shows the draft in composer fields UIKit emptied while closing. Fields
+    /// being edited are left alone, as they already hold what was typed.
+    private func restoreDraft(in textField: UISearchTextField, referenceView: UIView) {
+        for field in composerFields(matching: textField, referenceView: referenceView)
+        where !field.isFirstResponder && field.text != composer.draft {
+            field.text = composer.draft
+        }
     }
 
     /// Uses regular body text and removes the magnifying glass, since this field
@@ -80,13 +119,17 @@ struct SearchFieldComposer: ViewModifier {
     /// prompt is updated directly. The task list's "Search tasks" field never
     /// shares that prompt.
     private func styleComposerFields(in textField: UISearchTextField, referenceView: UIView) {
-        guard let prompt = textField.placeholder, let window = referenceView.window else { return }
-        for field in [textField] + searchTextFields(in: window)
-        where field.placeholder == prompt {
-            if !(field.leftView is ComposerSearchFieldStyle) {
-                field.leftView = ComposerSearchFieldStyle(textField: field)
-            }
+        for field in composerFields(matching: textField, referenceView: referenceView)
+        where !(field.leftView is ComposerSearchFieldStyle) {
+            field.leftView = ComposerSearchFieldStyle(textField: field)
         }
+    }
+
+    /// `textField` and every clone of it UIKit shows, told apart by this
+    /// composer's prompt.
+    private func composerFields(matching textField: UISearchTextField, referenceView: UIView) -> [UISearchTextField] {
+        guard let prompt = textField.placeholder, let window = referenceView.window else { return [] }
+        return ([textField] + searchTextFields(in: window)).filter { $0.placeholder == prompt }
     }
 
     private func searchTextFields(in view: UIView) -> [UISearchTextField] {
