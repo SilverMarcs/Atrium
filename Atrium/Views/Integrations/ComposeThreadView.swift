@@ -43,6 +43,9 @@ struct ComposeThreadView: View {
                     workspaceID: $workspaceID,
                     model: projectPicker,
                     onSubmit: openTask,
+                    onMove: { source, destination in
+                        withAnimation { store.moveWorkspaces(from: source, to: destination) }
+                    },
                     onDelete: store.deleteWorkspace
                 )
             }

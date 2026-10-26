@@ -30,6 +30,8 @@ struct NewTaskSheet: View {
                     }
                 }
             }
+            // Projects reordered on the host slide into place.
+            .animation(.default, value: workspaces.map(\.id))
             .searchable(text: $searchText, prompt: "Search projects")
             .navigationTitle(provider?.name ?? "New Task")
             .navigationBarTitleDisplayMode(.inline)

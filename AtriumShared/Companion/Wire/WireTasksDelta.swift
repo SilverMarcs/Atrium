@@ -6,22 +6,27 @@ nonisolated struct WireTasksDelta: Codable, Sendable {
     var removedTaskIDs: [String] = []
     var upsertedWorkspaces: [WireWorkspace] = []
     var removedWorkspaceIDs: [UUID] = []
+    /// The full project order, present only when it changed: projects can be
+    /// reordered on the host, and new ones are added at the top.
+    var workspaceOrder: [UUID]?
     /// The full provider list, present only when it changed.
     var providers: [WireProvider]?
 
     var isEmpty: Bool {
         upsertedTasks.isEmpty && removedTaskIDs.isEmpty && upsertedWorkspaces.isEmpty
-            && removedWorkspaceIDs.isEmpty && providers == nil
+            && removedWorkspaceIDs.isEmpty && workspaceOrder == nil && providers == nil
     }
 
     init(from old: WireTasksSnapshot, to new: WireTasksSnapshot) {
         (upsertedTasks, removedTaskIDs) = Self.changes(from: old.tasks, to: new.tasks)
         (upsertedWorkspaces, removedWorkspaceIDs) = Self.changes(from: old.workspaces, to: new.workspaces)
+        let order = new.workspaces.map(\.id)
+        if old.workspaces.map(\.id) != order { workspaceOrder = order }
         if old.providers != new.providers { providers = new.providers }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case upsertedTasks, removedTaskIDs, upsertedWorkspaces, removedWorkspaceIDs, providers
+        case upsertedTasks, removedTaskIDs, upsertedWorkspaces, removedWorkspaceIDs, workspaceOrder, providers
     }
 
     // Empty lists are left out: most deltas touch a single task.
@@ -31,6 +36,7 @@ nonisolated struct WireTasksDelta: Codable, Sendable {
         removedTaskIDs = try container.decodeIfPresent([String].self, forKey: .removedTaskIDs) ?? []
         upsertedWorkspaces = try container.decodeIfPresent([WireWorkspace].self, forKey: .upsertedWorkspaces) ?? []
         removedWorkspaceIDs = try container.decodeIfPresent([UUID].self, forKey: .removedWorkspaceIDs) ?? []
+        workspaceOrder = try container.decodeIfPresent([UUID].self, forKey: .workspaceOrder)
         providers = try container.decodeIfPresent([WireProvider].self, forKey: .providers)
     }
 
@@ -40,6 +46,7 @@ nonisolated struct WireTasksDelta: Codable, Sendable {
         if !removedTaskIDs.isEmpty { try container.encode(removedTaskIDs, forKey: .removedTaskIDs) }
         if !upsertedWorkspaces.isEmpty { try container.encode(upsertedWorkspaces, forKey: .upsertedWorkspaces) }
         if !removedWorkspaceIDs.isEmpty { try container.encode(removedWorkspaceIDs, forKey: .removedWorkspaceIDs) }
+        try container.encodeIfPresent(workspaceOrder, forKey: .workspaceOrder)
         try container.encodeIfPresent(providers, forKey: .providers)
     }
 

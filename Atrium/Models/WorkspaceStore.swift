@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Persists `Workspace` objects (and their `Terminal` / `CommandEntry`
 /// children) to a JSON file in `~/Library/Application Support/Atrium/TaskWorkspace/`.
@@ -155,6 +156,11 @@ final class WorkspaceStore {
     func addWorkspace(_ workspace: Workspace) {
         workspace.store = self
         workspaces.insert(workspace, at: 0)
+        scheduleSave()
+    }
+
+    func moveWorkspaces(from source: IndexSet, to destination: Int) {
+        workspaces.move(fromOffsets: source, toOffset: destination)
         scheduleSave()
     }
 

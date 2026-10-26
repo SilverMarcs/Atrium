@@ -6,6 +6,7 @@ struct ComposeProjectPickerView: View {
     @Binding var workspaceID: UUID?
     @Bindable var model: ComposeProjectPickerModel
     let onSubmit: () -> Void
+    let onMove: (IndexSet, Int) -> Void
     let onDelete: (Workspace) -> Void
     @State private var didInitialScroll = false
     @FocusState private var isProjectListFocused: Bool
@@ -76,6 +77,8 @@ struct ComposeProjectPickerView: View {
                         }
                     }
                 }
+                // Search results are a subset, so their offsets don't map onto the full list.
+                .onMove(perform: model.searchText.isEmpty ? onMove : nil)
             }
             .contentMargins(10, for: .scrollContent)
             .accessibilityLabel("Projects")

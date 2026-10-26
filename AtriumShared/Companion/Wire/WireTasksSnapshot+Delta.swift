@@ -4,6 +4,10 @@ nonisolated extension WireTasksSnapshot {
     mutating func apply(_ delta: WireTasksDelta) {
         tasks = Self.merging(tasks, upserted: delta.upsertedTasks, removed: delta.removedTaskIDs)
         workspaces = Self.merging(workspaces, upserted: delta.upsertedWorkspaces, removed: delta.removedWorkspaceIDs)
+        if let order = delta.workspaceOrder {
+            let positions = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+            workspaces.sort { positions[$0.id, default: .max] < positions[$1.id, default: .max] }
+        }
         if let providers = delta.providers { self.providers = providers }
     }
 
