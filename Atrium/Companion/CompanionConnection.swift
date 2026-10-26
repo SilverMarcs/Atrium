@@ -49,17 +49,27 @@ final class CompanionConnection {
         if case .transcript(let taskID) = topic { sentTranscripts[taskID] = nil }
     }
 
-    /// Sends a task's whole conversation first, then only messages that changed.
+    /// Sends a task's recent turns first, then only messages that changed.
+    ///
+    /// The transcript is a window over the last turns, so each new turn pushes the
+    /// oldest one out. The companion keeps what it already shows instead: removing
+    /// it would shift the timeline under a reader scrolled up. Only messages that
+    /// leave the window from its end, as a rolled-back turn does, are removed.
     func push(transcript messages: [TranscriptMessage], of taskID: String) {
         guard topics.contains(.transcript(taskID: taskID)) else { return }
         if let sent = sentTranscripts[taskID] {
-            let delta = WireTranscriptDelta(from: sent, to: messages)
+            var held = messages
+            if let first = messages.first, let start = sent.firstIndex(where: { $0.id == first.id }) {
+                held.insert(contentsOf: sent[..<start], at: 0)
+            }
+            let delta = WireTranscriptDelta(from: sent, to: held)
             guard !delta.isEmpty else { return }
             send(.event(.transcriptChanged(taskID: taskID, delta: delta)))
+            sentTranscripts[taskID] = held
         } else {
             send(.event(.transcript(taskID: taskID, messages: messages)))
+            sentTranscripts[taskID] = messages
         }
-        sentTranscripts[taskID] = messages
     }
 
     func authenticated(as device: CompanionDevice) {

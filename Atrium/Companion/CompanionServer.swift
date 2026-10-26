@@ -8,7 +8,8 @@ import SystemConfiguration
 /// open through it, authenticates them against paired devices, answers requests
 /// through the same stores and controllers the Mac UI uses, and streams the state
 /// each companion subscribes to. Feeds for a project's Git status and commands
-/// run only while someone watches them.
+/// run only while someone watches them. When a task finishes or needs input,
+/// every paired phone is alerted through the relay's push service.
 @MainActor
 @Observable
 final class CompanionServer {
@@ -32,26 +33,9 @@ final class CompanionServer {
         }
     }
 
-    var relayAddress: String {
-        didSet {
-            guard relayAddress != oldValue else { return }
-            UserDefaults.standard.set(relayAddress, forKey: Self.relayAddressKey)
-            guard isEnabled else { return }
-            stop()
-            start()
-        }
-    }
-
-    var relayURL: URL? {
-        URL(string: relayAddress.trimmingCharacters(in: .whitespacesAndNewlines))
-            .flatMap { ["ws", "wss"].contains($0.scheme) && $0.host() != nil ? $0 : nil }
-    }
-
     /// What the pairing QR code encodes.
-    var pairingLink: CompanionPairingLink? {
-        guard let relayURL else { return nil }
-        return CompanionPairingLink(
-            relay: relayURL,
+    var pairingLink: CompanionPairingLink {
+        CompanionPairingLink(
             macID: CompanionIdentity.macID,
             publicKey: CompanionIdentity.publicKey,
             secret: pairing.secret,
@@ -62,7 +46,7 @@ final class CompanionServer {
     @ObservationIgnored private let workspaces: WorkspaceStore
     @ObservationIgnored private let tasks: CompanionTaskService
     @ObservationIgnored private let tasksFeed: CompanionTasksFeed
-    @ObservationIgnored private var listener: (any CompanionListener)?
+    @ObservationIgnored private var listener: RelayListener?
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
     @ObservationIgnored private var connections: [ObjectIdentifier: CompanionConnection] = [:]
     @ObservationIgnored private var gitFeeds: [UUID: CompanionGitFeed] = [:]
@@ -72,9 +56,6 @@ final class CompanionServer {
     @ObservationIgnored private var latestTasks: WireTasksSnapshot?
 
     private static let enabledKey = "companion.enabled"
-    private static let relayAddressKey = "companion.relayAddress"
-    /// The relay phones use unless the user points this Mac at their own.
-    static let defaultRelayAddress = "wss://atrium-relay.zabirraihan.workers.dev"
     /// Unauthenticated connections are dropped after this long.
     private static let authenticationTimeout: Duration = .seconds(30)
 
@@ -89,18 +70,13 @@ final class CompanionServer {
         tasks = CompanionTaskService(integrations: integrations, sessions: sessions, workspaces: workspaces)
         tasksFeed = CompanionTasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces)
         isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
-        relayAddress = UserDefaults.standard.string(forKey: Self.relayAddressKey) ?? Self.defaultRelayAddress
         integrations.onTranscriptChanged = { [weak self] taskID in self?.transcriptFeeds[taskID]?.refresh() }
         if isEnabled { start() }
     }
 
     func start() {
         guard listener == nil else { return }
-        guard let relayURL else {
-            status = .failed("Enter a relay address starting with wss://")
-            return
-        }
-        let listener = RelayListener(relay: relayURL, macID: CompanionIdentity.macID)
+        let listener = RelayListener()
         listener.onStateChange = { [weak self] state in
             switch state {
             case .starting: self?.status = .starting
@@ -109,6 +85,7 @@ final class CompanionServer {
             }
         }
         listener.onChannel = { [weak self] channel in self?.accept(channel) }
+        listener.onPushTokenUnregistered = { [weak self] token in self?.pairing.removePushToken(token) }
         self.listener = listener
         listener.start()
         tasksFeed.start { [weak self] snapshot in self?.broadcast(tasks: snapshot) }
@@ -203,6 +180,9 @@ final class CompanionServer {
         switch request {
         case .pair, .authenticate:
             return .done
+        case .registerPush(let registration):
+            if let id = connection.device?.id { pairing.registerPush(registration, forDevice: id) }
+            return .done
         case .subscribe(let topic):
             guard isValid(topic) else { return .failed(message: "That project is no longer on your Mac.") }
             connection.subscribe(topic)
@@ -224,11 +204,16 @@ final class CompanionServer {
             await tasks.integrations.refresh()
             return .done
         case .task(let id, let action):
-            return await tasks.perform(action, onTask: id)
+            let reply = await tasks.perform(action, onTask: id)
+            // Reconcile optimistic companion actions before acknowledging them.
+            broadcast(tasks: tasksFeed.snapshot())
+            return reply
         case .compose(let provider, let workspaceID):
             return await tasks.compose(provider: provider, workspaceID: workspaceID)
-        case .prompt(let taskID, let text):
-            return await tasks.prompt(text, toTask: taskID)
+        case .prompt(let taskID, let text, let images):
+            let reply = await tasks.prompt(text, images: images, toTask: taskID)
+            broadcast(tasks: tasksFeed.snapshot())
+            return reply
         case .interrupt(let taskID):
             return await tasks.interrupt(task: taskID)
         case .updateScratchpad(let workspaceID, let text):
@@ -267,9 +252,27 @@ final class CompanionServer {
     // MARK: - Feeds
 
     private func broadcast(tasks snapshot: WireTasksSnapshot) {
+        if let latestTasks {
+            for task in snapshot.tasksNeedingAttention(since: latestTasks) { alertPhones(about: task) }
+        }
         latestTasks = snapshot
         for connection in connections.values where connection.isAuthenticated {
             connection.push(tasks: snapshot)
+        }
+    }
+
+    /// Pushes a notification to every paired phone that registered for them,
+    /// whether or not it's connected.
+    private func alertPhones(about task: WireTask) {
+        for device in pairing.devices {
+            guard let push = device.push else { continue }
+            listener?.push(RelayPushAlert(
+                token: push.token,
+                environment: push.environment,
+                title: task.projectName,
+                body: "\(task.title) — \(task.status == .waiting ? "Needs your input" : "Done")",
+                taskID: task.id
+            ))
         }
     }
 

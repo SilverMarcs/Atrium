@@ -4,23 +4,21 @@ import Foundation
 /// open to the relay; for each phone that arrives, it opens a data connection the
 /// relay joins to the phone's, and ends a Noise handshake inside it, so the relay
 /// only passes ciphertext. Nothing on the Mac listens for incoming connections.
+/// The control connection also carries task alerts for the relay to push to phones.
 @MainActor
 final class RelayListener: CompanionListener {
     var onChannel: ((any CompanionChannel) -> Void)?
     var onStateChange: ((CompanionListenerState) -> Void)?
+    /// A push token APNs no longer accepts, so the Mac stops using it.
+    var onPushTokenUnregistered: ((String) -> Void)?
 
-    private let relay: URL
-    private let macID: String
+    private let relay = CompanionProtocol.relayURL
+    private let macID = CompanionIdentity.macID
     private var control: WebSocketChannel?
     private var keepAlive: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var retryDelay: Duration = .seconds(1)
     private var isStopped = true
-
-    init(relay: URL, macID: String) {
-        self.relay = relay
-        self.macID = macID
-    }
 
     func start() {
         guard isStopped else { return }
@@ -39,7 +37,7 @@ final class RelayListener: CompanionListener {
 
     private func connect() {
         onStateChange?(.starting)
-        let control = WebSocketChannel(url: relay.appending(path: "v1/mac/\(macID)"))
+        let control = WebSocketChannel(url: relay.appending(path: "v1/mac/\(macID)"), headers: authorization)
         self.control = control
         control.onReady = { [weak self] in
             guard let self else { return }
@@ -52,16 +50,39 @@ final class RelayListener: CompanionListener {
         control.start()
     }
 
+    /// Asks the relay to alert a phone. Dropped while the relay is unreachable.
+    func push(_ alert: RelayPushAlert) {
+        guard let control, let data = try? JSONEncoder().encode(alert) else { return }
+        control.send(data)
+    }
+
     private func receive(_ data: Data) {
-        guard let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              message["type"] as? String == "connect",
-              let id = message["id"] as? String, !id.isEmpty, id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return }
-        let data = WebSocketChannel(url: relay.appending(path: "v1/mac/\(macID)/data/\(id)"))
+        guard let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        switch message["type"] as? String {
+        case "connect":
+            guard let id = message["id"] as? String, !id.isEmpty,
+                  id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return }
+            accept(id: id)
+        case "pushUnregistered":
+            guard let token = message["token"] as? String else { return }
+            onPushTokenUnregistered?(token)
+        default:
+            break
+        }
+    }
+
+    private func accept(id: String) {
+        let data = WebSocketChannel(url: relay.appending(path: "v1/mac/\(macID)/data/\(id)"), headers: authorization)
         onChannel?(NoiseChannel(
             inner: data,
             role: .responder(staticKey: CompanionIdentity.privateKey),
             prologue: CompanionPairingLink.prologue(macID: macID)
         ))
+    }
+
+    /// Proves to the relay that this Mac owns its ID.
+    private var authorization: [(name: String, value: String)] {
+        [("Authorization", "Bearer \(CompanionIdentity.relaySecret.base64URLEncodedString())")]
     }
 
     /// A ping every half minute keeps the relay connection from idling out and
@@ -72,7 +93,8 @@ final class RelayListener: CompanionListener {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 guard let self, !Task.isCancelled else { return }
-                self.control?.send(Data("ping".utf8))
+                // As text, so the relay answers it without waking the room.
+                self.control?.send(text: "ping")
             }
         }
     }

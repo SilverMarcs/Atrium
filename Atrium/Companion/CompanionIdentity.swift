@@ -14,9 +14,20 @@ enum CompanionIdentity {
 
     static var publicKey: Data { privateKey.publicKey.rawRepresentation }
 
-    /// Names this Mac on the relay. Derived from the public key, so it reveals nothing else.
+    /// Proves to the relay that this Mac owns `macID`, so nobody else can take
+    /// its room. Derived from the private key, so it needs no storage of its own.
+    static var relaySecret: Data {
+        HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: privateKey.rawRepresentation),
+            info: Data("atrium-relay-secret-v1".utf8),
+            outputByteCount: 32
+        ).withUnsafeBytes { Data($0) }
+    }
+
+    /// Names this Mac on the relay: a hash of `relaySecret`, which the relay checks
+    /// the secret against. It reveals nothing about the keys.
     static var macID: String {
-        Data(SHA256.hash(data: privateKey.publicKey.rawRepresentation)).prefix(16).base64URLEncodedString()
+        Data(SHA256.hash(data: relaySecret)).prefix(16).base64URLEncodedString()
     }
 
     private static func loadKey() -> Curve25519.KeyAgreement.PrivateKey? {

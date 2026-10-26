@@ -13,8 +13,8 @@ final class RelayClientChannel: CompanionChannel {
     private var isReady = false
     private var timeout: Task<Void, Never>?
 
-    init(relay: URL, macID: String) {
-        socket = WebSocketChannel(url: relay.appending(path: "v1/phone/\(macID)"))
+    init(macID: String) {
+        socket = WebSocketChannel(url: CompanionProtocol.relayURL.appending(path: "v1/phone/\(macID)"))
     }
 
     func start() {

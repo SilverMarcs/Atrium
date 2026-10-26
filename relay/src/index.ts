@@ -1,25 +1,76 @@
 /**
- * Atrium relay: joins an iPhone to a Mac when neither can reach the other directly.
+ * Atrium relay: joins an iPhone to a Mac when neither can reach the other directly,
+ * and sends the Mac's task alerts to its phones through APNs.
  *
  * Both ends connect out over WebSockets, so the Mac needs no open ports. Each Mac
  * has a room (a Durable Object named by its Mac ID):
  *
- *   GET /v1/mac/:macID            The Mac's control connection. Told of each phone.
+ *   GET /v1/mac/:macID            The Mac's control connection. Told of each phone,
+ *                                 and carries the Mac's push requests.
  *   GET /v1/phone/:macID          A phone arriving. Gets "ready" once the Mac picks it
  *                                 up, or "offline" if the Mac isn't connected.
  *   GET /v1/mac/:macID/data/:id   The Mac's connection for that phone.
  *
- * After "ready", the room forwards every message between a phone and its data
- * connection unchanged. They're end-to-end encrypted (Noise NK), so the relay can
- * neither read them nor pose as the Mac. Rooms use WebSocket hibernation, so idle
- * connections cost nothing.
+ * A Mac proves it owns its ID with a secret whose hash is the ID, so nobody else
+ * can take its room. After "ready", the room forwards every message between a
+ * phone and its data connection unchanged. They're end-to-end encrypted (Noise
+ * NK), so the relay can neither read them nor pose as the Mac. Rooms use
+ * WebSocket hibernation, so idle connections cost nothing.
  */
 
-interface Env {
+import { type APNsEnv, type APNsEnvironment, deliver } from "./apns";
+
+interface Env extends APNsEnv {
   ROOMS: DurableObjectNamespace;
 }
 
+/** A task alert the Mac asks the relay to send to one of its phones. */
+interface PushRequest {
+  type: "push";
+  token: string;
+  environment: APNsEnvironment;
+  title: string;
+  body: string;
+  taskID: string;
+}
+
 const route = /^\/v1\/(mac|phone)\/([A-Za-z0-9_-]{16,64})(?:\/data\/([A-Za-z0-9-]{1,64}))?$/;
+const encoder = new TextEncoder();
+/** Bounds the alerts one Mac can send, should its secret ever leak. */
+const maxPushesPerHour = 300;
+
+function base64url(bytes: ArrayBuffer | Uint8Array): string {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function decodeBase64url(text: string): Uint8Array | undefined {
+  try {
+    const padded = text.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - (text.length % 4)) % 4);
+    return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The Mac ID is the first 16 bytes of the SHA-256 of the Mac's relay secret. */
+async function isOwner(request: Request, macID: string): Promise<boolean> {
+  const secret = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(request.headers.get("Authorization") ?? "")?.[1];
+  const bytes = secret ? decodeBase64url(secret) : undefined;
+  if (!bytes || bytes.length !== 32) return false;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return base64url(new Uint8Array(digest).slice(0, 16)) === macID;
+}
+
+function isPushRequest(value: unknown): value is PushRequest {
+  const push = value as PushRequest;
+  return !!push && push.type === "push"
+    && typeof push.token === "string" && /^[0-9a-f]{32,256}$/i.test(push.token)
+    && (push.environment === "sandbox" || push.environment === "production")
+    && typeof push.title === "string" && push.title.length <= 200
+    && typeof push.body === "string" && push.body.length > 0 && push.body.length <= 1000
+    && typeof push.taskID === "string" && push.taskID.length <= 256;
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -30,13 +81,18 @@ export default {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket", { status: 426 });
     }
+    if (match[1] === "mac" && !(await isOwner(request, match[2]))) {
+      return new Response("Unauthorized", { status: 401 });
+    }
     const room = env.ROOMS.get(env.ROOMS.idFromName(match[2]));
     return room.fetch(request);
   },
 };
 
 export class Room implements DurableObject {
-  constructor(private readonly state: DurableObjectState) {
+  private pushWindow = { start: 0, count: 0 };
+
+  constructor(private readonly state: DurableObjectState, private readonly env: Env) {
     // Keep-alive pings are answered without waking the room.
     state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
@@ -69,7 +125,11 @@ export class Room implements DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): void {
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    if (this.state.getTags(socket).includes("control")) {
+      await this.handleControl(socket, message);
+      return;
+    }
     const peer = this.peer(socket);
     if (peer && peer.readyState === WebSocket.OPEN) peer.send(message);
   }
@@ -80,6 +140,37 @@ export class Room implements DurableObject {
 
   webSocketError(socket: WebSocket): void {
     this.closePeer(socket, 1011, "Connection error");
+  }
+
+  /** The Mac's control connection only carries push requests. */
+  private async handleControl(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    let push: unknown;
+    try {
+      push = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message));
+    } catch {
+      return;
+    }
+    if (!isPushRequest(push) || !this.allowPush()) return;
+    const collapseID = base64url(await crypto.subtle.digest("SHA-256", encoder.encode(push.taskID)));
+    const payload = {
+      aps: { alert: { title: push.title, body: push.body }, sound: "default", "thread-id": push.taskID },
+      taskID: push.taskID,
+    };
+    try {
+      const result = await deliver(this.env, push.token, push.environment, payload, collapseID);
+      if (result === "unregistered" && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "pushUnregistered", token: push.token }));
+      }
+    } catch (error) {
+      console.error("Push failed", error instanceof Error ? error.message : "unknown");
+    }
+  }
+
+  private allowPush(): boolean {
+    const now = Date.now();
+    if (now - this.pushWindow.start > 3_600_000) this.pushWindow = { start: now, count: 0 };
+    this.pushWindow.count += 1;
+    return this.pushWindow.count <= maxPushesPerHour;
   }
 
   /** A phone's data connection, or a data connection's phone. */

@@ -8,4 +8,6 @@ struct CompanionPairedDevice: Codable, Identifiable, Equatable {
     let tokenHash: String
     let pairedAt: Date
     var lastConnectedAt: Date?
+    /// Where to send this device's task alerts, once it has registered for them.
+    var push: CompanionPushRegistration?
 }

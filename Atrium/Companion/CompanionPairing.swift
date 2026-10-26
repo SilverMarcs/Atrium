@@ -62,6 +62,25 @@ final class CompanionPairing {
         return devices[index]
     }
 
+    func registerPush(_ registration: CompanionPushRegistration, forDevice id: UUID) {
+        guard let index = devices.firstIndex(where: { $0.id == id }), devices[index].push != registration else { return }
+        // A token belongs to one install; another device holding it is stale.
+        for other in devices.indices where devices[other].push?.token == registration.token {
+            devices[other].push = nil
+        }
+        devices[index].push = registration
+        save()
+    }
+
+    /// Forgets a push token APNs reported as no longer valid.
+    func removePushToken(_ token: String) {
+        guard devices.contains(where: { $0.push?.token == token }) else { return }
+        for index in devices.indices where devices[index].push?.token == token {
+            devices[index].push = nil
+        }
+        save()
+    }
+
     func remove(_ device: CompanionPairedDevice) {
         devices.removeAll { $0.id == device.id }
         save()

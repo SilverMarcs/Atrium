@@ -22,6 +22,8 @@ struct CompanionTaskService {
                 sessions.snooze(thread, until: date)
             case .unsnooze:
                 sessions.unsnooze(thread)
+            case .viewed:
+                integrations.acknowledgeResult(for: thread.id)
             case .markRead:
                 await integrations.markRead(thread)
             case .markUnread:
@@ -37,12 +39,17 @@ struct CompanionTaskService {
         }
     }
 
-    func prompt(_ text: String, toTask id: String) async -> CompanionReply {
+    func prompt(_ text: String, images: [Data], toTask id: String) async -> CompanionReply {
         guard let thread = integrations.threads.first(where: { $0.id == id }) else {
             return .failed(message: "This task no longer exists.")
         }
         do {
-            try await sessions.sendPrompt(text, to: thread)
+            let imageURLs = try CompanionAttachments.save(images)
+            try await sessions.sendPrompt(text, images: imageURLs, to: thread)
+            // A successful prompt wakes the task even before its provider reports
+            // the new turn, matching the companion's optimistic move.
+            sessions.restore(thread)
+            sessions.unsnooze(thread)
             return .done
         } catch {
             return .failed(message: error.localizedDescription)

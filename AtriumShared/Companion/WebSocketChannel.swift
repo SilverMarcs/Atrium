@@ -19,17 +19,19 @@ final class WebSocketChannel: CompanionChannel {
         self.connection = connection
     }
 
-    convenience init(url: URL) {
-        let parameters = Self.parameters(secure: url.scheme == "wss")
+    /// Dials `url`, sending `headers` with the WebSocket handshake.
+    convenience init(url: URL, headers: [(name: String, value: String)] = []) {
+        let parameters = Self.parameters(secure: url.scheme == "wss", headers: headers)
         self.init(connection: NWConnection(to: .url(url), using: parameters))
     }
 
     /// TCP, or TLS for `wss`, with a WebSocket application protocol.
-    static func parameters(secure: Bool = false) -> NWParameters {
+    static func parameters(secure: Bool = false, headers: [(name: String, value: String)] = []) -> NWParameters {
         let parameters: NWParameters = secure ? .tls : .tcp
         let webSocket = NWProtocolWebSocket.Options()
         webSocket.autoReplyPing = true
         webSocket.maximumMessageSize = CompanionProtocol.maxMessageBytes
+        if !headers.isEmpty { webSocket.setAdditionalHeaders(headers) }
         parameters.defaultProtocolStack.applicationProtocols.insert(webSocket, at: 0)
         return parameters
     }
@@ -43,8 +45,17 @@ final class WebSocketChannel: CompanionChannel {
     }
 
     func send(_ data: Data) {
+        send(data, opcode: .binary)
+    }
+
+    /// Sends a text message, such as a keep-alive the far end matches as text.
+    func send(text: String) {
+        send(Data(text.utf8), opcode: .text)
+    }
+
+    private func send(_ data: Data, opcode: NWProtocolWebSocket.Opcode) {
         guard !isClosed else { return }
-        let metadata = NWProtocolWebSocket.Metadata(opcode: .binary)
+        let metadata = NWProtocolWebSocket.Metadata(opcode: opcode)
         let context = NWConnection.ContentContext(identifier: "message", metadata: [metadata])
         connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self] error in
             guard let error else { return }
