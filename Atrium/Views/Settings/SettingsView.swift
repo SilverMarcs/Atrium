@@ -7,7 +7,7 @@ struct SettingsView: View {
                 GeneralSettingsView()
             }
 
-            Tab("Integrations", systemImage: "puzzlepiece.extension") {
+            Tab("Agents", systemImage: "puzzlepiece.extension") {
                 IntegrationsSettingsView()
             }
 

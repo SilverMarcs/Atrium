@@ -12,17 +12,17 @@ struct CompanionSettingsView: View {
                     LabeledContent("Status") {
                         CompanionStatusLabel(status: server.status)
                     }
-                    LabeledContent("Connected") {
-                        Text(server.connectedDevices.isEmpty
-                            ? "No devices"
-                            : server.connectedDevices.map(\.name).formatted(.list(type: .and)))
-                            .foregroundStyle(.secondary)
-                    }
+                    // LabeledContent("Connected") {
+                        // Text(server.connectedDevices.isEmpty
+                            // ? "No devices"
+                            // : server.connectedDevices.map(\.name).formatted(.list(type: .and)))
+                            // .foregroundStyle(.secondary)
+                    // }
                 }
             } header: {
                 Text("Companion")
             } footer: {
-                Text("The Atrium iPhone app can follow your tasks, send prompts, run commands and manage Git from any network. It connects through the Atrium relay with end-to-end encryption, so the relay only passes data it can’t read. Alerts for finished tasks are sent through Apple’s push service. Your Mac stays awake while this is on.")
+                Text("The Atrium iPhone app can connect to your computer with end-to-end encryption.")
             }
 
             if server.isEnabled, let url = server.pairingLink.url {
@@ -36,7 +36,7 @@ struct CompanionSettingsView: View {
                         Spacer()
                     }
                     ShareLink("Share Pairing Link", item: url)
-                    Button("New QR Code") { server.pairing.regenerateSecret() }
+                    // Button("New QR Code") { server.pairing.regenerateSecret() }
                 } header: {
                     Text("Pair an iPhone")
                 } footer: {
