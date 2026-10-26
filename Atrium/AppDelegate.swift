@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     static func sendThreadNotification(_ thread: AgentThread) {
+        guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
         let content = UNMutableNotificationContent()
         content.title = thread.projectName.isEmpty ? thread.provider.name : thread.projectName
         content.body = "\(thread.title) — \(thread.status == .waiting ? "Needs your input" : "Done")"

@@ -4,6 +4,8 @@ nonisolated enum CompanionRequest: Codable, Sendable {
     /// Trades the one-time secret from the Mac's pairing QR code for a long-lived device token.
     case pair(secret: String, device: CompanionDevice)
     case authenticate(token: String, deviceID: UUID)
+    /// Whether this companion is in the foreground, for routing task alerts.
+    case activity(CompanionActivity)
     /// Where the Mac sends this phone's task alerts. Sent after each authentication.
     case registerPush(CompanionPushRegistration)
     case subscribe(CompanionTopic)

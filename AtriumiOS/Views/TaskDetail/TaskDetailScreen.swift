@@ -34,8 +34,15 @@ struct TaskDetailScreen: View {
                 )
             }
         }
+        .onAppear { client.setVisibleTask(taskID) }
+        .onDisappear { client.clearVisibleTask(taskID) }
         .navigationTitle(task?.title ?? "Task")
-        .navigationSubtitle(task?.projectName ?? "")
+        // iPad has no More menu, so its subtitle names the model in its place, and
+        // leaves the connection status to the task list beside it.
+        .modifier(ConnectionStatusSubtitle(
+            subtitle: (isPhone ? task?.projectName : task.map { $0.modelSummary ?? $0.provider.name }) ?? "",
+            showsStatus: isPhone
+        ))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
@@ -124,6 +131,7 @@ struct TaskDetailScreen: View {
         // The screen outlives its task when another opens, so each task keeps
         // its own draft and images, waiting for it to open again.
         .onChange(of: taskID) { oldID, newID in
+            client.setVisibleTask(newID)
             composer.isFocused = false
             if composer.hasContent {
                 stashedComposers[oldID] = composer

@@ -9,7 +9,7 @@ import SystemConfiguration
 /// through the same stores and controllers the Mac UI uses, and streams the state
 /// each companion subscribes to. Feeds for a project's Git status and commands
 /// run only while someone watches them. When a task finishes or needs input,
-/// every paired phone is alerted through the relay's push service.
+/// alerts follow the device currently using Atrium.
 @MainActor
 @Observable
 final class CompanionServer {
@@ -102,7 +102,10 @@ final class CompanionServer {
         awakeActivity = nil
         tasksFeed.stop()
         latestTasks = nil
-        for connection in connections.values { connection.close() }
+        for connection in connections.values {
+            NotificationRouting.shared.remove(connectionID: connection.id)
+            connection.close()
+        }
         connections.removeAll()
         updateFeeds()
         connectedDevices = []
@@ -133,6 +136,7 @@ final class CompanionServer {
     }
 
     private func disconnect(_ connection: CompanionConnection) {
+        NotificationRouting.shared.remove(connectionID: connection.id)
         connections.removeValue(forKey: ObjectIdentifier(connection))
         updateFeeds()
         updateConnectedDevices()
@@ -170,6 +174,7 @@ final class CompanionServer {
     private func authenticate(_ connection: CompanionConnection, as device: CompanionDevice) {
         // A phone that reconnects after iOS dropped its socket replaces the stale connection.
         for other in connections.values where other !== connection && other.device?.id == device.id {
+            NotificationRouting.shared.remove(connectionID: other.id)
             other.close()
         }
         connection.authenticated(as: device)
@@ -177,8 +182,15 @@ final class CompanionServer {
     }
 
     private func handleAuthenticated(_ request: CompanionRequest, from connection: CompanionConnection) async -> CompanionReply {
+        // Any request from a companion in the foreground means it's in use.
+        NotificationRouting.shared.used(connectionID: connection.id)
         switch request {
         case .pair, .authenticate:
+            return .done
+        case .activity(let activity):
+            if let device = connection.device {
+                NotificationRouting.shared.update(activity, deviceID: device.id, connectionID: connection.id)
+            }
             return .done
         case .registerPush(let registration):
             if let id = connection.device?.id { pairing.registerPush(registration, forDevice: id) }
@@ -261,11 +273,11 @@ final class CompanionServer {
         }
     }
 
-    /// Pushes a notification to every paired phone that registered for them,
-    /// whether or not it's connected.
+    /// Routes alerts to the active device, or all devices when none is active.
     private func alertPhones(about task: WireTask) {
         for device in pairing.devices {
-            guard let push = device.push else { continue }
+            guard let push = device.push,
+                  NotificationRouting.shared.shouldNotify(device.id, taskID: task.id) else { continue }
             listener?.push(RelayPushAlert(
                 token: push.token,
                 environment: push.environment,

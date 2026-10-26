@@ -52,6 +52,8 @@ final class CompanionClient {
     /// Paired but without a live connection, so screens show cached state.
     var isReconnecting: Bool { isPaired && !isConnected }
 
+    @ObservationIgnored private var activity = CompanionActivity(isActive: false, taskID: nil)
+    @ObservationIgnored private var supportsActivity = false
     /// This install's APNs token, sent to each host so it can alert this phone.
     @ObservationIgnored private var pushRegistration: CompanionPushRegistration?
     @ObservationIgnored private var channel: (any CompanionChannel)?
@@ -135,6 +137,30 @@ final class CompanionClient {
 
     func sceneDidBecomeActive() {
         connectToPairedHost()
+    }
+
+    var visibleTaskID: String? { activity.isActive ? activity.taskID : nil }
+
+    func setSceneActive(_ active: Bool) {
+        activity.isActive = active
+        publishActivity()
+        if active { sceneDidBecomeActive() }
+    }
+
+    func setVisibleTask(_ taskID: String?) {
+        guard activity.taskID != taskID else { return }
+        activity.taskID = taskID
+        publishActivity()
+    }
+
+    func clearVisibleTask(_ taskID: String) {
+        if activity.taskID == taskID { setVisibleTask(nil) }
+    }
+
+    private func publishActivity() {
+        guard isConnected, supportsActivity else { return }
+        let snapshot = activity
+        Task { try? await request(.activity(snapshot)) }
     }
 
     // MARK: - Topics
@@ -442,6 +468,7 @@ final class CompanionClient {
             }
             state = .connected(hostName: host.displayName)
             failedAttempts = 0
+            publishActivity()
             registerForPush()
             for topic in topicCounts.keys { subscribe(topic) }
         } catch {
@@ -490,6 +517,7 @@ final class CompanionClient {
         reconnectTask = nil
         let channel = channel
         self.channel = nil
+        supportsActivity = false
         channel?.close()
         for continuation in pending.values {
             continuation.resume(throwing: CompanionClientError.disconnected)
@@ -509,8 +537,8 @@ final class CompanionClient {
 
     private func apply(_ event: CompanionEvent) {
         switch event {
-        case .hello:
-            break
+        case .hello(_, let protocolVersion):
+            supportsActivity = protocolVersion >= 5
         case .tasks(let snapshot):
             hostTasks = snapshot
             settleTasksAwaitingAgent()

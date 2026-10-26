@@ -5,6 +5,7 @@ import Foundation
 /// sent as deltas against what this connection last received.
 @MainActor
 final class CompanionConnection {
+    let id = UUID()
     private let channel: any CompanionChannel
     private weak var server: CompanionServer?
     private(set) var device: CompanionDevice?

@@ -17,14 +17,15 @@ struct AtriumiOSApp: App {
             CompanionRootView()
                 .environment(client)
                 .task {
+                    NotificationCoordinator.shared.visibleTaskID = { [client] in client.visibleTaskID }
                     NotificationCoordinator.shared.onTap = { [client] taskID in
                         client.pendingTaskID = taskID
                     }
                     client.start()
                 }
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { client.sceneDidBecomeActive() }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            client.setSceneActive(phase == .active)
         }
     }
 }

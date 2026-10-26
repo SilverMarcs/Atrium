@@ -49,6 +49,9 @@ struct ContentView: View {
                 )
             }
         }
+        .onChange(of: appState.selectedSession?.id, initial: true) { _, id in
+            NotificationRouting.shared.macTaskID = id
+        }
         .modifier(TaskIntegrationModifier())
         .focusedSceneValue(\.editorPanel, appState.selectedWorkspace?.editorPanel)
         .focusedSceneValue(\.isMainWindow, true)

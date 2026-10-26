@@ -9,7 +9,7 @@ import Foundation
 /// `CompanionEvent`s for the topics a client subscribes to, first as a full
 /// snapshot and then as deltas.
 nonisolated enum CompanionProtocol {
-    static let version = 4
+    static let version = 5
     /// Bounds a single message so a corrupt or hostile peer can't exhaust memory.
     static let maxMessageBytes = 16 * 1024 * 1024
     /// The Atrium relay every Mac and phone connect through.

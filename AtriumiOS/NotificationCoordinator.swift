@@ -6,13 +6,16 @@ import UserNotifications
 final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationCoordinator()
 
+    var visibleTaskID: (() -> String?)?
     var onTap: ((String) -> Void)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        if let taskID = notification.request.content.userInfo["taskID"] as? String,
+           taskID == visibleTaskID?() { return [] }
+        return [.banner, .sound]
     }
 
     func userNotificationCenter(
