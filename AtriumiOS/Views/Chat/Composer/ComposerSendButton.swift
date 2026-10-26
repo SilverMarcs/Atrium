@@ -10,7 +10,7 @@ struct ComposerSendButton: View {
 
     var body: some View {
         Group {
-            if let task, task.actions.contains(.interrupt), !composer.hasContent {
+            if let task, task.actions.contains(.interrupt), !composer.hasContent, !composer.dictation.isActive, !composer.isSubmittingDictation {
                 Button(role: .destructive) {
                     client.send(.interrupt(taskID: task.id))
                 } label: {
@@ -37,6 +37,6 @@ struct ComposerSendButton: View {
     }
 
     private var isSendDisabled: Bool {
-        task == nil || !composer.hasContent
+        task == nil || composer.isSubmittingDictation || (!composer.hasContent && !composer.dictation.isActive)
     }
 }

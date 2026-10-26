@@ -23,6 +23,14 @@ struct SearchFieldComposer: ViewModifier {
                 SearchIntrospector { configure($0, referenceView: $1) }
             )
             .onSubmit(of: .search, send)
+            .task(id: composer.focusRequestID) {
+                guard composer.focusRequestID != nil else { return }
+                isPresented = true
+                // Let the search field open before requesting its keyboard.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                isFocused = true
+            }
             // Mirror focus into the composer, where the timeline observes it
             // to scroll to the latest message (FocusState is view-local).
             .onChange(of: isFocused) { _, focused in

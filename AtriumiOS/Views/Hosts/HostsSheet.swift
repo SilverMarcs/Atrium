@@ -34,6 +34,7 @@ struct HostsSheet: View {
                         Label("Pair New Host", systemImage: "plus")
                     }
                 }
+                DictationSettingsSection()
             }
             .navigationTitle("Hosts")
             .navigationBarTitleDisplayMode(.inline)

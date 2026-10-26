@@ -34,14 +34,19 @@ struct TaskInputBar: View {
                     .fixedSize()
                     .scaleEffect(0.97)
 
-                    TextField(prompt, text: $composer.draft, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .focused($isFocused)
-                        .lineLimit(1 ... 7)
-                        .padding(.horizontal, 4)
-                        .padding(8)
-                        .glassEffect(in: .rect(cornerRadius: 20))
-                        .onSubmit(send)
+                    HStack(alignment: .bottom, spacing: 0) {
+                        TextField(prompt, text: $composer.draft, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .focused($isFocused)
+                            .lineLimit(1 ... 7)
+                            .padding(.horizontal, 4)
+                            .padding(8)
+                            .onSubmit(send)
+
+                        ComposerDictationButton(isInline: true)
+                            .buttonStyle(.plain)
+                    }
+                    .glassEffect(in: .rect(cornerRadius: 20))
 
                     ComposerSendButton(task: task, send: send)
                 }

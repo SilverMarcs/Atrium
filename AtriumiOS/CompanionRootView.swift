@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompanionRootView: View {
     @Environment(CompanionClient.self) private var client
+    @State private var dictationSettings = DictationSettings()
     @State private var selectedTaskID: String?
     /// The task the detail column keeps showing once going back on iPhone has
     /// cleared the selection. See `detailTaskID`.
@@ -44,6 +45,7 @@ struct CompanionRootView: View {
                 }
             }
         }
+        .environment(dictationSettings)
         .onOpenURL { url in client.handle(url) }
         .task(id: client.isPaired) {
             guard client.isPaired else { return }
@@ -65,6 +67,7 @@ struct CompanionRootView: View {
         }
         .sheet(isPresented: $showingHosts) {
             HostsSheet()
+                .environment(dictationSettings)
         }
         .alert(
             "Couldn’t Complete Action",

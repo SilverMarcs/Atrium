@@ -2,6 +2,8 @@ import SwiftUI
 
 /// One task's conversation, with a prompt field that sends to its agent on the host.
 struct TaskDetailScreen: View {
+    @Environment(DictationSettings.self) private var dictationSettings
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(CompanionClient.self) private var client
     let taskID: String
     @State private var showingScratchPad = false
@@ -34,8 +36,17 @@ struct TaskDetailScreen: View {
                 )
             }
         }
+        .onChange(of: dictationSettings.isEnabled) { _, enabled in
+            if !enabled { composer.dictation.cancel() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { composer.dictation.cancel() }
+        }
         .onAppear { client.setVisibleTask(taskID) }
-        .onDisappear { client.clearVisibleTask(taskID) }
+        .onDisappear {
+            client.clearVisibleTask(taskID)
+            composer.dictation.cancel()
+        }
         .navigationTitle(task?.title ?? "Task")
         // iPad has no More menu, so its subtitle names the model in its place, and
         // leaves the connection status to the task list beside it.
@@ -104,20 +115,31 @@ struct TaskDetailScreen: View {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    // A running agent can be stopped from where dictation sits.
+                    ComposerDictationButton()
+                }
+                if dictationSettings.isEnabled, task?.actions.contains(.interrupt) == true {
+                    ToolbarSpacer(.fixed, placement: .bottomBar)
+                }
+                ToolbarItem(placement: .bottomBar) {
                     if let task, task.actions.contains(.interrupt) {
                         Button("Stop", systemImage: "stop.fill", role: .destructive) {
                             client.send(.interrupt(taskID: task.id))
                         }
                         .tint(.red)
-                    } else {
-                        ComposerDictationButton()
                     }
                 }
             }
         }
         .taskComposer(composer, task: task, prompt: "Ask anything…", submit: sendDraft)
         .composerAttachmentPickers(composer)
+        .alert("Couldn’t Dictate", isPresented: Binding(
+            get: { composer.dictation.error != nil },
+            set: { if !$0 { composer.dictation.error = nil } }
+        )) {
+            Button("OK") { composer.dictation.error = nil }
+        } message: {
+            Text(composer.dictation.error ?? "")
+        }
         .environment(composer)
         .sheet(isPresented: $showingDetails) {
             if let task { TaskDetailsSheet(task: task) }
@@ -132,6 +154,7 @@ struct TaskDetailScreen: View {
         // its own draft and images, waiting for it to open again.
         .onChange(of: taskID) { oldID, newID in
             client.setVisibleTask(newID)
+            composer.dictation.cancel()
             composer.isFocused = false
             if composer.hasContent {
                 stashedComposers[oldID] = composer

@@ -5,7 +5,10 @@ import Foundation
 @MainActor
 @Observable
 final class TaskComposer {
+    let dictation = ComposerDictation()
     var draft = ""
+    private(set) var isSubmittingDictation = false
+    private(set) var focusRequestID: UUID?
     private(set) var images: [ComposerImage] = []
     var isPickingPhotos = false
     var isTakingPhoto = false
@@ -14,6 +17,11 @@ final class TaskComposer {
     var isFocused = false
 
     static let maxImages = 4
+
+    func appendTranscription(_ text: String) {
+        draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
+        focusRequestID = UUID()
+    }
 
     var remainingImageSlots: Int { max(Self.maxImages - images.count, 0) }
 
@@ -39,6 +47,21 @@ final class TaskComposer {
     /// - Returns: Whether the prompt was sent.
     @discardableResult
     func submit(to task: WireTask, using client: CompanionClient) -> Bool {
+        guard !isSubmittingDictation else { return false }
+        if dictation.isActive {
+            let session = dictation.sessionID
+            isSubmittingDictation = true
+            Task {
+                defer { isSubmittingDictation = false }
+                guard await dictation.finish(session: session), let currentTask = client.task(task.id) else { return }
+                _ = sendDraft(to: currentTask, using: client)
+            }
+            return false
+        }
+        return sendDraft(to: task, using: client)
+    }
+
+    private func sendDraft(to task: WireTask, using client: CompanionClient) -> Bool {
         guard hasContent else { return false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard task.actions.contains(.prompt) else {
