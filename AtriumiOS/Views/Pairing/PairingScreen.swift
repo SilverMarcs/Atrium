@@ -25,6 +25,14 @@ struct PairingScreen: View {
             }
 
             Section {
+                if let url = URL(string: "https://github.com/SilverMarcs/Atrium/releases/latest") {
+                    Link(destination: url) {
+                        Label("Download Atrium for Mac", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+
+            Section {
                 PasteButton(payloadType: URL.self) { urls in
                     if let url = urls.first { client.handle(url) }
                 }

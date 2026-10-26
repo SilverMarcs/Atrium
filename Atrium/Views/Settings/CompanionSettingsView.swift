@@ -24,6 +24,11 @@ struct CompanionSettingsView: View {
             } footer: {
                 Text("The Atrium iPhone app can connect to your computer with end-to-end encryption.")
             }
+            .sectionActions {
+                if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
+                    Link("Get the iOS App", destination: url)
+                }
+            }
 
             if server.isEnabled, let url = server.pairingLink.url {
                 Section {
