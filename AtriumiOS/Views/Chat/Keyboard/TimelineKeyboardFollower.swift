@@ -38,6 +38,9 @@ final class TimelineKeyboardFollower {
         /// The safe area the timeline ends with.
         var endSafeAreaBottom: CGFloat
         let startTime: CFTimeInterval
+        /// The timeline's safe area in the last pass, and when it last changed.
+        var safeAreaBottom: CGFloat
+        var safeAreaChangedAt: CFTimeInterval
         var progress: CGFloat = 0
         /// The additive offset drawn in the last commit.
         var additive: CGFloat = 0
@@ -52,6 +55,10 @@ final class TimelineKeyboardFollower {
     private static let animationKey = "atrium.keyboardFollow"
     /// Ends a follow whose composer or timeline never settles.
     private static let maximumDuration: CFTimeInterval = 1
+    /// How long the safe area must hold still to count as settled. Passes can
+    /// run several times within one frame, so the safe area matching the
+    /// previous pass doesn't mean SwiftUI has finished animating it.
+    private static let safeAreaSettleDuration: CFTimeInterval = 0.05
 
     private weak var scrollView: UIScrollView?
     private var observer: CFRunLoopObserver?
@@ -254,10 +261,12 @@ final class TimelineKeyboardFollower {
               let restingSafeAreaBottom,
               maximumOffset(of: scrollView, safeAreaBottom: restingSafeAreaBottom) - scrollView.contentOffset.y < scrollView.bounds.height else { return }
         // The safe area may already have grown for the keyboard.
+        let now = CACurrentMediaTime()
         startFollow(Follow(isShowing: true, startY: restY, startSafeAreaBottom: restingSafeAreaBottom,
                            startOffset: scrollView.contentOffset.y,
                            endSafeAreaBottom: max(scrollView.safeAreaInsets.bottom, restingSafeAreaBottom),
-                           startTime: CACurrentMediaTime()), in: scrollView)
+                           startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom,
+                           safeAreaChangedAt: now), in: scrollView)
     }
 
     /// Starts following as the keyboard hides, under a timeline that was
@@ -279,9 +288,11 @@ final class TimelineKeyboardFollower {
         guard !scrollView.isTracking, !scrollView.isDragging, !scrollView.isDecelerating,
               abs(startOffset - startMaximumOffset) < 2 else { return }
         hasFollowedThisDismissal = true
+        let now = CACurrentMediaTime()
         startFollow(Follow(isShowing: false, startY: startY, startSafeAreaBottom: startSafeAreaBottom,
                            startOffset: startOffset, endSafeAreaBottom: endSafeAreaBottom,
-                           startTime: CACurrentMediaTime()), in: scrollView)
+                           startTime: now, safeAreaBottom: safeAreaBottom,
+                           safeAreaChangedAt: now), in: scrollView)
     }
 
     private func startFollow(_ follow: Follow, in scrollView: UIScrollView) {
@@ -318,8 +329,16 @@ final class TimelineKeyboardFollower {
             follow.progress = 1
         }
         // Once the composer has arrived, end where SwiftUI's safe area does,
-        // in case the estimate was a point or two out.
-        let isSafeAreaSettled = safeAreaBottom == lastSafeAreaBottom
+        // in case the estimate was a point or two out. The safe area can still
+        // be animating well after the composer arrives; ending then would
+        // drop the timeline back to SwiftUI's offset, above where it settles,
+        // and it would bounce up before following the safe area down.
+        let now = CACurrentMediaTime()
+        if safeAreaBottom != follow.safeAreaBottom {
+            follow.safeAreaBottom = safeAreaBottom
+            follow.safeAreaChangedAt = now
+        }
+        let isSafeAreaSettled = now - follow.safeAreaChangedAt >= Self.safeAreaSettleDuration
         if follow.progress >= 1, isSafeAreaSettled {
             follow.endSafeAreaBottom = safeAreaBottom
         }
@@ -330,7 +349,7 @@ final class TimelineKeyboardFollower {
         if follow.progress >= 1, isSafeAreaSettled, abs(scrollView.contentOffset.y - endOffset) < 0.5 {
             endFollow(settling: true)
         } else if scrollView.isTracking
-            || CACurrentMediaTime() - follow.startTime > Self.maximumDuration {
+            || now - follow.startTime > Self.maximumDuration {
             // A new touch, or a move that never settled, hands the rest to an animation.
             endFollow(settling: true)
         }
