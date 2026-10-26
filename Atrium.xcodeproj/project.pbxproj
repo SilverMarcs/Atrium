@@ -10,6 +10,7 @@
 		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
+		0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,6 +64,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,6 +137,7 @@
 			);
 			name = AtriumiOS;
 			packageProductDependencies = (
+				0A7C00000000000000000103 /* SwiftMarkdownView */,
 			);
 			productName = AtriumiOS;
 			productReference = 0A7C00000000000000000001 /* Atrium.app */;
@@ -171,6 +174,7 @@
 				08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
+				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D10C4B2F64897100754649 /* Products */;
@@ -576,6 +580,14 @@
 				minimumVersion = 2.2.1;
 			};
 		};
+		0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SilverMarcs/SwiftMarkdownView";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -593,6 +605,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */;
 			productName = Highlightr;
+		};
+		0A7C00000000000000000103 /* SwiftMarkdownView */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */;
+			productName = SwiftMarkdownView;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

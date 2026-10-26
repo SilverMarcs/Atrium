@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Every step behind a reply, in order: the agent's notes as Markdown and its
+/// Every step behind a reply, in order: the agent's notes as plain text and its
 /// tool calls as one-line summaries, set smaller than the reply itself.
 struct AssistantStepsSheet: View {
     let steps: [TranscriptBlock]
@@ -13,7 +13,8 @@ struct AssistantStepsSheet: View {
                     switch step.kind {
                     case .text:
                         Label {
-                            MarkdownText(text: step.text, isCompact: true)
+                            Text(step.text)
+                                .font(.subheadline)
                                 .foregroundStyle(.primary)
                         } icon: {
                             Image(systemName: "text.alignleft")
