@@ -17,9 +17,17 @@ struct TaskDetailScreen: View {
     /// The task's info menu is hidden for now; its actions stay wired up.
     private static let showsInfoMenu = false
 
-    private var task: WireTask? { client.task(taskID) }
+    /// The task a draft has become, once the host creates it, so the screen
+    /// carries on with it in place.
+    private var resolvedTaskID: String { client.drafts[taskID]?.taskID ?? taskID }
 
-    private var models: [AgentModel] { task.map { client.models(for: $0.provider) } ?? [] }
+    private var hostTask: WireTask? { client.task(resolvedTaskID) }
+
+    /// The host's task, or what a draft shows until the host lists it.
+    private var task: WireTask? { hostTask ?? client.draftTask(resolvedTaskID) }
+
+    /// A draft's model can't be changed until the host has created its task.
+    private var models: [AgentModel] { hostTask.map { client.models(for: $0.provider) } ?? [] }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
@@ -44,9 +52,9 @@ struct TaskDetailScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { composer.dictation.cancel() }
         }
-        .onAppear { client.setVisibleTask(taskID) }
+        .onAppear { client.setVisibleTask(resolvedTaskID) }
         .onDisappear {
-            client.clearVisibleTask(taskID)
+            client.clearVisibleTask(resolvedTaskID)
             composer.dictation.cancel()
         }
         .navigationTitle(task?.title ?? "Task")
@@ -167,18 +175,23 @@ struct TaskDetailScreen: View {
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
         // The screen outlives its task when another opens, so each task keeps
-        // its own draft and images, waiting for it to open again.
-        .onChange(of: taskID) { oldID, newID in
+        // its own draft and images, waiting for it to open again. A new task
+        // opened from the screen's draft carries on with the draft's.
+        .onChange(of: resolvedTaskID) { oldID, newID in
             client.setVisibleTask(newID)
+            guard client.drafts[oldID]?.taskID != newID else { return }
             composer.dictation.cancel()
             composer.isFocused = false
-            if composer.hasContent {
+            // A draft that's left isn't opened again.
+            if composer.hasContent, !TaskDraft.isDraftID(oldID) {
                 stashedComposers[oldID] = composer
             }
             composer = stashedComposers.removeValue(forKey: newID) ?? TaskComposer()
         }
-        .task(id: taskID) {
-            await client.follow(.transcript(taskID: taskID))
+        .task(id: resolvedTaskID) {
+            // The host has no transcript for a draft.
+            guard !TaskDraft.isDraftID(resolvedTaskID) else { return }
+            await client.follow(.transcript(taskID: resolvedTaskID))
         }
         .task(id: task) {
             // Viewing a finished task reads it, as selecting it does on the host.

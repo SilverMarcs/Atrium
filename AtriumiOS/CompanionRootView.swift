@@ -52,7 +52,12 @@ struct CompanionRootView: View {
             await client.follow(.tasks)
         }
         .onChange(of: selectedTaskID) { _, id in
-            if let id { lastSelectedTaskID = id }
+            if let id {
+                // A draft is forgotten once another task opens. Going back on
+                // iPhone keeps it, since its screen stays in the detail column.
+                if let lastSelectedTaskID, lastSelectedTaskID != id { client.closeDraft(lastSelectedTaskID) }
+                lastSelectedTaskID = id
+            }
             detailPath = []
         }
         .onChange(of: client.pendingTaskID) { _, id in

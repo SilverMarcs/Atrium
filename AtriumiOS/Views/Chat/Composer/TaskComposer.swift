@@ -81,7 +81,8 @@ final class TaskComposer {
             isSubmittingDictation = true
             Task {
                 defer { isSubmittingDictation = false }
-                guard await dictation.finish(session: session), let currentTask = client.task(task.id) else { return }
+                guard await dictation.finish(session: session),
+                      let currentTask = client.task(task.id) ?? client.draftTask(task.id) else { return }
                 _ = sendDraft(to: currentTask, using: client)
             }
             return false

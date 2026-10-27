@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Starts a task on the host in a chosen project with a chosen agent, then opens it.
+/// Picks a project and an agent for a new task, then opens it as a draft,
+/// which the host creates once its first prompt is sent.
 struct NewTaskSheet: View {
     @Environment(CompanionClient.self) private var client
     @Environment(\.dismiss) private var dismiss
+    /// Opens a draft in the chosen project with the chosen agent.
+    let onStart: (UUID, AgentProvider) -> Void
     @State private var provider: AgentProvider?
     @State private var workspaceID: UUID?
     @State private var searchText = ""
-    @State private var isCreating = false
 
     private var providers: [WireProvider] {
         client.tasks?.providers.filter(\.isEnabled) ?? []
@@ -71,30 +73,20 @@ struct NewTaskSheet: View {
                     Button(role: .cancel) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isCreating {
-                        ProgressView()
-                    } else {
-                        Button("Start", role: .confirm, action: create)
-                            .disabled(provider == nil || workspaceID == nil)
-                    }
+                    Button("Start", role: .confirm, action: start)
+                        .disabled(provider == nil || workspaceID == nil)
                 }
             }
         }
-        .interactiveDismissDisabled(isCreating)
         .onAppear {
-            provider = provider ?? providers.first?.provider
+            provider = provider ?? client.defaultProvider
             workspaceID = workspaceID ?? client.tasks?.workspaces.first?.id
         }
     }
 
-    private func create() {
+    private func start() {
         guard let provider, let workspaceID else { return }
-        isCreating = true
-        Task {
-            defer { isCreating = false }
-            guard case .task(let id) = await client.perform(.compose(provider: provider, workspaceID: workspaceID)) else { return }
-            dismiss()
-            client.pendingTaskID = id
-        }
+        dismiss()
+        onStart(workspaceID, provider)
     }
 }

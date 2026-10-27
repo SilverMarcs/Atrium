@@ -41,6 +41,9 @@ final class CompanionClient {
     var actionError: String?
     /// A task to navigate to, from a notification tap or a task just created.
     var pendingTaskID: String?
+    /// New tasks opened on this phone, by draft ID. One stays after its first
+    /// prompt until the task list shows the task the host created for it.
+    private(set) var drafts: [String: TaskDraft] = [:]
 
     var isPaired: Bool { currentHost != nil }
     var pairedHostName: String? { currentHost?.displayName }
@@ -124,6 +127,7 @@ final class CompanionClient {
         transcripts = [:]
         pendingPrompts = [:]
         tasksAwaitingAgent = [:]
+        drafts = [:]
         icons = [:]
     }
 
@@ -275,6 +279,11 @@ final class CompanionClient {
     private func deliver(_ id: UUID, to taskID: String) {
         guard let prompt = pendingPrompts[taskID]?.first(where: { $0.id == id }) else { return }
         tasksAwaitingAgent[taskID] = id
+        // A draft's prompts wait for the host to create its task.
+        if let draft = drafts[taskID] {
+            if !draft.isCreating, draft.taskID == nil { createTask(from: draft) }
+            return
+        }
         Task {
             do {
                 _ = try await request(.prompt(taskID: taskID, text: prompt.text, images: prompt.images))
@@ -329,7 +338,8 @@ final class CompanionClient {
     private func settleTasksAwaitingAgent() {
         guard !tasksAwaitingAgent.isEmpty else { return }
         tasksAwaitingAgent = tasksAwaitingAgent.filter { taskID, _ in
-            guard let status = task(taskID)?.status else { return false }
+            // A draft's agent can't report anything until its task is listed.
+            guard let status = task(taskID)?.status else { return draftTask(taskID) != nil }
             return status != .processing && status != .waiting
         }
     }
@@ -371,6 +381,122 @@ final class CompanionClient {
         guard !shown.isEmpty else { return }
         pendingPrompts[taskID]?.removeAll { prompt in shown.contains { $0.id == prompt.id } }
         if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
+    }
+
+    // MARK: - Drafts
+
+    /// The agent a new task starts with: the one this phone last started a
+    /// task with, while the host has it enabled, else the host's first.
+    var defaultProvider: AgentProvider? {
+        let enabled = tasks?.providers.filter(\.isEnabled).map(\.provider) ?? []
+        let last = UserDefaults.standard.string(forKey: Self.lastProviderKey).flatMap(AgentProvider.init(rawValue:))
+        return enabled.first { $0 == last } ?? enabled.first
+    }
+
+    private static let lastProviderKey = "newTaskProvider"
+
+    /// Opens a new task in a project. The host creates it once its first
+    /// prompt is sent.
+    /// - Returns: The draft's ID, or nil while the host has no agent enabled.
+    func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil) -> String? {
+        guard let provider = provider ?? defaultProvider else { return nil }
+        let draft = TaskDraft(workspaceID: workspaceID, provider: provider)
+        drafts[draft.id] = draft
+        // A new task has no messages to load.
+        transcripts[draft.id] = []
+        return draft.id
+    }
+
+    /// Picks the agent a draft's task is created with, until its first prompt is sent.
+    func setProvider(_ provider: AgentProvider, ofDraft id: String) {
+        guard let draft = drafts[id], !draft.isCreating, draft.taskID == nil else { return }
+        drafts[id]?.provider = provider
+    }
+
+    /// Forgets a draft another task has opened in place of, unless its first
+    /// prompt has been sent, which leaves nothing behind on the host.
+    func closeDraft(_ id: String) {
+        guard let draft = drafts[id], !draft.isCreating, draft.taskID == nil else { return }
+        forgetDraft(id)
+    }
+
+    private func forgetDraft(_ id: String) {
+        drafts[id] = nil
+        transcripts[id] = nil
+        pendingPrompts[id] = nil
+        tasksAwaitingAgent[id] = nil
+    }
+
+    /// What a draft shows in place of its task, by the draft's ID or, once
+    /// the host has created the task, by the task's own until the task list
+    /// shows it. It takes the ID of the task once there is one.
+    func draftTask(_ id: String) -> WireTask? {
+        guard let draft = drafts[id] ?? drafts.values.first(where: { $0.taskID == id }) else { return nil }
+        let workspace = workspace(draft.workspaceID)
+        return WireTask(
+            id: draft.taskID ?? draft.id,
+            title: "New Task",
+            provider: draft.provider,
+            status: .idle,
+            projectName: workspace?.name ?? "",
+            directory: workspace?.directory ?? "",
+            workspaceID: draft.workspaceID,
+            updatedAt: draft.createdAt,
+            hasUnreadResult: false,
+            isSettled: false,
+            supportsDeletion: false,
+            actions: .prompt
+        )
+    }
+
+    /// Has the host create a draft's task for its first prompt. Prompts sent
+    /// meanwhile wait with it, and all fail together if the host can't.
+    private func createTask(from draft: TaskDraft) {
+        drafts[draft.id]?.isCreating = true
+        Task {
+            do {
+                guard case .task(let taskID) = try await request(.compose(provider: draft.provider, workspaceID: draft.workspaceID)) else {
+                    throw CompanionClientError.unexpectedReply
+                }
+                didCreateTask(taskID, from: draft.id)
+            } catch {
+                guard drafts[draft.id] != nil else { return }
+                drafts[draft.id]?.isCreating = false
+                // The host's reason, such as the agent having been turned off,
+                // says what to change before retrying.
+                if case CompanionClientError.rejected(let message) = error { actionError = message }
+                for prompt in pendingPrompts[draft.id] ?? [] where prompt.state == .sending {
+                    markPendingPromptFailed(prompt.id, in: draft.id)
+                }
+                tasksAwaitingAgent[draft.id] = nil
+            }
+        }
+    }
+
+    /// Moves a draft's prompts to the task the host created for it and
+    /// delivers them, opening the task in the draft's place if it's on screen.
+    private func didCreateTask(_ taskID: String, from draftID: String) {
+        guard let draft = drafts[draftID] else { return }
+        drafts[draftID]?.isCreating = false
+        drafts[draftID]?.taskID = taskID
+        UserDefaults.standard.set(draft.provider.rawValue, forKey: Self.lastProviderKey)
+        if transcripts[taskID] == nil { transcripts[taskID] = [] }
+        let prompts = pendingPrompts.removeValue(forKey: draftID) ?? []
+        pendingPrompts[taskID, default: []].append(contentsOf: prompts)
+        tasksAwaitingAgent[draftID] = nil
+        if activity.taskID == draftID { pendingTaskID = taskID }
+        for prompt in prompts where prompt.state == .sending {
+            deliver(prompt.id, to: taskID)
+        }
+    }
+
+    /// Drops drafts whose task the task list now shows, once they're off screen.
+    private func dropListedDrafts() {
+        for (id, draft) in drafts {
+            guard let taskID = draft.taskID, task(taskID) != nil, activity.taskID != id else { continue }
+            drafts[id] = nil
+            transcripts[id] = nil
+        }
     }
 
     /// Performs a task menu action. Rename and delete need confirmation first,
@@ -546,12 +672,14 @@ final class CompanionClient {
             supportsActivity = protocolVersion >= 5
         case .tasks(let snapshot):
             hostTasks = snapshot
+            dropListedDrafts()
             settleTasksAwaitingAgent()
             dropOverduePrompts()
         case .tasksChanged(let delta):
             guard var snapshot = hostTasks else { return }
             snapshot.apply(delta)
             hostTasks = snapshot
+            dropListedDrafts()
             settleTasksAwaitingAgent()
             dropOverduePrompts()
         case .git(let workspaceID, let status):

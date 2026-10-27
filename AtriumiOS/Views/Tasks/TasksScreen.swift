@@ -62,14 +62,14 @@ struct TasksScreen: View {
                 }
             } else {
                 ToolbarItem(placement: .topBarLeading) {
-                    NewTaskButton { showingNewTask = true }
+                    NewTaskButton(action: { showingNewTask = true }, openProject: { openDraft(in: $0) })
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             if isPhone {
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    NewTaskButton { showingNewTask = true }
+                    NewTaskButton(action: { showingNewTask = true }, openProject: { openDraft(in: $0) })
                 }
             }
         }
@@ -77,7 +77,7 @@ struct TasksScreen: View {
             TasksPlaceholder(isLoaded: client.tasks != nil, isSearching: isSearching, isEmpty: visibleTasksAreEmpty(sections))
         }
         .sheet(isPresented: $showingNewTask) {
-            NewTaskSheet()
+            NewTaskSheet { openDraft(in: $0, provider: $1) }
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
     }
@@ -106,6 +106,13 @@ struct TasksScreen: View {
             }
             .taskSwipeActions(task.menuState) { perform($0, on: task) }
         }
+    }
+
+    /// Opens a new task as a draft, which the host creates once its first
+    /// prompt is sent.
+    private func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil) {
+        guard let id = client.openDraft(in: workspaceID, provider: provider) else { return }
+        selection = id
     }
 
     private func perform(_ action: TaskMenuAction, on task: WireTask) {

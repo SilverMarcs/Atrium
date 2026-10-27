@@ -114,7 +114,11 @@ struct TaskChatView: View {
                     ProgressView()
                         .controlSize(.large)
                 } else if messages?.isEmpty == true, pendingPrompts.isEmpty {
-                    ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
+                    if let draft = client.drafts[task.id] {
+                        DraftAgentPicker(draft: draft)
+                    } else {
+                        ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
+                    }
                 }
             }
         }
