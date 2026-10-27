@@ -6,8 +6,9 @@ struct TaskComposerPlacement: ViewModifier {
     let composer: TaskComposer
     let task: WireTask?
     let prompt: String
-    /// Sends the draft, returning whether it was sent.
-    let submit: () -> Bool
+    /// Sends the draft from the field at the given frame, if known, returning
+    /// whether it was sent.
+    let submit: (CGRect?) -> Bool
 
     func body(content: Content) -> some View {
         if UIDevice.current.userInterfaceIdiom == .phone {
@@ -24,7 +25,7 @@ struct TaskComposerPlacement: ViewModifier {
 
 extension View {
     /// Adds the task's prompt composer where the device shows it.
-    func taskComposer(_ composer: TaskComposer, task: WireTask?, prompt: String, submit: @escaping () -> Bool) -> some View {
+    func taskComposer(_ composer: TaskComposer, task: WireTask?, prompt: String, submit: @escaping (CGRect?) -> Bool) -> some View {
         modifier(TaskComposerPlacement(composer: composer, task: task, prompt: prompt, submit: submit))
     }
 }

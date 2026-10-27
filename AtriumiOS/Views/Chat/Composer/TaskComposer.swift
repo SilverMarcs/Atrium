@@ -15,17 +15,8 @@ final class TaskComposer {
     /// Mirrors the composer's focus, where the timeline observes it to scroll
     /// to the latest message (`FocusState` is view-local).
     var isFocused = false
-    /// A prompt just sent from the bottom-bar composer is still moving into
-    /// view. The composer keeps its keyboard up until the timeline settles on
-    /// it, so the prompt and the working indicator land before the keyboard
-    /// starts to hide, rather than in the same frame.
-    private(set) var isRevealingSentPrompt = false
-    private var revealTimeout: Task<Void, Never>?
 
     static let maxImages = 4
-    /// Ends a reveal the timeline never reports settling, such as one with
-    /// nothing to scroll.
-    private static let maximumRevealDuration: Duration = .milliseconds(400)
 
     func appendTranscription(_ text: String) {
         draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
@@ -51,30 +42,20 @@ final class TaskComposer {
         images.removeAll { $0.id == image.id }
     }
 
-    /// Waits for the timeline to bring the prompt just sent into view.
-    func beginRevealingSentPrompt() {
-        isRevealingSentPrompt = true
-        revealTimeout?.cancel()
-        revealTimeout = Task { [weak self] in
-            try? await Task.sleep(for: Self.maximumRevealDuration)
-            guard !Task.isCancelled else { return }
-            self?.finishRevealingSentPrompt()
-        }
-    }
-
-    /// The timeline has settled, with the prompt just sent in view.
-    func finishRevealingSentPrompt() {
-        revealTimeout?.cancel()
-        revealTimeout = nil
-        guard isRevealingSentPrompt else { return }
-        isRevealingSentPrompt = false
-    }
-
     /// Sends the draft and its images to the task's agent, or explains why it
     /// can't take a prompt right now. The draft is kept when nothing is sent.
+    /// - Parameters:
+    ///   - animator: Flies the sent prompt's bubble in from the composer.
+    ///   - sourceFrame: The field the prompt was sent from, which its bubble
+    ///     flies in from. Without one, the composer's own field is used.
     /// - Returns: Whether the prompt was sent.
     @discardableResult
-    func submit(to task: WireTask, using client: CompanionClient) -> Bool {
+    func submit(
+        to task: WireTask,
+        using client: CompanionClient,
+        animator: PromptSendAnimator,
+        from sourceFrame: CGRect? = nil
+    ) -> Bool {
         guard !isSubmittingDictation else { return false }
         if dictation.isActive {
             let session = dictation.sessionID
@@ -83,14 +64,19 @@ final class TaskComposer {
                 defer { isSubmittingDictation = false }
                 guard await dictation.finish(session: session),
                       let currentTask = client.task(task.id) ?? client.draftTask(task.id) else { return }
-                _ = sendDraft(to: currentTask, using: client)
+                _ = sendDraft(to: currentTask, using: client, animator: animator, from: sourceFrame)
             }
             return false
         }
-        return sendDraft(to: task, using: client)
+        return sendDraft(to: task, using: client, animator: animator, from: sourceFrame)
     }
 
-    private func sendDraft(to task: WireTask, using client: CompanionClient) -> Bool {
+    private func sendDraft(
+        to task: WireTask,
+        using client: CompanionClient,
+        animator: PromptSendAnimator,
+        from sourceFrame: CGRect?
+    ) -> Bool {
         guard hasContent else { return false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard task.actions.contains(.prompt) else {
@@ -99,8 +85,10 @@ final class TaskComposer {
                 : "\(task.provider.name) can’t take a prompt right now."
             return false
         }
+        let animationSource = sourceFrame ?? animator.sourceFrame?()
         draft = ""
-        client.sendPrompt(text, images: images.map(\.data), to: task.id)
+        let promptID = client.sendPrompt(text, images: images.map(\.data), to: task.id)
+        animator.begin(promptID, text: text, from: animationSource)
         images = []
         return true
     }

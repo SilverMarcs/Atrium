@@ -5,10 +5,12 @@ import SwiftUI
 /// draft, and a Send button that becomes Stop while the agent works.
 struct TaskInputBar: View {
     @Environment(TaskComposer.self) private var composer
+    @Environment(PromptSendAnimator.self) private var sendAnimator
     let task: WireTask?
     let prompt: String
-    /// Sends the draft, returning whether it was sent.
-    let submit: () -> Bool
+    /// Sends the draft from the field at the given frame, if known, returning
+    /// whether it was sent.
+    let submit: (CGRect?) -> Bool
 
     @FocusState private var isFocused: Bool
 
@@ -41,6 +43,11 @@ struct TaskInputBar: View {
                             .lineLimit(1 ... 7)
                             .padding(.horizontal, 4)
                             .padding(8)
+                            .onGeometryChange(for: CGRect.self) { geometry in
+                                geometry.frame(in: .global)
+                            } action: { frame in
+                                sendAnimator.sourceFrame = { frame }
+                            }
                             .onSubmit(send)
 
                         ComposerDictationButton(isInline: true)
@@ -68,7 +75,7 @@ struct TaskInputBar: View {
 
     /// Sends the draft, keeping the keyboard up for the next prompt.
     private func send() {
-        _ = submit()
+        _ = submit(nil)
         // Wait a turn so focus lands after Return's own focus change.
         Task {
             await Task.yield()

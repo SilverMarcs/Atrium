@@ -11,6 +11,9 @@ struct TaskDetailScreen: View {
     @State private var taskToRename: WireTask?
     @State private var taskToDelete: WireTask?
     @State private var composer = TaskComposer()
+    /// Shared by every task the screen shows, so the composer's field
+    /// geometry it tracks survives switching tasks.
+    @State private var sendAnimator = PromptSendAnimator()
     /// Drafts left in other tasks, restored when their task opens again.
     @State private var stashedComposers: [String: TaskComposer] = [:]
 
@@ -52,10 +55,17 @@ struct TaskDetailScreen: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { composer.dictation.cancel() }
         }
-        .onAppear { client.setVisibleTask(resolvedTaskID) }
+        .onAppear {
+            client.setVisibleTask(resolvedTaskID)
+            client.onPendingPromptShown = { [sendAnimator] promptID, messageID in
+                sendAnimator.confirm(promptID, as: messageID)
+            }
+        }
         .onDisappear {
             client.clearVisibleTask(resolvedTaskID)
+            client.onPendingPromptShown = nil
             composer.dictation.cancel()
+            sendAnimator.cancelAll()
         }
         .navigationTitle(task?.title ?? "Task")
         // iPad has no More menu, so its subtitle names the model in its place, and
@@ -165,6 +175,7 @@ struct TaskDetailScreen: View {
             Text(composer.dictation.error ?? "")
         }
         .environment(composer)
+        .environment(sendAnimator)
         .sheet(isPresented: $showingDetails) {
             if let task { TaskDetailsSheet(task: task) }
         }
@@ -181,6 +192,7 @@ struct TaskDetailScreen: View {
             client.setVisibleTask(newID)
             guard client.drafts[oldID]?.taskID != newID else { return }
             composer.dictation.cancel()
+            sendAnimator.cancelAll()
             composer.isFocused = false
             // A draft that's left isn't opened again.
             if composer.hasContent, !TaskDraft.isDraftID(oldID) {
@@ -201,8 +213,8 @@ struct TaskDetailScreen: View {
         }
     }
 
-    private func sendDraft() -> Bool {
+    private func sendDraft(from sourceFrame: CGRect?) -> Bool {
         guard let task else { return false }
-        return composer.submit(to: task, using: client)
+        return composer.submit(to: task, using: client, animator: sendAnimator, from: sourceFrame)
     }
 }

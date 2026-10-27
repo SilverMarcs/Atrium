@@ -5,6 +5,9 @@ import SwiftUI
 struct PairingScreen: View {
     @Environment(CompanionClient.self) private var client
 
+    @State private var pairingLink = ""
+    @State private var showsScanner = false
+
     var body: some View {
         Form {
             Section {
@@ -14,14 +17,14 @@ struct PairingScreen: View {
                     Image(systemName: "macbook")
                 }
                 Label {
-                    Text("Scan its QR code with the Camera app, or share the pairing link to this iPhone and open it.")
+                    Text("Scan its QR code using the button above, or paste its pairing link below.")
                 } icon: {
                     Image(systemName: "qrcode.viewfinder")
                 }
             } header: {
                 Text("Pair with Your Host")
             } footer: {
-                Text("Your iPhone reaches the host from any network. The connection is end-to-end encrypted.")
+                Text("The connection is end-to-end encrypted.")
             }
 
             Section {
@@ -33,16 +36,41 @@ struct PairingScreen: View {
             }
 
             Section {
-                PasteButton(payloadType: URL.self) { urls in
-                    if let url = urls.first { client.handle(url) }
-                }
-            } footer: {
-                Text("Copied the pairing link? Paste it here instead.")
+                TextField("Paste the pairing link from your host", text: $pairingLink)
+                    .textContentType(.URL)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(client.isPairing)
+                    .onChange(of: pairingLink) { pairWithEnteredLink() }
             }
 
             PairingStatusSection()
         }
         .navigationTitle("Atrium")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Scan QR Code", systemImage: "qrcode.viewfinder") {
+                    showsScanner = true
+                }
+                .disabled(client.isPairing)
+            }
+        }
+        .sheet(isPresented: $showsScanner) {
+            PairingScannerSheet { link in
+                showsScanner = false
+                client.pair(with: link)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func pairWithEnteredLink() {
+        guard !client.isPairing,
+              let url = URL(string: pairingLink.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let link = CompanionPairingLink(url: url) else { return }
+        client.pair(with: link)
     }
 }

@@ -60,6 +60,10 @@ final class TimelineKeyboardFollower {
     /// previous pass doesn't mean SwiftUI has finished animating it.
     private static let safeAreaSettleDuration: CFTimeInterval = 0.05
 
+    /// Whether the timeline holds a prompt at the top rather than its end
+    /// above the composer. The keyboard then moves over blank space below
+    /// the prompt, which stays put, so there's nothing to follow.
+    var isHoldingPrompt: () -> Bool = { false }
     private weak var scrollView: UIScrollView?
     private var observer: CFRunLoopObserver?
     private var offsetObservation: NSKeyValueObservation?
@@ -256,7 +260,7 @@ final class TimelineKeyboardFollower {
     /// Runs before either moves. `ScrollOnComposerFocus` takes the timeline
     /// to its newest message, so it follows from anywhere near it.
     private func beginShowFollowIfNeeded() {
-        guard let scrollView, scrollView.window != nil, !scrollView.isTracking,
+        guard !isHoldingPrompt(), let scrollView, scrollView.window != nil, !scrollView.isTracking,
               composerY() != nil, let restY = restingComposerY,
               let restingSafeAreaBottom,
               maximumOffset(of: scrollView, safeAreaBottom: restingSafeAreaBottom) - scrollView.contentOffset.y < scrollView.bounds.height else { return }
@@ -273,7 +277,7 @@ final class TimelineKeyboardFollower {
     /// pinned to its newest message, with the composer still above its
     /// resting place. Uses the previous pass, from before anything moved.
     private func beginHideFollowIfNeeded(in scrollView: UIScrollView, composerY y: CGFloat) {
-        guard let startY = lastComposerY, let startSafeAreaBottom = lastSafeAreaBottom,
+        guard !isHoldingPrompt(), let startY = lastComposerY, let startSafeAreaBottom = lastSafeAreaBottom,
               let startOffset = lastOffset, let startMaximumOffset = lastMaximumOffset,
               let restY = restingComposerY,
               restY - startY > 1 else { return }

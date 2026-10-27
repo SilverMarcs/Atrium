@@ -32,6 +32,7 @@ interface PushRequest {
   title: string;
   body: string;
   taskID: string;
+  hostID?: string;
 }
 
 const route = /^\/v1\/(mac|phone)\/([A-Za-z0-9_-]{16,64})(?:\/data\/([A-Za-z0-9-]{1,64}))?$/;
@@ -98,13 +99,13 @@ export class Room implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const [, role, , dataID] = new URL(request.url).pathname.match(route) ?? [];
+    const [, role, hostID, dataID] = new URL(request.url).pathname.match(route) ?? [];
     const { 0: client, 1: server } = new WebSocketPair();
 
     if (role === "mac" && !dataID) {
       // A Mac reconnecting replaces its previous control connection.
       for (const old of this.state.getWebSockets("control")) old.close(1000, "Replaced");
-      this.state.acceptWebSocket(server, ["control"]);
+      this.state.acceptWebSocket(server, ["control", `host:${hostID}`]);
     } else if (role === "mac" && dataID) {
       const [phone] = this.state.getWebSockets(`phone:${dataID}`);
       if (!phone) return new Response("No phone is waiting", { status: 404 });
@@ -151,10 +152,16 @@ export class Room implements DurableObject {
       return;
     }
     if (!isPushRequest(push) || !this.allowPush()) return;
-    const collapseID = base64url(await crypto.subtle.digest("SHA-256", encoder.encode(push.taskID)));
+    // Bind routing to the authenticated control socket. Older live sockets
+    // predate the host tag, so updated Macs also supply their identity.
+    const hostID = this.state.getTags(socket).find(tag => tag.startsWith("host:"))?.slice(5)
+      ?? (typeof push.hostID === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(push.hostID) ? push.hostID : undefined);
+    const destination = hostID ? `${hostID}:${push.taskID}` : push.taskID;
+    const collapseID = base64url(await crypto.subtle.digest("SHA-256", encoder.encode(destination)));
     const payload = {
-      aps: { alert: { title: push.title, body: push.body }, sound: "default", "thread-id": push.taskID },
+      aps: { alert: { title: push.title, body: push.body }, sound: "default", "thread-id": destination },
       taskID: push.taskID,
+      hostID,
     };
     try {
       const result = await deliver(this.env, push.token, push.environment, payload, collapseID);

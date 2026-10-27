@@ -4,6 +4,7 @@ import Foundation
 /// It's the only thing on the relay that isn't end-to-end encrypted.
 struct RelayPushAlert: Encodable {
     let type = "push"
+    let hostID = CompanionIdentity.macID
     var token: String
     var environment: CompanionPushRegistration.Environment
     var title: String

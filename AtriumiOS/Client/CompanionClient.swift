@@ -39,8 +39,42 @@ final class CompanionClient {
     private(set) var tasksAwaitingAgent: [String: UUID] = [:]
     /// The latest failed action, shown as an alert.
     var actionError: String?
+    /// Called as the transcript takes over showing a prompt sent from this
+    /// phone, with the message that now shows it, so a send animation still
+    /// running carries on in that message's row.
+    @ObservationIgnored var onPendingPromptShown: ((PendingPrompt.ID, TranscriptMessage.ID) -> Void)?
     /// A task to navigate to, from a notification tap or a task just created.
     var pendingTaskID: String?
+    private var notificationDestination: (hostID: String, taskID: String)?
+
+    /// Never resolve against cached tasks or guess the sender of an old push.
+    func openNotification(hostID: String?, taskID: String) {
+        guard let hostID else {
+            actionError = "This older notification doesn’t identify its Mac. Choose the Mac and task manually."
+            return
+        }
+        guard let host = pairedHosts.first(where: { $0.id == hostID }) else {
+            actionError = "The Mac that sent this notification is no longer paired."
+            return
+        }
+        select(host)
+        pendingTaskID = nil
+        notificationDestination = (hostID, taskID)
+        // An existing connection needs a new snapshot too. Reconnects resubscribe.
+        if isConnected { subscribe(.tasks) }
+        else { connectToPairedHost() }
+    }
+
+    private func resolveNotification(in snapshot: WireTasksSnapshot) {
+        guard let destination = notificationDestination,
+              destination.hostID == currentHost?.id else { return }
+        notificationDestination = nil
+        guard snapshot.tasks.contains(where: { $0.id == destination.taskID }) else {
+            actionError = "This task is no longer available on this Mac."
+            return
+        }
+        pendingTaskID = destination.taskID
+    }
     /// New tasks opened on this phone, by draft ID. One stays after its first
     /// prompt until the task list shows the task the host created for it.
     private(set) var drafts: [String: TaskDraft] = [:]
@@ -91,6 +125,8 @@ final class CompanionClient {
 
     func select(_ host: PairedHost) {
         guard host.id != currentHost?.id else { return }
+        notificationDestination = nil
+        pendingTaskID = nil
         CompanionCredentials.select(host)
         currentHost = host
         closeChannel()
@@ -104,6 +140,7 @@ final class CompanionClient {
         CompanionCredentials.forget(host)
         pairedHosts = CompanionCredentials.pairedHosts
         guard host.id == currentHost?.id else { return }
+        notificationDestination = nil
         currentHost = nil
         closeChannel()
         clearMirroredState()
@@ -254,7 +291,9 @@ final class CompanionClient {
 
     /// Sends a prompt to a task's agent, showing it in the timeline at once.
     /// A failed send stays there with a retry button instead of an alert.
-    func sendPrompt(_ text: String, images: [Data] = [], to taskID: String) {
+    /// - Returns: The ID of the prompt's row in the timeline.
+    @discardableResult
+    func sendPrompt(_ text: String, images: [Data] = [], to taskID: String) -> PendingPrompt.ID {
         let prompt = PendingPrompt(
             text: text,
             images: images,
@@ -263,6 +302,7 @@ final class CompanionClient {
         )
         pendingPrompts[taskID, default: []].append(prompt)
         deliver(prompt.id, to: taskID)
+        return prompt.id
     }
 
     func retryPrompt(_ id: UUID, in taskID: String) {
@@ -371,6 +411,15 @@ final class CompanionClient {
         return messages[start...].count { $0.role == .user }
     }
 
+    /// The `position`th user message after the anchor, counting from one.
+    private func userMessage(in taskID: String, after anchorID: String?, at position: Int) -> TranscriptMessage? {
+        let messages = transcripts[taskID, default: []]
+        let start = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }.map { $0 + 1 } ?? 0
+        let userMessages = messages[start...].filter { $0.role == .user }
+        guard position > 0, position <= userMessages.count else { return nil }
+        return userMessages[position - 1]
+    }
+
     /// Drops prompts the transcript now shows.
     private func reconcilePendingPrompts(for taskID: String) {
         guard let prompts = pendingPrompts[taskID] else { return }
@@ -379,6 +428,11 @@ final class CompanionClient {
                 && $0.expectedUserMessagesAfterAnchor <= userMessageCount(in: taskID, after: $0.anchorUserMessageID)
         }
         guard !shown.isEmpty else { return }
+        for prompt in shown {
+            if let message = userMessage(in: taskID, after: prompt.anchorUserMessageID, at: prompt.expectedUserMessagesAfterAnchor) {
+                onPendingPromptShown?(prompt.id, message.id)
+            }
+        }
         pendingPrompts[taskID]?.removeAll { prompt in shown.contains { $0.id == prompt.id } }
         if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
     }
@@ -570,10 +624,16 @@ final class CompanionClient {
             prologue: CompanionPairingLink.prologue(macID: host.hostID)
         )
         self.channel = channel
-        channel.onReady = { [weak self] in
-            Task { await self?.authenticate(authentication, host: host) }
+        channel.onReady = { [weak self, weak channel] in
+            Task {
+                guard let self, let channel, self.channel === channel else { return }
+                await self.authenticate(authentication, host: host)
+            }
         }
-        channel.onMessage = { [weak self] data in self?.receive(data) }
+        channel.onMessage = { [weak self, weak channel] data in
+            guard let self, let channel, self.channel === channel else { return }
+            self.receive(data)
+        }
         channel.onClose = { [weak self, weak channel] reason in
             guard let self, let channel, self.channel === channel else { return }
             self.channelDidClose(reason)
@@ -582,12 +642,14 @@ final class CompanionClient {
     }
 
     private func authenticate(_ authentication: Authentication, host: PairedHost) async {
+        guard let authenticatingChannel = channel else { return }
         do {
             switch authentication {
             case .pair(let secret):
                 guard case .paired(let token) = try await request(.pair(secret: secret, device: CompanionCredentials.device)) else {
                     throw CompanionClientError.unexpectedReply
                 }
+                guard channel === authenticatingChannel else { return }
                 CompanionCredentials.save(host, token: token)
                 pairedHosts = CompanionCredentials.pairedHosts
                 if host.id != currentHost?.id { clearMirroredState() }
@@ -597,12 +659,14 @@ final class CompanionClient {
             case .token(let token):
                 _ = try await request(.authenticate(token: token, deviceID: CompanionCredentials.device.id))
             }
+            guard channel === authenticatingChannel else { return }
             state = .connected(hostName: host.displayName)
             failedAttempts = 0
             publishActivity()
             registerForPush()
             for topic in topicCounts.keys { subscribe(topic) }
         } catch {
+            guard channel === authenticatingChannel else { return }
             switch (authentication, error) {
             case (.token, CompanionClientError.rejected):
                 // The host revoked this phone; staying paired would retry forever.
@@ -672,6 +736,7 @@ final class CompanionClient {
             supportsActivity = protocolVersion >= 5
         case .tasks(let snapshot):
             hostTasks = snapshot
+            resolveNotification(in: snapshot)
             dropListedDrafts()
             settleTasksAwaitingAgent()
             dropOverduePrompts()

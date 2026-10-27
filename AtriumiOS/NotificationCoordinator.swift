@@ -1,20 +1,22 @@
 import Foundation
 import UserNotifications
 
-/// Shows task notifications while the app is open and routes taps to the task.
+/// Routes taps immediately, including during launch before views are installed.
 @MainActor
 final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationCoordinator()
 
-    var visibleTaskID: (() -> String?)?
-    var onTap: ((String) -> Void)?
+    weak var client: CompanionClient?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        if let taskID = notification.request.content.userInfo["taskID"] as? String,
-           taskID == visibleTaskID?() { return [] }
+        let info = notification.request.content.userInfo
+        if let hostID = info["hostID"] as? String,
+           hostID == client?.currentHost?.id,
+           let taskID = info["taskID"] as? String,
+           taskID == client?.visibleTaskID { return [] }
         return [.banner, .sound]
     }
 
@@ -22,7 +24,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard let taskID = response.notification.request.content.userInfo["taskID"] as? String else { return }
-        onTap?(taskID)
+        let info = response.notification.request.content.userInfo
+        guard let taskID = info["taskID"] as? String else { return }
+        client?.openNotification(hostID: info["hostID"] as? String, taskID: taskID)
     }
 }

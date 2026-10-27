@@ -21,7 +21,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record your voice to transcribe a prompt with OpenAI.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Take a photo to attach to a prompt.</string>
+	<string>Scan a host’s pairing QR code or take a photo to attach to a prompt.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

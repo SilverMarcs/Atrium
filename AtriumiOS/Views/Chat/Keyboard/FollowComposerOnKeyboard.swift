@@ -8,12 +8,14 @@ import SwiftUI
 /// rides the keyboard, so elsewhere this does nothing.
 struct FollowComposerOnKeyboard: ViewModifier {
     @State private var follower = TimelineKeyboardFollower()
+    let isHoldingPrompt: () -> Bool
 
     func body(content: Content) -> some View {
         content
             .background {
                 if UIDevice.current.userInterfaceIdiom == .phone {
                     EnclosingScrollViewIntrospector { scrollView in
+                        follower.isHoldingPrompt = isHoldingPrompt
                         follower.attach(to: scrollView)
                     } onDetach: { scrollView in
                         follower.detach(from: scrollView)
@@ -26,8 +28,8 @@ struct FollowComposerOnKeyboard: ViewModifier {
 
 extension View {
     /// Keeps the timeline moving with the composer as the keyboard shows and
-    /// hides.
-    func followsComposerOnKeyboard() -> some View {
-        modifier(FollowComposerOnKeyboard())
+    /// hides, except while it holds a prompt at the top.
+    func followsComposerOnKeyboard(isHoldingPrompt: @escaping () -> Bool) -> some View {
+        modifier(FollowComposerOnKeyboard(isHoldingPrompt: isHoldingPrompt))
     }
 }

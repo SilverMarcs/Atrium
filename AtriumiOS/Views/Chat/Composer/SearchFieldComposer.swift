@@ -6,9 +6,11 @@ import SwiftUI
 struct SearchFieldComposer: ViewModifier {
     @Bindable var composer: TaskComposer
     let prompt: String
-    /// Sends the draft, returning whether it was sent.
-    let submit: () -> Bool
+    /// Sends the draft from the field at the given frame, if known, returning
+    /// whether it was sent.
+    let submit: (CGRect?) -> Bool
 
+    @Environment(PromptSendAnimator.self) private var sendAnimator
     @FocusState private var isFocused: Bool
     @State private var isPresented = false
     @State private var delegateProxy: TextFieldDelegateProxy?
@@ -23,8 +25,13 @@ struct SearchFieldComposer: ViewModifier {
             .searchPresentationToolbarBehavior(.avoidHidingContent)
             .background(
                 SearchIntrospector { configure($0, searchBar: $1, referenceView: $2) }
+                    .onGeometryChange(for: CGRect.self) { geometry in
+                        geometry.frame(in: .global)
+                    } action: { frame in
+                        sendAnimator.searchReferenceFrame = frame
+                    }
             )
-            .onSubmit(of: .search, send)
+            .onSubmit(of: .search) { send() }
             .task(id: composer.focusRequestID) {
                 guard composer.focusRequestID != nil else { return }
                 isPresented = true
@@ -43,21 +50,13 @@ struct SearchFieldComposer: ViewModifier {
             .onDisappear {
                 composer.isFocused = false
             }
-            // Closing in the same frame the prompt and working indicator appear
-            // moves the keyboard and the timeline at once, so the keyboard
-            // waits for the timeline to settle on them. Anything written
-            // meanwhile keeps it open.
-            .onChange(of: composer.isRevealingSentPrompt) { _, isRevealing in
-                guard !isRevealing, !composer.hasContent else { return }
-                isPresented = false
-            }
     }
 
-    /// Sends the draft and, once the timeline shows it, closes the composer
-    /// and its keyboard. A draft that couldn't be sent stays open for editing.
-    private func send() {
-        if submit() {
-            composer.beginRevealingSentPrompt()
+    /// Sends the draft and, once it's gone, closes the composer and its
+    /// keyboard. A draft that couldn't be sent stays open for editing.
+    private func send(from sourceFrame: CGRect? = nil) {
+        if submit(sourceFrame) {
+            isPresented = false
         }
     }
 
@@ -77,7 +76,7 @@ struct SearchFieldComposer: ViewModifier {
     }
 
     /// Makes Return send and Close keep the draft, by intercepting them
-    /// through delegate proxies.
+    /// through delegate proxies, and gives the send animation its source frame.
     private func configure(_ textField: UISearchTextField, searchBar: UISearchBar?, referenceView: UIView) {
         if textField.returnKeyType != .send {
             textField.returnKeyType = .send
@@ -86,13 +85,29 @@ struct SearchFieldComposer: ViewModifier {
             }
         }
         styleComposerFields(in: textField, referenceView: referenceView)
+        let animator = sendAnimator
+        animator.sourceFrame = { [weak animator, weak textField, weak referenceView] in
+            guard let animator, let textField, let referenceView,
+                  textField.window != nil, !textField.isHidden else { return nil }
+            let frame = textField.convert(textField.bounds, to: referenceView)
+            let reference = animator.searchReferenceFrame
+            return frame.offsetBy(dx: reference.minX, dy: reference.minY)
+        }
         if delegateProxy == nil || textField.delegate !== delegateProxy {
             let proxy = TextFieldDelegateProxy(originalDelegate: textField.delegate)
             textField.delegate = proxy
             delegateProxy = proxy
         }
-        delegateProxy?.shouldReturn = { _ in
-            send()
+        // Use the field that received Return, even if SwiftUI has replaced
+        // the searchable field.
+        delegateProxy?.shouldReturn = { [weak referenceView] field in
+            let sourceFrame = referenceView.map {
+                field.convert(field.bounds, to: $0).offsetBy(
+                    dx: animator.searchReferenceFrame.minX,
+                    dy: animator.searchReferenceFrame.minY
+                )
+            }
+            send(from: sourceFrame)
             return false
         }
         if let searchBar {
@@ -150,7 +165,7 @@ struct SearchFieldComposer: ViewModifier {
 
 extension View {
     /// Turns the navigation search field into the task's prompt composer.
-    func searchFieldComposer(_ composer: TaskComposer, prompt: String, submit: @escaping () -> Bool) -> some View {
+    func searchFieldComposer(_ composer: TaskComposer, prompt: String, submit: @escaping (CGRect?) -> Bool) -> some View {
         modifier(SearchFieldComposer(composer: composer, prompt: prompt, submit: submit))
     }
 }

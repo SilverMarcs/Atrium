@@ -3,9 +3,9 @@ import SwiftUI
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.
 struct TaskChatView: View {
     @Environment(CompanionClient.self) private var client
-    @Environment(TaskComposer.self) private var composer
     let task: WireTask
     @State private var pin = TimelinePin()
+    @State private var anchorSpace = TimelineAnchorSpace()
 
     private static let bottomID = "bottom"
 
@@ -17,44 +17,81 @@ struct TaskChatView: View {
         let footerStatus: AgentThreadStatus = client.tasksAwaitingAgent[task.id] != nil && task.status != .waiting
             ? .processing
             : task.status
+        let newestPromptID = pendingPrompts.last?.timelineID ?? messages?.last { $0.role == .user }?.id
+        // A prompt sent from this device starts the latest turn, held at the
+        // top. A pending prompt held there hands over to the transcript's
+        // message once that shows it.
+        let anchorID = pendingPrompts.last?.timelineID ?? anchorSpace.anchorID.flatMap { id in
+            id.hasPrefix("pending-") ? newestPromptID : id
+        }
+        let sections = TimelineSections(messages: messages ?? [], pendingPrompts: pendingPrompts, anchorID: anchorID)
+        // A reply followed by a prompt still on its way is finished, even
+        // once the agent starts on that prompt.
+        let streamingMessageID = task.status == .processing && pendingPrompts.isEmpty ? messages?.last?.id : nil
 
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(messages ?? []) { message in
-                            switch message.role {
-                            case .user:
-                                UserMessageView(text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"))
-                            case .assistant:
-                                // A reply followed by a prompt still on its way is
-                                // finished, even once the agent starts on that prompt.
-                                AssistantMessageView(
-                                    blocks: message.blocks,
-                                    isStreaming: task.status == .processing
-                                        && pendingPrompts.isEmpty
-                                        && message.id == messages?.last?.id
-                                )
-                            }
+                        ForEach(sections.historyMessages) { message in
+                            TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
                         }
-                        ForEach(pendingPrompts) { prompt in
+                        ForEach(sections.historyPendingPrompts) { prompt in
                             PendingPromptView(prompt: prompt, taskID: task.id)
                         }
-                        TaskChatStatusFooter(status: footerStatus)
+                        if sections.hasTurn {
+                            // At least the resting viewport's height, so its
+                            // prompt can scroll to the top.
+                            VStack(alignment: .leading, spacing: 16) {
+                                ForEach(sections.turnMessages) { message in
+                                    TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
+                                }
+                                ForEach(sections.turnPendingPrompts) { prompt in
+                                    PendingPromptView(prompt: prompt, taskID: task.id)
+                                }
+                                TaskChatStatusFooter(status: footerStatus)
+                            }
+                            .onGeometryChange(for: CGFloat.self) { geometry in
+                                geometry.size.height
+                            } action: { height in
+                                anchorSpace.setTurnHeight(height)
+                            }
+                            .frame(minHeight: anchorSpace.turnMinimumHeight, alignment: .top)
+                            .id(TimelineAnchorSpace.turnID)
+                        } else {
+                            TaskChatStatusFooter(status: footerStatus)
+                        }
                     }
                     // Keep the scroll target available independently of lazy rows.
                     Color.clear
-                        .frame(height: 1)
+                        .frame(height: TimelineAnchorSpace.bottomTargetHeight)
                         .id(Self.bottomID)
                         .accessibilityHidden(true)
                 }
-                .followsComposerOnKeyboard()
+                // A prompt just sent closes the keyboard in the same turn, before
+                // its turn has been measured, but it always fits below itself.
+                .followsComposerOnKeyboard { [client, anchorSpace, taskID = task.id] in
+                    client.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
+                }
+            }
+            // The container is what shows between the bars and keyboard. The
+            // latest turn is sized for it with the keyboard hidden, so its
+            // prompt holds still as the keyboard comes and goes. Before the
+            // bars are laid out, there are no insets yet.
+            .onScrollGeometryChange(for: CGSize?.self) { geometry in
+                geometry.contentInsets.top > 0 ? geometry.containerSize : nil
+            } action: { _, size in
+                if let size { anchorSpace.noteViewport(size) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                anchorSpace.keyboardDidHide()
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)
             .contentMargins([.horizontal, .bottom], 20, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
+            .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
                 scrollToLatest(with: proxy)
             }
@@ -65,22 +102,35 @@ struct TaskChatView: View {
             // makes the composer's placeholder spring.
             .onChange(of: "\(task.id)-\(messages != nil)") {
                 pin = TimelinePin()
+                anchorSpace.reset()
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
             .onChange(of: TranscriptTracker(
                 count: (messages?.count ?? 0) + pendingPrompts.count,
                 lastID: pendingPrompts.last?.timelineID ?? messages?.last?.id
             )) { oldTracker, newTracker in
-                guard oldTracker.lastID != nil else { return }
                 // Scroll when a new message arrives. A shrinking transcript
                 // keeps the reader where they are.
                 guard newTracker.lastID != oldTracker.lastID,
                       newTracker.count >= oldTracker.count else { return }
+                // A prompt sent from this device is held at the top, and each
+                // prompt after it takes its place there.
+                let isNewPrompt = newTracker.lastID == newestPromptID
+                let sentFromHere = newTracker.lastID?.hasPrefix("pending-") == true
+                if isNewPrompt, sentFromHere || anchorSpace.anchorID != nil {
+                    anchorSpace.anchorID = newestPromptID
+                    scrollToLatest(with: proxy, holdingPrompt: true)
+                    return
+                }
+                guard oldTracker.lastID != nil else { return }
                 // The transcript showing a pending prompt swaps one row for
                 // another at the end; let the send's scroll finish.
                 let confirmedPendingPrompt = oldTracker.lastID?.hasPrefix("pending-") == true
                     && newTracker.count == oldTracker.count
                 guard !confirmedPendingPrompt else { return }
+                // A reply arriving below a prompt held at the top leaves the
+                // prompt there for the reader to read down from.
+                guard !sections.hasTurn else { return }
                 scrollToLatest(with: proxy)
             }
             // Only the reader scrolling decides whether the timeline stays
@@ -92,9 +142,6 @@ struct TaskChatView: View {
                 case .tracking, .interacting:
                     pin.isReaderScrolling = true
                 case .idle:
-                    // A prompt just sent is in view once the scroll to it
-                    // ends, so the composer can close its keyboard.
-                    composer.finishRevealingSentPrompt()
                     guard pin.isReaderScrolling else { return }
                     pin.isReaderScrolling = false
                     pin.isPinned = context.geometry.isAtBottom
@@ -107,6 +154,9 @@ struct TaskChatView: View {
             // already on its way.
             .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { oldHeight, newHeight in
                 guard newHeight > oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
+                // A reply outgrowing the turn below a prompt held at the top
+                // leaves the prompt where it is.
+                guard !sections.hasTurn else { return }
                 scrollToLatest(with: proxy)
             }
             .overlay {
@@ -124,10 +174,17 @@ struct TaskChatView: View {
         }
     }
 
-    private func scrollToLatest(with proxy: ScrollViewProxy) {
+    /// Scrolls to the newest message: to the prompt held at the top, while
+    /// its turn fits below it, else to the end.
+    private func scrollToLatest(with proxy: ScrollViewProxy, holdingPrompt: Bool? = nil) {
         pin.isPinned = true
+        let holdsPrompt = holdingPrompt ?? anchorSpace.isHolding
         withAnimation(.easeOut(duration: 0.25)) {
-            proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            if holdsPrompt {
+                proxy.scrollTo(TimelineAnchorSpace.turnID, anchor: .top)
+            } else {
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
         }
     }
 }

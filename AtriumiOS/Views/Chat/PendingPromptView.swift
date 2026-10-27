@@ -13,7 +13,7 @@ struct PendingPromptView: View {
                 PendingPromptImages(images: prompt.images)
             }
             if !prompt.text.isEmpty {
-                UserMessageView(text: prompt.text)
+                UserMessageView(text: prompt.text, sendFlight: { [id = prompt.id] in $0.flight(forPending: id) })
             }
             if prompt.state == .failed {
                 Button("Retry", systemImage: "arrow.clockwise") {

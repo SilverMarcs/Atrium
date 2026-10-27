@@ -4,6 +4,7 @@ struct CompanionRootView: View {
     @Environment(CompanionClient.self) private var client
     @State private var dictationSettings = DictationSettings()
     @State private var selectedTaskID: String?
+    @State private var navigationHostID: String?
     /// The task the detail column keeps showing once going back on iPhone has
     /// cleared the selection. See `detailTaskID`.
     @State private var lastSelectedTaskID: String?
@@ -60,15 +61,18 @@ struct CompanionRootView: View {
             }
             detailPath = []
         }
-        .onChange(of: client.pendingTaskID) { _, id in
-            guard let id else { return }
-            selectedTaskID = id
-            client.pendingTaskID = nil
-        }
-        .onChange(of: client.currentHost) {
-            // Another host's tasks replace this one's.
-            selectedTaskID = nil
-            lastSelectedTaskID = nil
+        .onChange(of: [client.currentHost?.id, client.pendingTaskID], initial: true) {
+            if navigationHostID != client.currentHost?.id {
+                navigationHostID = client.currentHost?.id
+                selectedTaskID = nil
+                lastSelectedTaskID = nil
+                detailPath = []
+            }
+            if let id = client.pendingTaskID {
+                selectedTaskID = id
+                detailPath = []
+                client.pendingTaskID = nil
+            }
         }
         .sheet(isPresented: $showingHosts) {
             HostsSheet()
