@@ -131,7 +131,7 @@ actor ClaudeSessionHistory {
             prompts += 1
             return prompts == ClaudeTranscript.turnLimit
         }
-        scan: while offset > 0, file.stamp.size - Int(offset) < Self.transcriptScanLimit {
+        scan: while offset > 0 {
             try Task.checkCancellation()
             let count = min(UInt64(Self.windowSize), offset)
             offset -= count
@@ -152,18 +152,8 @@ actor ClaudeSessionHistory {
         if offset == 0, prompts < ClaudeTranscript.turnLimit {
             _ = add(Data(partialLine.joined()))
         }
-        let messages = ClaudeTranscript.messages(fromLines: lines.reversed())
-        // A read cut short by the limit starts partway through a turn. That reply
-        // takes its ID from whichever of its records was read first, which changes
-        // as the session grows, so it's left out while a whole turn follows.
-        guard offset > 0, prompts < ClaudeTranscript.turnLimit, messages.contains(where: { $0.role == .user }) else {
-            return messages
-        }
-        return Array(messages.drop { $0.role != .user })
+        return ClaudeTranscript.messages(fromLines: lines.reversed())
     }
-
-    /// Bounds the read for a session whose recent turns hold a lot of output.
-    private static let transcriptScanLimit = 4 * 1024 * 1024
 
     private static let fileKeys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
 
