@@ -78,8 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     static func sendThreadNotification(_ thread: AgentThread, projectIconURL: URL? = nil) {
         guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
         let content = UNMutableNotificationContent()
-        content.title = thread.title
-        content.body = "\(thread.title) — \(thread.status == .waiting ? "Needs your input" : "Done")"
+        content.title = thread.projectName
+        content.subtitle = thread.title
+        content.body = thread.status == .waiting ? "Needs your input" : "Done"
         content.sound = .default
         content.userInfo = ["threadID": thread.id]
         let icon = ProjectNotificationIcon.pngData(at: projectIconURL)
@@ -87,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let notification: UNNotificationContent
             if let icon,
                let updated = try? await ProjectNotificationContent.updating(
-                content: content, title: thread.title, imageData: icon, conversationID: thread.id
+                content: content, title: thread.projectName, imageData: icon, conversationID: thread.id
                ) {
                 notification = updated
             } else {

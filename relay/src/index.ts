@@ -30,6 +30,7 @@ interface PushRequest {
   token: string;
   environment: APNsEnvironment;
   title: string;
+  subtitle?: string;
   body: string;
   taskID: string;
   hostID?: string;
@@ -74,6 +75,7 @@ function isPushRequest(value: unknown): value is PushRequest {
     && typeof push.token === "string" && /^[0-9a-f]{32,256}$/i.test(push.token)
     && (push.environment === "sandbox" || push.environment === "production")
     && typeof push.title === "string" && push.title.length <= 1000
+    && (push.subtitle === undefined || (typeof push.subtitle === "string" && push.subtitle.length <= 1000))
     && typeof push.body === "string" && push.body.length > 0 && push.body.length <= 1000
     && typeof push.taskID === "string" && push.taskID.length <= 256
     && (push.projectIcon === undefined || (typeof push.projectIcon === "string" && push.projectIcon.length <= 87_384));
@@ -179,19 +181,22 @@ export class Room implements DurableObject {
     }
     const payload = {
       aps: {
-        alert: { title: push.title, body: push.body }, sound: "default", "thread-id": destination,
+        alert: { title: push.title, ...(push.subtitle ? { subtitle: push.subtitle } : {}), body: push.body }, sound: "default", "thread-id": destination,
         ...(projectIconURL ? { "mutable-content": 1 } : {}),
       },
       taskID: push.taskID,
       hostID,
       ...(projectIconURL ? { projectIconURL } : {}),
     };
-    // A long chat title now appears twice. Fit APNs' byte limit by shortening
-    // only the heading, preserving the body and routing and whole code points.
-    const title = Array.from(push.title);
-    while (encoder.encode(JSON.stringify(payload)).length > 4096 && title.length) {
-      title.pop();
-      payload.aps.alert.title = title.join("");
+    // Chat titles can be long. Fit APNs' byte limit by shortening the chat
+    // title (the subtitle, or the heading from older Macs), preserving the
+    // body and routing and whole code points.
+    const alert: { title: string; subtitle?: string } = payload.aps.alert;
+    const key = alert.subtitle ? "subtitle" : "title";
+    const heading = Array.from(alert[key] ?? "");
+    while (encoder.encode(JSON.stringify(payload)).length > 4096 && heading.length) {
+      heading.pop();
+      alert[key] = heading.join("");
     }
     try {
       const result = await deliver(this.env, push.token, push.environment, payload, collapseID);

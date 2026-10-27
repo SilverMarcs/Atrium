@@ -7,7 +7,10 @@ struct RelayPushAlert: Encodable {
     let hostID = CompanionIdentity.macID
     var token: String
     var environment: CompanionPushRegistration.Environment
+    /// The project name.
     var title: String
+    /// The chat title.
+    var subtitle: String
     var body: String
     var taskID: String
     /// Only a manually selected project icon, resized for native notifications.
