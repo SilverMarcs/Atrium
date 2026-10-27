@@ -34,6 +34,6 @@ struct ClaudeBackgroundSession: Decodable, Sendable, Equatable {
         guard kind == "background", let sessionID, UUID(uuidString: sessionID) != nil else { return nil }
         let title = name.flatMap { $0.isEmpty || $0 == id ? nil : $0 } ?? "New Claude thread"
         return AgentThread(sessionID: sessionID, provider: .claude, title: title,
-                           directory: cwd, updatedAt: Date(timeIntervalSince1970: startedAt / 1000), status: threadStatus)
+                           directory: cwd, updatedAt: Date(timeIntervalSince1970: startedAt / 1000), status: threadStatus, isMainTask: true)
     }
 }

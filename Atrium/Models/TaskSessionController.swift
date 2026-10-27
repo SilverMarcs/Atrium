@@ -21,7 +21,12 @@ final class TaskSessionController {
         self.integrations = integrations
         self.appState = appState
         self.workspaces = workspaces
-        integrations.onAttention = AppDelegate.sendThreadNotification
+        NotificationRouting.shared.isMainTask = { [weak integrations] id in
+            integrations?.threads.first(where: { $0.id == id })?.isMainTask == true
+        }
+        integrations.onAttention = { [weak workspaces] thread in
+            AppDelegate.sendThreadNotification(thread, projectIconURL: workspaces?.workspace(for: thread)?.customIconURL)
+        }
     }
 
     /// Creates and opens a task, returning it once its terminal is launching.

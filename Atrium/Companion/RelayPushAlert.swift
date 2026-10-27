@@ -10,4 +10,6 @@ struct RelayPushAlert: Encodable {
     var title: String
     var body: String
     var taskID: String
+    /// Only a manually selected project icon, resized for native notifications.
+    var projectIcon: Data? = nil
 }

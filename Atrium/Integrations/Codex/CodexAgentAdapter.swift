@@ -604,11 +604,15 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let name = (row["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let preview = row["preview"] as? String ?? ""
         let hasProviderTitle = !name.isEmpty && name != "New Codex thread"
+        // Match thread/list's main-task sources. Subagents have an object-valued
+        // source, and newer servers also report parentThreadId. A fork is still a main task.
+        let isMainTask = row["parentThreadId"] as? String == nil
+            && ["cli", "vscode", "appServer"].contains(row["source"] as? String ?? "")
         return AgentThread(
             sessionID: id, provider: .codex,
             title: hasProviderTitle ? name : (preview.isEmpty ? "New Codex thread" : String(preview.prefix(160))),
             directory: directory, updatedAt: Date(timeIntervalSince1970: row["recencyAt"] as? Double ?? row["updatedAt"] as? Double ?? 0),
-            status: status(row["status"] as? [String: Any]), hasProviderTitle: hasProviderTitle,
+            status: status(row["status"] as? [String: Any]), isMainTask: isMainTask, hasProviderTitle: hasProviderTitle,
             model: row["model"] as? String, reasoningEffort: row["reasoningEffort"] as? String
         )
     }

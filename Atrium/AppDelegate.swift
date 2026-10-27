@@ -75,21 +75,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(request)
     }
 
-    static func sendThreadNotification(_ thread: AgentThread) {
+    static func sendThreadNotification(_ thread: AgentThread, projectIconURL: URL? = nil) {
         guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
         let content = UNMutableNotificationContent()
         content.title = thread.title
         content.body = "\(thread.title) — \(thread.status == .waiting ? "Needs your input" : "Done")"
         content.sound = .default
         content.userInfo = ["threadID": thread.id]
-        let request = UNNotificationRequest(
-            identifier: "thread:\(thread.id)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
-        bounceDockIcon()
-        if !NSApplication.shared.isActive { showBadge() }
+        let icon = ProjectNotificationIcon.pngData(at: projectIconURL)
+        Task { @MainActor in
+            let notification: UNNotificationContent
+            if let icon,
+               let updated = try? await ProjectNotificationContent.updating(
+                content: content, title: thread.title, imageData: icon, conversationID: thread.id
+               ) {
+                notification = updated
+            } else {
+                notification = content
+            }
+            guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
+            let request = UNNotificationRequest(identifier: "thread:\(thread.id)", content: notification, trigger: nil)
+            try? await UNUserNotificationCenter.current().add(request)
+            bounceDockIcon()
+            if !NSApplication.shared.isActive { showBadge() }
+        }
     }
 
     static func bounceDockIcon() {

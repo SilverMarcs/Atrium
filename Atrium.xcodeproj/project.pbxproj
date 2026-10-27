@@ -11,11 +11,47 @@
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 		0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
+		0A7C00000000000000000220 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000210 /* NotificationService.swift */; };
+		0A7C00000000000000000221 /* NotificationDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000211 /* NotificationDelivery.swift */; };
+		0A7C00000000000000000222 /* RelayIconDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000212 /* RelayIconDownloader.swift */; };
+		0A7C00000000000000000223 /* ProjectNotificationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000215 /* ProjectNotificationContent.swift */; };
+		0A7C00000000000000000224 /* AtriumNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000201 /* AtriumNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0A7C0000000000000000020A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08D10C422F64897100754649 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0A7C00000000000000000200;
+			remoteInfo = AtriumNotificationService;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0A7C00000000000000000209 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0A7C00000000000000000224 /* AtriumNotificationService.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		08D10C4A2F64897100754649 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A7C00000000000000000001 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A7C00000000000000000201 /* AtriumNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AtriumNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A7C00000000000000000210 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		0A7C00000000000000000211 /* NotificationDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelivery.swift; sourceTree = "<group>"; };
+		0A7C00000000000000000212 /* RelayIconDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayIconDownloader.swift; sourceTree = "<group>"; };
+		0A7C00000000000000000213 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0A7C00000000000000000214 /* AtriumNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AtriumNotificationService.entitlements; sourceTree = "<group>"; };
+		0A7C00000000000000000215 /* ProjectNotificationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumShared/Notifications/ProjectNotificationContent.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -69,6 +105,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A7C00000000000000000207 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -78,6 +120,7 @@
 				08D10C4C2F64897100754649 /* Atrium */,
 				0A7C00000000000000000002 /* AtriumShared */,
 				0A7C00000000000000000003 /* AtriumiOS */,
+				0A7C00000000000000000202 /* AtriumNotificationService */,
 				08D10C4B2F64897100754649 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -87,8 +130,22 @@
 			children = (
 				08D10C4A2F64897100754649 /* Atrium.app */,
 				0A7C00000000000000000001 /* Atrium.app */,
+				0A7C00000000000000000201 /* AtriumNotificationService.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		0A7C00000000000000000202 /* AtriumNotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				0A7C00000000000000000210 /* NotificationService.swift */,
+				0A7C00000000000000000211 /* NotificationDelivery.swift */,
+				0A7C00000000000000000212 /* RelayIconDownloader.swift */,
+				0A7C00000000000000000213 /* Info.plist */,
+				0A7C00000000000000000214 /* AtriumNotificationService.entitlements */,
+				0A7C00000000000000000215 /* ProjectNotificationContent.swift */,
+			);
+			path = AtriumNotificationService;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -127,10 +184,12 @@
 				0A7C00000000000000000006 /* Sources */,
 				0A7C00000000000000000007 /* Frameworks */,
 				0A7C00000000000000000008 /* Resources */,
+				0A7C00000000000000000209 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0A7C0000000000000000020B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				0A7C00000000000000000002 /* AtriumShared */,
@@ -144,6 +203,21 @@
 			productReference = 0A7C00000000000000000001 /* Atrium.app */;
 			productType = "com.apple.product-type.application";
 		};
+		0A7C00000000000000000200 /* AtriumNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0A7C00000000000000000203 /* Build configuration list for PBXNativeTarget "AtriumNotificationService" */;
+			buildPhases = (
+				0A7C00000000000000000206 /* Sources */,
+				0A7C00000000000000000207 /* Frameworks */,
+				0A7C00000000000000000208 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = AtriumNotificationService;
+			productName = AtriumNotificationService;
+			productReference = 0A7C00000000000000000201 /* AtriumNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -154,11 +228,23 @@
 				LastSwiftUpdateCheck = 2630;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					0A7C00000000000000000200 = {
+						CreatedOnToolsVersion = 27.1;
+						SystemCapabilities = {
+							com.apple.CommunicationNotifications = { enabled = 1; };
+						};
+					};
 					08D10C492F64897100754649 = {
 						CreatedOnToolsVersion = 26.3;
+						SystemCapabilities = {
+							com.apple.CommunicationNotifications = { enabled = 1; };
+						};
 					};
 					0A7C00000000000000000005 = {
 						CreatedOnToolsVersion = 27.1;
+						SystemCapabilities = {
+							com.apple.CommunicationNotifications = { enabled = 1; };
+						};
 					};
 				};
 			};
@@ -184,6 +270,7 @@
 			targets = (
 				08D10C492F64897100754649 /* Atrium */,
 				0A7C00000000000000000005 /* AtriumiOS */,
+				0A7C00000000000000000200 /* AtriumNotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -203,6 +290,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A7C00000000000000000208 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -220,7 +313,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0A7C00000000000000000206 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A7C00000000000000000220 /* NotificationService.swift in Sources */,
+				0A7C00000000000000000221 /* NotificationDelivery.swift in Sources */,
+				0A7C00000000000000000222 /* RelayIconDownloader.swift in Sources */,
+				0A7C00000000000000000223 /* ProjectNotificationContent.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0A7C0000000000000000020B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0A7C00000000000000000200 /* AtriumNotificationService */;
+			targetProxy = 0A7C0000000000000000020A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		08D10C532F64897300754649 /* Debug */ = {
@@ -345,6 +457,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Atrium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 65;
@@ -408,6 +521,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = Atrium.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 65;
@@ -471,7 +585,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AtriumiOS/AtriumiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = J52QUTREBS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -504,7 +618,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AtriumiOS/AtriumiOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = J52QUTREBS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -526,6 +640,68 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		0A7C00000000000000000204 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = AtriumNotificationService/AtriumNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 31;
+				DEVELOPMENT_TEAM = J52QUTREBS;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AtriumNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.3.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium.NotificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A7C00000000000000000205 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = AtriumNotificationService/AtriumNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 31;
+				DEVELOPMENT_TEAM = J52QUTREBS;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AtriumNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.3.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium.NotificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -556,6 +732,15 @@
 			buildConfigurations = (
 				0A7C0000000000000000000A /* Debug */,
 				0A7C0000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A7C00000000000000000203 /* Build configuration list for PBXNativeTarget "AtriumNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A7C00000000000000000204 /* Debug */,
+				0A7C00000000000000000205 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

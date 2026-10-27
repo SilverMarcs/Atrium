@@ -7,6 +7,8 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var directory: String
     var updatedAt: Date
     var status: AgentThreadStatus
+    /// Only provider-confirmed main tasks may alert. Older retained rows have no classification yet.
+    var isMainTask: Bool?
     /// A saved provider name takes precedence over a terminal title or prompt preview.
     var hasProviderTitle = false
     var readState: AgentReadState?

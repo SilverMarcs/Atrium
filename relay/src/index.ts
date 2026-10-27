@@ -33,10 +33,15 @@ interface PushRequest {
   body: string;
   taskID: string;
   hostID?: string;
+  projectIcon?: string;
 }
 
 const route = /^\/v1\/(mac|phone)\/([A-Za-z0-9_-]{16,64})(?:\/data\/([A-Za-z0-9-]{1,64}))?$/;
+const iconRoute = /^\/v1\/icon\/([A-Za-z0-9_-]{16,64})\/([0-9a-f-]{36})$/;
 const encoder = new TextEncoder();
+const iconLifetime = 60 * 60 * 1000;
+interface StoredProjectIcon { data: Uint8Array; expiresAt: number }
+
 /** Bounds the alerts one Mac can send, should its secret ever leak. */
 const maxPushesPerHour = 300;
 
@@ -70,12 +75,18 @@ function isPushRequest(value: unknown): value is PushRequest {
     && (push.environment === "sandbox" || push.environment === "production")
     && typeof push.title === "string" && push.title.length <= 1000
     && typeof push.body === "string" && push.body.length > 0 && push.body.length <= 1000
-    && typeof push.taskID === "string" && push.taskID.length <= 256;
+    && typeof push.taskID === "string" && push.taskID.length <= 256
+    && (push.projectIcon === undefined || (typeof push.projectIcon === "string" && push.projectIcon.length <= 87_384));
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const match = new URL(request.url).pathname.match(route);
+    const pathname = new URL(request.url).pathname;
+    const icon = pathname.match(iconRoute);
+    if (icon && request.method === "GET") {
+      return env.ROOMS.get(env.ROOMS.idFromName(icon[1])).fetch(request);
+    }
+    const match = pathname.match(route);
     if (!match || (match[1] === "phone" && match[3])) {
       return new Response("Atrium relay", { status: 404 });
     }
@@ -99,7 +110,10 @@ export class Room implements DurableObject {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const [, role, hostID, dataID] = new URL(request.url).pathname.match(route) ?? [];
+    const pathname = new URL(request.url).pathname;
+    const icon = pathname.match(iconRoute);
+    if (icon && request.method === "GET") return this.projectIconResponse(icon[2]);
+    const [, role, hostID, dataID] = pathname.match(route) ?? [];
     const { 0: client, 1: server } = new WebSocketPair();
 
     if (role === "mac" && !dataID) {
@@ -158,10 +172,19 @@ export class Room implements DurableObject {
       ?? (typeof push.hostID === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(push.hostID) ? push.hostID : undefined);
     const destination = hostID ? `${hostID}:${push.taskID}` : push.taskID;
     const collapseID = base64url(await crypto.subtle.digest("SHA-256", encoder.encode(destination)));
+    let projectIconURL: string | undefined;
+    if (hostID && push.projectIcon) {
+      try { projectIconURL = await this.storeProjectIcon(push.projectIcon, hostID); }
+      catch { console.error("Could not prepare the project notification icon"); }
+    }
     const payload = {
-      aps: { alert: { title: push.title, body: push.body }, sound: "default", "thread-id": destination },
+      aps: {
+        alert: { title: push.title, body: push.body }, sound: "default", "thread-id": destination,
+        ...(projectIconURL ? { "mutable-content": 1 } : {}),
+      },
       taskID: push.taskID,
       hostID,
+      ...(projectIconURL ? { projectIconURL } : {}),
     };
     // A long chat title now appears twice. Fit APNs' byte limit by shortening
     // only the heading, preserving the body and routing and whole code points.
@@ -178,6 +201,45 @@ export class Room implements DurableObject {
     } catch (error) {
       console.error("Push failed", error instanceof Error ? error.message : "unknown");
     }
+  }
+
+  /** Short-lived, unguessable image URLs keep image bytes out of the APNs payload. */
+  private async storeProjectIcon(encoded: string, hostID: string): Promise<string | undefined> {
+    let data: Uint8Array;
+    try { data = Uint8Array.from(atob(encoded), value => value.charCodeAt(0)); }
+    catch { return undefined; }
+    const png = [137, 80, 78, 71, 13, 10, 26, 10];
+    if (data.length > 65_536 || !png.every((byte, index) => data[index] === byte)) return undefined;
+    const icons = await this.state.storage.list<StoredProjectIcon>({ prefix: "icon:" });
+    const live = [...icons].filter(([, icon]) => icon.expiresAt > Date.now()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+    const remove = [...icons].filter(([, icon]) => icon.expiresAt <= Date.now()).map(([key]) => key);
+    // Bound storage even if a host generates many notifications in a burst.
+    remove.push(...live.slice(0, Math.max(0, live.length - 63)).map(([key]) => key));
+    if (remove.length) await this.state.storage.delete(remove);
+    const id = crypto.randomUUID();
+    const expiresAt = Date.now() + iconLifetime;
+    await this.state.storage.put(`icon:${id}`, { data, expiresAt } satisfies StoredProjectIcon);
+    if (await this.state.storage.getAlarm() === null) await this.state.storage.setAlarm(expiresAt);
+    return `https://atrium-relay.lynksphere.com/v1/icon/${hostID}/${id}`;
+  }
+
+  private async projectIconResponse(id: string): Promise<Response> {
+    const icon = await this.state.storage.get<StoredProjectIcon>(`icon:${id}`);
+    if (!icon || icon.expiresAt <= Date.now()) {
+      if (icon) await this.state.storage.delete(`icon:${id}`);
+      return new Response("Not found", { status: 404 });
+    }
+    return new Response(icon.data, { headers: {
+      "Content-Type": "image/png", "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff",
+    } });
+  }
+
+  async alarm(): Promise<void> {
+    const icons = await this.state.storage.list<StoredProjectIcon>({ prefix: "icon:" });
+    const expired = [...icons].filter(([, icon]) => icon.expiresAt <= Date.now()).map(([key]) => key);
+    if (expired.length) await this.state.storage.delete(expired);
+    const live = [...icons.values()].filter(icon => icon.expiresAt > Date.now());
+    if (live.length) await this.state.storage.setAlarm(Math.min(...live.map(icon => icon.expiresAt)));
   }
 
   private allowPush(): boolean {

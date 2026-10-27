@@ -272,7 +272,7 @@ actor ClaudeSessionHistory {
     private func thread(_ file: File, metadata: ClaudeSessionMetadata) -> AgentThread {
         // The previous SDK helper treated its summary (including a prompt fallback) as an authoritative title.
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
-                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, hasProviderTitle: true, projectDirectory: metadata.projectDirectory,
+                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: true, projectDirectory: metadata.projectDirectory,
                     model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode)
     }
 }

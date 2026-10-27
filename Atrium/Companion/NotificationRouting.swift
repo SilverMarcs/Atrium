@@ -17,6 +17,8 @@ final class NotificationRouting {
     /// Companions in the foreground, by connection.
     private var companions: [UUID: NotificationPresence] = [:]
     var macTaskID: String?
+    /// Both alert paths require current provider metadata, including for retained tasks.
+    var isMainTask: (String) -> Bool = { _ in false }
 
     func update(_ activity: CompanionActivity, deviceID: UUID, connectionID: UUID) {
         companions[connectionID] = activity.isActive
@@ -34,11 +36,13 @@ final class NotificationRouting {
     }
 
     func shouldNotifyMac(taskID: String) -> Bool {
+        guard isMainTask(taskID) else { return false }
         guard let active = activeDevice() else { return true }
         return active.deviceID == nil && active.taskID != taskID
     }
 
     func shouldNotify(_ deviceID: UUID, taskID: String) -> Bool {
+        guard isMainTask(taskID) else { return false }
         guard let active = activeDevice() else { return true }
         return active.deviceID == deviceID && active.taskID != taskID
     }

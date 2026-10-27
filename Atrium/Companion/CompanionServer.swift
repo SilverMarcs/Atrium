@@ -275,6 +275,8 @@ final class CompanionServer {
 
     /// Routes alerts to the active device, or all devices when none is active.
     private func alertPhones(about task: WireTask) {
+        let workspace = workspaces.workspaces.first { $0.id == task.workspaceID }
+        let icon = ProjectNotificationIcon.pngData(at: workspace?.customIconURL)
         for device in pairing.devices {
             guard let push = device.push,
                   NotificationRouting.shared.shouldNotify(device.id, taskID: task.id) else { continue }
@@ -283,7 +285,8 @@ final class CompanionServer {
                 environment: push.environment,
                 title: task.title,
                 body: "\(task.title) — \(task.status == .waiting ? "Needs your input" : "Done")",
-                taskID: task.id
+                taskID: task.id,
+                projectIcon: icon
             ))
         }
     }
