@@ -43,13 +43,21 @@ struct SearchFieldComposer: ViewModifier {
             .onDisappear {
                 composer.isFocused = false
             }
+            // Closing in the same frame the prompt and working indicator appear
+            // moves the keyboard and the timeline at once, so the keyboard
+            // waits for the timeline to settle on them. Anything written
+            // meanwhile keeps it open.
+            .onChange(of: composer.isRevealingSentPrompt) { _, isRevealing in
+                guard !isRevealing, !composer.hasContent else { return }
+                isPresented = false
+            }
     }
 
-    /// Sends the draft and, once it's gone, closes the composer and its
-    /// keyboard. A draft that couldn't be sent stays open for editing.
+    /// Sends the draft and, once the timeline shows it, closes the composer
+    /// and its keyboard. A draft that couldn't be sent stays open for editing.
     private func send() {
         if submit() {
-            isPresented = false
+            composer.beginRevealingSentPrompt()
         }
     }
 

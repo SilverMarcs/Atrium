@@ -15,8 +15,17 @@ final class TaskComposer {
     /// Mirrors the composer's focus, where the timeline observes it to scroll
     /// to the latest message (`FocusState` is view-local).
     var isFocused = false
+    /// A prompt just sent from the bottom-bar composer is still moving into
+    /// view. The composer keeps its keyboard up until the timeline settles on
+    /// it, so the prompt and the working indicator land before the keyboard
+    /// starts to hide, rather than in the same frame.
+    private(set) var isRevealingSentPrompt = false
+    private var revealTimeout: Task<Void, Never>?
 
     static let maxImages = 4
+    /// Ends a reveal the timeline never reports settling, such as one with
+    /// nothing to scroll.
+    private static let maximumRevealDuration: Duration = .milliseconds(400)
 
     func appendTranscription(_ text: String) {
         draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
@@ -40,6 +49,25 @@ final class TaskComposer {
 
     func remove(_ image: ComposerImage) {
         images.removeAll { $0.id == image.id }
+    }
+
+    /// Waits for the timeline to bring the prompt just sent into view.
+    func beginRevealingSentPrompt() {
+        isRevealingSentPrompt = true
+        revealTimeout?.cancel()
+        revealTimeout = Task { [weak self] in
+            try? await Task.sleep(for: Self.maximumRevealDuration)
+            guard !Task.isCancelled else { return }
+            self?.finishRevealingSentPrompt()
+        }
+    }
+
+    /// The timeline has settled, with the prompt just sent in view.
+    func finishRevealingSentPrompt() {
+        revealTimeout?.cancel()
+        revealTimeout = nil
+        guard isRevealingSentPrompt else { return }
+        isRevealingSentPrompt = false
     }
 
     /// Sends the draft and its images to the task's agent, or explains why it

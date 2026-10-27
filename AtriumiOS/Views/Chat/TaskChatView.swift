@@ -3,6 +3,7 @@ import SwiftUI
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.
 struct TaskChatView: View {
     @Environment(CompanionClient.self) private var client
+    @Environment(TaskComposer.self) private var composer
     let task: WireTask
     @State private var pin = TimelinePin()
 
@@ -49,9 +50,6 @@ struct TaskChatView: View {
                 }
                 .followsComposerOnKeyboard()
             }
-            // Recreate only the viewport when a task opens or its transcript
-            // first arrives, so it opens at the newest message.
-            .id("\(task.id)-\(messages != nil)")
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)
@@ -60,9 +58,14 @@ struct TaskChatView: View {
             .scrollsOnComposerFocus {
                 scrollToLatest(with: proxy)
             }
-            // Another task opens in this view at its newest message, pinned.
-            .onChange(of: task.id) {
+            // Another task, or a transcript arriving for the first time, opens
+            // at its newest message, pinned. The scroll view itself is kept
+            // rather than recreated with a new identity: the bottom bar
+            // re-adopts a new scroll view, so recreating it while a task opens
+            // makes the composer's placeholder spring.
+            .onChange(of: "\(task.id)-\(messages != nil)") {
                 pin = TimelinePin()
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
             .onChange(of: TranscriptTracker(
                 count: (messages?.count ?? 0) + pendingPrompts.count,
@@ -89,6 +92,9 @@ struct TaskChatView: View {
                 case .tracking, .interacting:
                     pin.isReaderScrolling = true
                 case .idle:
+                    // A prompt just sent is in view once the scroll to it
+                    // ends, so the composer can close its keyboard.
+                    composer.finishRevealingSentPrompt()
                     guard pin.isReaderScrolling else { return }
                     pin.isReaderScrolling = false
                     pin.isPinned = context.geometry.isAtBottom

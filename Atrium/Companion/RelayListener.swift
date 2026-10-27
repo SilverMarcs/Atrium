@@ -42,7 +42,7 @@ final class RelayListener: CompanionListener {
         control.onReady = { [weak self] in
             guard let self else { return }
             self.retryDelay = .seconds(1)
-            self.onStateChange?(.ready("Connected to \(self.relay.host() ?? "the relay")"))
+            self.onStateChange?(.ready("Connected"))
             self.startKeepAlive()
         }
         control.onMessage = { [weak self] data in self?.receive(data) }

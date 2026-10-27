@@ -74,7 +74,7 @@ final class TimelineKeyboardFollower {
     private var lastComposerY: CGFloat?
     private var lastSafeAreaBottom: CGFloat?
     private var lastOffset: CGFloat?
-    /// The newest message's offset in the previous pass. Sending adds a row in
+    /// The newest message's offset in the previous pass. Content can grow in
     /// the same turn the keyboard starts hiding, so the current content size
     /// can't tell whether the timeline was pinned before.
     private var lastMaximumOffset: CGFloat?
