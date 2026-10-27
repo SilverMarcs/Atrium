@@ -12,6 +12,7 @@ struct AtriumiOSApp: App {
         WindowGroup {
             CompanionRootView()
                 .environment(client)
+                .onOpenURL(prefersInApp: true)
                 .task {
                     client.start()
                 }
