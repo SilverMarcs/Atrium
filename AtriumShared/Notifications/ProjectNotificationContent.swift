@@ -41,7 +41,8 @@ nonisolated enum ProjectNotificationContent {
             recipients: nil,
             outgoingMessageType: .outgoingMessageText,
             content: content.body,
-            speakableGroupName: nil,
+            // Communication notifications derive their subtitle from the group name.
+            speakableGroupName: content.subtitle.isEmpty ? nil : INSpeakableString(spokenPhrase: content.subtitle),
             conversationIdentifier: conversationID,
             serviceName: nil,
             sender: sender,
