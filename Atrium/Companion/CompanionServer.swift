@@ -281,7 +281,7 @@ final class CompanionServer {
             listener?.push(RelayPushAlert(
                 token: push.token,
                 environment: push.environment,
-                title: task.projectName,
+                title: task.title,
                 body: "\(task.title) — \(task.status == .waiting ? "Needs your input" : "Done")",
                 taskID: task.id
             ))
