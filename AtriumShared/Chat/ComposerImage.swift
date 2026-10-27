@@ -12,6 +12,15 @@ nonisolated struct ComposerImage: Identifiable, Equatable, Sendable {
     private static let maxPixelSize = 2048
     private static let compressionQuality = 0.8
 
+    /// Reads and prepares an imported file while keeping security-scoped access alive.
+    @concurrent
+    static func prepare(contentsOf url: URL) async throws -> ComposerImage? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let source = try Data(contentsOf: url)
+        return await prepare(source)
+    }
+
     /// Prepares an image in any format the photo library or camera produces,
     /// or returns `nil` if the data isn't an image.
     @concurrent

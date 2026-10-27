@@ -3,13 +3,14 @@ import SwiftUI
 /// Animate the actual bubble relative to its current layout, never a copied
 /// destination rectangle. Only render transforms change on animation frames.
 struct PromptSendEffect: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(PromptSendAnimator.self) private var animator
 
     /// Finds this bubble's flight, if it was just sent.
     let flight: (PromptSendAnimator) -> PromptSendFlight?
 
     func body(content: Content) -> some View {
-        if let flight = flight(animator) {
+        if !reduceMotion, let flight = flight(animator) {
             let source = flight.sourceFrame
             let startedAt = flight.startedAt
             TimelineView(.animation) { _ in

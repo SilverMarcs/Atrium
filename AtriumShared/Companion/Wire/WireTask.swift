@@ -33,12 +33,16 @@ nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     /// The model and reasoning effort as one line, with the model named as its
     /// provider lists it, such as "Opus 5.5 · High", and "Fast" in fast mode.
     func modelSummary(using models: [AgentModel]) -> String? {
-        guard let model else { return nil }
-        return [
-            models.model(running: model)?.name ?? model,
-            reasoningEffort.map(AgentModel.effortName),
-            isFastMode == true ? "Fast" : nil
-        ].compactMap(\.self).joined(separator: " · ")
+        modelSelection.summary(using: models)
+    }
+
+    var modelSelection: TaskModelSelection {
+        TaskModelSelection(
+            model: model,
+            reasoningEffort: reasoningEffort,
+            isFastMode: isFastMode == true,
+            canSelectModel: actions.contains(.selectModel)
+        )
     }
 
     var menuState: TaskMenuState {

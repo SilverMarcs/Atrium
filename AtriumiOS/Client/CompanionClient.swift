@@ -31,12 +31,19 @@ final class CompanionClient {
     }
     private(set) var gitStatuses: [UUID: WireGitStatus] = [:]
     private(set) var commands: [UUID: [WireCommand]] = [:]
-    private(set) var transcripts: [String: [TranscriptMessage]] = [:]
-    /// Prompts sent from this phone that each task's transcript doesn't show yet.
-    private(set) var pendingPrompts: [String: [PendingPrompt]] = [:]
-    /// Tasks just sent a prompt whose agent hasn't reported working yet, by the
-    /// latest prompt's ID, so their timelines show it working right away.
-    private(set) var tasksAwaitingAgent: [String: UUID] = [:]
+    let conversations = ConversationStore()
+    private(set) var transcripts: [String: [TranscriptMessage]] {
+        get { conversations.transcripts }
+        set { conversations.transcripts = newValue }
+    }
+    private(set) var pendingPrompts: [String: [PendingPrompt]] {
+        get { conversations.pendingPrompts }
+        set { conversations.pendingPrompts = newValue }
+    }
+    private(set) var tasksAwaitingAgent: [String: UUID] {
+        get { conversations.tasksAwaitingAgent }
+        set { conversations.tasksAwaitingAgent = newValue }
+    }
     /// The latest failed action, shown as an alert.
     var actionError: String?
     /// Called as the transcript takes over showing a prompt sent from this
@@ -161,9 +168,7 @@ final class CompanionClient {
         taskUpdates.removeAll()
         gitStatuses = [:]
         commands = [:]
-        transcripts = [:]
-        pendingPrompts = [:]
-        tasksAwaitingAgent = [:]
+        conversations.reset()
         drafts = [:]
         icons = [:]
     }
@@ -294,147 +299,53 @@ final class CompanionClient {
     /// - Returns: The ID of the prompt's row in the timeline.
     @discardableResult
     func sendPrompt(_ text: String, images: [Data] = [], to taskID: String) -> PendingPrompt.ID {
-        let prompt = PendingPrompt(
-            text: text,
-            images: images,
-            anchorUserMessageID: newestUserMessageID(in: taskID),
-            expectedUserMessagesAfterAnchor: nextExpectedUserMessageCount(for: taskID)
-        )
-        pendingPrompts[taskID, default: []].append(prompt)
+        let prompt = conversations.enqueue(text, images: images, to: taskID)
         deliver(prompt.id, to: taskID)
         return prompt.id
     }
 
     func retryPrompt(_ id: UUID, in taskID: String) {
-        let anchor = newestUserMessageID(in: taskID)
-        let expected = nextExpectedUserMessageCount(for: taskID)
-        updatePendingPrompt(id, in: taskID) {
-            $0.state = .sending
-            $0.anchorUserMessageID = anchor
-            $0.expectedUserMessagesAfterAnchor = expected
-        }
+        conversations.prepareRetry(id, in: taskID)
         deliver(id, to: taskID)
     }
 
     private func deliver(_ id: UUID, to taskID: String) {
-        guard let prompt = pendingPrompts[taskID]?.first(where: { $0.id == id }) else { return }
+        guard pendingPrompts[taskID]?.contains(where: { $0.id == id }) == true else { return }
         tasksAwaitingAgent[taskID] = id
         // A draft's prompts wait for the host to create its task.
         if let draft = drafts[taskID] {
             if !draft.isCreating, draft.taskID == nil { createTask(from: draft) }
             return
         }
-        Task {
-            do {
-                _ = try await request(.prompt(taskID: taskID, text: prompt.text, images: prompt.images))
-                updatePendingPrompt(id, in: taskID) { $0.state = .sent }
-                // An agent whose transcript never shows the prompt, or that
-                // never reports working, mustn't leave either pending forever.
-                try? await Task.sleep(for: .seconds(20))
-                if task(taskID)?.status == .processing {
-                    // A working agent takes a prompt sent mid-turn only between
-                    // steps, so it stays until the agent stops.
-                    updatePendingPrompt(id, in: taskID) { $0.isOverdue = true }
-                } else {
-                    pendingPrompts[taskID]?.removeAll { $0.id == id && $0.state == .sent }
-                }
-                stopAwaitingAgent(for: taskID, after: id)
-            } catch {
-                markPendingPromptFailed(id, in: taskID)
-                stopAwaitingAgent(for: taskID, after: id)
-            }
+        conversations.deliver(id, to: taskID, using: self) { [weak self] in
+            self?.task(taskID)?.status
         }
     }
 
-    private func updatePendingPrompt(_ id: UUID, in taskID: String, _ update: (inout PendingPrompt) -> Void) {
-        guard var prompts = pendingPrompts[taskID],
-              let index = prompts.firstIndex(where: { $0.id == id }) else { return }
-        update(&prompts[index])
-        pendingPrompts[taskID] = prompts
-    }
-
-    /// A failed prompt never reaches the transcript, so prompts sent after it
-    /// expect one user message fewer.
     private func markPendingPromptFailed(_ id: UUID, in taskID: String) {
-        guard var prompts = pendingPrompts[taskID],
-              let index = prompts.firstIndex(where: { $0.id == id }) else { return }
-        prompts[index].state = .failed
-        for later in prompts.indices.dropFirst(index + 1) where prompts[later].state != .failed {
-            prompts[later].expectedUserMessagesAfterAnchor -= 1
-        }
-        pendingPrompts[taskID] = prompts
+        conversations.markFailed(id, in: taskID)
     }
 
-    /// Stops showing the task working for a prompt, unless a later one has
-    /// taken over.
-    private func stopAwaitingAgent(for taskID: String, after id: UUID) {
-        if tasksAwaitingAgent[taskID] == id {
-            tasksAwaitingAgent[taskID] = nil
-        }
-    }
-
-    /// Hands over to the agent's own status once it reports working or
-    /// needing input.
     private func settleTasksAwaitingAgent() {
-        guard !tasksAwaitingAgent.isEmpty else { return }
-        tasksAwaitingAgent = tasksAwaitingAgent.filter { taskID, _ in
-            // A draft's agent can't report anything until its task is listed.
-            guard let status = task(taskID)?.status else { return draftTask(taskID) != nil }
-            return status != .processing && status != .waiting
-        }
-    }
-
-    /// Drops overdue prompts once their agent stops without showing them.
-    private func dropOverduePrompts() {
-        for (taskID, prompts) in pendingPrompts where prompts.contains(where: \.isOverdue) {
-            guard task(taskID)?.status != .processing else { continue }
-            pendingPrompts[taskID]?.removeAll { $0.isOverdue && $0.state == .sent }
-            if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
-        }
-    }
-
-    /// The user messages the transcript holds after its newest one once it
-    /// shows the next prompt: one past what's already on its way.
-    private func nextExpectedUserMessageCount(for taskID: String) -> Int {
-        pendingPrompts[taskID, default: []].filter { $0.state != .failed }.count + 1
-    }
-
-    private func newestUserMessageID(in taskID: String) -> String? {
-        transcripts[taskID]?.last { $0.role == .user }?.id
-    }
-
-    /// User messages after the anchor. An anchor that has dropped out of the
-    /// transcript's window is older than everything left in it.
-    private func userMessageCount(in taskID: String, after anchorID: String?) -> Int {
-        let messages = transcripts[taskID, default: []]
-        let start = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }.map { $0 + 1 } ?? 0
-        return messages[start...].count { $0.role == .user }
-    }
-
-    /// The `position`th user message after the anchor, counting from one.
-    private func userMessage(in taskID: String, after anchorID: String?, at position: Int) -> TranscriptMessage? {
-        let messages = transcripts[taskID, default: []]
-        let start = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }.map { $0 + 1 } ?? 0
-        let userMessages = messages[start...].filter { $0.role == .user }
-        guard position > 0, position <= userMessages.count else { return nil }
-        return userMessages[position - 1]
-    }
-
-    /// Drops prompts the transcript now shows.
-    private func reconcilePendingPrompts(for taskID: String) {
-        guard let prompts = pendingPrompts[taskID] else { return }
-        let shown = prompts.filter {
-            $0.state != .failed
-                && $0.expectedUserMessagesAfterAnchor <= userMessageCount(in: taskID, after: $0.anchorUserMessageID)
-        }
-        guard !shown.isEmpty else { return }
-        for prompt in shown {
-            if let message = userMessage(in: taskID, after: prompt.anchorUserMessageID, at: prompt.expectedUserMessagesAfterAnchor) {
-                onPendingPromptShown?(prompt.id, message.id)
+        for taskID in tasksAwaitingAgent.keys {
+            if let status = task(taskID)?.status {
+                conversations.noteStatus(status, for: taskID)
+            } else if draftTask(taskID) == nil {
+                tasksAwaitingAgent[taskID] = nil
             }
         }
-        pendingPrompts[taskID]?.removeAll { prompt in shown.contains { $0.id == prompt.id } }
-        if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
+    }
+
+    private func dropOverduePrompts() {
+        for taskID in pendingPrompts.keys {
+            if let status = task(taskID)?.status { conversations.noteStatus(status, for: taskID) }
+        }
+    }
+
+    private func reconcilePendingPrompts(for taskID: String) {
+        for confirmation in conversations.reconcile(taskID: taskID) {
+            onPendingPromptShown?(confirmation.promptID, confirmation.messageID)
+        }
     }
 
     // MARK: - Drafts
@@ -476,9 +387,7 @@ final class CompanionClient {
 
     private func forgetDraft(_ id: String) {
         drafts[id] = nil
-        transcripts[id] = nil
-        pendingPrompts[id] = nil
-        tasksAwaitingAgent[id] = nil
+        conversations.remove(id)
     }
 
     /// What a draft shows in place of its task, by the draft's ID or, once
@@ -758,5 +667,16 @@ final class CompanionClient {
             transcripts[taskID, default: []].apply(delta)
             reconcilePendingPrompts(for: taskID)
         }
+    }
+}
+
+
+extension CompanionClient: ConversationTransport {
+    func deliverPrompt(_ prompt: PendingPrompt, to taskID: String) async throws {
+        _ = try await request(.prompt(taskID: taskID, text: prompt.text, images: prompt.images))
+    }
+
+    func interruptConversation(taskID: String) async throws {
+        _ = try await request(.interrupt(taskID: taskID))
     }
 }

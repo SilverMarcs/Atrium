@@ -3,9 +3,11 @@ import SwiftUI
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.
 struct TaskChatView: View {
     @Environment(CompanionClient.self) private var client
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: WireTask
     @State private var pin = TimelinePin()
     @State private var anchorSpace = TimelineAnchorSpace()
+    @State private var scrollPolicy = ConversationScrollPolicy()
 
     private static let bottomID = "bottom"
 
@@ -14,9 +16,7 @@ struct TaskChatView: View {
         let pendingPrompts = client.pendingPrompts[task.id] ?? []
         // A prompt just sent shows the agent working with it, before the host
         // reports so, so the indicator arrives with the prompt's row.
-        let footerStatus: AgentThreadStatus = client.tasksAwaitingAgent[task.id] != nil && task.status != .waiting
-            ? .processing
-            : task.status
+        let footerStatus = client.conversations.footerStatus(for: task.id, status: task.status)
         let newestPromptID = pendingPrompts.last?.timelineID ?? messages?.last { $0.role == .user }?.id
         // A prompt sent from this device starts the latest turn, held at the
         // top. A pending prompt held there hands over to the transcript's
@@ -93,22 +93,25 @@ struct TaskChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
-                scrollToLatest(with: proxy)
+                scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
             }
             // Another task, or a transcript arriving for the first time, opens
             // at its newest message, pinned. The scroll view itself is kept
             // rather than recreated with a new identity: the bottom bar
             // re-adopts a new scroll view, so recreating it while a task opens
             // makes the composer's placeholder spring.
-            .onChange(of: "\(task.id)-\(messages != nil)") {
-                pin = TimelinePin()
-                anchorSpace.reset()
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
             .onChange(of: TranscriptTracker(
+                taskID: task.id,
+                hasTranscript: messages != nil,
                 count: (messages?.count ?? 0) + pendingPrompts.count,
                 lastID: pendingPrompts.last?.timelineID ?? messages?.last?.id
-            )) { oldTracker, newTracker in
+            ), initial: true) { oldTracker, newTracker in
+                if scrollPolicy.observe(from: oldTracker, to: newTracker) {
+                    pin = TimelinePin()
+                    anchorSpace.reset()
+                    scrollToLatest(with: proxy, animated: false)
+                    return
+                }
                 // Scroll when a new message arrives. A shrinking transcript
                 // keeps the reader where they are.
                 guard newTracker.lastID != oldTracker.lastID,
@@ -157,7 +160,9 @@ struct TaskChatView: View {
                 // A reply outgrowing the turn below a prompt held at the top
                 // leaves the prompt where it is.
                 guard !sections.hasTurn else { return }
-                scrollToLatest(with: proxy)
+                // Markdown can finish measuring after initial placement. Keep
+                // those corrections immediate until a same-task update arrives.
+                scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
             }
             .overlay {
                 if messages == nil {
@@ -176,10 +181,13 @@ struct TaskChatView: View {
 
     /// Scrolls to the newest message: to the prompt held at the top, while
     /// its turn fits below it, else to the end.
-    private func scrollToLatest(with proxy: ScrollViewProxy, holdingPrompt: Bool? = nil) {
+    private func scrollToLatest(with proxy: ScrollViewProxy, holdingPrompt: Bool? = nil, animated: Bool = true) {
         pin.isPinned = true
         let holdsPrompt = holdingPrompt ?? anchorSpace.isHolding
-        withAnimation(.easeOut(duration: 0.25)) {
+        let shouldAnimate = animated && !reduceMotion
+        var transaction = Transaction(animation: shouldAnimate ? .easeOut(duration: 0.25) : nil)
+        transaction.disablesAnimations = !shouldAnimate
+        withTransaction(transaction) {
             if holdsPrompt {
                 proxy.scrollTo(TimelineAnchorSpace.turnID, anchor: .top)
             } else {

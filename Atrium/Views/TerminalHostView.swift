@@ -10,6 +10,13 @@ final class TerminalHostView: NSView {
         }
     }
 
+    var acceptsInputFocus = true {
+        didSet {
+            guard acceptsInputFocus, !oldValue, let terminalView, terminalView.superview === self, let window else { return }
+            window.makeFirstResponder(terminalView)
+        }
+    }
+
     private static var owners: [ObjectIdentifier: WeakHost] = [:]
     private weak var terminalView: NSView?
 
@@ -81,6 +88,7 @@ final class TerminalHostView: NSView {
             // must leave keyboard focus in the editor or inspector alone.
             Task { @MainActor [weak self, weak terminalView] in
                 guard let self, let terminalView,
+                      self.acceptsInputFocus,
                       terminalView.superview === self,
                       let window = self.window else { return }
                 window.makeFirstResponder(terminalView)

@@ -51,7 +51,7 @@ final class CompanionServer {
     @ObservationIgnored private var connections: [ObjectIdentifier: CompanionConnection] = [:]
     @ObservationIgnored private var gitFeeds: [UUID: CompanionGitFeed] = [:]
     @ObservationIgnored private var commandFeeds: [UUID: CompanionCommandsFeed] = [:]
-    @ObservationIgnored private var transcriptFeeds: [String: CompanionTranscriptFeed] = [:]
+    @ObservationIgnored private var transcriptSubscriptions: [String: HostTranscriptSubscription] = [:]
     @ObservationIgnored private let integrations: AgentIntegrationStore
     @ObservationIgnored private var latestTasks: WireTasksSnapshot?
 
@@ -70,11 +70,12 @@ final class CompanionServer {
         tasks = CompanionTaskService(integrations: integrations, sessions: sessions, workspaces: workspaces)
         tasksFeed = CompanionTasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces)
         isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
-        integrations.onTranscriptChanged = { [weak self] taskID in self?.transcriptFeeds[taskID]?.refresh() }
         if isEnabled { start() }
     }
 
     func start() {
+        // Development builds must not compete with the installed app's relay connection.
+        #if !DEBUG
         guard listener == nil else { return }
         let listener = RelayListener()
         listener.onStateChange = { [weak self] state in
@@ -93,6 +94,7 @@ final class CompanionServer {
         awakeActivity = ProcessInfo.processInfo.beginActivity(
             options: .idleSystemSleepDisabled, reason: "The Atrium iPhone companion is on"
         )
+        #endif
     }
 
     func stop() {
@@ -305,7 +307,7 @@ final class CompanionServer {
                 connection.push(.commands(workspaceID: workspaceID, commands: commands))
             }
         case .transcript(let taskID):
-            if let messages = transcriptFeeds[taskID]?.messages {
+            if let messages = transcriptSubscriptions[taskID]?.feed.messages {
                 connection.push(transcript: messages, of: taskID)
             }
         }
@@ -326,20 +328,17 @@ final class CompanionServer {
             }
         }
 
-        for (id, feed) in transcriptFeeds where !transcriptIDs.contains(id) {
-            feed.stop()
-            transcriptFeeds[id] = nil
+        for (id, subscription) in transcriptSubscriptions where !transcriptIDs.contains(id) {
+            subscription.release()
+            transcriptSubscriptions[id] = nil
         }
-        for id in transcriptIDs where transcriptFeeds[id] == nil {
-            let feed = CompanionTranscriptFeed(taskID: id, integrations: integrations)
-            feed.onChange = { [weak self] messages in
+        for id in transcriptIDs where transcriptSubscriptions[id] == nil {
+            transcriptSubscriptions[id] = integrations.acquireTranscriptFeed(taskID: id) { [weak self] messages in
                 guard let self else { return }
                 for connection in self.connections.values where connection.isAuthenticated {
                     connection.push(transcript: messages, of: id)
                 }
             }
-            transcriptFeeds[id] = feed
-            feed.start()
         }
 
         for (id, feed) in gitFeeds where !gitIDs.contains(id) {

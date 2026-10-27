@@ -7,6 +7,7 @@ struct GeneralSettingsView: View {
     @AppStorage(TerminalProcessRegistry.fontSizeKey) private var terminalFontSize: Double = Double(TerminalProcessRegistry.defaultFontSize)
     @AppStorage(TerminalProcessRegistry.scrollbackKey) private var terminalScrollback: Int = TerminalProcessRegistry.defaultScrollback
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
+    @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     var body: some View {
         Form {
@@ -43,6 +44,18 @@ struct GeneralSettingsView: View {
             }
             .onChange(of: terminalFontSize) { _, newValue in
                 TerminalProcessRegistry.applyFontSizeToTaskTerminals(CGFloat(newValue))
+            }
+
+            Section("Chat") {
+                LabeledContent("Font size") {
+                    HStack {
+                        Slider(value: $chatFontSize, in: ChatFontSize.min...ChatFontSize.max, step: ChatFontSize.step)
+                        Text(chatFontSize, format: .number.precision(.fractionLength(1)))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 25, alignment: .trailing)
+                    }
+                }
             }
 
             Section {

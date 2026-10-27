@@ -29,6 +29,8 @@ struct AssistantMessageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(iOS)
         .animation(.default, value: isStreaming)
+        #endif
     }
 }

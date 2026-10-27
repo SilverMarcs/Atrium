@@ -5,6 +5,9 @@ import Observation
 @Observable
 final class TaskSession: Identifiable {
     let id: String
+    let conversation = ConversationStore()
+    var chatPrompt = ""
+    var chatImages: [ComposerImage] = []
     var thread: AgentThread
     let workspace: Workspace
     private(set) var terminal: Terminal

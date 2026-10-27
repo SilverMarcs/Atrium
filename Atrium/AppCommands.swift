@@ -10,6 +10,7 @@ struct AppCommands: Commands {
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
+    @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     /// Whether the focused window is the main Atrium window.
     private var mainWindowActive: Bool { isMainWindow == true }
@@ -48,6 +49,7 @@ struct AppCommands: Commands {
 
             CommandGroup(replacing: .toolbar) {
                 Button {
+                    chatFontSize = min(chatFontSize + ChatFontSize.step, ChatFontSize.max)
                     appState.activeTerminal?.increaseFontSize()
                     editorFontSize = min(editorFontSize + 0.5, EditorFontSize.max)
                 } label: {
@@ -56,6 +58,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("+", modifiers: .command)
 
                 Button {
+                    chatFontSize = max(chatFontSize - ChatFontSize.step, ChatFontSize.min)
                     appState.activeTerminal?.decreaseFontSize()
                     editorFontSize = max(editorFontSize - 0.5, EditorFontSize.min)
                 } label: {
@@ -64,12 +67,13 @@ struct AppCommands: Commands {
                 .keyboardShortcut("-", modifiers: .command)
 
                 Button {
+                    chatFontSize = ChatFontSize.default
                     appState.activeTerminal?.resetFontSize()
                     editorFontSize = EditorFontSize.default
                 } label: {
                     Label("Actual Size", systemImage: "1.magnifyingglass")
                 }
-                .keyboardShortcut("O", modifiers: .command)
+                .keyboardShortcut("0", modifiers: .command)
 
                 Divider()
 

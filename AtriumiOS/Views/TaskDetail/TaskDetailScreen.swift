@@ -68,10 +68,8 @@ struct TaskDetailScreen: View {
             sendAnimator.cancelAll()
         }
         .navigationTitle(task?.title ?? "Task")
-        // iPad has no More menu, so its subtitle names the model in its place, and
-        // leaves the connection status to the task list beside it.
         .modifier(ConnectionStatusSubtitle(
-            subtitle: (isPhone ? task?.projectName : task.map { $0.modelSummary(using: models) ?? $0.provider.name }) ?? "",
+            subtitle: task?.projectName ?? "",
             showsStatus: isPhone
         ))
         .toolbarTitleDisplayMode(.inline)
@@ -83,7 +81,9 @@ struct TaskDetailScreen: View {
                             Menu {
                                 if !models.isEmpty {
                                     Section {
-                                        TaskModelMenu(task: task, models: models)
+                                        TaskModelMenu(provider: task.provider, selection: task.modelSelection, models: models) { action in
+                                            client.send(.task(id: task.id, action: action))
+                                        }
                                     }
                                 }
                                 if let workspaceID = task.workspaceID {
@@ -107,7 +107,14 @@ struct TaskDetailScreen: View {
                     // scratch pad in place of the More menu.
                     if !models.isEmpty {
                         ToolbarItem(placement: .primaryAction) {
-                            TaskModelMenu(task: task, models: models)
+                            TaskModelMenu(
+                                provider: task.provider,
+                                selection: task.modelSelection,
+                                models: models,
+                                perform: { action in client.send(.task(id: task.id, action: action)) },
+                                showsToolbarLabel: true
+                            )
+                            .labelStyle(.titleOnly)
                         }
                         if task.workspaceID != nil {
                             ToolbarSpacer(.fixed, placement: .primaryAction)

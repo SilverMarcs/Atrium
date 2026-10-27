@@ -42,6 +42,11 @@ final class PromptSendAnimator {
         flights.first { $0.confirmedMessageID == id }
     }
 
+    /// Local clients retain the pending row identity after transcript confirmation.
+    func flight(forTimelineID id: String) -> PromptSendFlight? {
+        flights.first { "pending-\($0.id.uuidString)" == id || $0.confirmedMessageID == id }
+    }
+
     func start(_ id: UUID) {
         guard let flight = flights.first(where: { $0.id == id }),
               flight.startedAt == nil else { return }

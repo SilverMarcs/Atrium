@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
 		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
@@ -92,6 +93,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
+                AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */,
 				08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
 			);
@@ -170,6 +172,7 @@
 			name = Atrium;
 			packageProductDependencies = (
 				08BEFC272F74722D009C370D /* SwiftTerm */,
+                0A7C00000000000000000103 /* SwiftMarkdownView */,
 				08BEFC292F74722D009C370E /* Sparkle */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 			);

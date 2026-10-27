@@ -7,6 +7,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
     let terminal: Terminal
     let appState: AppState
+    var acceptsInputFocus = true
 
     func makeNSView(context: Context) -> TerminalHostView {
         let container = TerminalHostView(frame: .zero)
@@ -15,6 +16,7 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ container: TerminalHostView, context: Context) {
+        container.acceptsInputFocus = acceptsInputFocus
         // A retiring host must not recreate a process after its session is closed.
         guard !terminal.hasExited || terminal.localProcessTerminalView != nil else { return }
         TerminalProcessCoordinator.shared.appState = appState

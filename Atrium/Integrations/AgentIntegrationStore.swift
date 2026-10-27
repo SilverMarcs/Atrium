@@ -21,8 +21,7 @@ final class AgentIntegrationStore {
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
-    /// Called with a thread's id when its conversation changes.
-    @ObservationIgnored var onTranscriptChanged: ((String) -> Void)?
+    @ObservationIgnored private var transcriptFeeds: [String: CompanionTranscriptFeed] = [:]
     @ObservationIgnored private var viewedThreadID: String?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -224,7 +223,8 @@ final class AgentIntegrationStore {
             removeDeletedThread("\(provider.rawValue):\(sessionID)")
         case .transcriptChanged(let sessionID):
             guard enabled.contains(provider) else { return }
-            onTranscriptChanged?("\(provider.rawValue):\(sessionID)")
+            let id = "\(provider.rawValue):\(sessionID)"
+            transcriptFeeds[id]?.refresh()
         }
     }
 
@@ -593,6 +593,32 @@ final class AgentIntegrationStore {
 
     func capabilities(of provider: AgentProvider) -> AgentCapabilities {
         adapters[provider]?.capabilities ?? []
+    }
+
+    /// One load pipeline per task, shared by local UI and remote subscribers.
+    /// Callbacks receive future changes; read `subscription.feed.messages` for cached state.
+    /// Capture callback owners weakly and retain the token until observation ends.
+    func acquireTranscriptFeed(
+        taskID: String,
+        onChange: (([TranscriptMessage]) -> Void)? = nil
+    ) -> HostTranscriptSubscription {
+        let feed: CompanionTranscriptFeed
+        if let existing = transcriptFeeds[taskID] {
+            feed = existing
+        } else {
+            feed = CompanionTranscriptFeed(taskID: taskID, integrations: self)
+            transcriptFeeds[taskID] = feed
+        }
+        let token = UUID()
+        feed.addSubscriber(token, onChange: onChange)
+        feed.start()
+        return HostTranscriptSubscription(feed: feed) { [weak self, weak feed] in
+            guard let self, let feed else { return }
+            feed.removeSubscriber(token)
+            guard !feed.hasSubscribers, self.transcriptFeeds[taskID] === feed else { return }
+            self.transcriptFeeds[taskID] = nil
+            feed.stop()
+        }
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
