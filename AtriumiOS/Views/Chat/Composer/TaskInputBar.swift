@@ -49,6 +49,7 @@ struct TaskInputBar: View {
                                 sendAnimator.sourceFrame = { frame }
                             }
                             .onSubmit(send)
+                            .background(ComposerPasteAnchor(composer: composer))
 
                         ComposerDictationButton(isInline: true)
                             .buttonStyle(.plain)

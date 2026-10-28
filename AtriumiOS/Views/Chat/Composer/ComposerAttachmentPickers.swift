@@ -15,6 +15,14 @@ struct ComposerAttachmentPickers: ViewModifier {
                     ComposerAttachmentStrip(composer: composer)
                 }
             }
+            .alert(
+                "Couldn’t Paste Attachment",
+                isPresented: Binding(get: { composer.pasteError != nil }, set: { if !$0 { composer.pasteError = nil } })
+            ) {
+                Button("OK") { composer.pasteError = nil }
+            } message: {
+                Text(composer.pasteError ?? "")
+            }
             .photosPicker(
                 isPresented: $composer.isPickingPhotos,
                 selection: $selection,

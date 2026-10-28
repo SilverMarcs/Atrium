@@ -6,6 +6,8 @@ import Foundation
 @Observable
 final class TaskComposer {
     let dictation = ComposerDictation()
+    @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
+    var pasteError: String?
     var draft = ""
     private(set) var isSubmittingDictation = false
     private(set) var focusRequestID: UUID?
@@ -36,6 +38,11 @@ final class TaskComposer {
             guard let image = await ComposerImage.prepare(source), remainingImageSlots > 0 else { continue }
             images.append(image)
         }
+    }
+
+    func attachPastedImage(_ image: ComposerImage) throws {
+        try ComposerPasteContent.checkImageLimit(images.count, maximum: Self.maxImages)
+        images.append(image)
     }
 
     func remove(_ image: ComposerImage) {

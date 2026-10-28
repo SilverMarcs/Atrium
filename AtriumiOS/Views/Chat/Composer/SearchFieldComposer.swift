@@ -142,9 +142,11 @@ struct SearchFieldComposer: ViewModifier {
     /// prompt is updated directly. The task list's "Search tasks" field never
     /// shares that prompt.
     private func styleComposerFields(in textField: UISearchTextField, referenceView: UIView) {
-        for field in composerFields(matching: textField, referenceView: referenceView)
-        where !(field.leftView is ComposerSearchFieldStyle) {
-            field.leftView = ComposerSearchFieldStyle(textField: field)
+        for field in composerFields(matching: textField, referenceView: referenceView) {
+            composer.pasteDelegate.configure(field)
+            if !(field.leftView is ComposerSearchFieldStyle) {
+                field.leftView = ComposerSearchFieldStyle(textField: field)
+            }
         }
     }
 
