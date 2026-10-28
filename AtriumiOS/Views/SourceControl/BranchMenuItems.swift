@@ -11,8 +11,7 @@ struct BranchMenuItems: View {
         Picker("Branch", selection: Binding(
             get: { status.branchName ?? "" },
             set: { branch in
-                guard !branch.isEmpty, branch != status.branchName else { return }
-                source.send(.switchBranch(branch))
+                source.selectBranch(branch, in: status)
             }
         )) {
             ForEach(status.localBranches, id: \.self) { branch in

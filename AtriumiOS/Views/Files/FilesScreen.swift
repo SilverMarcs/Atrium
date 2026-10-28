@@ -7,32 +7,48 @@ struct FilesScreen: View {
     let workspaceID: UUID
     let folder: String
     @AppStorage("showHiddenFiles") private var showsHiddenFiles = false
+    @State private var search = FileNameSearch()
 
     private var topic: HostTopic { .directory(workspaceID: workspaceID, path: folder) }
     private var workspace: WorkspaceRef { WorkspaceRef(hostID: host.id, workspaceID: workspaceID) }
     private var entries: [FileEntry]? {
-        host.directories[topic]?.filter { showsHiddenFiles || !$0.isHidden }
+        if search.isActive {
+            return search.paths?.filter { path in
+                showsHiddenFiles || !path.split(separator: "/").contains { $0.hasPrefix(".") }
+            }.map { path in
+                FileEntry(
+                    name: URL(filePath: path).lastPathComponent,
+                    path: URL(filePath: folder, directoryHint: .isDirectory).appending(path: path).filePath,
+                    isDirectory: false
+                )
+            }
+        }
+        return host.directories[topic]?.filter { showsHiddenFiles || !$0.isHidden }
     }
 
     var body: some View {
-        List(entries ?? []) { entry in
-            NavigationLink(value: entry.isDirectory ? Route.files(workspace, folder: entry.path) : Route.file(workspace, path: entry.path)) {
-                Label {
-                    Text(entry.name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
-                        .foregroundStyle(entry.isDirectory ? Color.accentColor : .secondary)
-                }
-                .opacity(entry.isHidden ? 0.5 : 1)
+        List {
+            ForEach(entries ?? []) { entry in
+                FileBrowserRow(
+                    workspace: workspace, entry: entry,
+                    searchRoot: search.isActive ? folder : nil
+                )
+            }
+            if search.isActive, search.isTruncated {
+                Text("Showing the first matches only. Refine your search to see more.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .contentMargins(.top, 10)
         .overlay {
-            if entries == nil {
+            if search.isActive, let error = search.error {
+                ContentUnavailableView("Couldn’t Search", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else if entries == nil {
                 ProgressView()
                     .controlSize(.large)
+            } else if search.isActive, entries?.isEmpty == true {
+                ContentUnavailableView.search(text: search.submittedText)
             } else if entries?.isEmpty == true {
                 ContentUnavailableView("Empty Folder", systemImage: "folder")
             }
@@ -41,15 +57,17 @@ struct FilesScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu("Options", systemImage: "ellipsis") {
-                    Toggle("Show Hidden Files", systemImage: "eye", isOn: $showsHiddenFiles)
-                    if isRoot {
-                        NavigationLink(value: Route.search(workspace)) {
-                            Label("Search in Files", systemImage: "magnifyingglass")
-                        }
-                    }
+                Button(showsHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files", systemImage: "line.3.horizontal.decrease") {
+                    showsHiddenFiles.toggle()
                 }
+                .foregroundStyle(showsHiddenFiles ? .accent : .primary)
+                .accessibilityValue(showsHiddenFiles ? "Shown" : "Hidden")
             }
+        }
+        .searchable(text: $search.text, prompt: "Find Files")
+        .searchPresentationToolbarBehavior(.avoidHidingContent)
+        .onSubmit(of: .search) {
+            search.submit(in: folder, host: host, workspaceID: workspaceID)
         }
         .task(id: topic) {
             await host.follow(topic)
