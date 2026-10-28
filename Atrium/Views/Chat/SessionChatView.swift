@@ -142,6 +142,10 @@ struct SessionChatView: View {
     ))
     .font(.system(size: chatFontSize))
     .environment(sendAnimator)
+    .environment(\.openURL, OpenURLAction { url in
+      let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
+      return WorkspaceLinkHandler.openFile(link, for: session.terminal) ? .handled : .systemAction
+    })
   }
 
   private func send() {

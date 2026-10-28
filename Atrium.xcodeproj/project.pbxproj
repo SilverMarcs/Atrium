@@ -780,7 +780,7 @@
 			repositoryURL = "https://github.com/SilverMarcs/SwiftMarkdownView";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.2.0;
+				minimumVersion = 1.2.2;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
