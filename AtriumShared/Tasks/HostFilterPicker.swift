@@ -9,7 +9,7 @@ struct HostFilterPicker: View {
         Picker("Host", selection: $hosts.filter) {
             Label("All Hosts", systemImage: "square.stack.3d.up").tag(String?.none)
             ForEach(hosts.hosts) { host in
-                Label(host.name, systemImage: host.isConnected ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark")
+                Label(host.name, systemImage: host.isConnected ? "macbook" : "macbook.trianglebadge.exclamationmark")
                     .tag(Optional(host.id))
             }
         }

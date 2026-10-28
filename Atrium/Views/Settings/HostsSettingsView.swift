@@ -37,7 +37,7 @@ private struct ThisMacSections: View {
         } header: {
             Text("This Mac")
         } footer: {
-            Text("Your iPhone and other Macs running Atrium can connect to this Mac with end-to-end encryption. Terminals stay on this Mac and files are read-only elsewhere.")
+            Text("Your iPhone and other Macs running Atrium can connect to this Mac with end-to-end encryption.")
         }
         .sectionActions {
             if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
@@ -90,6 +90,7 @@ private struct ThisMacSections: View {
 private struct OtherHostsSection: View {
     let hosts: HostDirectory
     @State private var link = ""
+    @State private var hostToRename: HostClient?
 
     var body: some View {
         Section {
@@ -97,12 +98,13 @@ private struct OtherHostsSection: View {
                 LabeledContent {
                     Button("Remove", role: .destructive) { hosts.forget(host) }
                 } label: {
-                    Label {
-                        Text(host.name)
-                        HostStatusText(host: host)
-                    } icon: {
-                        Image(systemName: "desktopcomputer")
+                    Button { hostToRename = host } label: {
+                        HostLabel(host: host)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
+                    .help("Rename on this Mac")
                 }
             }
             HStack {
@@ -123,9 +125,10 @@ private struct OtherHostsSection: View {
         } header: {
             Text("Other Hosts")
         } footer: {
-            Text("Copy the pairing link from Atrium Settings on another Mac and paste it here.")
+            Text("Click a host to rename it on this Mac. To add one, copy the pairing link from Atrium Settings on another Mac and paste it here.")
         }
         .onChange(of: hosts.pairingCount) { link = "" }
+        .hostRenameAlert($hostToRename, in: hosts)
     }
 
     private func pair() {
@@ -134,22 +137,6 @@ private struct OtherHostsSection: View {
             return
         }
         hosts.pair(with: link)
-    }
-}
-
-private struct HostStatusText: View {
-    let host: HostClient
-
-    var body: some View {
-        if host.needsAppUpdate {
-            Text("Update Atrium to use this host")
-        } else {
-            switch host.state {
-            case .connected: Text(host.route == .localNetwork ? "Connected on this network" : "Connected through the relay")
-            case .connecting: Text("Connecting…")
-            case .offline(let reason): Text(reason)
-            }
-        }
     }
 }
 

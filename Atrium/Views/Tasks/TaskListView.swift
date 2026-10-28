@@ -55,9 +55,10 @@ struct TaskListView: View {
         .toolbar {
             if hosts.hosts.count > 1 {
                 ToolbarItem {
-                    Menu("Hosts", systemImage: hosts.filter == nil ? "square.stack.3d.up" : "desktopcomputer") {
+                    Menu("Hosts", systemImage: hosts.filter == nil ? "square.stack.3d.up" : "macbook") {
                         HostFilterPicker(hosts: hosts)
                             .pickerStyle(.inline)
+                            .labelsHidden()
                     }
                     .help("Show tasks from one host or all of them")
                 }

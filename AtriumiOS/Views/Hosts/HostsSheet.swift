@@ -8,17 +8,13 @@ struct HostsSheet: View {
     @State private var path: [HostsRoute] = []
     @State private var hostToRename: HostClient?
     @State private var hostToForget: HostClient?
-    @State private var newName = ""
 
     var body: some View {
         NavigationStack(path: $path) {
             List {
                 Section {
                     ForEach(hosts.hosts) { host in
-                        HostRow(host: host) {
-                            newName = host.name
-                            hostToRename = host
-                        }
+                        HostRow(host: host) { hostToRename = host }
                         .swipeActions {
                             Button("Forget", systemImage: "trash") { hostToForget = host }
                                 .tint(.red)
@@ -49,14 +45,7 @@ struct HostsSheet: View {
             }
         }
         .onChange(of: hosts.pairingCount) { path = [] }
-        .alert("Rename Host", isPresented: Binding(get: { hostToRename != nil }, set: { if !$0 { hostToRename = nil } }),
-               presenting: hostToRename) { host in
-            TextField(host.pairedHost?.hostName ?? host.name, text: $newName)
-            Button("Rename") { hosts.rename(host, to: newName) }
-            Button("Cancel", role: .cancel) {}
-        } message: { host in
-            Text("Leave it empty to use “\(host.pairedHost?.hostName ?? host.name)”.")
-        }
+        .hostRenameAlert($hostToRename, in: hosts)
         .alert("Forget This Host?", isPresented: Binding(get: { hostToForget != nil }, set: { if !$0 { hostToForget = nil } }),
                presenting: hostToForget) { host in
             Button("Forget", role: .destructive) { hosts.forget(host) }
