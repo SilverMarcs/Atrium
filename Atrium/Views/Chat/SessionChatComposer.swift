@@ -41,12 +41,7 @@ struct SessionChatComposer: View {
             .offset(y: -1)
 
           if edit != nil {
-            Button("Cancel Edit", systemImage: "xmark.circle.fill", action: cancelEdit)
-              .labelStyle(.iconOnly)
-              .font(.title2)
-              .buttonStyle(.plain)
-              .keyboardShortcut(.cancelAction)
-              .help("Cancel Edit")
+            ConversationEditCancelButton(action: cancelEdit)
           }
 
           ZStack(alignment: .leading) {
@@ -85,7 +80,13 @@ struct SessionChatComposer: View {
               Image(systemName: "arrow.up")
                 .hidden()
                 .overlay {
-                  Image(systemName: showsStop ? "stop.fill" : edit == nil ? "arrow.up" : "checkmark")
+                  if edit?.isSubmitting == true {
+                    ProgressView()
+                      .controlSize(.small)
+                      .tint(.white)
+                  } else {
+                    Image(systemName: showsStop ? "stop.fill" : edit == nil ? "arrow.up" : "checkmark")
+                  }
                 }
             }
             .padding(1)
@@ -93,7 +94,7 @@ struct SessionChatComposer: View {
           .labelStyle(.iconOnly)
           .font(.title3)
           .bold()
-          .opacity(isButtonDisabled ? 0.35 : 0.85)
+          .opacity(isButtonDisabled && edit?.isSubmitting != true ? 0.35 : 0.85)
           .controlSize(.large)
           .tint(showsStop ? .red : .accent)
           .buttonStyle(.glassProminent)

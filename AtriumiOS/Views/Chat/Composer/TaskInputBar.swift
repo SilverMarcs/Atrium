@@ -38,10 +38,7 @@ struct TaskInputBar: View {
                     .scaleEffect(0.97)
 
                     if composer.messageEdit != nil {
-                        Button("Cancel Edit", systemImage: "xmark.circle.fill", action: composer.cancelEdit)
-                            .labelStyle(.iconOnly)
-                            .font(.largeTitle)
-                            .buttonStyle(.plain)
+                        ConversationEditCancelButton(action: composer.cancelEdit)
                     }
 
                     HStack(alignment: .bottom, spacing: 0) {
