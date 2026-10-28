@@ -5,11 +5,32 @@ import Foundation
 @MainActor
 final class CodexLiveConversation {
     private var turns: [[String: Any]]
+    private var answeredQuestionIDs: Set<String> = []
 
     init(turns: [[String: Any]]) { self.turns = turns }
     var messages: [TranscriptMessage] { CodexTranscript.messages(fromTurns: turns) }
     var activeTurnID: String? {
         turns.last(where: { $0["status"] as? String == "inProgress" })?["id"] as? String
+    }
+
+    /// Async questions remain answerable after work finishes. Any later user
+    /// message supersedes them, including replies sent by another client.
+    var pendingQuestions: [CodexAsyncQuestion] {
+        var questions: [CodexAsyncQuestion] = []
+        for turn in turns {
+            for item in turn["items"] as? [[String: Any]] ?? [] {
+                if item["type"] as? String == "userMessage" {
+                    questions.removeAll()
+                } else if let question = CodexAsyncQuestion(item: item), !answeredQuestionIDs.contains(question.itemID) {
+                    questions.append(question)
+                }
+            }
+        }
+        return questions
+    }
+
+    func resolveQuestions(_ itemIDs: Set<String>) {
+        answeredQuestionIDs.formUnion(itemIDs)
     }
 
     func fileChanges(for itemID: String) -> String? {

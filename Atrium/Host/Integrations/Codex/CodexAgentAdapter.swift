@@ -15,6 +15,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var conversations: [String: CodexLiveConversation] = [:]
     private var openingConversations: [String: Task<Void, Error>] = [:]
     private var decisions: [String: CodexPendingDecision] = [:]
+    private var asyncQuestions: [String: AgentInteraction] = [:]
     private var desiredConversations: [String: AgentThread] = [:]
     private var reconnectTask: Task<Void, Never>?
     private var isEnabled = true
@@ -175,6 +176,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
+            self.refreshAsyncQuestions(sessionID: thread.sessionID)
         }
         openingConversations[thread.sessionID] = task
         defer { openingConversations[thread.sessionID] = nil }
@@ -187,6 +189,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// Starts a turn, or steers the one in progress so the prompt joins it as Codex does mid-turn.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
         try await openConversation(thread)
+        let questionIDs = Set(conversations[thread.sessionID]?.pendingQuestions.map(\.itemID) ?? [])
         var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
         if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
         if let turnID = try await activeTurnID(of: thread.sessionID) {
@@ -207,6 +210,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if pendingSettings[thread.sessionID] == settings { pendingSettings[thread.sessionID] = nil }
         }
+        conversations[thread.sessionID]?.resolveQuestions(questionIDs)
+        refreshAsyncQuestions(sessionID: thread.sessionID)
         generateTitleIfNeeded(for: thread, prompt: text.isEmpty ? "Discuss an attached image" : text)
     }
 
@@ -235,6 +240,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         _ = try await request("thread/revert", params: ["threadId": thread.sessionID, "beforeTurnId": messageID])
         activeTurnIDs[thread.sessionID] = nil
         conversations[thread.sessionID] = CodexLiveConversation(turns: try await turns(of: thread.sessionID))
+        refreshAsyncQuestions(sessionID: thread.sessionID)
         onEvent?(.transcriptChanged(sessionID: thread.sessionID))
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
         return (conversations[thread.sessionID]?.messages ?? [], images)
@@ -464,6 +470,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if method == "thread/reverted" {
                 conversations[id] = nil
+                refreshAsyncQuestions(sessionID: id)
                 activeTurnIDs[id] = nil
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -476,6 +483,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if let conversation = conversations[id] {
                 conversation.apply(method, params: params)
+                if params["item"] != nil || params["turn"] != nil { refreshAsyncQuestions(sessionID: id) }
                 if method.hasPrefix("item/") || method.hasPrefix("turn/") { onEvent?(.transcriptChanged(sessionID: id)) }
             }
             if ["item/started", "item/completed"].contains(method) {
@@ -532,6 +540,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         openingConversations.removeAll()
         for id in Array(decisions.keys) { onEvent?(.interactionResolved(id: id)) }
         decisions.removeAll()
+        for id in Array(asyncQuestions.keys) { onEvent?(.interactionResolved(id: id)) }
+        asyncQuestions.removeAll()
         let requests = pending.values
         pending.removeAll()
         for continuation in requests { continuation.resume(throwing: error) }
@@ -609,6 +619,15 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func respond(to interactionID: String, with decision: AgentDecision) async throws {
+        if let question = asyncQuestions[interactionID],
+           let thread = desiredConversations.values.first(where: { $0.id == question.taskID }) {
+            let text = question.questions.map { question in
+                let answer = decision.allowed ? (decision.answers[question.id] ?? []).joined(separator: ", ") : "Continue without an answer."
+                return question.title + "\n" + answer
+            }.joined(separator: "\n\n")
+            try await sendPrompt(text, images: [], to: thread)
+            return
+        }
         guard connected, let pending = decisions[interactionID] else {
             throw IntegrationError(message: "Codex is no longer waiting for this answer.")
         }
@@ -633,6 +652,20 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         for (id, _) in decisions.filter({ $0.value.sessionID == sessionID }) {
             decisions[id] = nil
             onEvent?(.interactionResolved(id: id))
+        }
+        refreshAsyncQuestions(sessionID: sessionID)
+    }
+
+    private func refreshAsyncQuestions(sessionID: String) {
+        let requests = (conversations[sessionID]?.pendingQuestions ?? []).map { $0.interaction(sessionID: sessionID) }
+        let ids = Set(requests.map(\.id))
+        for (id, request) in asyncQuestions where request.taskID == "codex:" + sessionID && !ids.contains(id) {
+            asyncQuestions[id] = nil
+            onEvent?(.interactionResolved(id: id))
+        }
+        for request in requests where asyncQuestions[request.id] != request {
+            asyncQuestions[request.id] = request
+            onEvent?(.interactionRequested(request))
         }
     }
 
