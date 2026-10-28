@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Names a paired host on this device only; an empty name goes back to the
-/// host's own.
+/// Names a host on this device only; an empty name goes back to the host's own.
 struct HostRenameAlert: ViewModifier {
     @Binding var renaming: HostClient?
     let hosts: HostDirectory
@@ -9,13 +8,14 @@ struct HostRenameAlert: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert("Rename Host", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
+            .alert(renaming?.isLocal == true ? "Rename This Mac" : "Rename Host",
+                   isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }),
                    presenting: renaming) { host in
-                TextField(host.pairedHost?.hostName ?? host.name, text: $name)
+                TextField(host.defaultName, text: $name)
                 Button("Rename") { hosts.rename(host, to: name) }
                 Button("Cancel", role: .cancel) {}
             } message: { host in
-                Text("Leave it empty to use “\(host.pairedHost?.hostName ?? host.name)”.")
+                Text("Leave it empty to use “\(host.defaultName)”.")
             }
             .onChange(of: renaming?.id) {
                 name = renaming?.name ?? ""

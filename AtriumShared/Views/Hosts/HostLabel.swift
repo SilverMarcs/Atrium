@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A paired host's name over how it's connected.
+/// A host's name over how it's connected.
 struct HostLabel: View {
     let host: HostClient
 
@@ -15,6 +15,7 @@ struct HostLabel: View {
     }
 
     private var status: String {
+        if host.isLocal { return "This Mac" }
         if host.needsAppUpdate { return "Update Atrium to use this host" }
         switch host.state {
         case .connected: return host.route == .localNetwork ? "Connected on this network" : "Connected through the relay"

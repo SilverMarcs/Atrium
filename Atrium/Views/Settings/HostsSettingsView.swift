@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// This Mac as a host other devices connect to, and the other hosts this Mac
-/// connects to. Every connected host's tasks show in the window at once.
+/// This Mac as a host other devices connect to, and every host this Mac shows,
+/// itself included. Every connected host's tasks show in the window at once.
 struct HostsSettingsView: View {
     @Environment(AppModel.self) private var app
 
@@ -10,7 +10,7 @@ struct HostsSettingsView: View {
             if let host = app.localHost {
                 ThisMacSections(host: host)
             }
-            OtherHostsSection(hosts: app.hosts)
+            HostsSection(hosts: app.hosts)
         }
         .formStyle(.grouped)
     }
@@ -86,25 +86,23 @@ private struct ThisMacSections: View {
     }
 }
 
-/// Hosts this Mac connects to as a client, and pairing with a new one.
-private struct OtherHostsSection: View {
+/// This Mac's own host and the hosts it connects to as a client, and
+/// pairing with a new one.
+private struct HostsSection: View {
     let hosts: HostDirectory
     @State private var link = ""
     @State private var hostToRename: HostClient?
 
     var body: some View {
         Section {
+            if let host = hosts.localHost {
+                HostRow(host: host, hostToRename: $hostToRename)
+            }
             ForEach(hosts.remoteHosts) { host in
                 LabeledContent {
                     Button("Remove", role: .destructive) { hosts.forget(host) }
                 } label: {
-                    Button { hostToRename = host } label: {
-                        HostLabel(host: host)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Rename on this Mac")
+                    HostRow(host: host, hostToRename: $hostToRename)
                 }
             }
             HStack {
@@ -123,7 +121,7 @@ private struct OtherHostsSection: View {
                     .foregroundStyle(.red)
             }
         } header: {
-            Text("Other Hosts")
+            Text("Hosts")
         } footer: {
             Text("Click a host to rename it on this Mac. To add one, copy the pairing link from Atrium Settings on another Mac and paste it here.")
         }
@@ -137,6 +135,22 @@ private struct OtherHostsSection: View {
             return
         }
         hosts.pair(with: link)
+    }
+}
+
+/// A host's name and status, which opens renaming it.
+private struct HostRow: View {
+    let host: HostClient
+    @Binding var hostToRename: HostClient?
+
+    var body: some View {
+        Button { hostToRename = host } label: {
+            HostLabel(host: host)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help("Rename on this Mac")
     }
 }
 

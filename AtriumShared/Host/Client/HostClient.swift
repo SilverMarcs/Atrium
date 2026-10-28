@@ -36,6 +36,8 @@ final class HostClient: Identifiable {
     /// files and projects and show terminals.
     let isLocal: Bool
     private(set) var pairedHost: PairedHost?
+    /// A name the user chose for this Mac's own host, shown instead of its own.
+    private(set) var customLocalName: String?
     private(set) var state: State = .connecting
     /// How the connection in use reaches a paired host.
     private(set) var route: Route?
@@ -111,7 +113,9 @@ final class HostClient: Identifiable {
         self.authentication = authentication
     }
 
-    var name: String { pairedHost?.displayName ?? hello?.hostName ?? localName }
+    var name: String { pairedHost?.displayName ?? customLocalName ?? hello?.hostName ?? localName }
+    /// What an empty rename goes back to: the host's own name.
+    var defaultName: String { pairedHost?.hostName ?? hello?.hostName ?? localName }
     var isConnected: Bool { state == .connected }
     /// Whether the relay is holding a connection until the host comes online.
     private var isWaitingForHost: Bool {
@@ -148,6 +152,7 @@ final class HostClient: Identifiable {
     }
 
     func rename(to name: String?) {
+        if isLocal { customLocalName = name }
         guard var host = pairedHost else { return }
         host.customName = name
         pairedHost = host

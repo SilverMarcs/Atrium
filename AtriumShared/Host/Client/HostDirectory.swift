@@ -38,9 +38,13 @@ final class HostDirectory {
     @ObservationIgnored private var notificationDestination: TaskRef?
 
     private static let filterKey = "hostFilter"
+    private static let localHostNameKey = "localHostName"
 
     init(localHost: HostClient? = nil) {
-        if let localHost { hosts.append(localHost) }
+        if let localHost {
+            localHost.rename(to: UserDefaults.standard.string(forKey: Self.localHostNameKey))
+            hosts.append(localHost)
+        }
         for host in HostCredentials.pairedHosts {
             guard let token = HostCredentials.token(for: host) else { continue }
             hosts.append(HostClient(paired: host, authentication: .token(token)))
@@ -230,10 +234,14 @@ final class HostDirectory {
 
     /// Names a host on this device only; an empty name goes back to the host's own.
     func rename(_ host: HostClient, to name: String) {
-        guard let paired = host.pairedHost else { return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        HostCredentials.rename(paired, to: name.isEmpty ? nil : name)
-        host.rename(to: name.isEmpty ? nil : name)
+        let customName = name.isEmpty ? nil : name
+        if host.isLocal {
+            UserDefaults.standard.set(customName, forKey: Self.localHostNameKey)
+        } else if let paired = host.pairedHost {
+            HostCredentials.rename(paired, to: customName)
+        }
+        host.rename(to: customName)
     }
 
     // MARK: - Notifications
