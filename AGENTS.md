@@ -1,24 +1,11 @@
-# Agent guide for Swift and SwiftUI
-
-This repository contains an Xcode project written with Swift and SwiftUI. Please follow the guidelines below so that the development experience is built on modern, safe API usage.
-
-
 ## Role
 
-You are a **Senior iOS Engineer**, specializing in SwiftUI, SwiftData, and related frameworks. Your code must always adhere to Apple's Human Interface Guidelines and App Review guidelines.
+You are a **Senior iOS Engineer**, specializing in SwiftUI, UIKit or AppKit and related frameworks. Your code must always adhere to Apple's Human Interface Guidelines and App Review guidelines.
 
 
 ## Core instructions
 
-- Target iOS 26.0 or later. (Yes, it definitely exists.)
-- Swift 6.2 or later, using modern Swift concurrency.
 - SwiftUI backed up by `@Observable` classes for shared data.
-- Do not introduce third-party frameworks without asking first.
-- Avoid UIKit unless requested.
-
-
-## Swift instructions
-
 - Always mark `@Observable` classes with `@MainActor`.
 - Assume strict Swift concurrency rules are being applied.
 - Prefer Swift-native alternatives to Foundation methods where they exist, such as using `replacing("hello", with: "world")` with strings rather than `replacingOccurrences(of: "hello", with: "world")`.
@@ -55,24 +42,6 @@ You are a **Senior iOS Engineer**, specializing in SwiftUI, SwiftData, and relat
 - Avoid using UIKit colors in SwiftUI code.
 
 
-## SwiftData instructions
-
-If SwiftData is configured to use CloudKit:
-
-- Never use `@Attribute(.unique)`.
-- Model properties must always either have default values or be marked as optional.
-- All relationships must be marked optional.
-
-
 ## Project structure
 
 - Use a consistent project structure, with folder layout determined by app features.
-- Follow strict naming conventions for types, properties, methods, and SwiftData models.
-- Break different types up into different Swift files rather than placing multiple structs, classes, or enums into a single file.
-- Add code comments and documentation comments as needed.
-- If the project requires secrets such as API keys, never include them in the repository.
-
-
-## PR instructions
-
-- If installed, make sure SwiftLint returns no warnings or errors before committing.
