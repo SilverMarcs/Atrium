@@ -490,6 +490,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         case "Stop":
             liveStatuses[sessionID] = .done
             transcript.finish(event["last_assistant_message"] as? String ?? "")
+            // Mid-turn prompts are saved as queued attachments without a prompt hook.
+            // Once the reply is saved, let history restore those missing messages.
+            if let saved = try? await history.transcript(sessionID), !saved.isEmpty {
+                live[sessionID] = ClaudeLiveTranscript(history: saved)
+            }
             resolveDecisions(sessionID: sessionID)
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .done)))
             onEvent?(.threadInvalidated(sessionID: sessionID))
