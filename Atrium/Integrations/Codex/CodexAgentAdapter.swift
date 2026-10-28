@@ -6,26 +6,19 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
-    private let defaults: UserDefaults
-    // Keep threads archived by older Atrium versions available for restoration.
-    private var archivedThreadIDs: Set<String>
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
     private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
     private var socketPath: String?
-    private var watchers: [FileSystemWatcher] = []
-    private var historyTask: Task<Void, Never>?
-    /// The turn in progress for each thread, from `turn/started` notifications.
+    private var conversations: [String: CodexLiveConversation] = [:]
+    private var openingConversations: [String: Task<Void, Error>] = [:]
+    private var decisions: [String: CodexPendingDecision] = [:]
+    private var desiredConversations: [String: AgentThread] = [:]
+    private var reconnectTask: Task<Void, Never>?
+    private var isEnabled = true
+    /// The turn in progress for each subscribed thread.
     private var activeTurnIDs: [String: String] = [:]
-    /// Each thread's rollout file, where Codex appends every step as it works.
-    private var rolloutPaths: [String: String] = [:]
-    /// Threads Codex is working on, whose rollout files are followed so the
-    /// transcript changes with each step. Item notifications only reach the
-    /// thread's own clients, and FSEvents reports the appends only once Codex
-    /// closes the file.
-    private var workingThreadIDs: Set<String> = []
-    private var rolloutWatchers: [String: FileWriteWatcher] = [:]
     /// The configured model and reasoning effort, which threads that never
     /// overrode them leave unset.
     private var defaultModel: String?
@@ -43,12 +36,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// by thread until Codex returns the turn's ID, which it may announce first.
     private var startingTurnThreadIDs: Set<String> = []
     private var startedTurnIDs: Set<String> = []
-    /// Prompts waiting for the Mac's terminal to load their thread.
-    private var loadWaiters: [String: [CheckedContinuation<Void, Error>]] = [:]
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        archivedThreadIDs = Set(defaults.stringArray(forKey: "integration.codex.archivedThreadIDs") ?? [])
+    init() {
         socket.onMessage = { [weak self] in self?.receive($0) }
         socket.onClose = { [weak self] in self?.disconnect(error: $0) }
     }
@@ -84,11 +73,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func listThreads() async throws -> [AgentThread] {
         try await connect()
-        try startWatching()
-        let active = try await listThreads(archived: false)
-        guard !archivedThreadIDs.isEmpty else { return active }
-        let archived = try await listThreads(archived: true).filter { archivedThreadIDs.contains($0.sessionID) }
-        return AgentThread.unique(active + archived)
+        return try await listThreads(archived: false)
     }
 
     private func listThreads(archived: Bool) async throws -> [AgentThread] {
@@ -104,10 +89,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let threads: [AgentThread] = rows.compactMap { row in
             guard var thread = withDefaults(Self.thread(row)) else { return nil }
             thread.readState = Self.readState(readStates[thread.sessionID])
-            rolloutPaths[thread.sessionID] = row["path"] as? String
             return thread
         }
-        for thread in threads { followRollout(of: thread.sessionID, status: thread.status) }
         return AgentThread.unique(threads)
     }
 
@@ -119,7 +102,6 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
-        rolloutPaths[id] = row["path"] as? String ?? rolloutPaths[id]
         return thread
     }
 
@@ -153,10 +135,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
               let row = result["thread"] as? [String: Any], let thread = Self.thread(row) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
-        // Archiving persists and unloads the empty thread; restore it for CLI resume.
-        // Leave its name unset so Codex can generate a title after the first prompt.
-        _ = try await request("thread/archive", params: ["threadId": thread.sessionID])
-        _ = try await request("thread/unarchive", params: ["threadId": thread.sessionID])
+        conversations[thread.sessionID] = CodexLiveConversation(turns: [])
+        desiredConversations[thread.sessionID] = thread
         return thread
     }
 
@@ -177,14 +157,28 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        try await openConversation(thread)
+        return conversations[thread.sessionID]?.messages ?? []
+    }
+
+    func openConversation(_ thread: AgentThread) async throws {
+        desiredConversations[thread.sessionID] = thread
         try await connect()
-        return CodexTranscript.messages(fromTurns: try await turns(of: thread.sessionID))
+        if conversations[thread.sessionID] != nil { return }
+        if let opening = openingConversations[thread.sessionID] { return try await opening.value }
+        let task = Task {
+            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true])
+            let rows = try await self.turns(of: thread.sessionID)
+            self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
+        }
+        openingConversations[thread.sessionID] = task
+        defer { openingConversations[thread.sessionID] = nil }
+        try await task.value
     }
 
     /// Starts a turn, or steers the one in progress so the prompt joins it as Codex does mid-turn.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
-        try await connect()
-        try await waitUntilLoaded(thread.sessionID)
+        try await openConversation(thread)
         var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
         if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
         if let turnID = try await activeTurnID(of: thread.sessionID) {
@@ -198,7 +192,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             defer { startingTurnThreadIDs.remove(thread.sessionID) }
             let data = try await request("turn/start", params: params)
             let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            if let turnID = (result?["turn"] as? [String: Any])?["id"] as? String { startedTurnIDs.insert(turnID) }
+            if let turn = result?["turn"] as? [String: Any], let turnID = turn["id"] as? String {
+                startedTurnIDs.insert(turnID)
+                conversations[thread.sessionID]?.apply("turn/started", params: ["turn": turn])
+                onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+            }
             if pendingSettings[thread.sessionID] == settings { pendingSettings[thread.sessionID] = nil }
         }
     }
@@ -231,60 +229,28 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         _ = try await request("turn/interrupt", params: ["threadId": thread.sessionID, "turnId": turnID])
     }
 
-    /// Reads a loaded thread's turns directly. An unloaded thread is loaded just long
-    /// enough to read it, so this connection doesn't become a client of its turns.
+    /// Restores a subscribed conversation through the current app-server API.
     private func turns(of threadID: String) async throws -> [[String: Any]] {
         do {
-            let data = try await request("thread/read", params: ["threadId": threadID, "includeTurns": true])
-            return Self.turns(in: data)
-        } catch let error as IntegrationError where error.message.localizedStandardContains("not supported") {
-            let data = try await request("thread/resume", params: ["threadId": threadID])
-            _ = try? await request("thread/unsubscribe", params: ["threadId": threadID])
-            return Self.turns(in: data)
-        }
-    }
+            let data = try await request("thread/turns/list", params: ["threadId": threadID, "limit": CodexTranscript.turnLimit, "sortDirection": "desc", "itemsView": "full"])
+            let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return Array((result?["data"] as? [[String: Any]] ?? []).reversed())
+        } catch let error as IntegrationError where error.message.localizedStandardContains("not materialized") {
+            return []
 
-    /// The Mac attaches a terminal before a remote prompt, so approvals have somewhere to
-    /// appear; its resume loads the thread, which Codex announces to every connection.
-    /// A thread loaded already is never announced again, so it's looked up once, after
-    /// waiting starts so an announcement in between isn't missed.
-    private func waitUntilLoaded(_ threadID: String) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            loadWaiters[threadID, default: []].append(continuation)
-            Task {
-                do {
-                    let data = try await request("thread/loaded/list", params: [:])
-                    let loaded = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [String] ?? []
-                    if loaded.contains(threadID) { finishWaiting(for: threadID) }
-                } catch {
-                    finishWaiting(for: threadID, throwing: error)
-                }
-            }
-        }
-    }
-
-    private func finishWaiting(for threadID: String, throwing error: Error? = nil) {
-        for waiter in loadWaiters.removeValue(forKey: threadID) ?? [] {
-            if let error { waiter.resume(throwing: error) } else { waiter.resume() }
         }
     }
 
     private func activeTurnID(of threadID: String) async throws -> String? {
         if let turnID = activeTurnIDs[threadID] { return turnID }
+        if let conversation = conversations[threadID] { return conversation.activeTurnID }
         let turn = try await turns(of: threadID).last
         return turn?["status"] as? String == "inProgress" ? turn?["id"] as? String : nil
-    }
-
-    private static func turns(in data: Data) -> [[String: Any]] {
-        let result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        return (result?["thread"] as? [String: Any])?["turns"] as? [[String: Any]] ?? []
     }
 
     func deleteThread(_ thread: AgentThread) async throws {
         try await connect()
         _ = try await request("thread/delete", params: ["threadId": thread.sessionID])
-        archivedThreadIDs.remove(thread.sessionID)
-        saveArchivedThreadIDs()
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
         onEvent?(.listInvalidated)
     }
@@ -294,11 +260,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Invalid Codex session identifier.")
         }
         try await connect()
-        if archivedThreadIDs.contains(thread.sessionID) {
-            _ = try await request("thread/unarchive", params: ["threadId": thread.sessionID])
-            archivedThreadIDs.remove(thread.sessionID)
-            saveArchivedThreadIDs()
-        }
+        try await openConversation(thread)
         guard let socketPath else {
             throw IntegrationError(message: "Codex is disconnected. Try again.")
         }
@@ -306,111 +268,27 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func stopThread(_ thread: AgentThread) async throws {
-        // Settling is local to Atrium; the controller closes its terminal session.
+        desiredConversations[thread.sessionID] = nil
+        if connected {
+            try await interrupt(thread)
+            _ = try await request("thread/unsubscribe", params: ["threadId": thread.sessionID])
+        }
+        conversations[thread.sessionID] = nil
+        resolveDecisions(sessionID: thread.sessionID)
     }
 
     func didExit(_ thread: AgentThread) {
-        finishWaiting(for: thread.sessionID, throwing: IntegrationError(message: "Codex closed before it opened the task."))
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
     }
 
-    private func saveArchivedThreadIDs() {
-        defaults.set(archivedThreadIDs.sorted(), forKey: "integration.codex.archivedThreadIDs")
-    }
-
     func setEnabled(_ isEnabled: Bool) {
+        self.isEnabled = isEnabled
         guard !isEnabled else { return }
-        watchers.forEach { $0.stop() }
-        watchers.removeAll()
-        rolloutWatchers.values.forEach { $0.stop() }
-        rolloutWatchers.removeAll()
-        workingThreadIDs.removeAll()
-        historyTask?.cancel()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        desiredConversations.removeAll()
         connectionTask?.cancel()
         disconnect(error: CancellationError())
-    }
-
-    private func startWatching() throws {
-        guard watchers.isEmpty else { return }
-        let configured = IntegrationProcess.environment["CODEX_HOME"]
-            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-        let home = configured ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
-        let directories = ["sessions", "archived_sessions"].map { home.appending(path: $0) }
-        for directory in directories {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-        // fs/watch currently watches immediate children; rollouts live in dated subdirectories.
-        watchers = directories.map { directory in
-            FileSystemWatcher(url: directory, ignoredSubstrings: [], onPathsChanged: { [weak self] paths in
-                Task { @MainActor [weak self] in self?.historyChanged(paths) }
-            })
-        }
-    }
-
-    private func historyChanged(_ paths: [String]) {
-        guard !watchers.isEmpty else { return }
-        var needsListing = false
-        for path in paths {
-            let url = URL(fileURLWithPath: path)
-            if url.pathExtension == "jsonl" {
-                let id = String(url.deletingPathExtension().lastPathComponent.suffix(36))
-                guard UUID(uuidString: id) != nil else { continue }
-                if FileManager.default.fileExists(atPath: path) {
-                    // A new thread's rollout file appears once its first turn starts.
-                    rolloutPaths[id] = path
-                    watchRolloutIfWorking(id)
-                    onEvent?(.threadInvalidated(sessionID: id))
-                    // Item notifications only reach clients subscribed to the thread, such as
-                    // its terminal; the rollout file changes for every turn regardless.
-                    onEvent?(.transcriptChanged(sessionID: id))
-                } else {
-                    needsListing = true
-                }
-            } else if url.pathExtension.isEmpty {
-                // Covers removed directories and coalesced/root notifications.
-                needsListing = true
-            }
-        }
-        guard needsListing, historyTask == nil else { return }
-        historyTask = Task { [weak self] in
-            defer { self?.historyTask = nil }
-            do {
-                try await Task.sleep(for: .milliseconds(300))
-                self?.onEvent?(.listInvalidated)
-            } catch {}
-        }
-    }
-
-    // MARK: - Rollout files
-
-    /// Follows a thread's rollout file while Codex works on it.
-    private func followRollout(of id: String, status: AgentThreadStatus) {
-        guard !watchers.isEmpty, status == .processing || status == .waiting else {
-            workingThreadIDs.remove(id)
-            rolloutWatchers.removeValue(forKey: id)?.stop()
-            return
-        }
-        workingThreadIDs.insert(id)
-        if rolloutPaths[id] == nil {
-            // Not in the last listing; its row names the file.
-            Task {
-                guard (try? await readThread(id)) != nil else { return }
-                watchRolloutIfWorking(id)
-            }
-        } else {
-            watchRolloutIfWorking(id)
-        }
-    }
-
-    private func watchRolloutIfWorking(_ id: String) {
-        guard workingThreadIDs.contains(id), rolloutWatchers[id] == nil, let path = rolloutPaths[id] else { return }
-        rolloutWatchers[id] = FileWriteWatcher(path: path) { [weak self] in
-            self?.onEvent?(.transcriptChanged(sessionID: id))
-        } onRemove: { [weak self] in
-            // Archiving moves the file; the next listing names its new place.
-            self?.rolloutPaths[id] = nil
-            self?.rolloutWatchers.removeValue(forKey: id)?.stop()
-        }
     }
 
     private func request(_ method: String, params: [String: Any]) async throws -> Data {
@@ -436,6 +314,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     private func receive(_ data: Data) {
         guard let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        if let method = message["method"] as? String, message["id"] != nil,
+           let params = message["params"] as? [String: Any] {
+            receiveDecision(message, method: method, params: params)
+            return
+        }
         if message["method"] == nil, let id = message["id"] as? Int, let continuation = pending.removeValue(forKey: id) {
             if let error = message["error"] as? [String: Any] {
                 continuation.resume(throwing: IntegrationError(message: error["message"] as? String ?? "Codex request failed."))
@@ -452,16 +335,19 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             if ["thread/started", "thread/archived", "thread/unarchived"].contains(method) {
-                if let id = params["threadId"] as? String {
-                    if method == "thread/unarchived" {
-                        archivedThreadIDs.remove(id)
-                        saveArchivedThreadIDs()
-                    }
-                }
                 onEvent?(.listInvalidated)
                 return
             }
             guard let id = params["threadId"] as? String else { return }
+            if method == "serverRequest/resolved", let requestID = Self.decisionID(params["requestId"]) {
+                decisions[requestID] = nil
+                onEvent?(.interactionResolved(id: requestID))
+                return
+            }
+            if let conversation = conversations[id] {
+                conversation.apply(method, params: params)
+                if method.hasPrefix("item/") || method.hasPrefix("turn/") { onEvent?(.transcriptChanged(sessionID: id)) }
+            }
             if ["item/started", "item/completed"].contains(method) {
                 onEvent?(.transcriptChanged(sessionID: id))
                 return
@@ -478,11 +364,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/status/changed" {
-                if (params["status"] as? [String: Any])?["type"] as? String != "notLoaded" {
-                    finishWaiting(for: id)
-                }
                 let status = Self.status(params["status"] as? [String: Any])
-                followRollout(of: id, status: status)
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status)))
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -511,11 +393,113 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         connected = false
         socketPath = nil
         socket.close()
+        conversations.removeAll()
+        for task in openingConversations.values { task.cancel() }
+        openingConversations.removeAll()
+        for id in Array(decisions.keys) { onEvent?(.interactionResolved(id: id)) }
+        decisions.removeAll()
         let requests = pending.values
         pending.removeAll()
         for continuation in requests { continuation.resume(throwing: error) }
-        for threadID in Array(loadWaiters.keys) { finishWaiting(for: threadID, throwing: error) }
         if wasConnected { onEvent?(.listInvalidated) }
+        if wasConnected, isEnabled, !desiredConversations.isEmpty { reconnect() }
+    }
+
+    private func reconnect() {
+        guard reconnectTask == nil else { return }
+        reconnectTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.reconnectTask = nil }
+            var attempt = 0
+            while self.isEnabled, !Task.isCancelled {
+                do {
+                    try await self.connect()
+                    for thread in Array(self.desiredConversations.values) {
+                        try Task.checkCancellation()
+                        try await self.openConversation(thread)
+                        self.onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+                    }
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    attempt += 1
+                    try? await Task.sleep(for: .seconds(min(attempt, 15)))
+                }
+            }
+        }
+    }
+
+    private static func decisionID(_ raw: Any?) -> String? {
+        if let string = raw as? String { return "codex:" + string }
+        if let number = raw as? NSNumber { return "codex:" + number.stringValue }
+        return nil
+    }
+
+    private func receiveDecision(_ message: [String: Any], method: String, params: [String: Any]) {
+        guard let raw = message["id"], let id = Self.decisionID(raw), let threadID = params["threadId"] as? String,
+              let encodedID = try? JSONSerialization.data(withJSONObject: raw, options: .fragmentsAllowed),
+              let encodedParams = try? JSONSerialization.data(withJSONObject: params) else { return }
+        let questions = (params["questions"] as? [[String: Any]] ?? []).compactMap { value -> AgentQuestion? in
+            guard let questionID = value["id"] as? String, let title = value["question"] as? String else { return nil }
+            return AgentQuestion(id: questionID, title: title,
+                                 options: (value["options"] as? [[String: Any]] ?? []).compactMap { $0["label"] as? String },
+                                 isSecret: value["isSecret"] as? Bool ?? false,
+                                 optionDescriptions: Dictionary((value["options"] as? [[String: Any]] ?? []).compactMap { option in
+                                     guard let label = option["label"] as? String else { return nil }
+                                     return (label, option["description"] as? String ?? "")
+                                 }, uniquingKeysWith: { _, new in new }))
+        }
+        var supported = ["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval", "item/tool/requestUserInput"].contains(method)
+        var detail = [params["reason"] as? String, params["command"] as? String].compactMap(\.self).joined(separator: "\n\n")
+        if method == "item/fileChange/requestApproval" {
+            if let itemID = params["itemId"] as? String, let changes = conversations[threadID]?.fileChanges(for: itemID) {
+                detail += "\n\n" + changes
+            } else {
+                supported = false
+                detail = "Review these file changes in the terminal."
+            }
+        }
+        if let permissions = params["permissions"] ?? params["additionalPermissions"],
+           let data = try? JSONSerialization.data(withJSONObject: permissions, options: [.prettyPrinted, .sortedKeys]) {
+            detail += "\n" + String(decoding: data, as: UTF8.self)
+        }
+        if detail.isEmpty { detail = params["message"] as? String ?? "Codex needs your input to continue." }
+        if detail.utf8.count > 65_536 {
+            supported = false
+            detail = "Review this large request in the terminal."
+        }
+        decisions[id] = CodexPendingDecision(id: encodedID, method: method, params: encodedParams, sessionID: threadID)
+        onEvent?(.interactionRequested(AgentInteraction(id: id, taskID: "codex:" + threadID,
+                                                       title: supported ? (questions.isEmpty ? "Allow Codex to continue?" : "Codex needs your input") : "Continue in Terminal",
+                                                       detail: detail, questions: questions, supportsResponse: supported)))
+    }
+
+    func respond(to interactionID: String, with decision: AgentDecision) async throws {
+        guard connected, let pending = decisions[interactionID] else {
+            throw IntegrationError(message: "Codex is no longer waiting for this answer.")
+        }
+        let params = try JSONSerialization.jsonObject(with: pending.params) as? [String: Any] ?? [:]
+        let result: [String: Any]
+        switch pending.method {
+        case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+            result = ["decision": decision.allowed ? "accept" : "decline"]
+        case "item/permissions/requestApproval":
+            result = ["permissions": decision.allowed ? (params["permissions"] as? [String: Any] ?? [:]) : [:], "scope": "turn"]
+        case "item/tool/requestUserInput":
+            result = ["answers": decision.allowed ? decision.answers.mapValues { ["answers": $0] } : [:]]
+        default: throw IntegrationError(message: "Answer this request in the terminal.")
+        }
+        let rawID = try JSONSerialization.jsonObject(with: pending.id, options: .fragmentsAllowed)
+        socket.send(try JSONSerialization.data(withJSONObject: ["id": rawID, "result": result]))
+        decisions[interactionID] = nil
+        onEvent?(.interactionResolved(id: interactionID))
+    }
+
+    private func resolveDecisions(sessionID: String) {
+        for (id, _) in decisions.filter({ $0.value.sessionID == sessionID }) {
+            decisions[id] = nil
+            onEvent?(.interactionResolved(id: id))
+        }
     }
 
     private static func readState(_ value: [String: Any]?) -> AgentReadState? {

@@ -26,8 +26,19 @@ nonisolated enum CodexTranscript {
                     let text = (item["content"] as? [[String: Any]] ?? [])
                         .compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
                         .joined(separator: "\n")
-                    if !text.isEmpty {
-                        messages.append(TranscriptMessage(id: id, role: .user, blocks: [.text(text, id: id)]))
+                    let images = (item["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in
+                        if content["type"] as? String == "localImage", let path = content["path"] as? String {
+                            return TranscriptImage.thumbnail(at: URL(filePath: path))
+                        }
+                        if content["type"] as? String == "image", let url = content["url"] as? String,
+                           url.hasPrefix("data:image/"), url.utf8.count <= 28 * 1024 * 1024,
+                           let comma = url.firstIndex(of: ","), let data = Data(base64Encoded: String(url[url.index(after: comma)...])) {
+                            return TranscriptImage.thumbnail(data)
+                        }
+                        return nil
+                    }
+                    if !text.isEmpty || !images.isEmpty {
+                        messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images))
                     }
                 } else if let block = block(for: item, id: id) {
                     blocks.append(block)

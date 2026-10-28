@@ -11,6 +11,10 @@ final class TaskSession: Identifiable {
     var thread: AgentThread
     let workspace: Workspace
     private(set) var terminal: Terminal
+    var isTerminalAttached = false
+    var isTerminalVisible = false
+    var isAttachingTerminal = false
+    var terminalError: String?
 
     init(thread: AgentThread, workspace: Workspace, launch: AgentLaunch) {
         id = thread.id
@@ -24,5 +28,6 @@ final class TaskSession: Identifiable {
         terminal.terminate()
         terminal = Terminal(workspace: workspace, title: thread.title, currentDirectory: thread.directory, isTaskTerminal: true)
         terminal.pendingLaunch = launch
+        isTerminalAttached = false
     }
 }

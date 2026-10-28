@@ -23,7 +23,7 @@ struct SessionChatView: View {
     let prompts = client.pendingPrompts
     let footerStatus = client.conversation.footerStatus(for: session.id, status: thread.status)
     let streamingID =
-      thread.status == .processing && !prompts.contains { $0.state != .failed }
+      (thread.status == .processing || thread.status == .waiting) && !prompts.contains { $0.state != .failed }
       ? rows.last?.id : nil
     ScrollViewReader { proxy in
       ScrollView {
@@ -132,6 +132,10 @@ struct SessionChatView: View {
         sendAnimator.cancelAll()
       }
     }
+    .modifier(AgentInteractionPresentation(
+      requests: integrations.interactions.filter { $0.taskID == session.id },
+      respond: { request, decision in try await integrations.respond(to: request, with: decision) }
+    ))
     .font(.system(size: chatFontSize))
     .environment(sendAnimator)
   }

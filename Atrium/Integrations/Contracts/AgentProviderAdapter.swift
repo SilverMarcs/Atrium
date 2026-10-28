@@ -8,6 +8,10 @@ protocol AgentProviderAdapter: AnyObject {
     var capabilities: AgentCapabilities { get }
     var onEvent: ((AgentEvent) -> Void)? { get set }
 
+    /// Opens the provider connection, independently of any terminal attachment.
+    func openConversation(_ thread: AgentThread) async throws
+    func respond(to interactionID: String, with decision: AgentDecision) async throws
+
     func listThreads() async throws -> [AgentThread]
     func readThread(_ sessionID: String) async throws -> AgentThread?
     func forkThread(_ thread: AgentThread) async throws -> AgentThread
@@ -38,6 +42,12 @@ protocol AgentProviderAdapter: AnyObject {
 
 extension AgentProviderAdapter {
     var capabilities: AgentCapabilities { [] }
+
+    func openConversation(_ thread: AgentThread) async throws {}
+
+    func respond(to interactionID: String, with decision: AgentDecision) async throws {
+        throw IntegrationError(message: "This request must be answered in the terminal.")
+    }
 
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         throw IntegrationError(message: "\(provider.name) does not support forking a thread.")

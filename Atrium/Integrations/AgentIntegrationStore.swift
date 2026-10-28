@@ -7,6 +7,7 @@ import Observation
 final class AgentIntegrationStore {
     let providers: [AgentProvider]
     private(set) var threads: [AgentThread] = []
+    private(set) var interactions: [AgentInteraction] = []
     private(set) var errors: [AgentProvider: String] = [:]
     private(set) var isRefreshing = false
     private(set) var deletingThreadIDs: Set<String> = []
@@ -91,6 +92,7 @@ final class AgentIntegrationStore {
             modelsRefreshDates[provider] = nil
             adapters[provider]?.setEnabled(newValue)
             if !newValue {
+                interactions.removeAll { $0.taskID.hasPrefix(provider.rawValue + ":") }
                 for index in threads.indices where threads[index].provider == provider {
                     threads[index].status = .unknown
                 }
@@ -177,6 +179,7 @@ final class AgentIntegrationStore {
     }
 
     private func removeDeletedThread(_ id: String) {
+        interactions.removeAll { $0.taskID == id }
         guard deletedThreadIDs.insert(id).inserted else { return }
         threads.removeAll { $0.id == id }
         drafts[id] = nil
@@ -195,6 +198,12 @@ final class AgentIntegrationStore {
 
     private func receive(_ event: AgentEvent, from provider: AgentProvider) {
         switch event {
+        case .interactionRequested(let request):
+            guard enabled.contains(provider), !deletedThreadIDs.contains(request.taskID) else { return }
+            interactions.removeAll { $0.id == request.id }
+            interactions.append(request)
+        case .interactionResolved(let id):
+            interactions.removeAll { $0.id == id }
         case .threadUpdated(let sessionID, let update):
             guard enabled.contains(provider) else { return }
             guard let index = threads.firstIndex(where: { $0.provider == provider && $0.sessionID == sessionID }) else { return }
@@ -593,6 +602,21 @@ final class AgentIntegrationStore {
 
     func capabilities(of provider: AgentProvider) -> AgentCapabilities {
         adapters[provider]?.capabilities ?? []
+    }
+
+    func openConversation(_ thread: AgentThread) async throws {
+        if let stopTask = stopTasks[thread.id] { await stopTask.value }
+        try Task.checkCancellation()
+        try await enabledAdapter(for: thread.provider).openConversation(thread)
+    }
+
+    func respond(to request: AgentInteraction, with decision: AgentDecision) async throws {
+        guard interactions.contains(where: { $0.id == request.id }),
+              let thread = threads.first(where: { $0.id == request.taskID }) else {
+            throw IntegrationError(message: "This request has already been answered or cancelled.")
+        }
+        try await enabledAdapter(for: thread.provider).respond(to: request.id, with: decision)
+        interactions.removeAll { $0.id == request.id }
     }
 
     /// One load pipeline per task, shared by local UI and remote subscribers.

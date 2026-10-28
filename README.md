@@ -17,6 +17,8 @@ Work across projects with an integrated terminal, editor, and Git inspector.
 ## Features
 
 - Codex and Claude tasks grouped by project
+- Native chat with optional terminal attachment to the same running conversation
+- Streaming replies, images, mid-turn guidance, and native approval/question controls
 - Workspace-based terminal sessions
 - Built-in text editor with syntax highlighting
 - Git changes, diffs, branches, and worktrees
@@ -25,7 +27,10 @@ Work across projects with an integrated terminal, editor, and Git inspector.
 
 - macOS 26.0+
 
-Claude integration requires Claude Code to be installed separately. Atrium reads local session metadata directly and runs and monitors background sessions through the Claude Code CLI.
+Both providers require their CLI to be installed separately. Codex conversations use its shared app-server and item events. Claude conversations use `--bg`, a local supervisor connection, and authenticated HTTP hooks delivered directly to Atrium. No Node or Python companion program is bundled. The terminal is created on demand and switching views does not restart the agent.
+
+Claude's supervisor socket is undocumented and isolated in `ClaudeDaemonClient`; CLI updates may require compatibility changes. Claude lists current local sessions regardless of which app created them, using session metadata snapshots and background-worker discovery. Atrium-connected hook messages are saved in Atrium’s own store; external saved conversations are read on demand. Provider session directories are not watched. Codex restores conversations through its app-server API. Resuming an Atrium background job preserves its saved launch options, avoiding an implicit conversation fork. Reopening a Claude conversation loads its current provider history, including replies completed while Atrium was closed, then continues with native hook events for Atrium-connected workers. Unsupported dialogs remain accessible through Terminal.
+
 
 ## License
 

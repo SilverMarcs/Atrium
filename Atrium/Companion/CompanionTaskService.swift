@@ -14,6 +14,12 @@ struct CompanionTaskService {
         }
         return await reportingErrors {
             switch action {
+            case .respond(let interactionID, let decision):
+                guard let request = integrations.interactions.first(where: { $0.id == interactionID && $0.taskID == id }) else {
+                    return .failed(message: "This request has already been answered or cancelled.")
+                }
+                do { try await integrations.respond(to: request, with: decision) }
+                catch { return .failed(message: error.localizedDescription) }
             case .settle:
                 sessions.settle(thread)
             case .restore:

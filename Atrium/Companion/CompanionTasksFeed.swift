@@ -75,7 +75,8 @@ final class CompanionTasksFeed {
             actions: menu.allowed,
             model: thread.model,
             reasoningEffort: thread.reasoningEffort,
-            isFastMode: thread.isFastMode
+            isFastMode: thread.isFastMode,
+            interactions: integrations.interactions.filter { $0.taskID == thread.id }
         )
     }
 

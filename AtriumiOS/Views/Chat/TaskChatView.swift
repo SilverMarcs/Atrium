@@ -27,7 +27,7 @@ struct TaskChatView: View {
         let sections = TimelineSections(messages: messages ?? [], pendingPrompts: pendingPrompts, anchorID: anchorID)
         // A reply followed by a prompt still on its way is finished, even
         // once the agent starts on that prompt.
-        let streamingMessageID = task.status == .processing && pendingPrompts.isEmpty ? messages?.last?.id : nil
+        let streamingMessageID = (task.status == .processing || task.status == .waiting) && pendingPrompts.isEmpty ? messages?.last?.id : nil
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -61,6 +61,7 @@ struct TaskChatView: View {
                         } else {
                             TaskChatStatusFooter(status: footerStatus)
                         }
+
                     }
                     // Keep the scroll target available independently of lazy rows.
                     Color.clear
@@ -177,6 +178,7 @@ struct TaskChatView: View {
                 }
             }
         }
+
     }
 
     /// Scrolls to the newest message: to the prompt held at the top, while

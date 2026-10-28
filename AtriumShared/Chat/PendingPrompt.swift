@@ -15,6 +15,7 @@ struct PendingPrompt: Identifiable, Equatable {
     /// Attached images, as the JPEG data sent to the host.
     var images: [Data] = []
     var state: State = .sending
+    var failureMessage: String?
     /// The newest user message in the transcript when this was sent.
     var anchorUserMessageID: String?
     /// How many user messages the transcript will hold after the anchor once

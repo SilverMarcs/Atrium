@@ -24,6 +24,8 @@ nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     var reasoningEffort: String?
     /// Whether the agent runs in fast mode, when its provider has one and it's known.
     var isFastMode: Bool?
+    /// Optional for compatibility with hosts predating native agent decisions.
+    var interactions: [AgentInteraction]? = nil
 
     var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
 

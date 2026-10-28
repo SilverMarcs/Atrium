@@ -192,6 +192,17 @@ struct TaskDetailScreen: View {
             }
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
+        .modifier(AgentInteractionPresentation(
+            requests: hostTask?.interactions ?? [],
+            respond: { interaction, decision in
+                _ = try await client.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
+            },
+            canPresent: scenePhase == .active && !showingDetails && !showingScratchPad
+                && taskToRename == nil && taskToDelete == nil
+                && !composer.isPickingPhotos && !composer.isTakingPhoto
+                && composer.dictation.error == nil,
+            prepareToPresent: { composer.isFocused = false }
+        ))
         // The screen outlives its task when another opens, so each task keeps
         // its own draft and images, waiting for it to open again. A new task
         // opened from the screen's draft carries on with the draft's.

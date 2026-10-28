@@ -21,7 +21,7 @@ struct ClaudeBackgroundSession: Decodable, Sendable, Equatable {
         if status == "busy" { return .processing }
         if status == "waiting" { return .waiting }
         switch state {
-        case "working": return status == "idle" ? .idle : .processing
+        case "working": return .idle
         case "done": return .done
         case "failed": return .failed
         case "stopped": return .stopped

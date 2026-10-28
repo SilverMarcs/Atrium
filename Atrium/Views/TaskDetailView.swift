@@ -5,7 +5,7 @@ struct TaskDetailView: View {
   @Environment(AgentIntegrationStore.self) private var integrations
   @Environment(TaskSessionController.self) private var sessions
   @Environment(WorkspaceStore.self) private var workspaces
-  @SceneStorage("taskPresentation") private var presentation = "terminal"
+  @SceneStorage("taskPresentation") private var presentation = "chat"
   @State private var showingScratchPad = false
 
   private var workspace: Workspace { session.workspace }
@@ -23,17 +23,35 @@ struct TaskDetailView: View {
 
   var body: some View {
     ZStack {
-      TaskTerminalView(session: session, acceptsInputFocus: presentation == "terminal")
+      if session.isTerminalAttached {
+        TaskTerminalView(session: session, acceptsInputFocus: presentation == "terminal")
         .scrollEdgeEffectHidden()
         .opacity(presentation == "terminal" ? 1 : 0)
         .allowsHitTesting(presentation == "terminal")
         .accessibilityHidden(presentation != "terminal")
+      }
+      if presentation == "terminal", !session.isTerminalAttached {
+        if let error = session.terminalError {
+          ContentUnavailableView {
+            Label("Couldn’t Attach Terminal", systemImage: "terminal")
+          } description: {
+            Text(error)
+          } actions: {
+            Button("Retry") { Task { await sessions.attachTerminal(to: session) } }
+          }
+        } else { ProgressView("Attaching terminal…") }
+      }
       if presentation == "chat" {
         SessionChatView(session: session)
           .id(session.id)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .task(id: session.id + ":" + presentation) {
+      session.isTerminalVisible = presentation == "terminal"
+      if presentation == "terminal" { await sessions.attachTerminal(to: session) }
+    }
+    .onDisappear { session.isTerminalVisible = false }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       BottomSheetView(directoryURL: workspace.url)
     }

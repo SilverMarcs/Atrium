@@ -20,6 +20,7 @@ struct PendingPromptRow: View {
                 UserMessageView(text: prompt.text, sendFlight: sendFlight)
             }
             if prompt.state == .failed {
+                if let error = prompt.failureMessage { Text(error).font(.caption).foregroundStyle(.red) }
                 Button("Retry", systemImage: "arrow.clockwise", action: retry)
                     .font(.caption)
                     .buttonStyle(.borderless)

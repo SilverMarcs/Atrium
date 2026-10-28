@@ -5,5 +5,7 @@ enum AgentEvent: Sendable {
     case threadDeleted(sessionID: String)
     /// The thread's conversation gained or changed messages.
     case transcriptChanged(sessionID: String)
+    case interactionRequested(AgentInteraction)
+    case interactionResolved(id: String)
     case listInvalidated
 }

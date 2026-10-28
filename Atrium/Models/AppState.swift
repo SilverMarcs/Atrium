@@ -12,7 +12,10 @@ final class AppState {
     var pendingRunReplacement: Terminal?
 
     var selectedWorkspace: Workspace? { selectedSession?.workspace }
-    var activeTerminal: Terminal? { selectedSession?.terminal }
+    var activeTerminal: Terminal? {
+        guard let session = selectedSession, session.isTerminalAttached, session.isTerminalVisible else { return nil }
+        return session.terminal
+    }
 
     func selectThread(_ id: String) {
         selectedThreadID = id

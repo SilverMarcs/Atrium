@@ -17,4 +17,5 @@ nonisolated enum CompanionTaskAction: Codable, Sendable {
     case selectModel(id: String, reasoningEffort: String?)
     /// Turns fast mode on or off for the agent's next turns.
     case setFastMode(Bool)
+    case respond(interactionID: String, decision: AgentDecision)
 }

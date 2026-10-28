@@ -30,6 +30,22 @@ nonisolated enum ClaudeTranscript {
                 flushAssistant()
                 messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)]))
             case "attachment":
+                if let attachment = record["attachment"] as? [String: Any], attachment["type"] as? String == "file",
+                   let content = attachment["content"] as? [String: Any], content["type"] as? String == "image",
+                   let file = content["file"] as? [String: Any], let encoded = file["base64"] as? String,
+                   encoded.utf8.count <= 28 * 1024 * 1024, let data = Data(base64Encoded: encoded),
+                   let preview = TranscriptImage.thumbnail(data), let user = messages.lastIndex(where: { $0.role == .user }) {
+                    messages[user].images = (messages[user].images ?? []) + [preview]
+                    if let filename = attachment["filename"] as? String {
+                        messages[user].blocks = messages[user].blocks.compactMap { block in
+                            guard block.kind == .text else { return block }
+                            let text = block.text.replacing("@\"\(filename)\"", with: "").replacing("@\(filename)", with: "")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            return text.isEmpty ? nil : .text(text, id: block.id)
+                        }
+                    }
+                    continue
+                }
                 // A prompt sent while the agent works joins its turn as an attachment.
                 guard let text = steeringText(record["attachment"]) else { continue }
                 flushAssistant()

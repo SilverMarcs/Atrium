@@ -85,11 +85,15 @@ final class TaskSessionController {
         openingThreadID = nil
         openError = nil
         appState.selectThread(thread.id)
-        if let session = appState.sessions[thread.id], !session.terminal.hasExited {
+        if let session = appState.sessions[thread.id] {
             session.thread = thread
             showCheckout(of: session)
             appState.show(session)
             integrations.setViewedThread(thread.id)
+            Task {
+                do { try await integrations.openConversation(thread) }
+                catch { integrations.actionError = error.localizedDescription }
+            }
             return
         }
         openingThreadID = thread.id
@@ -233,10 +237,7 @@ final class TaskSessionController {
         }
     }
 
-    /// Sends a prompt to a thread's agent as if typed on the Mac. The thread gets a live
-    /// terminal first, out of sight if the Mac hasn't opened it, so the conversation and any
-    /// question the agent asks back are there when the user returns to the Mac.
-    /// Images are files the agent attaches to the prompt.
+    /// Native providers own the conversation independently of terminal attachments.
     func sendPrompt(_ text: String, images: [URL] = [], to thread: AgentThread) async throws {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !images.isEmpty else { return }
@@ -244,10 +245,10 @@ final class TaskSessionController {
             throw IntegrationError(message: "\(thread.provider.name) is waiting for an answer. Reply on your Mac.")
         }
         let capabilities = integrations.capabilities(of: thread.provider)
-        let session = try await attachedSession(for: thread)
         if capabilities.contains(.prompt) {
             try await integrations.sendPrompt(text, images: images, to: thread)
         } else if capabilities.contains(.terminalPrompt) {
+            let session = try await attachedSession(for: thread)
             await session.terminal.submit(text, attaching: images)
         } else {
             throw IntegrationError(message: "\(thread.provider.name) doesn’t accept prompts from Atrium.")
@@ -303,8 +304,27 @@ final class TaskSessionController {
         }
         observeTerminal(of: session)
         session.terminal.ensureProcess()
+        session.isTerminalAttached = true
         await session.terminal.waitUntilQuiet()
         return session
+    }
+
+    func attachTerminal(to session: TaskSession) async {
+        guard !session.isAttachingTerminal else { return }
+        if session.isTerminalAttached, !session.terminal.hasExited { return }
+        session.isAttachingTerminal = true
+        session.terminalError = nil
+        defer { session.isAttachingTerminal = false }
+        do {
+            let launch = try await integrations.prepareLaunch(for: session.thread)
+            try Task.checkCancellation()
+            guard appState.sessions[session.id] === session else { return }
+            session.restart(launch: launch)
+            observeTerminal(of: session)
+            session.terminal.ensureProcess()
+            session.isTerminalAttached = true
+        } catch is CancellationError {
+        } catch { session.terminalError = error.localizedDescription }
     }
 
     private func canOpen(_ thread: AgentThread) -> Bool {
@@ -342,7 +362,9 @@ final class TaskSessionController {
         terminal.onProcessExit = { [weak self, weak session, weak terminal] code in
             guard let self, let session, session.terminal === terminal,
                   self.appState.sessions[session.id] === session else { return }
-            self.integrations.recordProcessExit(threadID: session.id, code: code)
+            if !self.integrations.capabilities(of: session.thread.provider).contains(.prompt) {
+                self.integrations.recordProcessExit(threadID: session.id, code: code)
+            }
         }
     }
 

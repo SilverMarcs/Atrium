@@ -12,4 +12,6 @@ nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identifiable 
     var role: Role
     /// In the order the agent produced them, so text and tool runs interleave correctly.
     var blocks: [TranscriptBlock]
+    /// Small previews, rather than full image payloads, for local and companion history.
+    var images: [Data]? = nil
 }

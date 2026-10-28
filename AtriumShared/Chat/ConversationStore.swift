@@ -33,6 +33,7 @@ final class ConversationStore {
     let expected = nextExpectedUserMessageCount(for: taskID)
     update(id, in: taskID) {
       $0.state = .sending
+      $0.failureMessage = nil
       $0.isOverdue = false
       $0.anchorUserMessageID = anchor
       $0.expectedUserMessagesAfterAnchor = expected
@@ -67,7 +68,7 @@ final class ConversationStore {
         self.stopAwaitingAgent(for: taskID, after: id)
       } catch {
         if !Task.isCancelled {
-          self?.markFailed(id, in: taskID)
+          self?.markFailed(id, in: taskID, message: error.localizedDescription)
           self?.stopAwaitingAgent(for: taskID, after: id)
         }
       }
@@ -83,11 +84,12 @@ final class ConversationStore {
     pendingPrompts[taskID] = prompts
   }
 
-  func markFailed(_ id: UUID, in taskID: String) {
+  func markFailed(_ id: UUID, in taskID: String, message: String? = nil) {
     guard var prompts = pendingPrompts[taskID],
       let index = prompts.firstIndex(where: { $0.id == id })
     else { return }
     prompts[index].state = .failed
+    prompts[index].failureMessage = message
     for later in prompts.indices.dropFirst(index + 1) where prompts[later].state != .failed {
       prompts[later].expectedUserMessagesAfterAnchor -= 1
     }
@@ -99,7 +101,7 @@ final class ConversationStore {
   }
 
   func noteStatus(_ status: AgentThreadStatus, for taskID: String) {
-    if status == .processing || status == .waiting || status == .failed || status == .stopped
+    if status == .processing || status == .waiting || status == .done || status == .failed || status == .stopped
       || status == .unknown
     {
       tasksAwaitingAgent[taskID] = nil
@@ -110,7 +112,11 @@ final class ConversationStore {
   }
 
   func footerStatus(for taskID: String, status: AgentThreadStatus) -> AgentThreadStatus {
-    tasksAwaitingAgent[taskID] != nil && status != .waiting ? .processing : status
+    if tasksAwaitingAgent[taskID] != nil && status != .waiting { return .processing }
+    // A provider may report worker startup as processing before any turn exists.
+    if status == .processing, transcripts[taskID]?.isEmpty != false,
+       pendingPrompts[taskID]?.contains(where: { $0.state != .failed }) != true { return .idle }
+    return status
   }
 
   func isSending(in taskID: String) -> Bool {

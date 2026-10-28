@@ -1,27 +1,17 @@
 import SwiftUI
 
-/// Shared optimistic/host state; waiting directs the reader to the appropriate host UI.
+/// Keep active-turn geometry stable while questions or approvals wait in a sheet.
 struct TaskChatStatusFooter: View {
     let status: AgentThreadStatus
 
     var body: some View {
         switch status {
-        case .processing:
+        case .processing, .waiting:
             ProgressView()
                 #if os(macOS)
                 .controlSize(.small)
                 #endif
                 .frame(maxWidth: .infinity, alignment: .leading)
-        case .waiting:
-            #if os(macOS)
-            let message: LocalizedStringKey = "Waiting for your answer in Terminal"
-            #else
-            let message: LocalizedStringKey = "Waiting for your answer on your host"
-            #endif
-            Label(message, systemImage: "exclamationmark.bubble")
-                .font(.subheadline)
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity)
         default:
             EmptyView()
         }

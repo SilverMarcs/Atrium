@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Projects opened in this personal app are trusted before Claude starts a background session.
 @MainActor
@@ -27,6 +28,15 @@ enum ClaudeWorkspaceTrust {
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home
         try accept(folder: trustedFolder.standardizedFileURL.resolvingSymlinksInPath(),
                    configFile: configHome.appending(path: ".claude.json"))
+        // Foundation can collapse /private/var back to /var. Claude's native
+        // background host uses realpath, so retain that spelling as well.
+        if let resolved = trustedFolder.path.withCString({ realpath($0, nil) }) {
+            defer { free(resolved) }
+            let path = String(cString: resolved)
+            if path != trustedFolder.path {
+                try accept(folder: URL(filePath: path), configFile: configHome.appending(path: ".claude.json"))
+            }
+        }
     }
 
     static func accept(folder: URL, configFile: URL) throws {
