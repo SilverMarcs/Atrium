@@ -17,11 +17,12 @@ final class ConversationStore {
   }
 
   @discardableResult
-  func enqueue(_ text: String, images: [Data], to taskID: String) -> PendingPrompt {
+  func enqueue(_ text: String, images: [Data], to taskID: String, isSteer: Bool = false) -> PendingPrompt {
     let prompt = PendingPrompt(
       text: text, images: images,
       anchorUserMessageID: newestUserMessageID(in: taskID),
-      expectedUserMessagesAfterAnchor: nextExpectedUserMessageCount(for: taskID)
+      expectedUserMessagesAfterAnchor: nextExpectedUserMessageCount(for: taskID),
+      isSteer: isSteer
     )
     pendingPrompts[taskID, default: []].append(prompt)
     tasksAwaitingAgent[taskID] = prompt.id
@@ -165,8 +166,9 @@ final class ConversationStore {
       || confirmedRowIDs[taskID]?.values.contains(id) == true
   }
 
-  func rows(for taskID: String) -> [ConversationRow] {
-    displayMessages(for: taskID).map { ConversationRow(message: $0) }
+  /// The task's messages as laid out by `turns`, then its prompts still on their way.
+  func rows(for taskID: String, turns: ConversationTurns) -> [ConversationRow] {
+    turns.messages.map { ConversationRow(message: $0) }
       + (pendingPrompts[taskID] ?? []).map { prompt in
         ConversationRow(
           message: TranscriptMessage(

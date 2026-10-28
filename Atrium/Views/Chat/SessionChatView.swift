@@ -21,12 +21,11 @@ struct SessionChatView: View {
     @Bindable var composer = app.composer(for: item.id)
     let editing = composer.messageEdit
     let transcript = conversation.transcripts[task.id]
-    let rows = conversation.rows(for: task.id)
     let prompts = conversation.pendingPrompts[task.id] ?? []
+    let turns = ConversationTurns(
+      messages: conversation.displayMessages(for: task.id), pendingPrompts: prompts, status: task.status)
+    let rows = conversation.rows(for: task.id, turns: turns)
     let footerStatus = conversation.footerStatus(for: task.id, status: task.status)
-    let streamingID =
-      (task.status == .processing || task.status == .waiting) && !prompts.contains { $0.state != .failed }
-      ? rows.last?.id : nil
     ScrollViewReader { proxy in
       ScrollView {
         // Bottom-aligns short chats; the `.alignment` scroll anchor would stretch the toolbar down to the first row.
@@ -37,7 +36,7 @@ struct SessionChatView: View {
             ForEach(rows) { row in
               SessionChatMessageRow(
                 message: row.message,
-                isStreaming: row.message.role == .assistant && row.id == streamingID,
+                isStreaming: turns.liveIDs.contains(row.id),
                 edit: row.pendingPrompt == nil && row.message.editTarget != nil
                     ? { composer.messageEdit = ConversationMessageEdit(message: row.message, item: item) } : nil,
                 editEnabled: task.actions.contains(.editMessage) && prompts.isEmpty && composer.messageEdit?.isSubmitting != true,

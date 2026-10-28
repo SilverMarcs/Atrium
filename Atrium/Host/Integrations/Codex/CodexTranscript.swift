@@ -24,7 +24,9 @@ nonisolated enum CodexTranscript {
                 guard let id = item["id"] as? String else { continue }
                 if item["type"] as? String == "userMessage" {
                     flushAssistant()
-                    let editTarget = hasUserMessage ? nil : turnID
+                    // Later prompts in a turn were steered into it.
+                    let isSteer = hasUserMessage
+                    let editTarget = isSteer ? nil : turnID
                     hasUserMessage = true
                     let text = (item["content"] as? [[String: Any]] ?? [])
                         .compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
@@ -41,7 +43,7 @@ nonisolated enum CodexTranscript {
                         return nil
                     }
                     if !text.isEmpty || !images.isEmpty {
-                        messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images, editTarget: editTarget))
+                        messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images, editTarget: editTarget, isSteer: isSteer))
                     }
                 } else if item["type"] as? String == "agentMessage" {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }

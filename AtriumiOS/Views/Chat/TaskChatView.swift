@@ -27,10 +27,8 @@ struct TaskChatView: View {
         let anchorID = pendingPrompts.last?.timelineID ?? anchorSpace.anchorID.flatMap { id in
             id.hasPrefix("pending-") ? newestPromptID : id
         }
-        let sections = TimelineSections(messages: messages ?? [], pendingPrompts: pendingPrompts, anchorID: anchorID)
-        // A reply followed by a prompt still on its way is finished, even
-        // once the agent starts on that prompt.
-        let streamingMessageID = (task.status == .processing || task.status == .waiting) && pendingPrompts.isEmpty ? messages?.last?.id : nil
+        let turns = ConversationTurns(messages: messages ?? [], pendingPrompts: pendingPrompts, status: task.status)
+        let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -38,7 +36,7 @@ struct TaskChatView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(sections.historyMessages) { message in
                             TranscriptMessageRow(
-                                message: message, isStreaming: message.id == streamingMessageID,
+                                message: message, isStreaming: turns.liveIDs.contains(message.id),
                                 edit: message.editTarget != nil
                                     ? { composer.beginEditing(message, in: item) } : nil,
                                 editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
@@ -53,7 +51,7 @@ struct TaskChatView: View {
                             VStack(alignment: .leading, spacing: 16) {
                                 ForEach(sections.turnMessages) { message in
                                     TranscriptMessageRow(
-                                        message: message, isStreaming: message.id == streamingMessageID,
+                                        message: message, isStreaming: turns.liveIDs.contains(message.id),
                                         edit: message.editTarget != nil
                                             ? { composer.beginEditing(message, in: item) } : nil,
                                         editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true

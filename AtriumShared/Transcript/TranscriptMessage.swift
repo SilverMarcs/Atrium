@@ -16,4 +16,6 @@ nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identifiable 
     var images: [Data]? = nil
     /// Provider-native rewind boundary. Nil for messages that cannot be edited independently.
     var editTarget: String? = nil
+    /// Sent while the agent was working, so it joined that turn rather than starting one.
+    var isSteer = false
 }

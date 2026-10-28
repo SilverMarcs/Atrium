@@ -27,6 +27,8 @@ struct PendingPrompt: Identifiable, Equatable {
     /// Sent a while ago to an agent still working, which hasn't taken it yet.
     /// It goes once the agent stops.
     var isOverdue = false
+    /// Sent while the agent was working, so it joins that turn.
+    var isSteer = false
 
     /// Distinct from transcript message IDs, so the timeline can tell an
     /// optimistic row from a confirmed one.

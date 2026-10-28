@@ -68,7 +68,7 @@ nonisolated enum ClaudeTranscript {
                 // A prompt sent while the agent works joins its turn as an attachment.
                 guard let text = steeringText(record["attachment"]) else { continue }
                 flushAssistant()
-                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)], editTarget: uuid))
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)], editTarget: uuid, isSteer: true))
             case "assistant":
                 var blocks = assistant?.blocks ?? []
                 for (index, content) in (message?["content"] as? [[String: Any]] ?? []).enumerated() {

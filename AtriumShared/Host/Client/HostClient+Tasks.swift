@@ -8,7 +8,8 @@ extension HostClient {
     /// - Returns: The ID of the prompt's row in the timeline.
     @discardableResult
     func sendPrompt(_ text: String, images: [Data] = [], to taskID: String) -> PendingPrompt.ID {
-        let prompt = conversations.enqueue(text, images: images, to: taskID)
+        let status = task(taskID)?.status
+        let prompt = conversations.enqueue(text, images: images, to: taskID, isSteer: status == .processing || status == .waiting)
         deliver(prompt.id, to: taskID)
         return prompt.id
     }
