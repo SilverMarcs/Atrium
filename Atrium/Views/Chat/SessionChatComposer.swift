@@ -37,18 +37,29 @@ struct SessionChatComposer: View {
           SessionChatInputMenu(images: $images)
             .offset(y: -1)
 
-          HStack(alignment: .bottom, spacing: 0) {
-            TextField("Message \(provider.name)...", text: $prompt, axis: .vertical)
-              .textFieldStyle(.plain)
-              .font(.body)
+          ZStack(alignment: .leading) {
+            if prompt.isEmpty {
+              Text("Message \(provider.name)...")
+                .padding(.leading, 1)
+                .foregroundStyle(.placeholder)
+                .allowsHitTesting(false)
+            }
+
+            TextEditor(text: $prompt)
+              .padding(.leading, -4)
+              .frame(maxHeight: 350)
+              .fixedSize(horizontal: false, vertical: true)
+              .scrollContentBackground(.hidden)
               .focused($isFocused)
-              .lineLimit(1 ... 7)
-              .padding(.horizontal, 4)
-              .padding(8)
-              .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { noteSourceFrame($0) }
               .onKeyPress(.return, action: handleReturnKey)
           }
-          .glassEffect(in: .rect(cornerRadius: 20))
+          .font(.body)
+          .padding(.horizontal, 7)
+          .padding(.vertical, 3)
+          .padding(6)
+          .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { noteSourceFrame($0) }
+          .glassEffect(in: .rect(cornerRadius: 16))
+          .modifier(SessionChatPasteHandler(prompt: $prompt, images: $images, isFocused: isFocused))
 
           Button {
             showsStop ? interrupt() : send()
