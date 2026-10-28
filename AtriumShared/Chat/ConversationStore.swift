@@ -159,6 +159,12 @@ final class ConversationStore {
     }
   }
 
+  func containsTimelineID(_ id: String, in taskID: String) -> Bool {
+    pendingPrompts[taskID]?.contains { $0.timelineID == id } == true
+      || transcripts[taskID]?.contains { $0.id == id } == true
+      || confirmedRowIDs[taskID]?.values.contains(id) == true
+  }
+
   func rows(for taskID: String) -> [ConversationRow] {
     displayMessages(for: taskID).map { ConversationRow(message: $0) }
       + (pendingPrompts[taskID] ?? []).map { prompt in

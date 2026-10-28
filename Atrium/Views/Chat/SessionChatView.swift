@@ -31,7 +31,7 @@ struct SessionChatView: View {
         ZStack(alignment: .bottom) {
           Color.clear
             .containerRelativeFrame(.vertical)
-          LazyVStack(alignment: .leading, spacing: 8) {
+          LazyVStack(alignment: .leading, spacing: 16) {
             ForEach(rows) { row in
               SessionChatMessageRow(
                 message: row.message,

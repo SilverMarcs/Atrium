@@ -107,7 +107,17 @@ struct TaskChatView: View {
                 count: (messages?.count ?? 0) + pendingPrompts.count,
                 lastID: pendingPrompts.last?.timelineID ?? messages?.last?.id
             ), initial: true) { oldTracker, newTracker in
-                if scrollPolicy.observe(from: oldTracker, to: newTracker) {
+                if client.drafts[oldTracker.taskID]?.taskID == newTracker.taskID, anchorSpace.anchorID == nil {
+                    anchorSpace.anchorID = pendingPrompts.last?.timelineID
+                        ?? client.conversations.displayMessages(for: task.id).last {
+                            $0.role == .user && $0.id.hasPrefix("pending-")
+                        }?.id
+                }
+                let continuesConversation = oldTracker.taskID == newTracker.taskID || TaskDraft.isDraftID(oldTracker.taskID)
+                let preservesTurn = continuesConversation && anchorSpace.anchorID.map {
+                    client.conversations.containsTimelineID($0, in: task.id)
+                } == true
+                if scrollPolicy.observe(from: oldTracker, to: newTracker, preservingTurn: preservesTurn) {
                     pin = TimelinePin()
                     anchorSpace.reset()
                     scrollToLatest(with: proxy, animated: false)
