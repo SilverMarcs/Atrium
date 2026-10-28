@@ -13,6 +13,7 @@ struct OptimisticTaskUpdate: Identifiable {
         case .task(let taskID, let action):
             if case .fork = action { return nil }
             if case .respond = action { return nil }
+            if case .rewind = action { return nil }
             self.taskID = taskID
             self.action = action
         case .prompt(let taskID, _, _):
@@ -52,7 +53,7 @@ struct OptimisticTaskUpdate: Identifiable {
             snapshot.tasks[index].isFastMode = isOn
         case .delete:
             snapshot.tasks.remove(at: index)
-        case .fork, .respond:
+        case .fork, .respond, .rewind:
             break
         }
     }

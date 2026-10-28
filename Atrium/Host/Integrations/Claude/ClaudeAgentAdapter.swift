@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel, .editMessage]
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
     private let configDirectory: URL
@@ -133,6 +133,52 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             throw error
         }
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now)))
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+        guard UUID(uuidString: messageID) != nil,
+              let messages = try await history.transcript(thread.sessionID),
+              messages.contains(where: { $0.editTarget == messageID }) else {
+            throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
+        }
+        let sessions = try await listBackgroundSessions()
+        guard !sessions.contains(where: {
+            $0.sessionID == thread.sessionID && $0.isRunning && ($0.threadStatus == .processing || $0.threadStatus == .waiting)
+        }) else {
+            throw IntegrationError(message: "Wait for Claude to finish or stop it before editing a message.")
+        }
+        let images = try await history.promptImages(thread.sessionID, messageID: messageID)
+        // The daemon's interactive workers do not accept SDK control requests.
+        // Release this session's writer, let the CLI persist its own rewind,
+        // and let the normal next send resume the same background job.
+        try await stopThread(thread)
+        let requests: [[String: Any]] = [
+            ["type": "control_request", "request_id": "initialize", "request": ["subtype": "initialize"]],
+            ["type": "control_request", "request_id": "rewind", "request": [
+                "subtype": "rewind_conversation", "target_message_uuid": messageID,
+                "last_seen_user_message_uuid": messages.last(where: { $0.role == .user })?.id ?? messageID
+            ]]
+        ]
+        var input = Data()
+        for request in requests {
+            input.append(try JSONSerialization.data(withJSONObject: request))
+            input.append(10)
+        }
+        let output = try await IntegrationProcess.run("claude", arguments: [
+            "-p", "--resume", thread.sessionID, "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"
+        ], directory: thread.directory, input: input, timeout: .seconds(60))
+        let response = output.split(separator: 10).compactMap {
+            (try? JSONSerialization.jsonObject(with: Data($0)) as? [String: Any])?["response"] as? [String: Any]
+        }.first { $0["request_id"] as? String == "rewind" }
+        let result = response?["response"] as? [String: Any]
+        guard result?["rewound"] as? Bool == true else {
+            throw IntegrationError(message: response?["error"] as? String ?? result?["reason"] as? String ?? "Claude could not rewind this message.")
+        }
+        let retained = try await savedTranscript(thread.sessionID)
+        live[thread.sessionID] = ClaudeLiveTranscript(history: retained)
+        onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+        onEvent?(.threadInvalidated(sessionID: thread.sessionID))
+        return (retained, images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

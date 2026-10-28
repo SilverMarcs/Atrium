@@ -52,6 +52,8 @@ nonisolated enum TaskAction: Codable, Sendable {
     case selectModel(id: String, reasoningEffort: String?)
     /// Turns fast mode on or off for the agent's next turns.
     case setFastMode(Bool)
+    /// Removes this prompt and later conversation, keeping files unchanged.
+    case rewind(messageID: String)
     case respond(interactionID: String, decision: AgentDecision)
 }
 

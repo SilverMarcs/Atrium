@@ -14,6 +14,11 @@ struct TaskService {
         }
         return await reportingErrors {
             switch action {
+            case .rewind(let messageID):
+                do {
+                    let result = try await integrations.rewind(thread, before: messageID)
+                    return .rewound(messages: result.messages, images: result.images)
+                } catch { return .failed(message: error.localizedDescription) }
             case .respond(let interactionID, let decision):
                 guard let request = integrations.interactions.first(where: { $0.id == interactionID && $0.taskID == id }) else {
                     return .failed(message: "This request has already been answered or cancelled.")

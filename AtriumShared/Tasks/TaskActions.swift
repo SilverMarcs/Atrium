@@ -21,6 +21,9 @@ nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     /// The agent's model, reasoning effort and fast mode can be changed right now.
     static let selectModel = Self(rawValue: 1 << 11)
 
+    /// Conversation history can be rewound while the agent is idle.
+    static let editMessage = Self(rawValue: 1 << 12)
+
     func allows(_ action: TaskMenuAction) -> Bool {
         switch action {
         case .settle: contains(.settle)

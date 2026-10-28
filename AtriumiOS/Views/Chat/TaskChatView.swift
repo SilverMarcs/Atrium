@@ -4,6 +4,7 @@ import SwiftUI
 struct TaskChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: HostTask
+    @Environment(TaskComposer.self) private var composer
     @State private var pin = TimelinePin()
     @State private var anchorSpace = TimelineAnchorSpace()
     @State private var scrollPolicy = ConversationScrollPolicy()
@@ -36,7 +37,12 @@ struct TaskChatView: View {
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(sections.historyMessages) { message in
-                            TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
+                            TranscriptMessageRow(
+                                message: message, isStreaming: message.id == streamingMessageID,
+                                edit: message.editTarget != nil
+                                    ? { composer.beginEditing(message, in: item) } : nil,
+                                editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
+                            )
                         }
                         ForEach(sections.historyPendingPrompts) { prompt in
                             PendingPromptView(prompt: prompt, item: item)
@@ -46,7 +52,12 @@ struct TaskChatView: View {
                             // prompt can scroll to the top.
                             VStack(alignment: .leading, spacing: 16) {
                                 ForEach(sections.turnMessages) { message in
-                                    TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
+                                    TranscriptMessageRow(
+                                        message: message, isStreaming: message.id == streamingMessageID,
+                                        edit: message.editTarget != nil
+                                            ? { composer.beginEditing(message, in: item) } : nil,
+                                        editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
+                                    )
                                 }
                                 ForEach(sections.turnPendingPrompts) { prompt in
                                     PendingPromptView(prompt: prompt, item: item)
@@ -73,8 +84,8 @@ struct TaskChatView: View {
                 }
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
-                .followsComposerOnKeyboard { [host, anchorSpace, taskID = task.id] in
-                    host.conversations.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
+                .followsComposerOnKeyboard { [host, anchorSpace, composer, taskID = task.id] in
+                    composer.messageEdit != nil || host.conversations.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
                 }
             }
             // The container is what shows between the bars and keyboard. The
@@ -97,6 +108,20 @@ struct TaskChatView: View {
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
                 scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
+            } scrollToEditingMessage: { id in
+                scrollToEditingMessage(id, with: proxy)
+            }
+            .onChange(of: composer.messageEdit?.id) { _, id in
+                guard id != nil, composer.isFocused, let messageID = composer.messageEdit?.messageID else { return }
+                scrollToEditingMessage(messageID, with: proxy)
+            }
+            .onChange(of: composer.editedPromptID) { _, id in
+                guard let id else { return }
+                // Replacing an older turn shrinks the transcript, so it cannot
+                // use the normal new-row count check to establish this anchor.
+                scrollPolicy.noteSend()
+                anchorSpace.anchorID = "pending-" + id.uuidString
+                scrollToLatest(with: proxy, holdingPrompt: true)
             }
             // Another task, or a transcript arriving for the first time, opens
             // at its newest message, pinned. The scroll view itself is kept
@@ -109,6 +134,7 @@ struct TaskChatView: View {
                 count: (messages?.count ?? 0) + pendingPrompts.count,
                 lastID: pendingPrompts.last?.timelineID ?? messages?.last?.id
             ), initial: true) { oldTracker, newTracker in
+                guard composer.messageEdit == nil else { return }
                 if host.drafts[oldTracker.taskID]?.taskID == newTracker.taskID, anchorSpace.anchorID == nil {
                     anchorSpace.anchorID = pendingPrompts.last?.timelineID
                         ?? host.conversations.displayMessages(for: task.id).last {
@@ -169,7 +195,7 @@ struct TaskChatView: View {
             // working indicator) carries it along, retargeting any scroll
             // already on its way.
             .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { oldHeight, newHeight in
-                guard newHeight > oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
+                guard composer.messageEdit == nil, newHeight > oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
                 // A reply outgrowing the turn below a prompt held at the top
                 // leaves the prompt where it is.
                 guard !sections.hasTurn else { return }
@@ -199,6 +225,13 @@ struct TaskChatView: View {
             }
         }
 
+    }
+
+    private func scrollToEditingMessage(_ id: String, with proxy: ScrollViewProxy) {
+        pin.isPinned = false
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+            proxy.scrollTo(id, anchor: .bottom)
+        }
     }
 
     /// Scrolls to the newest message: to the prompt held at the top, while

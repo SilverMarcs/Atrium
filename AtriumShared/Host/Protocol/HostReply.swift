@@ -2,6 +2,8 @@ import Foundation
 
 nonisolated enum HostReply: Codable, Sendable {
     case done
+    /// Canonical retained history and the original prompt attachments, ready to resend.
+    case rewound(messages: [TranscriptMessage], images: [Data])
     case failed(message: String)
     case paired(token: String)
     /// The task a compose or fork created.

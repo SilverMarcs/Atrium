@@ -26,6 +26,8 @@ protocol AgentProviderAdapter: AnyObject {
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
     /// Requires `.prompt`. Images are local files attached to the prompt.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
+    /// Rewinds conversation only and returns original attachments for the replacement prompt.
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data])
     /// Requires `.prompt`.
     func interrupt(_ thread: AgentThread) async throws
     /// Requires `.selectModel`. The models threads can switch to, as the provider's own picker lists them.
@@ -75,6 +77,10 @@ extension AgentProviderAdapter {
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
         throw IntegrationError(message: "\(provider.name) does not accept prompts from Atrium.")
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+        throw IntegrationError(message: "\(provider.name) doesn’t support conversation editing.")
     }
 
     func interrupt(_ thread: AgentThread) async throws {

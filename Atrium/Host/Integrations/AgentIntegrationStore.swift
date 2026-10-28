@@ -12,6 +12,7 @@ final class AgentIntegrationStore {
     private(set) var isRefreshing = false
     private(set) var deletingThreadIDs: Set<String> = []
     private(set) var stoppingThreadIDs: Set<String> = []
+    private(set) var rewindingThreadIDs: Set<String> = []
     private(set) var renamingThreadIDs: Set<String> = []
     private(set) var deletedThreadIDs: Set<String> = []
     var actionError: String?
@@ -647,7 +648,18 @@ final class AgentIntegrationStore {
     }
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
+        guard !rewindingThreadIDs.contains(thread.id) else {
+            throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
+        }
         try await enabledAdapter(for: thread.provider).sendPrompt(text, images: images, to: thread)
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+        guard thread.status != .processing, thread.status != .waiting, rewindingThreadIDs.insert(thread.id).inserted else {
+            throw IntegrationError(message: "Wait for the agent to finish or stop it before editing a message.")
+        }
+        defer { rewindingThreadIDs.remove(thread.id) }
+        return try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

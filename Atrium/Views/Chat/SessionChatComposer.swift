@@ -11,24 +11,27 @@ struct SessionChatComposer: View {
   var actions: TaskActions = [.prompt, .interrupt]
   let send: () -> Void
   let interrupt: () -> Void
+  var edit: ConversationMessageEdit?
+  var cancelEdit: () -> Void = {}
   var noteSourceFrame: (CGRect) -> Void = { _ in }
   @Environment(AppModel.self) private var app
   @FocusState private var isFocused: Bool
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
   private var canSend: Bool {
-    !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
+    !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty || edit?.images.isEmpty == false
   }
 
   private var showsStop: Bool { isProcessing && actions.contains(.interrupt) && !canSend }
 
   private var isButtonDisabled: Bool {
-    isSending || (!showsStop && (!canSend || !actions.contains(.prompt)))
+    isSending || edit?.isSubmitting == true || (edit != nil && edit?.canSubmit != true) || (!showsStop && (!canSend || !actions.contains(.prompt)))
   }
 
   var body: some View {
     GlassEffectContainer {
       VStack(spacing: 0) {
+        if let edit { ConversationEditContent(edit: edit) }
         if !images.isEmpty {
           SessionChatAttachmentStrip(images: $images)
         }
@@ -37,9 +40,18 @@ struct SessionChatComposer: View {
           SessionChatInputMenu(images: $images)
             .offset(y: -1)
 
+          if edit != nil {
+            Button("Cancel Edit", systemImage: "xmark.circle.fill", action: cancelEdit)
+              .labelStyle(.iconOnly)
+              .font(.title2)
+              .buttonStyle(.plain)
+              .keyboardShortcut(.cancelAction)
+              .help("Cancel Edit")
+          }
+
           ZStack(alignment: .leading) {
             if prompt.isEmpty {
-              Text("Message \(provider.name)...")
+              Text(edit == nil ? "Message \(provider.name)..." : "Edit message…")
                 .padding(.leading, 1)
                 .foregroundStyle(.placeholder)
                 .allowsHitTesting(false)
@@ -52,6 +64,7 @@ struct SessionChatComposer: View {
               .scrollContentBackground(.hidden)
               .focused($isFocused)
               .onKeyPress(.return, action: handleReturnKey)
+              .disabled(edit?.isSubmitting == true)
           }
           .font(.body)
           .padding(.horizontal, 7)
@@ -65,14 +78,14 @@ struct SessionChatComposer: View {
             showsStop ? interrupt() : send()
           } label: {
             Label {
-              Text(showsStop ? "Stop" : "Send")
+              Text(showsStop ? "Stop" : edit == nil ? "Send" : "Save and Continue")
             } icon: {
               // Measure both states using Relay's Send glyph; the overlay
               // changes the visible symbol without changing its layout size.
               Image(systemName: "arrow.up")
                 .hidden()
                 .overlay {
-                  Image(systemName: showsStop ? "stop.fill" : "arrow.up")
+                  Image(systemName: showsStop ? "stop.fill" : edit == nil ? "arrow.up" : "checkmark")
                 }
             }
             .padding(1)
@@ -86,7 +99,7 @@ struct SessionChatComposer: View {
           .buttonStyle(.glassProminent)
           .buttonBorderShape(.circle)
           .disabled(isButtonDisabled)
-          .help(showsStop ? "Stop" : "Send")
+          .help(showsStop ? "Stop" : edit == nil ? "Send" : "Save and Continue")
           .offset(y: -2)
           .modifier(SessionChatSendShortcut(enabled: !showsStop))
         }
@@ -95,12 +108,19 @@ struct SessionChatComposer: View {
         .padding(.bottom, 12)
       }
       .fixedSize(horizontal: false, vertical: true)
+      .disabled(edit?.isSubmitting == true)
     }
     .toolbar {
       ToolbarItem(placement: .keyboard) {
         Button("Focus") { isFocused = true }
           .keyboardShortcut("l", modifiers: .command)
       }
+    }
+    .task(id: edit?.id) {
+      guard edit != nil else { return }
+      await Task.yield()
+      guard !Task.isCancelled else { return }
+      isFocused = true
     }
     .task(id: app.selection) {
       await Task.yield()
@@ -114,7 +134,7 @@ struct SessionChatComposer: View {
     guard enterToSendChat, modifiers.intersection([.shift, .option, .command]).isEmpty else {
       return .ignored
     }
-    if canSend && !isSending && actions.contains(.prompt) { send() }
+    if canSend && !isButtonDisabled && actions.contains(.prompt) { send() }
     return .handled
   }
 }

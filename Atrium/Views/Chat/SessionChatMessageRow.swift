@@ -5,6 +5,8 @@ import SwiftUI
 struct SessionChatMessageRow: View {
   let message: TranscriptMessage
   let isStreaming: Bool
+  var edit: (() -> Void)?
+  var editEnabled = true
   var pendingPrompt: PendingPrompt?
   var retry: () -> Void = {}
 
@@ -18,6 +20,7 @@ struct SessionChatMessageRow: View {
         UserMessageView(
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: message.images ?? [],
+          edit: edit, editEnabled: editEnabled,
           sendFlight: { $0.flight(forTimelineID: message.id) })
       }
     case .assistant:

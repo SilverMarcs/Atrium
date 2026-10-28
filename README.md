@@ -29,6 +29,16 @@ Every Mac running Atrium is a host. The host alone touches projects, Git, files 
 
 Turn on remote access in Settings → Hosts, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Hosts on another Mac.
 
+## Editing conversation messages
+
+Choose **Edit** from a user message’s context menu on Mac or iOS. The existing composer loads a separate edit draft and scrolls to the selected message, without dimming other messages. The checkmark saves it and continues the conversation; **Copy** copies a message’s text. Cancelling leaves the conversation untouched and restores the ordinary composer draft. Submission removes the original message and later replies from active history, keeps earlier conversation and original image attachments, and sends the replacement through normal messaging. Editing is available once the agent finishes or you stop it with the existing Stop control. On iOS the replacement prompt anchors at the top, including when the conversation shrinks; macOS follows its usual send-to-bottom behavior.
+
+Codex uses native [`thread/revert`](https://developers.openai.com/codex/app-server#revert-thread-history), preserving the thread ID. Its rewind boundary is a whole turn, so only the prompt opening a turn is editable; mid-turn guidance cannot be edited independently without discarding earlier messages in that turn. Legacy non-paginated Codex threads do not support this operation and report the provider’s error without a fallback.
+
+Claude’s background daemon has no rewind operation. Atrium stops that conversation’s idle worker, invokes the installed CLI’s native `rewind_conversation` control request in a short-lived headless process, then lets normal messaging resume the same session with `--bg` and its saved launch options. No model call is made to rewind. The control request is undocumented; this path was verified with Claude Code 2.1.310. Atrium follows Claude’s saved active parent chain and rewind leaf so discarded branches stay out of history after reopening.
+
+Rewind replaces provider runtime state as well as history. Codex reloads its thread runtime; Claude restarts its background worker. Provider-managed background terminals, subprocesses, or agents can stop, including jobs started before the edited message. Detached external processes may continue, and their previous runtime handles may no longer work. After resuming, ordinary background execution continues as before. Conversation editing never restores file checkpoints or invokes Git undo; existing filesystem changes remain.
+
 ## Requirements
 
 - macOS 26.0+

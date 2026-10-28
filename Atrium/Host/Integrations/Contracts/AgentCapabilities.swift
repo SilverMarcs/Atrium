@@ -13,4 +13,5 @@ struct AgentCapabilities: OptionSet, Sendable {
     /// The model, reasoning effort and fast mode can be changed, through the
     /// adapter with `.prompt` or by typing commands with `.terminalPrompt`.
     static let selectModel = Self(rawValue: 1 << 8)
+    static let editMessage = Self(rawValue: 1 << 9)
 }

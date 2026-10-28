@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Scrolls the timeline to the newest message when the composer gains focus.
+/// Scrolls to the message being edited, or the newest message, when the composer gains focus.
 ///
 /// Focus is observed here rather than in `TaskChatView.body`, so a focus
 /// change re-evaluates only this modifier. Interactive keyboard dismissal ends
@@ -13,6 +13,7 @@ struct ScrollOnComposerFocus: ViewModifier {
     @State private var scrollTask: Task<Void, Never>?
 
     let scrollToLatest: () -> Void
+    let scrollToEditingMessage: (String) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -20,13 +21,16 @@ struct ScrollOnComposerFocus: ViewModifier {
                 scrollTask?.cancel()
                 guard focused else { return }
                 // The wait lets the keyboard's safe area apply first.
+                let editingMessageID = composer.messageEdit?.messageID
                 scrollTask = Task {
                     do {
                         try await Task.sleep(for: .milliseconds(1))
                     } catch {
                         return
                     }
-                    scrollToLatest()
+                    guard !Task.isCancelled, composer.messageEdit?.messageID == editingMessageID else { return }
+                    if let editingMessageID { scrollToEditingMessage(editingMessageID) }
+                    else { scrollToLatest() }
                 }
             }
             .onDisappear {
@@ -36,8 +40,8 @@ struct ScrollOnComposerFocus: ViewModifier {
 }
 
 extension View {
-    /// Scrolls to the newest message when the search-field composer gains focus.
-    func scrollsOnComposerFocus(scrollToLatest: @escaping () -> Void) -> some View {
-        modifier(ScrollOnComposerFocus(scrollToLatest: scrollToLatest))
+    /// Scrolls to the edit target or newest message when the composer gains focus.
+    func scrollsOnComposerFocus(scrollToLatest: @escaping () -> Void, scrollToEditingMessage: @escaping (String) -> Void) -> some View {
+        modifier(ScrollOnComposerFocus(scrollToLatest: scrollToLatest, scrollToEditingMessage: scrollToEditingMessage))
     }
 }

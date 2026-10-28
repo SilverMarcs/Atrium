@@ -8,6 +8,22 @@ nonisolated enum ClaudeTranscript {
     /// matching Codex's limit. A turn starts with each prompt.
     static let turnLimit = 20
 
+    /// Reads the original embedded bytes, before display thumbnails are made.
+    static func imageData(in record: [String: Any]) -> [Data] {
+        if let message = record["message"] as? [String: Any], let content = message["content"] as? [[String: Any]] {
+            return content.compactMap { block in
+                guard block["type"] as? String == "image", let source = block["source"] as? [String: Any],
+                      let data = source["data"] as? String else { return nil }
+                return Data(base64Encoded: data)
+            }
+        }
+        if let attachment = record["attachment"] as? [String: Any], attachment["type"] as? String == "file",
+           let content = attachment["content"] as? [String: Any], content["type"] as? String == "image",
+           let file = content["file"] as? [String: Any], let data = file["base64"] as? String,
+           let decoded = Data(base64Encoded: data) { return [decoded] }
+        return []
+    }
+
     private static let userMarker = Data(#""type":"user""#.utf8)
     private static let toolResultMarker = Data(#""type":"tool_result""#.utf8)
     private static let attachmentMarker = Data(#""type":"attachment""#.utf8)
@@ -26,9 +42,11 @@ nonisolated enum ClaudeTranscript {
             let message = record["message"] as? [String: Any]
             switch record["type"] as? String {
             case "user":
-                guard let text = promptText(message?["content"]) else { continue }
+                let images = imageData(in: record).compactMap { TranscriptImage.thumbnail($0) }
+                let text = promptText(message?["content"]) ?? ""
+                guard !text.isEmpty || !images.isEmpty else { continue }
                 flushAssistant()
-                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)]))
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: uuid)], images: images.isEmpty ? nil : images, editTarget: uuid))
             case "attachment":
                 if let attachment = record["attachment"] as? [String: Any], attachment["type"] as? String == "file",
                    let content = attachment["content"] as? [String: Any], content["type"] as? String == "image",
@@ -49,7 +67,7 @@ nonisolated enum ClaudeTranscript {
                 // A prompt sent while the agent works joins its turn as an attachment.
                 guard let text = steeringText(record["attachment"]) else { continue }
                 flushAssistant()
-                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)]))
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)], editTarget: uuid))
             case "assistant":
                 var blocks = assistant?.blocks ?? []
                 for (index, content) in (message?["content"] as? [[String: Any]] ?? []).enumerated() {
@@ -75,7 +93,7 @@ nonisolated enum ClaudeTranscript {
         let isSteering = contains(attachmentMarker, in: line) && contains(queuedCommandMarker, in: line)
         guard isPrompt || isSteering, let record = record(in: line) else { return false }
         switch record["type"] as? String {
-        case "user": return promptText((record["message"] as? [String: Any])?["content"]) != nil
+        case "user": return promptText((record["message"] as? [String: Any])?["content"]) != nil || !imageData(in: record).isEmpty
         case "attachment": return steeringText(record["attachment"]) != nil
         default: return false
         }

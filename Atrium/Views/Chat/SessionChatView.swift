@@ -37,6 +37,9 @@ struct SessionChatView: View {
               SessionChatMessageRow(
                 message: row.message,
                 isStreaming: row.message.role == .assistant && row.id == streamingID,
+                edit: row.pendingPrompt == nil && row.message.editTarget != nil
+                    ? { composer.messageEdit = ConversationMessageEdit(message: row.message, item: item) } : nil,
+                editEnabled: task.actions.contains(.editMessage) && prompts.isEmpty && composer.messageEdit?.isSubmitting != true,
                 pendingPrompt: row.pendingPrompt,
                 retry: { if let prompt = row.pendingPrompt { host.retryPrompt(prompt.id, in: task.id) } }
               )
@@ -81,7 +84,7 @@ struct SessionChatView: View {
       .onScrollGeometryChange(for: CGSize.self) { geometry in
         CGSize(width: geometry.containerSize.height, height: geometry.contentSize.height)
       } action: { old, new in
-        guard isPinned, !isReaderScrolling,
+        guard composer.messageEdit == nil, isPinned, !isReaderScrolling,
           new.height > old.height || new.width < old.width
         else { return }
         scrollToBottom(proxy, animated: scrollPolicy.animatesGrowth)
@@ -103,11 +106,13 @@ struct SessionChatView: View {
       }
       .safeAreaBar(edge: .bottom) {
         SessionChatComposer(
-          prompt: $composer.prompt, images: $composer.images, provider: task.provider,
+          prompt: $composer.inputText, images: $composer.inputImages, provider: task.provider,
           isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
           actions: task.actions,
           send: { send(composer) },
           interrupt: { host.interrupt(task.id) },
+          edit: composer.messageEdit,
+          cancelEdit: { composer.messageEdit = nil },
           noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
         )
         .frame(maxWidth: SessionChatLayout.maximumWidth)
@@ -123,6 +128,13 @@ struct SessionChatView: View {
       ) { old, new in
         if scrollPolicy.observe(from: old, to: new) {
           scrollToBottom(proxy, animated: false)
+        }
+      }
+      .onChange(of: composer.messageEdit?.id) { _, id in
+        guard id != nil, let messageID = composer.messageEdit?.messageID else { return }
+        isPinned = false
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+          proxy.scrollTo(messageID, anchor: .center)
         }
       }
       .onChange(of: task.status) { _, status in
@@ -157,18 +169,30 @@ struct SessionChatView: View {
   }
 
   private func send(_ composer: ComposerDraft) {
+    if let edit = composer.messageEdit {
+      Task {
+        if await edit.submit(send: { text, images in send(text, images: images) }) {
+          composer.messageEdit = nil
+        }
+      }
+      return
+    }
     let text = composer.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty || !composer.images.isEmpty, !conversation.isSending(in: task.id) else { return }
+    send(text, images: composer.images.map(\.data))
+    composer.prompt = ""
+    composer.images = []
+  }
+
+  private func send(_ text: String, images: [Data]) {
     scrollPolicy.noteSend()
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
     withTransaction(transaction) {
-      let id = host.sendPrompt(text, images: composer.images.map(\.data), to: task.id)
+      let id = host.sendPrompt(text, images: images, to: task.id)
       if !reduceMotion {
         sendAnimator.begin(id, text: text, from: sendAnimator.sourceFrame?())
       }
-      composer.prompt = ""
-      composer.images = []
       isPinned = true
     }
   }

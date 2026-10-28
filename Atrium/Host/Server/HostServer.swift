@@ -243,6 +243,7 @@ final class HostServer {
             let reply = await tasks.perform(action, onTask: id)
             // Reconcile optimistic client actions before acknowledging them.
             publishTasks(.tasks(tasksFeed.snapshot()))
+            if case .rewind = action { feeds[.transcript(taskID: id)]?.refresh() }
             return reply
         case .compose(let provider, let workspaceID, let settings):
             return await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)

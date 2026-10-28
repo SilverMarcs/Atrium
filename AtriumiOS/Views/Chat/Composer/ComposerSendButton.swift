@@ -21,7 +21,7 @@ struct ComposerSendButton: View {
                 .opacity(0.85)
             } else {
                 Button(action: send) {
-                    Label("Send", systemImage: "arrow.up")
+                    Label(composer.messageEdit == nil ? "Send" : "Save and Continue", systemImage: composer.messageEdit == nil ? "arrow.up" : "checkmark")
                         .labelStyle(.iconOnly)
                         .font(.title3)
                         .bold()
@@ -36,6 +36,6 @@ struct ComposerSendButton: View {
     }
 
     private var isSendDisabled: Bool {
-        item == nil || composer.isSubmittingDictation || (!composer.hasContent && !composer.dictation.isActive)
+        item == nil || composer.isSubmittingDictation || (composer.messageEdit != nil && composer.messageEdit?.canSubmit != true) || (!composer.hasContent && !composer.dictation.isActive)
     }
 }

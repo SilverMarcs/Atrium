@@ -7,6 +7,8 @@ import AppKit
 struct UserMessageView: View {
     let text: String
     var images: [Data] = []
+    var edit: (() -> Void)?
+    var editEnabled = true
     var sendFlight: (PromptSendAnimator) -> PromptSendFlight? = { _ in nil }
 
     var body: some View {
@@ -31,12 +33,6 @@ struct UserMessageView: View {
                 .modifier(PromptSendEffect(flight: sendFlight))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 #if os(macOS)
-                .contextMenu {
-                    Button("Copy Message", systemImage: "doc.on.doc") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    }
-                }
                 .padding(.leading, 160)
                 #else
                 .padding(.leading, 60)
@@ -45,5 +41,21 @@ struct UserMessageView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .textSelection(.enabled)
+        .contextMenu {
+            if let edit {
+                Button("Edit", systemImage: "pencil", action: edit)
+                    .disabled(!editEnabled)
+            }
+            if !text.isEmpty {
+                Button("Copy", systemImage: "doc.on.doc") {
+                    #if os(macOS)
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    #else
+                    UIPasteboard.general.string = text
+                    #endif
+                }
+            }
+        }
     }
 }

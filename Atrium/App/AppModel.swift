@@ -95,4 +95,22 @@ final class AppModel {
 final class ComposerDraft {
     var prompt = ""
     var images: [ComposerImage] = []
+    var messageEdit: ConversationMessageEdit?
+
+    /// Editing uses a separate draft, leaving the ordinary composer untouched.
+    var inputText: String {
+        get { messageEdit?.text ?? prompt }
+        set {
+            if let messageEdit { messageEdit.text = newValue }
+            else { prompt = newValue }
+        }
+    }
+
+    var inputImages: [ComposerImage] {
+        get { messageEdit?.addedImages ?? images }
+        set {
+            if let messageEdit { messageEdit.addedImages = newValue }
+            else { images = newValue }
+        }
+    }
 }

@@ -4,7 +4,7 @@ import OSLog
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private var connected = false
@@ -208,6 +208,36 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             if pendingSettings[thread.sessionID] == settings { pendingSettings[thread.sessionID] = nil }
         }
         generateTitleIfNeeded(for: thread, prompt: text.isEmpty ? "Discuss an attached image" : text)
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+        try await openConversation(thread)
+        guard try await activeTurnID(of: thread.sessionID) == nil else {
+            throw IntegrationError(message: "Wait for Codex to finish or stop it before editing a message.")
+        }
+        let rows = try await turns(of: thread.sessionID)
+        guard let turn = rows.first(where: { $0["id"] as? String == messageID }),
+              let prompt = (turn["items"] as? [[String: Any]])?.first(where: { $0["type"] as? String == "userMessage" }) else {
+            throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
+        }
+        let images = try (prompt["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in
+            if content["type"] as? String == "localImage", let path = content["path"] as? String {
+                return try Data(contentsOf: URL(filePath: path))
+            }
+            if content["type"] as? String == "image", let url = content["url"] as? String,
+               url.hasPrefix("data:image/"), let comma = url.firstIndex(of: ","),
+               let data = Data(base64Encoded: String(url[url.index(after: comma)...])) { return data }
+            if content["type"] as? String == "image" {
+                throw IntegrationError(message: "This message’s original image isn’t available to resend.")
+            }
+            return nil
+        }
+        _ = try await request("thread/revert", params: ["threadId": thread.sessionID, "beforeTurnId": messageID])
+        activeTurnIDs[thread.sessionID] = nil
+        conversations[thread.sessionID] = CodexLiveConversation(turns: try await turns(of: thread.sessionID))
+        onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+        onEvent?(.threadInvalidated(sessionID: thread.sessionID))
+        return (conversations[thread.sessionID]?.messages ?? [], images)
     }
 
     private func generateTitleIfNeeded(for thread: AgentThread, prompt: String) {
@@ -430,6 +460,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             guard let id = params["threadId"] as? String else { return }
             if let response = titleResponses[id] {
                 response.receive(method, params: params)
+                return
+            }
+            if method == "thread/reverted" {
+                conversations[id] = nil
+                activeTurnIDs[id] = nil
+                onEvent?(.transcriptChanged(sessionID: id))
+                onEvent?(.threadInvalidated(sessionID: id))
                 return
             }
             if method == "serverRequest/resolved", let requestID = Self.decisionID(params["requestId"]) {

@@ -13,12 +13,13 @@ struct SearchFieldComposer: ViewModifier {
     @Environment(PromptSendAnimator.self) private var sendAnimator
     @FocusState private var isFocused: Bool
     @State private var isPresented = false
+    @State private var editFocusTask: Task<Void, Never>?
     @State private var delegateProxy: TextFieldDelegateProxy?
     @State private var searchBarDelegateProxy: SearchBarDelegateProxy?
 
     func body(content: Content) -> some View {
         content
-            .searchable(text: $composer.draft, isPresented: $isPresented, prompt: Text(prompt))
+            .searchable(text: $composer.draft, isPresented: $isPresented, prompt: Text(composer.messageEdit == nil ? prompt : "Edit message…"))
             .autocorrectionDisabled(false)
             .textInputAutocapitalization(.sentences)
             .searchFocused($isFocused)
@@ -40,6 +41,21 @@ struct SearchFieldComposer: ViewModifier {
                 guard !Task.isCancelled else { return }
                 isFocused = true
             }
+            .onChange(of: composer.messageEdit?.id) { _, id in
+                editFocusTask?.cancel()
+                guard id != nil else { return }
+                editFocusTask = Task {
+                    do { try await Task.sleep(for: TaskComposer.contextMenuDismissalDelay) }
+                    catch { return }
+                    isPresented = true
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
+                    isFocused = true
+                }
+            }
+            .onChange(of: composer.editedPromptID) { _, _ in
+                isPresented = false
+            }
             // Mirror focus into the composer, where the timeline observes it
             // to scroll to the latest message (FocusState is view-local).
             .onChange(of: isFocused) { _, focused in
@@ -48,6 +64,7 @@ struct SearchFieldComposer: ViewModifier {
             // Leaving the task can tear the field down while it still has
             // focus; the next task's first focus must register as a change.
             .onDisappear {
+                editFocusTask?.cancel()
                 composer.isFocused = false
             }
     }
@@ -67,6 +84,8 @@ struct SearchFieldComposer: ViewModifier {
     /// SwiftUI only pushes the draft into it when the draft changes, so the
     /// draft is put back once UIKit is done.
     private func close(_ textField: UISearchTextField, referenceView: UIView) {
+        guard composer.messageEdit?.isSubmitting != true else { return }
+        composer.cancelEdit()
         withAnimation {
             isPresented = false
         }

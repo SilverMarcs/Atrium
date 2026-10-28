@@ -122,23 +122,56 @@ actor ClaudeSessionHistory {
     /// and only until the prompt opening the oldest turn shown.
     /// Nil when Claude has no file for the session.
     func transcript(_ id: String) throws -> [TranscriptMessage]? {
+        try transcriptLines(id).map { ClaudeTranscript.messages(fromLines: $0) }
+    }
+
+    /// Original attachments stay at full quality when the edited text is resent.
+    func promptImages(_ id: String, messageID: String) throws -> [Data] {
+        guard let lines = try transcriptLines(id) else { return [] }
+        var foundPrompt = false
+        var images: [Data] = []
+        for line in lines {
+            guard let record = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            if ClaudeTranscript.startsTurn(line) {
+                if foundPrompt { break }
+                foundPrompt = record["uuid"] as? String == messageID
+            }
+            if foundPrompt { images += ClaudeTranscript.imageData(in: record) }
+        }
+        return images
+    }
+
+    private func transcriptLines(_ id: String) throws -> [Data]? {
         guard let file = locate(id) else { return nil }
         let handle = try FileHandle(forReadingFrom: file.url)
         defer { try? handle.close() }
         var lines: [Data] = []
         var prompts = 0
+        var hasLeaf = false
+        var expectedID: String?
         var offset = UInt64(file.stamp.size)
         // The pieces read so far of a line that starts in an earlier window, in
         // file order. They're joined once the line is whole, as a tool result can
         // span many windows.
         var partialLine: [Data] = []
-        /// Adds a whole line, newest first, and returns whether the oldest turn shown has begun.
+        /// Follow Claude's active parent chain, skipping discarded branches.
+        /// A native rewind writes an explicit leaf even before the next prompt.
         func add(_ line: Data) -> Bool {
-            guard !line.isEmpty else { return false }
+            guard !line.isEmpty,
+                  let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  record["isSidechain"] as? Bool != true else { return false }
+            if !hasLeaf, record["type"] as? String == "last-prompt", record["leafUuid"] != nil {
+                expectedID = record["leafUuid"] as? String
+                hasLeaf = true
+                return expectedID == nil
+            }
+            guard let uuid = record["uuid"] as? String, record["parentUuid"] != nil else { return false }
+            if !hasLeaf { expectedID = uuid; hasLeaf = true }
+            guard uuid == expectedID else { return false }
             lines.append(line)
-            guard ClaudeTranscript.startsTurn(line) else { return false }
-            prompts += 1
-            return prompts == ClaudeTranscript.turnLimit
+            expectedID = record["parentUuid"] as? String
+            if ClaudeTranscript.startsTurn(line) { prompts += 1 }
+            return expectedID == nil || prompts == ClaudeTranscript.turnLimit
         }
         scan: while offset > 0 {
             try Task.checkCancellation()
@@ -161,7 +194,7 @@ actor ClaudeSessionHistory {
         if offset == 0, prompts < ClaudeTranscript.turnLimit {
             _ = add(Data(partialLine.joined()))
         }
-        return ClaudeTranscript.messages(fromLines: lines.reversed())
+        return Array(lines.reversed())
     }
 
     private static let fileKeys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]

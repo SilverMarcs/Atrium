@@ -19,6 +19,7 @@ struct TaskInputBar: View {
 
         GlassEffectContainer {
             VStack(spacing: 0) {
+                if let edit = composer.messageEdit { ConversationEditContent(edit: edit) }
                 if !composer.images.isEmpty {
                     ComposerAttachmentStrip(composer: composer)
                 }
@@ -36,8 +37,15 @@ struct TaskInputBar: View {
                     .fixedSize()
                     .scaleEffect(0.97)
 
+                    if composer.messageEdit != nil {
+                        Button("Cancel Edit", systemImage: "xmark.circle.fill", action: composer.cancelEdit)
+                            .labelStyle(.iconOnly)
+                            .font(.largeTitle)
+                            .buttonStyle(.plain)
+                    }
+
                     HStack(alignment: .bottom, spacing: 0) {
-                        TextField(prompt, text: $composer.draft, axis: .vertical)
+                        TextField(composer.messageEdit == nil ? prompt : "Edit message…", text: $composer.draft, axis: .vertical)
                             .textFieldStyle(.plain)
                             .focused($isFocused)
                             .lineLimit(1 ... 7)
@@ -49,6 +57,7 @@ struct TaskInputBar: View {
                                 sendAnimator.sourceFrame = { frame }
                             }
                             .onSubmit(send)
+                            .disabled(composer.messageEdit?.isSubmitting == true)
                             .background(ComposerPasteAnchor(composer: composer))
 
                         ComposerDictationButton(isInline: true)
@@ -64,6 +73,13 @@ struct TaskInputBar: View {
             }
             .fixedSize(horizontal: false, vertical: true)
         }
+        .task(id: composer.messageEdit?.id) {
+            guard composer.messageEdit != nil else { return }
+            do { try await Task.sleep(for: TaskComposer.contextMenuDismissalDelay) }
+            catch { return }
+            isFocused = true
+        }
+        .disabled(composer.messageEdit?.isSubmitting == true)
         // Mirror focus into the composer, where the timeline observes it to
         // scroll to the latest message (FocusState is view-local).
         .onChange(of: isFocused) { _, focused in

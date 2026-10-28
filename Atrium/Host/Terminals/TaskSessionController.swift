@@ -117,7 +117,7 @@ final class TaskSessionController {
     func menuState(for thread: AgentThread) -> TaskMenuState {
         let id = thread.id
         let isChanging = integrations.deletingThreadIDs.contains(id) || integrations.stoppingThreadIDs.contains(id)
-            || integrations.renamingThreadIDs.contains(id)
+            || integrations.renamingThreadIDs.contains(id) || integrations.rewindingThreadIDs.contains(id)
         var allowed: TaskActions = []
         if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
         if integrations.canSnooze(thread) { allowed.insert(.snooze) }
@@ -131,6 +131,11 @@ final class TaskSessionController {
                 allowed.insert(.selectModel)
             }
         }
+        if !isOpening && !isChanging, thread.status != .processing, thread.status != .waiting,
+           integrations.enabledProviders.contains(thread.provider), capabilities.contains(.editMessage) {
+            allowed.insert(.editMessage)
+        }
+        if integrations.rewindingThreadIDs.contains(id) { allowed.subtract([.prompt, .selectModel]) }
         if !isOpening {
             if integrations.canFork(thread) { allowed.insert(.fork) }
             if integrations.canRename(thread) { allowed.insert(.rename) }

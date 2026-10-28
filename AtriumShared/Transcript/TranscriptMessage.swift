@@ -14,4 +14,6 @@ nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identifiable 
     var blocks: [TranscriptBlock]
     /// Small previews, rather than full image payloads, for local and companion history.
     var images: [Data]? = nil
+    /// Provider-native rewind boundary. Nil for messages that cannot be edited independently.
+    var editTarget: String? = nil
 }
