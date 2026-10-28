@@ -27,39 +27,43 @@ struct SessionChatView: View {
       ? rows.last?.id : nil
     ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(alignment: .leading, spacing: 8) {
-          ForEach(rows) { row in
-            SessionChatMessageRow(
-              message: row.message,
-              isStreaming: row.message.role == .assistant && row.id == streamingID,
-              pendingPrompt: row.pendingPrompt,
-              retry: { if let prompt = row.pendingPrompt { client.retry(prompt.id) } }
-            )
-            .transition(.identity)
-          }
-          TaskChatStatusFooter(status: footerStatus)
-            .transition(.identity)
-          if let error = client.actionError ?? client.feed?.error {
-            Label(error, systemImage: "exclamationmark.triangle")
-              .frame(maxWidth: .infinity)
-              .foregroundStyle(.red)
-              .padding(.vertical)
+        // Bottom-aligns short chats; the `.alignment` scroll anchor would stretch the toolbar down to the first row.
+        ZStack(alignment: .bottom) {
+          Color.clear
+            .containerRelativeFrame(.vertical)
+          LazyVStack(alignment: .leading, spacing: 8) {
+            ForEach(rows) { row in
+              SessionChatMessageRow(
+                message: row.message,
+                isStreaming: row.message.role == .assistant && row.id == streamingID,
+                pendingPrompt: row.pendingPrompt,
+                retry: { if let prompt = row.pendingPrompt { client.retry(prompt.id) } }
+              )
+              .transition(.identity)
+            }
+            TaskChatStatusFooter(status: footerStatus)
+              .transition(.identity)
+            if let error = client.actionError ?? client.feed?.error {
+              Label(error, systemImage: "exclamationmark.triangle")
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(.red)
+                .padding(.vertical)
 
-            Button("Retry") { client.feed?.refresh() }
+              Button("Retry") { client.feed?.refresh() }
 
+            }
+            Color.clear.frame(height: 32).id("bottom")
           }
-          Color.clear.frame(height: 32).id("bottom")
+          .padding(.horizontal, 16)
+          .padding(.vertical, 4)
+          .frame(maxWidth: SessionChatLayout.maximumWidth)
+          .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
-        .frame(maxWidth: SessionChatLayout.maximumWidth)
-        .frame(maxWidth: .infinity)
       }
       .scrollEdgeEffectHidden(true, for: .bottom)
       .scrollEdgeEffectHidden(false, for: .top)
       .scrollEdgeEffectStyle(.soft, for: .top)
       .defaultScrollAnchor(.bottom, for: .initialOffset)
-      .defaultScrollAnchor(.bottom, for: .alignment)
       .showsSendFlightsUnclipped()
       .onScrollPhaseChange { _, phase, context in
         switch phase {
