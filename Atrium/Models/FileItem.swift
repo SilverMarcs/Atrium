@@ -1,7 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-struct FileItem: Identifiable, Hashable {
+nonisolated struct FileItem: Identifiable, Hashable, Sendable {
     var id: String { url.path }
     let name: String
     let url: URL
@@ -13,7 +13,7 @@ struct FileItem: Identifiable, Hashable {
         name.hasPrefix(".")
     }
 
-    var icon: NSImage {
+    @MainActor var icon: NSImage {
         url.fileIcon
     }
 
@@ -26,15 +26,16 @@ struct FileItem: Identifiable, Hashable {
     }
 
     /// Returns a filtered copy of the tree.
-    func filtered(searchText: String, changedURLs: Set<URL>?, showChangedOnly: Bool) -> FileItem? {
+    func filtered(searchText: String, changedURLs: Set<URL>?, showChangedOnly: Bool) throws -> FileItem? {
+        try Task.checkCancellation()
         if !isDirectory {
-            let nameMatch = searchText.isEmpty || name.localizedCaseInsensitiveContains(searchText)
+            let nameMatch = searchText.isEmpty || name.localizedStandardContains(searchText)
             let gitMatch = !showChangedOnly || changedURLs?.contains(url.standardizedFileURL) == true
             return (nameMatch && gitMatch) ? self : nil
         }
 
-        let filteredChildren = children?.compactMap {
-            $0.filtered(searchText: searchText, changedURLs: changedURLs, showChangedOnly: showChangedOnly)
+        let filteredChildren = try children?.compactMap {
+            try $0.filtered(searchText: searchText, changedURLs: changedURLs, showChangedOnly: showChangedOnly)
         }
 
         guard let filteredChildren, !filteredChildren.isEmpty else { return nil }
@@ -75,43 +76,82 @@ struct FileItem: Identifiable, Hashable {
         }
     }
 
-    static func buildTree(at directoryURL: URL, showHiddenFiles: Bool = false, maxDepth: Int = 15) -> [FileItem] {
-        buildTree(at: directoryURL, showHiddenFiles: showHiddenFiles, maxDepth: maxDepth, currentDepth: 0)
+    /// Explicitly leaves the main actor, even when called by a UI-owned task.
+    /// Limit the entire tree, rather than just its depth, to bound memory use.
+    @concurrent
+    static func buildTree(
+        at directoryURL: URL,
+        showHiddenFiles: Bool = false,
+        maxDepth: Int = 15,
+        maxItems: Int = 100_000
+    ) async throws -> (items: [FileItem], isTruncated: Bool) {
+        var remainingItems = maxItems
+        var isTruncated = false
+        let items = try buildTree(
+            at: directoryURL, showHiddenFiles: showHiddenFiles, maxDepth: maxDepth,
+            currentDepth: 0, remainingItems: &remainingItems, isTruncated: &isTruncated
+        )
+        return (items, isTruncated)
     }
 
-    private static func buildTree(at directoryURL: URL, showHiddenFiles: Bool, maxDepth: Int, currentDepth: Int) -> [FileItem] {
-        guard let contents = try? FileManager.default.contentsOfDirectory(
+    @concurrent
+    static func filter(
+        _ items: [FileItem], searchText: String, changedURLs: Set<URL>, showChangedOnly: Bool
+    ) async throws -> [FileItem] {
+        try items.compactMap {
+            try $0.filtered(searchText: searchText, changedURLs: changedURLs, showChangedOnly: showChangedOnly)
+        }
+    }
+
+    private static func buildTree(
+        at directoryURL: URL, showHiddenFiles: Bool, maxDepth: Int, currentDepth: Int,
+        remainingItems: inout Int, isTruncated: inout Bool
+    ) throws -> [FileItem] {
+        try Task.checkCancellation()
+        // Enumerate one directory at a time so a huge folder cannot allocate an
+        // unbounded URL array before the tree's item limit is checked.
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        var options: FileManager.DirectoryEnumerationOptions = [.skipsSubdirectoryDescendants]
+        if !showHiddenFiles { options.insert(.skipsHiddenFiles) }
+        guard let contents = FileManager.default.enumerator(
             at: directoryURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: showHiddenFiles ? [] : [.skipsHiddenFiles]
+            includingPropertiesForKeys: keys,
+            options: options
         ) else { return [] }
 
         let atDepthLimit = currentDepth + 1 >= maxDepth
-
-        return contents
-            .filter { !ignoredNames.contains($0.lastPathComponent) }
-            .compactMap { url -> FileItem? in
-                let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
-                let isDir = values?.isDirectory ?? false
-                let children: [FileItem]? = isDir
-                    ? (atDepthLimit ? nil : buildTree(at: url, showHiddenFiles: showHiddenFiles, maxDepth: maxDepth, currentDepth: currentDepth + 1))
-                    : nil
-                return FileItem(
-                    name: url.lastPathComponent,
-                    url: url,
-                    isDirectory: isDir,
-                    children: children
+        var items: [FileItem] = []
+        for case let url as URL in contents {
+            try Task.checkCancellation()
+            guard !ignoredNames.contains(url.lastPathComponent) else { continue }
+            guard remainingItems > 0 else {
+                isTruncated = true
+                break
+            }
+            remainingItems -= 1
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            let isDirectory = values?.isDirectory == true
+            var children: [FileItem]?
+            // Links can escape the project or lead back to an ancestor.
+            if isDirectory, !atDepthLimit, values?.isSymbolicLink != true {
+                children = try buildTree(
+                    at: url, showHiddenFiles: showHiddenFiles, maxDepth: maxDepth,
+                    currentDepth: currentDepth + 1, remainingItems: &remainingItems,
+                    isTruncated: &isTruncated
                 )
             }
-            .sorted { lhs, rhs in
-                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-            }
+            items.append(FileItem(name: url.lastPathComponent, url: url, isDirectory: isDirectory, children: children))
+        }
+        try Task.checkCancellation()
+        return items.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
     }
 
     static let ignoredNames: Set<String> = [
         ".DS_Store", ".git", "node_modules", ".build", "DerivedData",
-        "Pods", "__pycache__", ".venv", "venv", ".svn", ".hg",
+        "Pods", "__pycache__", ".venv", "venv", ".svn", ".hg", "target",
     ]
 }
 
@@ -178,7 +218,7 @@ enum FileTypeSets {
 extension GitChangeKind {
 
     /// Higher = more important. Used to pick the dominant status for folders.
-    var priority: Int {
+    nonisolated var priority: Int {
         switch self {
             case .typeChanged: 0
             case .copied: 1

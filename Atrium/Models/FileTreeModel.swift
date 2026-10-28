@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 @Observable
 final class FileTreeModel {
     private(set) var items: [FileItem] = []
@@ -7,12 +8,15 @@ final class FileTreeModel {
     private(set) var gitStatuses: [URL: GitChangeKind] = [:]
     private(set) var submittedSearchText = ""
     private(set) var isSearching = false
+    private(set) var isTruncated = false
 
     var searchText = ""
     var showChangedOnly = false
     var showHiddenFiles = false
 
-    private var filterTask: Task<Void, Never>?
+    @ObservationIgnored private var filterTask: Task<Void, Never>?
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var directoryURL: URL?
 
     var changedURLs: Set<URL> { Set(gitStatuses.keys) }
 
@@ -51,38 +55,48 @@ final class FileTreeModel {
         let showChangedOnly = showChangedOnly
         isSearching = true
 
-        filterTask = Task {
-            let result = await Task.detached(priority: .userInitiated) {
-                items.compactMap {
-                    $0.filtered(
-                        searchText: searchText,
-                        changedURLs: changedURLs,
-                        showChangedOnly: showChangedOnly
-                    )
-                }
-            }.value
-
-            guard !Task.isCancelled else { return }
-            filteredItems = result
-            isSearching = false
+        filterTask = Task(priority: .userInitiated) { [weak self] in
+            guard let result = try? await FileItem.filter(
+                items, searchText: searchText, changedURLs: changedURLs, showChangedOnly: showChangedOnly
+            ), !Task.isCancelled else { return }
+            self?.filteredItems = result
+            self?.isSearching = false
         }
     }
 
     func load(directoryURL: URL) {
-        let showHidden = showHiddenFiles
-        Task.detached(priority: .userInitiated) {
-            var tree = FileItem.buildTree(at: directoryURL, showHiddenFiles: showHidden)
-            await MainActor.run {
-                self.applyStatuses(to: &tree)
-                self.items = tree
-                self.refilter()
-            }
+        loadTask?.cancel()
+        if self.directoryURL != directoryURL {
+            filterTask?.cancel()
+            self.directoryURL = directoryURL
+            items = []
+            filteredItems = nil
+            gitStatuses = [:]
+            isTruncated = false
+            isSearching = false
         }
+        let showHidden = showHiddenFiles
+        loadTask = Task(priority: .userInitiated) { [weak self] in
+            guard let result = try? await FileItem.buildTree(at: directoryURL, showHiddenFiles: showHidden),
+                  !Task.isCancelled, let self else { return }
+            var tree = result.items
+            self.applyStatuses(to: &tree)
+            self.items = tree
+            self.isTruncated = result.isTruncated
+            self.refilter()
+        }
+    }
+
+    func cancelLoading() {
+        loadTask?.cancel()
+        filterTask?.cancel()
+        isSearching = false
     }
 
     func refreshGit(directoryURL: URL) async {
         guard let statuses = try? await GitRepository.shared.changedFileStatuses(in: directoryURL)
         else { return }
+        guard self.directoryURL == directoryURL, !Task.isCancelled else { return }
         guard statuses != gitStatuses else { return }
         gitStatuses = statuses
         var tree = items

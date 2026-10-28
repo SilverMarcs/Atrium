@@ -13,6 +13,11 @@ struct FileTreeView: View {
     var body: some View {
         ScrollViewReader { proxy in
             List(selection: $state.selectedID) {
+                if state.model.isTruncated {
+                    Text("This folder contains too many files to show them all. Open a smaller project folder to see the remaining files.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(state.model.displayItems) { item in
                     FileNodeView(item: item)
                         .id(item.id)
@@ -29,7 +34,10 @@ struct FileTreeView: View {
                     scrollToFile(id, using: proxy)
                 }
             }
-            .onDisappear { revealScrollTask?.cancel() }
+            .onDisappear {
+                revealScrollTask?.cancel()
+                state.model.cancelLoading()
+            }
             .onChange(of: directoryURL) { revealScrollTask?.cancel() }
             .environment(state)
             .environment(\.fileTreeAction, handleAction)
