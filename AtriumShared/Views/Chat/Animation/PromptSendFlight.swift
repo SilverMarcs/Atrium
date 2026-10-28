@@ -7,7 +7,7 @@ import SwiftUI
 final class PromptSendFlight: Identifiable {
     let id: PendingPrompt.ID
     let sourceFrame: CGRect
-    var startedAt: ContinuousClock.Instant?
+    var startedAt: Date?
     var confirmedMessageID: TranscriptMessage.ID?
 
     init(promptID: PendingPrompt.ID, sourceFrame: CGRect) {
@@ -18,9 +18,9 @@ final class PromptSendFlight: Identifiable {
     nonisolated static let duration: TimeInterval = 0.55
     nonisolated private static let spring = Spring(response: duration * 0.25 / 0.38, dampingRatio: 0.8)
 
-    nonisolated static func progress(since start: ContinuousClock.Instant?, at now: ContinuousClock.Instant) -> CGFloat {
+    nonisolated static func progress(since start: Date?, at now: Date) -> CGFloat {
         guard let start else { return 0 }
-        let seconds = start.duration(to: now) / .seconds(1)
+        let seconds = now.timeIntervalSince(start)
         guard seconds < duration else { return 1 }
         return spring.value(target: CGFloat(1), time: max(0, seconds))
     }

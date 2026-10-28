@@ -60,7 +60,7 @@ struct SessionChatView: View {
       .scrollEdgeEffectStyle(.soft, for: .top)
       .defaultScrollAnchor(.bottom, for: .initialOffset)
       .defaultScrollAnchor(.bottom, for: .alignment)
-      .scrollClipDisabled(!sendAnimator.flights.isEmpty)
+      .showsSendFlightsUnclipped()
       .onScrollPhaseChange { _, phase, context in
         switch phase {
         case .tracking, .interacting:
