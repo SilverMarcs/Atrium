@@ -93,9 +93,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard let id = session.id else { throw IntegrationError(message: "Claude did not provide a background identifier.") }
         backgroundIDs[thread.sessionID] = id
         backgroundSessions[thread.sessionID] = session
-        liveStatuses[thread.sessionID] = session.threadStatus
         saveBackgroundIDs()
-        if store.thread(thread.sessionID) != nil { _ = try await liveTranscript(thread.sessionID) }
+        if store.thread(thread.sessionID) != nil {
+            liveStatuses[thread.sessionID] = session.threadStatus
+            _ = try await liveTranscript(thread.sessionID)
+        }
         subscribe(sessionID: thread.sessionID, jobID: id)
     }
 
@@ -399,10 +401,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     private func receiveBackground(_ data: Data, sessionID: String) {
-        guard let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        // The daemon's record can stay "active" after a turn ends, so its snapshot is skipped and
+        // chats without our hooks take their status from `claude agents` instead.
+        guard let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = event["type"] as? String, type != "stream", type != "snapshot" else { return }
+        guard store.thread(sessionID) != nil else { return requestStatusRefresh() }
         let state = event["record"] as? [String: Any] ?? event["patch"] as? [String: Any] ?? [:]
         let status: AgentThreadStatus?
-        if event["type"] as? String == "settled" {
+        if type == "settled" {
             status = event["outcome"] as? String == "done" ? .done : .stopped
         } else if state["tempo"] as? String == "blocked" { status = .waiting }
         else if state["state"] as? String == "done" { status = .done }
