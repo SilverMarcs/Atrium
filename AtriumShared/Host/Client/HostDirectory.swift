@@ -28,6 +28,10 @@ final class HostDirectory {
     /// A failure that belongs to no connected host.
     private var error: String?
     @ObservationIgnored private let localNetwork = LocalHostBrowser()
+    @ObservationIgnored private let pathMonitor = NWPathMonitor()
+    /// Whether this device has a network to reach hosts over. Hosts aren't
+    /// tried without one, and are tried again as soon as there is one.
+    @ObservationIgnored private(set) var hasNetwork = true
     @ObservationIgnored private var isActive = false
     /// The last task shown, whose draft closes once another task is shown.
     @ObservationIgnored private var lastShownTask: TaskRef?
@@ -51,7 +55,20 @@ final class HostDirectory {
             for host in self?.hosts ?? [] { host.localNetworkChanged() }
         }
         localNetwork.start()
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let hasNetwork = path.status == .satisfied
+            MainActor.assumeIsolated { self?.networkChanged(hasNetwork) }
+        }
+        pathMonitor.start(queue: .main)
         for host in hosts { host.start() }
+    }
+
+    private func networkChanged(_ hasNetwork: Bool) {
+        guard hasNetwork != self.hasNetwork else { return }
+        self.hasNetwork = hasNetwork
+        if hasNetwork {
+            for host in hosts where !host.isConnected { host.retryNow() }
+        }
     }
 
     /// Where a host advertises itself on the local network, if it does.

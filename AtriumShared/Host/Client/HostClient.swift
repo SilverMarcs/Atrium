@@ -80,6 +80,8 @@ final class HostClient: Identifiable {
     @ObservationIgnored private var skipsLocalNetwork = false
     @ObservationIgnored private var authentication: Authentication
     @ObservationIgnored private var connection: (any HostConnection)?
+    /// The relay channel under `connection`, which can wait for the host to come online.
+    @ObservationIgnored private weak var relayChannel: RelayClientChannel?
     @ObservationIgnored private var activity = ClientActivity(isActive: false, taskID: nil)
     /// How many views follow each topic. Every client always follows a host's tasks.
     @ObservationIgnored private var topicCounts: [HostTopic: Int] = [.tasks: 1]
@@ -111,6 +113,10 @@ final class HostClient: Identifiable {
 
     var name: String { pairedHost?.displayName ?? hello?.hostName ?? localName }
     var isConnected: Bool { state == .connected }
+    /// Whether the relay is holding a connection until the host comes online.
+    private var isWaitingForHost: Bool {
+        if case .offline = state { connection != nil } else { false }
+    }
     var isPairing: Bool { if case .pair = authentication { true } else { false } }
     /// Whether the host speaks a newer protocol than this app.
     var needsAppUpdate: Bool { (hello?.protocolVersion ?? 0) > HostProtocol.version }
@@ -127,6 +133,9 @@ final class HostClient: Identifiable {
         reconnectTask?.cancel()
         reconnectTask = nil
         failedAttempts = 0
+        // A connection waiting at the relay may have died unnoticed, as while
+        // the app was suspended.
+        if isWaitingForHost { stop() }
         connect()
     }
 
@@ -147,6 +156,7 @@ final class HostClient: Identifiable {
     /// The host's own Mac connects in process; a paired host directly when
     /// it's on the local network, else through the relay.
     private func makeConnection() -> any HostConnection {
+        relayChannel = nil
         if let loopback {
             connectingRoute = nil
             return loopback()
@@ -157,7 +167,21 @@ final class HostClient: Identifiable {
             return RemoteHostConnection(host: pairedHost, over: FramedChannel(endpoint: endpoint))
         }
         connectingRoute = .relay
-        return RemoteHostConnection(host: pairedHost, over: RelayClientChannel(hostID: id))
+        // A paired host that's offline is waited for at the relay; pairing fails instead.
+        let relay = RelayClientChannel(hostID: id, waitsForHost: !isPairing)
+        relay.onHostOffline = { [weak self, weak relay] reason in
+            guard let self, let relay, self.relayChannel === relay else { return }
+            self.hostIsOffline(reason)
+        }
+        relayChannel = relay
+        return RemoteHostConnection(host: pairedHost, over: relay)
+    }
+
+    /// The relay holds the connection until the host comes online, so this
+    /// client shows it offline without retrying.
+    private func hostIsOffline(_ reason: String) {
+        Self.log.info("Waiting for \(self.name, privacy: .public) to come online")
+        state = .offline(reason)
     }
 
     /// The host appeared on or left the local network. A connection through the
@@ -171,6 +195,12 @@ final class HostClient: Identifiable {
 
     private func connect() {
         guard connection == nil, reconnectTask == nil else { return }
+        // Nothing to try without a network; the directory retries once there is one.
+        if !isLocal, directory?.hasNetwork == false {
+            let reason = "This device isn’t connected to a network."
+            if isPairing { directory?.pairingFailed(self, message: reason) } else { state = .offline(reason) }
+            return
+        }
         state = .connecting
         let connection = makeConnection()
         self.connection = connection
@@ -250,6 +280,7 @@ final class HostClient: Identifiable {
             return
         }
         state = .offline(reason)
+        guard directory?.hasNetwork != false else { return }
         // Back off while the host stays unreachable, up to half a minute between tries.
         failedAttempts += 1
         let delay = Duration.seconds(min(2 << min(failedAttempts - 1, 4), 30))

@@ -8,7 +8,9 @@
  *   GET /v1/mac/:macID            The Mac's control connection. Told of each phone,
  *                                 and carries the Mac's push requests.
  *   GET /v1/phone/:macID          A phone arriving. Gets "ready" once the Mac picks it
- *                                 up, or "offline" if the Mac isn't connected.
+ *                                 up. If the Mac isn't connected, gets "offline" and
+ *                                 stays open, then "connecting" when the Mac connects,
+ *                                 so the phone needn't keep retrying.
  *   GET /v1/mac/:macID/data/:id   The Mac's connection for that phone.
  *
  * A Mac proves it owns its ID with a secret whose hash is the ID, so nobody else
@@ -40,11 +42,18 @@ interface PushRequest {
 const route = /^\/v1\/(mac|phone)\/([A-Za-z0-9_-]{16,64})(?:\/data\/([A-Za-z0-9-]{1,64}))?$/;
 const iconRoute = /^\/v1\/icon\/([A-Za-z0-9_-]{16,64})\/([0-9a-f-]{36})$/;
 const encoder = new TextEncoder();
+/** Bounds the phones one room holds open for its Mac. */
+const maxWaitingPhones = 32;
 const iconLifetime = 60 * 60 * 1000;
 interface StoredProjectIcon { data: Uint8Array; expiresAt: number }
 
 /** Bounds the alerts one Mac can send, should its secret ever leak. */
 const maxPushesPerHour = 300;
+
+/** Close codes that only describe a connection can't be sent in a close frame. */
+function sendableCode(code: number): number {
+  return code >= 1000 && code < 5000 && code !== 1005 && code !== 1006 ? code : 1000;
+}
 
 function base64url(bytes: ArrayBuffer | Uint8Array): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -122,24 +131,42 @@ export class Room implements DurableObject {
       // A Mac reconnecting replaces its previous control connection.
       for (const old of this.state.getWebSockets("control")) old.close(1000, "Replaced");
       this.state.acceptWebSocket(server, ["control", `host:${hostID}`]);
+      // Phones still waiting, whether for the Mac to come online or on a control
+      // connection that died before it picked them up.
+      for (const [id, phone] of this.unjoinedPhones()) {
+        server.send(JSON.stringify({ type: "connect", id }));
+        try { phone.send("connecting"); } catch { /* Left while the Mac connected. */ }
+      }
     } else if (role === "mac" && dataID) {
       const [phone] = this.state.getWebSockets(`phone:${dataID}`);
       if (!phone) return new Response("No phone is waiting", { status: 404 });
+      if (this.state.getWebSockets(`data:${dataID}`).length) return new Response("Already joined", { status: 409 });
       this.state.acceptWebSocket(server, [`data:${dataID}`]);
       phone.send("ready");
     } else {
       const [control] = this.state.getWebSockets("control");
-      if (!control) {
-        this.state.acceptWebSocket(server, []);
-        server.send("offline");
-        server.close(4004, "Mac offline");
-      } else {
-        const id = crypto.randomUUID();
-        this.state.acceptWebSocket(server, [`phone:${id}`]);
+      if (!control && this.unjoinedPhones().length >= maxWaitingPhones) {
+        return new Response("Too many phones waiting", { status: 503 });
+      }
+      const id = crypto.randomUUID();
+      this.state.acceptWebSocket(server, [`phone:${id}`]);
+      if (control) {
         control.send(JSON.stringify({ type: "connect", id }));
+      } else {
+        // Held open, hibernated, until the Mac connects.
+        server.send("offline");
       }
     }
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Phones the Mac hasn't opened a data connection for yet, by ID. */
+  private unjoinedPhones(): [string, WebSocket][] {
+    return this.state.getWebSockets().flatMap(socket => {
+      const id = this.state.getTags(socket).find(tag => tag.startsWith("phone:"))?.slice("phone:".length);
+      const isUnjoined = id && socket.readyState === WebSocket.OPEN && this.state.getWebSockets(`data:${id}`).length === 0;
+      return isUnjoined ? [[id, socket] as [string, WebSocket]] : [];
+    });
   }
 
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -153,6 +180,8 @@ export class Room implements DurableObject {
 
   webSocketClose(socket: WebSocket, code: number, reason: string): void {
     this.closePeer(socket, code, reason);
+    // Answer the close, so a phone that left stops counting as waiting.
+    try { socket.close(sendableCode(code), reason); } catch { /* Already closed. */ }
   }
 
   webSocketError(socket: WebSocket): void {
@@ -267,7 +296,7 @@ export class Room implements DurableObject {
   private closePeer(socket: WebSocket, code: number, reason: string): void {
     const peer = this.peer(socket);
     if (peer && peer.readyState === WebSocket.OPEN) {
-      peer.close(code >= 1000 && code < 5000 && code !== 1005 && code !== 1006 ? code : 1000, reason);
+      peer.close(sendableCode(code), reason);
     }
   }
 }
