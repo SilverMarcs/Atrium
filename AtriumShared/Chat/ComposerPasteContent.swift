@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// Decodes clipboard attachments for both the desktop and iOS composers.
+/// Decodes pasted and dropped attachments for both desktop and iOS composers.
 nonisolated enum ComposerPasteContent: Sendable {
     case text(String)
     case image(ComposerImage)
@@ -42,28 +42,40 @@ nonisolated enum ComposerPasteContent: Sendable {
     /// own selection, undo, and text-paste behavior.
     @MainActor
     static func load(from provider: NSItemProvider) async throws -> Self? {
-        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            let data = try await data(from: provider, type: UTType.fileURL.identifier)
-            guard let url = URL(dataRepresentation: data, relativeTo: nil), supports(url) else { return nil }
-            return try await load(contentsOf: url)
-        }
-        guard let type = provider.registeredTypeIdentifiers.first(where: {
-            UTType($0)?.conforms(to: .image) == true
-        }) else { return nil }
-        let imageData = try await data(from: provider, type: type)
-        return try await load(imageData: imageData)
+        try await beginLoading(from: provider, prefersFileURL: true)?.value
     }
 
+    /// Starts the provider request before the drop callback returns, while the
+    /// system still grants access to its payload. Decoding can finish later.
     @MainActor
-    private static func data(from provider: NSItemProvider, type: String) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+    static func beginLoading(from provider: NSItemProvider, prefersFileURL: Bool = false) -> Task<Self?, Error>? {
+        // Screenshot thumbnails can advertise private formats before their
+        // usable image representation. Prefer a concrete image format.
+        let imageTypes: [UTType] = [.png, .jpeg, .heic, .heif, .gif, .tiff, .webP, .bmp, .image]
+        let imageType = imageTypes.first { provider.hasItemConformingToTypeIdentifier($0.identifier) }
+        let isFileURL = (prefersFileURL || imageType == nil)
+            && provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        guard let type = isFileURL ? UTType.fileURL.identifier : imageType?.identifier else { return nil }
+
+        let transfer = AsyncThrowingStream<Data, Error> { continuation in
             provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
                 if let data {
-                    continuation.resume(returning: data)
+                    continuation.yield(data)
+                    continuation.finish()
                 } else {
-                    continuation.resume(throwing: error ?? ComposerPasteError.unreadableItem)
+                    continuation.finish(throwing: error ?? ComposerPasteError.unreadableItem)
                 }
             }
+        }
+        return Task {
+            for try await data in transfer {
+                if isFileURL {
+                    guard let url = URL(dataRepresentation: data, relativeTo: nil), supports(url) else { return nil }
+                    return try await load(contentsOf: url)
+                }
+                return try await load(imageData: data)
+            }
+            return nil
         }
     }
 }

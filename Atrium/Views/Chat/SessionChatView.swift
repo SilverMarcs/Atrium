@@ -19,6 +19,7 @@ struct SessionChatView: View {
 
   var body: some View {
     @Bindable var composer = app.composer(for: item.id)
+    let editing = composer.messageEdit
     let transcript = conversation.transcripts[task.id]
     let rows = conversation.rows(for: task.id)
     let prompts = conversation.pendingPrompts[task.id] ?? []
@@ -156,6 +157,18 @@ struct SessionChatView: View {
       }
     ))
     .font(.system(size: chatFontSize))
+    .modifier(ComposerDropHandler(isEnabled: editing?.isSubmitting != true) { content in
+      guard composer.messageEdit === editing, editing?.isSubmitting != true else { return }
+      switch content {
+      case .text(let text):
+        composer.inputText += text
+      case .image(let image):
+        try ComposerPasteContent.checkImageLimit(
+          composer.inputImages.count + (editing?.images.count ?? 0), maximum: 10
+        )
+        composer.inputImages.append(image)
+      }
+    })
     .environment(sendAnimator)
     .environment(\.openURL, OpenURLAction { url in
       // Links to files in the project open in its editor; anything else goes to the system.

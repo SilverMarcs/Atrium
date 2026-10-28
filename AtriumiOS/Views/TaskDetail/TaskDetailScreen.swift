@@ -33,6 +33,8 @@ struct TaskDetailScreen: View {
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
+        let targetComposer = composer
+        let editing = composer.messageEdit
         Group {
             if let item {
                 TaskChatView(item: item)
@@ -159,6 +161,15 @@ struct TaskDetailScreen: View {
             }
         }
         .composerAttachmentPickers(composer)
+        .modifier(ComposerDropHandler(isEnabled: item != nil && editing?.isSubmitting != true) { content in
+            guard targetComposer.messageEdit === editing, editing?.isSubmitting != true else { return }
+            switch content {
+            case .text(let text):
+                targetComposer.draft += text
+            case .image(let image):
+                try targetComposer.attachPastedImage(image)
+            }
+        })
         .alert("Couldn’t Dictate", isPresented: Binding(
             get: { composer.dictation.error != nil },
             set: { if !$0 { composer.dictation.error = nil } }
