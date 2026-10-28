@@ -29,11 +29,12 @@ nonisolated enum ProjectNotificationContent {
         }
         try Task.checkCancellation()
 
+        let image = INImage(imageData: imageData)
         let sender = INPerson(
             personHandle: INPersonHandle(value: conversationID, type: .unknown),
             nameComponents: nil,
             displayName: title,
-            image: INImage(imageData: imageData),
+            image: image,
             contactIdentifier: nil,
             customIdentifier: conversationID
         )
@@ -48,6 +49,20 @@ nonisolated enum ProjectNotificationContent {
             sender: sender,
             attachments: nil
         )
+        if !content.subtitle.isEmpty {
+            // Include the receiving user in the count. With zero recipients,
+            // the system uses a direct-message layout that hides the chat title.
+            let metadata = INSendMessageIntentDonationMetadata()
+            metadata.recipientCount = 1
+            intent.donationMetadata = metadata
+            // The named-conversation layout takes its avatar from the group.
+            #if os(macOS)
+            // macOS doesn't expose the Swift key-path overlay.
+            intent.__setImage(image, forParameterNamed: "speakableGroupName")
+            #else
+            intent.setImage(image, forParameterNamed: \.speakableGroupName)
+            #endif
+        }
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
         try await interaction.donate()
