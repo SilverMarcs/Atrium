@@ -28,6 +28,7 @@ nonisolated enum ClaudeTranscript {
     private static let toolResultMarker = Data(#""type":"tool_result""#.utf8)
     private static let attachmentMarker = Data(#""type":"attachment""#.utf8)
     private static let queuedCommandMarker = Data(#""type":"queued_command""#.utf8)
+    private static let stopMarker = Data(#""subtype":"stop_hook_summary""#.utf8)
 
     /// The last `turnLimit` turns of the lines, oldest first.
     static func messages(fromLines lines: some Sequence<Data>) -> [TranscriptMessage] {
@@ -97,6 +98,14 @@ nonisolated enum ClaudeTranscript {
         case "attachment": return steeringText(record["attachment"]) != nil
         default: return false
         }
+    }
+
+    /// The identifier of the record Claude saves once a turn's Stop hooks finish.
+    /// Claude saves records in order, so everything the turn wrote before it is saved too.
+    static func stopID(_ line: Data) -> String? {
+        guard contains(stopMarker, in: line), let record = record(in: line), record["type"] as? String == "system",
+              record["subtype"] as? String == "stop_hook_summary" else { return nil }
+        return record["uuid"] as? String
     }
 
     /// A byte search, since tool results can make a line megabytes long.

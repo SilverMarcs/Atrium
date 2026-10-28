@@ -24,6 +24,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var historyWatcher: FileSystemWatcher?
     private var outgoing: [String: [ClaudeOutgoingPrompt]] = [:]
     private var liveStatuses: [String: AgentThreadStatus] = [:]
+    private struct UnsavedTurn: Equatable {
+        /// The latest Stop record saved when the turn ended, from an earlier stop.
+        let previousStop: String?
+    }
+    /// Turns whose Stop hook ran before Claude saved them, keyed by session.
+    /// Their chat stays as the hooks reported it until history has all of it.
+    private var unsavedTurns: [String: UnsavedTurn] = [:]
     /// Settings typed into each thread's terminal that its transcript doesn't show yet.
     private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
 
@@ -74,7 +81,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                     let url = URL(fileURLWithPath: path)
                     let id = url.lastPathComponent == "custom-title.json"
                         ? url.deletingLastPathComponent().lastPathComponent : url.deletingPathExtension().lastPathComponent
-                    if UUID(uuidString: id) != nil { self.onEvent?(.threadInvalidated(sessionID: id)) }
+                    guard UUID(uuidString: id) != nil else { continue }
+                    self.onEvent?(.threadInvalidated(sessionID: id))
+                    if self.unsavedTurns[id] != nil { await self.loadSavedTurn(id) }
                 }
             }
         })
@@ -93,6 +102,19 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Claude's history for this chat could not be found.")
         }
         return []
+    }
+
+    /// Claude saves a turn's records in batches, so its last ones can reach the file after the Stop hook.
+    /// The Stop record it saves once the hooks finish marks the whole turn as saved.
+    private func loadSavedTurn(_ sessionID: String) async {
+        guard let turn = unsavedTurns[sessionID],
+              let saved = try? await history.transcriptWithStop(sessionID),
+              let stop = saved.stop, stop != turn.previousStop, !saved.messages.isEmpty,
+              unsavedTurns[sessionID] == turn else { return }
+        unsavedTurns[sessionID] = nil
+        // History also restores mid-turn prompts, which are saved as queued attachments without a prompt hook.
+        live[sessionID] = ClaudeLiveTranscript(history: saved.messages)
+        onEvent?(.transcriptChanged(sessionID: sessionID))
     }
 
     func openConversation(_ thread: AgentThread) async throws {
@@ -288,6 +310,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         closeSubscription(thread.sessionID)
         resolveDecisions(sessionID: thread.sessionID)
         live[thread.sessionID] = nil
+        unsavedTurns[thread.sessionID] = nil
         outgoing[thread.sessionID] = nil
         liveStatuses[thread.sessionID] = nil
         let sessions = try await listBackgroundSessions()
@@ -312,6 +335,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             for id in Set(decisions.values.map(\.sessionID)) { resolveDecisions(sessionID: id) }
             hooks.stop()
             live.removeAll()
+            unsavedTurns.removeAll()
             outgoing.removeAll()
             liveStatuses.removeAll()
             backgroundListTask?.cancel()
@@ -514,6 +538,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // Subagent messages must not be mistaken for the main conversation's text or questions.
         if event["agent_id"] as? String != nil, name != "SubagentStart", name != "SubagentStop" { return Data("{}".utf8) }
         let transcript = try await liveTranscript(sessionID)
+        // Once the chat moves past an ended turn, that turn's history no longer has all of it.
+        if ["UserPromptSubmit", "MessageDisplay", "PreToolUse"].contains(name) { unsavedTurns[sessionID] = nil }
         switch name {
         case "UserPromptSubmit":
             liveStatuses[sessionID] = .processing
@@ -536,11 +562,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         case "Stop":
             liveStatuses[sessionID] = .done
             transcript.finish(event["last_assistant_message"] as? String ?? "")
-            // Mid-turn prompts are saved as queued attachments without a prompt hook.
-            // Once the reply is saved, let history restore those missing messages.
-            if let saved = try? await history.transcript(sessionID), !saved.isEmpty {
-                live[sessionID] = ClaudeLiveTranscript(history: saved)
-            }
+            // This turn's Stop record is saved only after this hook returns, so the latest one saved now is older.
+            unsavedTurns[sessionID] = UnsavedTurn(previousStop: try? await history.transcriptWithStop(sessionID)?.stop)
             resolveDecisions(sessionID: sessionID)
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .done)))
             onEvent?(.threadInvalidated(sessionID: sessionID))

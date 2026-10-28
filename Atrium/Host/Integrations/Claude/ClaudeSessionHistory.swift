@@ -125,6 +125,12 @@ actor ClaudeSessionHistory {
         try transcriptLines(id).map { ClaudeTranscript.messages(fromLines: $0) }
     }
 
+    /// The last turns of a session's transcript, with the latest Stop Claude saved in them.
+    func transcriptWithStop(_ id: String) throws -> (messages: [TranscriptMessage], stop: String?)? {
+        guard let lines = try transcriptLines(id) else { return nil }
+        return (ClaudeTranscript.messages(fromLines: lines), lines.reversed().lazy.compactMap(ClaudeTranscript.stopID).first)
+    }
+
     /// Original attachments stay at full quality when the edited text is resent.
     func promptImages(_ id: String, messageID: String) throws -> [Data] {
         guard let lines = try transcriptLines(id) else { return [] }
