@@ -87,7 +87,7 @@ struct CompanionTaskService {
         }
     }
 
-    func compose(provider: AgentProvider, workspaceID: UUID) async -> CompanionReply {
+    func compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil) async -> CompanionReply {
         guard integrations.enabledProviders.contains(provider) else {
             return .failed(message: "That agent isn’t enabled on your Mac.")
         }
@@ -98,7 +98,7 @@ struct CompanionTaskService {
             return .failed(message: "Your Mac is still opening another task.")
         }
         return await reportingErrors {
-            guard let thread = await sessions.compose(provider: provider, workspace: workspace) else {
+            guard let thread = await sessions.compose(provider: provider, workspace: workspace, settings: settings) else {
                 return .failed(message: "Couldn’t start a task.")
             }
             return .task(id: thread.id)

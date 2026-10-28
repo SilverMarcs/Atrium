@@ -222,8 +222,8 @@ final class CompanionServer {
             // Reconcile optimistic companion actions before acknowledging them.
             broadcast(tasks: tasksFeed.snapshot())
             return reply
-        case .compose(let provider, let workspaceID):
-            return await tasks.compose(provider: provider, workspaceID: workspaceID)
+        case .compose(let provider, let workspaceID, let settings):
+            return await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)
         case .prompt(let taskID, let text, let images):
             let reply = await tasks.prompt(text, images: images, toTask: taskID)
             broadcast(tasks: tasksFeed.snapshot())

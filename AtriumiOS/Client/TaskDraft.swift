@@ -8,6 +8,7 @@ struct TaskDraft: Identifiable, Equatable {
     let workspaceID: UUID
     /// The agent the host creates the task with.
     var provider: AgentProvider
+    var settings: TaskStartSettings? = nil
     /// The order it sorts in while it stands in for its task.
     let createdAt = Date.now
     /// The host is creating the task for the first prompt.

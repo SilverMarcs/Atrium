@@ -14,7 +14,7 @@ nonisolated enum CompanionRequest: Codable, Sendable {
     case icon(key: String)
     case refreshTasks
     case task(id: String, action: CompanionTaskAction)
-    case compose(provider: AgentProvider, workspaceID: UUID)
+    case compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil)
     /// Sends a prompt to the task's agent, as if typed on the Mac, with any
     /// attached images as JPEG data.
     case prompt(taskID: String, text: String, images: [Data])

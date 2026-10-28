@@ -363,19 +363,31 @@ final class CompanionClient {
     /// Opens a new task in a project. The host creates it once its first
     /// prompt is sent.
     /// - Returns: The draft's ID, or nil while the host has no agent enabled.
-    func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil) -> String? {
+    func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) -> String? {
         guard let provider = provider ?? defaultProvider else { return nil }
-        let draft = TaskDraft(workspaceID: workspaceID, provider: provider)
+        let draft = TaskDraft(workspaceID: workspaceID, provider: provider, settings: settings)
         drafts[draft.id] = draft
         // A new task has no messages to load.
         transcripts[draft.id] = []
         return draft.id
     }
 
+    /// Opens a blank conversation in the same project with the current task's settings.
+    func openDraft(matching task: WireTask) {
+        guard let workspaceID = task.workspaceID else { return }
+        let settings = TaskStartSettings(
+            model: task.model,
+            reasoningEffort: task.reasoningEffort,
+            isFastMode: task.isFastMode
+        )
+        pendingTaskID = openDraft(in: workspaceID, provider: task.provider, settings: settings)
+    }
+
     /// Picks the agent a draft's task is created with, until its first prompt is sent.
     func setProvider(_ provider: AgentProvider, ofDraft id: String) {
-        guard let draft = drafts[id], !draft.isCreating, draft.taskID == nil else { return }
+        guard let draft = drafts[id], !draft.isCreating, draft.taskID == nil, draft.provider != provider else { return }
         drafts[id]?.provider = provider
+        drafts[id]?.settings = nil
     }
 
     /// Forgets a draft another task has opened in place of, unless its first
@@ -408,7 +420,10 @@ final class CompanionClient {
             hasUnreadResult: false,
             isSettled: false,
             supportsDeletion: false,
-            actions: .prompt
+            actions: .prompt,
+            model: draft.settings?.model,
+            reasoningEffort: draft.settings?.reasoningEffort,
+            isFastMode: draft.settings?.isFastMode
         )
     }
 
@@ -418,7 +433,11 @@ final class CompanionClient {
         drafts[draft.id]?.isCreating = true
         Task {
             do {
-                guard case .task(let taskID) = try await request(.compose(provider: draft.provider, workspaceID: draft.workspaceID)) else {
+                guard case .task(let taskID) = try await request(.compose(
+                    provider: draft.provider,
+                    workspaceID: draft.workspaceID,
+                    settings: draft.settings
+                )) else {
                     throw CompanionClientError.unexpectedReply
                 }
                 didCreateTask(taskID, from: draft.id)

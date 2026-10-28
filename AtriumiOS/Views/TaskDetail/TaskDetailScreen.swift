@@ -75,6 +75,13 @@ struct TaskDetailScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
+                if isPhone, task.workspaceID != nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("New Session", systemImage: "square.and.pencil") {
+                            client.openDraft(matching: task)
+                        }
+                    }
+                }
                 if isPhone {
                     if task.workspaceID != nil || !models.isEmpty {
                         ToolbarItem(placement: .primaryAction) {

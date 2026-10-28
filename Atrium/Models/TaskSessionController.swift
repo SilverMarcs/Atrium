@@ -31,19 +31,37 @@ final class TaskSessionController {
 
     /// Creates and opens a task, returning it once its terminal is launching.
     @discardableResult
-    func compose(provider: AgentProvider, workspace: Workspace) async -> AgentThread? {
+    func compose(provider: AgentProvider, workspace: Workspace, settings: TaskStartSettings? = nil) async -> AgentThread? {
         guard !isOpening, integrations.enabledProviders.contains(provider) else { return nil }
         isComposing = true
         defer { isComposing = false }
         do {
             try validateDirectory(workspace.directory)
-            let thread = try await integrations.createThread(provider: provider, directory: workspace.directory)
+            var thread = try await integrations.createThread(provider: provider, directory: workspace.directory)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             let launch = try await integrations.prepareLaunch(for: thread, isNew: true)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             integrations.registerDraft(thread)
+            // Apply inherited settings before the companion can deliver its first prompt.
+            if let settings {
+                if let model = settings.model {
+                    let modelID = integrations.models[provider]?.model(running: model)?.id ?? model
+                    let change = AgentSettingsChange.model(modelID, reasoningEffort: settings.reasoningEffort)
+                    try integrations.validate(change, for: thread)
+                    try await integrations.changeSettings(change, of: thread)
+                    thread = change.applying(to: thread)
+                }
+                if let isFastMode = settings.isFastMode {
+                    let change = AgentSettingsChange.fastMode(isFastMode)
+                    try integrations.validate(change, for: thread)
+                    try await integrations.changeSettings(change, of: thread)
+                    thread = change.applying(to: thread)
+                }
+            }
+            try Task.checkCancellation()
+            guard canOpen(thread) else { return nil }
             launchSession(thread, configuration: launch, workspace: workspace)
             return thread
         } catch is CancellationError {
