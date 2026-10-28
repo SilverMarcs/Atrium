@@ -27,7 +27,15 @@ final class ClaudeLiveTranscript {
 
     func tool(_ event: [String: Any]) {
         guard let name = event["tool_name"] as? String, let id = event["tool_use_id"] as? String else { return }
-        block(.tool(name, summary: ClaudeToolSummary.summary(of: name, input: event["tool_input"] as? [String: Any] ?? [:]), id: id))
+        var summary = ClaudeToolSummary.summary(of: name, input: event["tool_input"] as? [String: Any] ?? [:])
+        if name == "Agent" || name == "Task" {
+            switch event["hook_event_name"] as? String {
+            case "PreToolUse": summary = "Subagent working · " + summary
+            case "PostToolUse", "PostToolUseFailure": summary = "Subagent done · " + summary
+            default: break
+            }
+        }
+        block(.tool(name, summary: summary, id: id))
     }
 
     func finish(_ text: String) {
