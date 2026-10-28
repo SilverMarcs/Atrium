@@ -7,6 +7,10 @@ struct AssistantReply {
     let steps: [TranscriptBlock]
     let finalText: String?
 
+    var hasIntermediaryText: Bool {
+        steps.contains { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+    }
+
     init(blocks: [TranscriptBlock]) {
         let trailingText = blocks.reversed().prefix { $0.text != nil }
         if trailingText.isEmpty {

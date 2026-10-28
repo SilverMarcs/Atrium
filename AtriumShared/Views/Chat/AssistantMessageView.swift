@@ -2,7 +2,8 @@ import SwiftUI
 
 /// An agent's reply. While it's being written, its notes and tool call counts
 /// appear as they arrive. Once finished, only its closing text stays in the timeline and
-/// every step before it folds into one row above it.
+/// every step before it folds into one row above it. The row only opens when
+/// there is intermediary text to read.
 struct AssistantMessageView: View {
     let blocks: [TranscriptBlock]
     let isStreaming: Bool
@@ -21,7 +22,11 @@ struct AssistantMessageView: View {
             } else {
                 let reply = AssistantReply(blocks: blocks)
                 if !reply.steps.isEmpty {
-                    AssistantStepsButton(steps: reply.steps)
+                    if reply.hasIntermediaryText {
+                        AssistantStepsButton(steps: reply.steps)
+                    } else {
+                        ToolGroupBadge(count: reply.steps.reduce(0) { $0 + $1.toolCount })
+                    }
                 }
                 if let text = reply.finalText {
                     MarkdownText(text: text)
