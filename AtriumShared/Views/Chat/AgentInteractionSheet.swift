@@ -79,14 +79,15 @@ struct AgentInteractionSheet: View {
 
             }
             .formStyle(.grouped)
-            .navigationTitle(request.title)
+            .navigationTitle("Question")
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if request.supportsResponse {
-                    ToolbarItem(placement: .destructiveAction) {
+                    ToolbarItem(placement: .cancellationAction) {
                         Button("Decline", role: .destructive) { submit(AgentDecision(allowed: false)) }
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(drafts.isEmpty ? "Allow" : "Submit") {
+                        Button(drafts.isEmpty ? "Allow" : "Submit", role: .confirm) {
                             submit(AgentDecision(allowed: true, answers: Dictionary(uniqueKeysWithValues: drafts.map { ($0.id, $0.answers) })))
                         }
                         .disabled(!drafts.allSatisfy { !$0.answers.isEmpty })
