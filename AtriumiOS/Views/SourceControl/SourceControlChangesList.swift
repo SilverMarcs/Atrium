@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SourceControlChangesList: View {
     let source: SourceControl
+    let onCommit: () -> Void
     let onDiscard: (SourceControlDiscard) -> Void
     @State private var isUnpushedExpanded = true
     @State private var isStagedExpanded = true
@@ -39,6 +40,7 @@ struct SourceControlChangesList: View {
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Staged Changes", systemImage: "checkmark.circle", isExpanded: $isStagedExpanded) {
+                        Button("Commit", systemImage: "checkmark", action: onCommit)
                         Button("Unstage All", systemImage: "tray.and.arrow.up") {
                             source.send(.unstage(paths: status.stagedFiles.map(\.repositoryRelativePath)))
                         }

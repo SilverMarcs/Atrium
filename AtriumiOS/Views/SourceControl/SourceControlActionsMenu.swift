@@ -17,7 +17,7 @@ struct SourceControlActionsMenu: View {
 
             Divider()
 
-            Button("Commit…", systemImage: "checkmark", action: onCommit)
+            Button("Commit", systemImage: "checkmark", action: onCommit)
                 .disabled(status?.stagedFiles.isEmpty != false)
         } label: {
             Label("Actions", systemImage: "point.topleft.down.curvedto.point.bottomright.up.fill")

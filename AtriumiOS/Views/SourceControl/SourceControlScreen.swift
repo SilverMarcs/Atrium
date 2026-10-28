@@ -19,7 +19,7 @@ struct SourceControlScreen: View {
 
     var body: some View {
         let status = source.status
-        SourceControlChangesList(source: source) { pendingDiscard = $0 }
+        SourceControlChangesList(source: source, onCommit: { showingCommit = true }) { pendingDiscard = $0 }
             .refreshable {
                 if let status { await source.perform(.fetch, in: status.mainRepositoryURL) }
             }
