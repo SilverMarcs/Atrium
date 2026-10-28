@@ -6,6 +6,18 @@
         <description>Atrium updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.11</title>
+            <pubDate>Wed, 28 Oct 2026 23:29:56 +0000</pubDate>
+            <sparkle:version>76</sparkle:version>
+            <sparkle:shortVersionString>1.3.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.11/Atrium.dmg"
+                length="11773423"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="uTbDaxKtSoTMT3ikLgDVvEQL4+eRq2QJwkgLHhFq/sizjWfQWxCSAlV68Vp05KWw2pebNdlVGeY1E2eeEy0iCg==" />
+        </item>
+        <item>
             <title>Version 1.3.10</title>
             <pubDate>Wed, 28 Oct 2026 22:52:06 +0000</pubDate>
             <sparkle:version>75</sparkle:version>
