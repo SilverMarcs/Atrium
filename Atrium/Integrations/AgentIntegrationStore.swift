@@ -209,11 +209,10 @@ final class AgentIntegrationStore {
             guard enabled.contains(provider) else { return }
             guard let index = threads.firstIndex(where: { $0.provider == provider && $0.sessionID == sessionID }) else { return }
             let previous = threads[index]
-            // A new turn can start while a snoozed chat is already processing.
-            // Status transitions also cover providers that only report activity.
-            if update.startsNewTurn || (update.status == .processing && previous.status != .processing && previous.status != .waiting) {
+            if update.startsNewTurn {
                 if settledThreadIDs.contains(previous.id) { restore(previous) }
                 if snoozedUntil[previous.id] != nil { unsnooze(previous) }
+                activity[previous.id, default: ThreadActivity(thread: previous)].resurface(markUnread: false)
             }
             let thread = reconcile(update.applying(to: threads[index]))
             threads[index] = thread
@@ -377,7 +376,7 @@ final class AgentIntegrationStore {
             return
         }
         activity[id, default: ThreadActivity(thread: threads[index])].resurface(now: now, markUnread: markUnread)
-        threads[index] = reconcile(threads[index], now: now)
+        threads[index] = reconcile(threads[index])
         if drafts[id] != nil { drafts[id] = threads[index] }
         revisions[id, default: 0] += 1
     }
@@ -463,10 +462,10 @@ final class AgentIntegrationStore {
         saveActivity()
     }
 
-    private func reconcile(_ source: AgentThread, now: Date = .now) -> AgentThread {
+    private func reconcile(_ source: AgentThread) -> AgentThread {
         let thread = source
         var state = activity[thread.id] ?? ThreadActivity(thread: thread)
-        let result = state.update(thread, isViewed: viewedThreadID == thread.id, now: now)
+        let result = state.update(thread, isViewed: viewedThreadID == thread.id)
         activity[thread.id] = state
         // Initial history and reconnect snapshots establish a baseline; only
         // an observed transition should ask for the user's attention.
