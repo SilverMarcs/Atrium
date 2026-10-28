@@ -1,15 +1,13 @@
 import SwiftUI
 
 struct CommandRow: View {
-    @Environment(CompanionClient.self) private var client
-    let workspaceID: UUID
     let command: WireCommand
+    /// Runs the command, or stops it while it runs.
+    let toggle: () -> Void
 
     var body: some View {
         LabeledContent {
-            Button(command.isRunning ? "Stop" : "Run", systemImage: command.isRunning ? "stop.fill" : "play.fill") {
-                client.send(.command(workspaceID: workspaceID, commandID: command.id, action: command.isRunning ? .stop : .run))
-            }
+            Button(command.isRunning ? "Stop" : "Run", systemImage: command.isRunning ? "stop.fill" : "play.fill", action: toggle)
             .labelStyle(.iconOnly)
             .foregroundStyle(command.isRunning ? .red : .accentColor)
             .contentTransition(.symbolEffect(.replace))

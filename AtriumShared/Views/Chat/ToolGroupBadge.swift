@@ -1,35 +1,18 @@
 import SwiftUI
 
-/// A capsule summarizing a run of tool calls; tapping it lists each call.
+/// A capsule counting a run of tool calls while the agent works.
 struct ToolGroupBadge: View {
-    let tools: [TranscriptBlock]
-    @State private var showingList = false
+    let count: Int
 
     var body: some View {
-        Button {
-            showingList = true
-        } label: {
-            HStack(spacing: 6) {
-                ForEach(symbols.prefix(4), id: \.self) { symbol in
-                    Image(systemName: symbol)
-                        .imageScale(.small)
-                }
-                Text(tools.count == 1 ? "1 tool" : "\(tools.count) tools")
-                    .font(.caption.monospacedDigit())
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.background.secondary, in: .capsule)
+        HStack(spacing: 6) {
+            Image(systemName: "wrench.and.screwdriver")
+                .imageScale(.small)
+            Text(TranscriptBlock.toolCalls(count))
+                .font(.caption.monospacedDigit())
         }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $showingList) {
-            AssistantStepsSheet(steps: tools)
-        }
-    }
-
-    /// Each tool's symbol once, in the order the tools first ran.
-    private var symbols: [String] {
-        var seen = Set<String>()
-        return tools.map(\.symbolName).filter { seen.insert($0).inserted }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.background.secondary, in: .capsule)
     }
 }

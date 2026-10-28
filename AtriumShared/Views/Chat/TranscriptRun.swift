@@ -1,10 +1,10 @@
 import Foundation
 
-/// Adjacent blocks of the same kind, so consecutive tool calls show as one badge.
+/// Adjacent blocks of the same kind, so consecutive notes read as one.
 struct TranscriptRun: Identifiable {
     enum Content {
         case text(String)
-        case tools([TranscriptBlock])
+        case tools(Int)
     }
 
     let id: String
@@ -13,15 +13,15 @@ struct TranscriptRun: Identifiable {
     static func runs(in blocks: [TranscriptBlock]) -> [TranscriptRun] {
         var runs: [TranscriptRun] = []
         for block in blocks {
-            switch (block.kind, runs.last?.content) {
-            case (.text, .text(let text)?):
-                runs[runs.count - 1].content = .text(text + "\n\n" + block.text)
-            case (.tool, .tools(let tools)?):
-                runs[runs.count - 1].content = .tools(tools + [block])
-            case (.text, _):
-                runs.append(TranscriptRun(id: block.id, content: .text(block.text)))
-            case (.tool, _):
-                runs.append(TranscriptRun(id: block.id, content: .tools([block])))
+            switch (block, runs.last?.content) {
+            case (.text(let text, _), .text(let previous)?):
+                runs[runs.count - 1].content = .text(previous + "\n\n" + text)
+            case (.tools(let count, _), .tools(let previous)?):
+                runs[runs.count - 1].content = .tools(previous + count)
+            case (.text(let text, let id), _):
+                runs.append(TranscriptRun(id: id, content: .text(text)))
+            case (.tools(let count, let id), _):
+                runs.append(TranscriptRun(id: id, content: .tools(count)))
             }
         }
         return runs

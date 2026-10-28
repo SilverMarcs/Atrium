@@ -1,11 +1,9 @@
 import SwiftUI
 
 struct GitInspectorView: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
-    var onShowInFileTree: ((URL) -> Void)?
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     private var hasRepository: Bool {
         !state.model.snapshots.isEmpty
@@ -17,9 +15,6 @@ struct GitInspectorView: View {
         } else if !state.model.hasCompletedInitialScan {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .task(id: directoryURL) {
-                    await state.refresh(directoryURL: directoryURL)
-                }
         } else {
             initializeView
         }
@@ -32,33 +27,20 @@ struct GitInspectorView: View {
             Text("This folder is not a Git repository.")
         } actions: {
             Button("Initialize Repository") {
-                Task {
-                    await state.model.initializeRepository(at: directoryURL)
-                    await state.refresh(directoryURL: directoryURL)
-                }
+                Task { await state.model.initializeRepository() }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: directoryURL) {
-            await state.refresh(directoryURL: directoryURL)
-        }
-        .watchFileSystem(at: directoryURL) {
-            Task { await state.refresh(directoryURL: directoryURL) }
-        }
     }
 
     private var repositoryView: some View {
-        GitInspectorChangesList(
-            directoryURL: directoryURL,
-            state: state,
-            onShowInFileTree: onShowInFileTree
-        )
+        GitInspectorChangesList(state: state)
         .safeAreaBar(edge: .top) {
             VStack(spacing: 8) {
-                GitInspectorBranchBar(directoryURL: directoryURL, state: state)
-                GitInspectorCommitArea(directoryURL: directoryURL, state: state)
+                GitInspectorBranchBar(state: state)
+                GitInspectorCommitArea(state: state)
                     .padding(.horizontal, 5)
             }
             .padding(.horizontal, 8)
@@ -77,27 +59,17 @@ struct GitInspectorView: View {
             .padding()
             .animation(.easeInOut(duration: 0.2), value: activeBanner)
         }
-        .task(id: scanID) {
-            await state.refresh(directoryURL: directoryURL)
+        .task(id: snapshot?.branchName) {
             if state.selectedRepoURL == nil {
                 state.selectedRepoURL = state.model.snapshots.first?.mainRepositoryURL
             }
-            guard let snapshot = state.currentSnapshot else { return }
-            await state.model.fetchIfStale(snapshot: snapshot)
-            await state.refresh(directoryURL: directoryURL)
-        }
-        .task(id: snapshot?.branchName) {
             guard let snapshot, snapshot.branchName != nil else { return }
             await state.model.fetchIfStale(snapshot: snapshot)
-            await state.refresh(directoryURL: directoryURL)
-        }
-        .watchFileSystem(at: directoryURL) {
-            Task { await state.refresh(directoryURL: directoryURL) }
         }
         .alert("Discard Changes?", isPresented: discardAlertBinding) {
             Button("Discard", role: .confirm) {
                 guard let target = state.discardTarget else { return }
-                state.performDiscard(target, directoryURL: directoryURL)
+                state.performDiscard(target)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -105,7 +77,7 @@ struct GitInspectorView: View {
         }
         .alert("Stash Changes?", isPresented: stashAlertBinding) {
             Button("Stash & Switch", role: .confirm) {
-                state.confirmStashAndSwitch(directoryURL: directoryURL)
+                state.confirmStashAndSwitch()
             }
             Button("Cancel", role: .cancel) { state.pendingBranchSwitch = nil }
         } message: {
@@ -114,7 +86,7 @@ struct GitInspectorView: View {
         .alert("Stash All Changes", isPresented: $state.showStashAlert) {
             TextField("Stash name", text: $state.stashMessage)
             Button("Stash") {
-                state.confirmStashAll(directoryURL: directoryURL)
+                state.confirmStashAll()
             }
             Button("Cancel", role: .cancel) { state.stashMessage = "" }
         } message: {
@@ -122,7 +94,7 @@ struct GitInspectorView: View {
         }
         .alert("Publish Branch?", isPresented: $state.showPushUpstreamAlert) {
             Button("Publish") {
-                state.pushSetUpstream(directoryURL: directoryURL)
+                state.pushSetUpstream()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -130,7 +102,7 @@ struct GitInspectorView: View {
         }
         .alert("Branches Diverged", isPresented: $state.showPullRebaseAlert) {
             Button("Rebase") {
-                state.syncWithRemote(directoryURL: directoryURL)
+                state.syncWithRemote()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -147,22 +119,22 @@ struct GitInspectorView: View {
             Text(state.model.errorMessage ?? "")
         }
         .sheet(isPresented: $state.showSyncWithBranchSheet) {
-            SyncWithBranchSheet(directoryURL: directoryURL, state: state)
+            SyncWithBranchSheet(state: state)
         }
         .sheet(isPresented: $state.showCommitLogSheet) {
             GitCommitLogSheet(state: state)
         }
         .sheet(isPresented: $state.showBranchListSheet) {
             if let snapshot {
-                GitBranchListSheet(snapshot: snapshot, directoryURL: directoryURL, state: state)
+                GitBranchListSheet(snapshot: snapshot, state: state)
             }
         }
         .sheet(isPresented: $state.showStashListSheet) {
-            GitStashListSheet(directoryURL: directoryURL, state: state)
+            GitStashListSheet(state: state)
         }
         .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
             Button("Undo", role: .confirm) {
-                state.undoLastCommit(directoryURL: directoryURL)
+                state.undoLastCommit()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -171,7 +143,7 @@ struct GitInspectorView: View {
         .alert("Rename Commit", isPresented: $state.showRenameCommitAlert) {
             TextField("Commit message", text: $state.renameCommitMessage)
             Button("Rename") {
-                state.renameLastCommit(directoryURL: directoryURL)
+                state.renameLastCommit()
             }
             Button("Cancel", role: .cancel) { state.renameCommitMessage = "" }
         } message: {
@@ -185,26 +157,12 @@ struct GitInspectorView: View {
         .alert("New Branch", isPresented: $state.showNewBranchSheet) {
             TextField("Branch name", text: $state.newBranchName)
             Button("Create") {
-                state.createBranch(named: state.newBranchName, directoryURL: directoryURL)
+                state.createBranch(named: state.newBranchName)
             }
             Button("Cancel", role: .cancel) { state.newBranchName = "" }
         } message: {
             Text("Create a new branch from \"\(snapshot?.branchName ?? "HEAD")\"")
         }
-    }
-
-    // MARK: - Scan Identity
-
-    /// Re-runs the scan task when either the viewed directory or any repo's
-    /// worktree context changes — a worktree switch doesn't move `directoryURL`
-    /// in multi-repo workspaces.
-    private var scanID: ScanID {
-        ScanID(directoryURL: directoryURL, worktreeOverrides: state.worktreeOverrides)
-    }
-
-    private struct ScanID: Equatable {
-        var directoryURL: URL
-        var worktreeOverrides: [URL: URL]
     }
 
     // MARK: - Repo Picker
@@ -215,13 +173,13 @@ struct GitInspectorView: View {
             let mainRepos = snapshots.filter { snapshot in
                 !snapshots.contains { other in
                     other.mainRepositoryURL != snapshot.mainRepositoryURL &&
-                    other.mainRepositoryURL.isAncestor(of: snapshot.mainRepositoryURL)
+                    other.mainRepositoryURL.contains(snapshot.mainRepositoryURL)
                 }
             }
             let submodules = snapshots.filter { snapshot in
                 snapshots.contains { other in
                     other.mainRepositoryURL != snapshot.mainRepositoryURL &&
-                    other.mainRepositoryURL.isAncestor(of: snapshot.mainRepositoryURL)
+                    other.mainRepositoryURL.contains(snapshot.mainRepositoryURL)
                 }
             }
 
@@ -246,7 +204,7 @@ struct GitInspectorView: View {
         .buttonSizing(.flexible)
     }
 
-    private func repoLabel(for snapshot: GitRepositoryStatusSnapshot) -> some View {
+    private func repoLabel(for snapshot: GitRepositoryStatus) -> some View {
         let repoName = snapshot.mainRepositoryURL.lastPathComponent
         return Label {
             if snapshot.isLinkedWorktree {

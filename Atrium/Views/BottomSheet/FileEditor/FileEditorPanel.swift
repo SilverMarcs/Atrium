@@ -1,48 +1,53 @@
 import SwiftUI
 
+/// A file from the project's host in the bottom panel: editable on this Mac's
+/// own host, read-only on any other, and reloaded when it changes there.
 struct FileEditorPanel: View {
-    private struct FileGitState {
-        var stagedKind: GitChangeKind?
-        var unstagedKind: GitChangeKind?
-    }
-
     let fileURL: URL
-    let directoryURL: URL
-    @Environment(EditorPanel.self) private var panel
+    let project: Project
     @State private var loader = FileEditorLoadModel()
     @State private var saveError: String?
     @State private var gutterDiff: GutterDiffResult = .empty
-    @State private var gitState = FileGitState()
     @State private var showingPreview = false
-    @Environment(\.showInFileTree) private var showInFileTree
     @Environment(\.editorFontSize) private var editorFontSize
 
-    private var hasUnsavedChanges: Bool {
-        if case .text = loader.phase {
-            return loader.content != loader.savedContent
-        }
-        return false
-    }
+    private var panel: EditorPanel { project.editor }
+    private var path: String { fileURL.filePath }
 
     private var isMarkdownFile: Bool {
         let ext = fileURL.pathExtension.lowercased()
         return ext == "md" || ext == "markdown"
     }
 
+    /// The file's staged and unstaged changes, from the project's Git status.
+    private var gitKinds: (staged: GitChangeKind?, unstaged: GitChangeKind?) {
+        let files = project.repositories ?? []
+        let standardized = fileURL.standardizedFileURL
+        return (
+            files.lazy.compactMap { $0.stagedFiles.first { $0.fileURL.standardizedFileURL == standardized }?.kind }.first,
+            files.lazy.compactMap { $0.unstagedFiles.first { $0.fileURL.standardizedFileURL == standardized }?.kind }.first
+        )
+    }
+
     var body: some View {
         PanelLayout {
-            Image(nsImage: fileURL.fileIcon)
+            Image(nsImage: FileIcon.image(for: fileURL))
                 .resizable()
                 .frame(width: 16, height: 16)
-            Text(fileURL.relativePath(from: directoryURL))
+            Text(fileURL.relativePath(from: project.root))
                 .font(.subheadline.weight(.medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let unstagedKind = gitState.unstagedKind {
-                GitStatusBadge(kind: unstagedKind, staged: false)
+            if let unstaged = gitKinds.unstaged {
+                GitStatusBadge(kind: unstaged, staged: false)
             }
-            if let stagedKind = gitState.stagedKind {
-                GitStatusBadge(kind: stagedKind, staged: true)
+            if let staged = gitKinds.staged {
+                GitStatusBadge(kind: staged, staged: true)
+            }
+            if !project.isLocal {
+                Image(systemName: "lock")
+                    .foregroundStyle(.secondary)
+                    .help("Files on \(project.host.name) are read-only here")
             }
             if panel.isDirty {
                 Circle()
@@ -52,82 +57,84 @@ struct FileEditorPanel: View {
             }
         } actions: {
             if isMarkdownFile, case .text = loader.phase {
-                Button {
+                Button("Preview", systemImage: "doc.plaintext") {
                     showingPreview.toggle()
-                } label: {
-                    Image(systemName: "doc.plaintext")
-                        .foregroundStyle(showingPreview ? .accent : .secondary)
                 }
+                .labelStyle(.iconOnly)
+                .foregroundStyle(showingPreview ? .accent : .secondary)
                 .buttonStyle(.borderless)
                 .help(showingPreview ? "Show Editor" : "Show Preview")
             }
 
-            Button { showInFileTree(fileURL) } label: {
-                Image(systemName: "folder")
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut("j", modifiers: [.command, .shift])
-            .help("Show in File Tree")
+            Button("Show in File Tree", systemImage: "folder") { project.reveal(fileURL) }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+                .help("Show in File Tree")
         } content: {
             switch loader.phase {
             case .text:
                 if showingPreview && isMarkdownFile {
-                    MarkdownPreviewView(
-                        markdownText: loader.content,
-                        fontSize: editorFontSize
-                    )
+                    MarkdownPreviewView(markdownText: loader.content, fontSize: editorFontSize)
                 } else {
                     CodeTextEditor(
-                        text: Binding(
-                            get: { loader.content },
-                            set: { loader.content = $0 }
-                        ),
+                        text: $loader.content,
                         documentID: fileURL,
                         fileExtension: fileURL.pathExtension.lowercased(),
+                        isEditable: project.isLocal,
                         gutterDiff: gutterDiff,
                         highlightRequest: panel.highlightRequest,
                         scrollToLine: panel.pendingScrollLine,
-                        repositoryRootURL: directoryURL,
+                        hunkTarget: HunkTarget(project: project, repository: project.root),
                         onReloadFromDisk: {
-                            await loader.reloadInPlace(fileURL: fileURL)
-                            refreshGitState()
+                            await loader.reloadInPlace(fileURL, in: project)
+                            await loadGutter()
                         },
-                        onSave: { saveFile() }
+                        onSave: save
                     )
                 }
             case .image(let image):
-                imagePreview(image)
-            case .unsupported(let reason):
-                unsupportedView(reason)
-            case .error(let message):
-                ContentUnavailableView {
-                    Label("Cannot Open File", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(message)
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .tooLarge(let bytes):
+                unavailable("File Too Large", systemImage: "doc.badge.ellipsis",
+                            description: "\(fileURL.lastPathComponent) is \(bytes.formatted(.byteCount(style: .file))) — too large to open in the editor.")
+            case .binary:
+                unavailable("Preview Not Available", systemImage: "doc",
+                            description: "\(fileURL.lastPathComponent) can’t be displayed as text.")
+            case .error(let message):
+                ContentUnavailableView("Cannot Open File", systemImage: "exclamationmark.triangle", description: Text(message))
             case .idle, .loading:
                 Color.clear
             }
         }
-        .onChange(of: fileURL, initial: true) { _, newURL in
+        .onChange(of: fileURL, initial: true) { _, url in
             showingPreview = false
-            resetTransientState()
-            loader.load(fileURL: newURL)
+            saveError = nil
+            gutterDiff = .empty
+            panel.isDirty = false
+            loader.load(url, in: project)
         }
-        .onChange(of: loader.loadedURL) { _, _ in
-            if case .text = loader.phase {
-                refreshGitState()
-            }
+        .task(id: fileURL) {
+            await project.host.follow(.file(workspaceID: project.workspaceID, path: path))
         }
-        .watchFileSystem(at: fileURL.deletingLastPathComponent(), id: fileURL) {
-            loader.reloadIfChanged(fileURL: fileURL)
+        .onChange(of: project.host.fileRevisions[.file(workspaceID: project.workspaceID, path: path)]) {
+            loader.reloadIfUnchanged(fileURL, in: project)
         }
-        .onChange(of: hasUnsavedChanges) { _, dirty in
+        .task(id: GutterID(url: loader.loadedURL, repositories: project.repositories)) {
+            await loadGutter()
+        }
+        .onChange(of: loader.hasUnsavedChanges) { _, dirty in
             panel.isDirty = dirty
         }
         .onChange(of: panel.saveRequested) { _, requested in
             if requested {
-                saveFile()
+                save()
                 panel.saveRequested = false
             }
         }
@@ -136,19 +143,15 @@ struct FileEditorPanel: View {
             set: { if !$0 { panel.cancelDiscard() } }
         )) {
             Button("Save") {
-                saveFile()
+                save()
                 panel.confirmDiscard()
             }
-            Button("Discard", role: .confirm) {
-                panel.confirmDiscard()
-            }
-            Button("Cancel", role: .cancel) {
-                panel.cancelDiscard()
-            }
+            Button("Discard", role: .confirm) { panel.confirmDiscard() }
+            Button("Cancel", role: .cancel) { panel.cancelDiscard() }
         } message: {
-            Text("Do you want to save changes to \"\(fileURL.lastPathComponent)\"?")
+            Text("Do you want to save changes to “\(fileURL.lastPathComponent)”?")
         }
-        .alert("Couldn't Save File", isPresented: Binding(
+        .alert("Couldn’t Save File", isPresented: Binding(
             get: { saveError != nil },
             set: { if !$0 { saveError = nil } }
         )) {
@@ -158,104 +161,47 @@ struct FileEditorPanel: View {
         }
     }
 
-    private func resetTransientState() {
-        saveError = nil
-        gutterDiff = .empty
-        gitState = FileGitState()
-        panel.isDirty = false
-    }
-
-    @ViewBuilder
-    private func imagePreview(_ image: NSImage) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    @ViewBuilder
-    private func unsupportedView(_ reason: FileEditorUnsupportedReason) -> some View {
+    private func unavailable(_ title: String, systemImage: String, description: String) -> some View {
         ContentUnavailableView {
-            Label(unsupportedTitle(reason), systemImage: unsupportedSymbol(reason))
+            Label(title, systemImage: systemImage)
         } description: {
-            Text(unsupportedDescription(reason))
+            Text(description)
         } actions: {
-            HStack {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-                }
-                Button("Open in Default App") {
-                    NSWorkspace.shared.open(fileURL)
+            if project.isLocal {
+                HStack {
+                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([fileURL]) }
+                    Button("Open in Default App") { NSWorkspace.shared.open(fileURL) }
                 }
             }
         }
     }
 
-    private func unsupportedTitle(_ reason: FileEditorUnsupportedReason) -> String {
-        switch reason {
-        case .tooLarge: return "File Too Large"
-        case .binary: return "Preview Not Available"
-        }
-    }
-
-    private func unsupportedSymbol(_ reason: FileEditorUnsupportedReason) -> String {
-        switch reason {
-        case .tooLarge: return "doc.badge.ellipsis"
-        case .binary: return "doc"
-        }
-    }
-
-    private func unsupportedDescription(_ reason: FileEditorUnsupportedReason) -> String {
-        switch reason {
-        case .tooLarge(let bytes):
-            let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-            return "\(fileURL.lastPathComponent) is \(formatted) — too large to open in the editor."
-        case .binary:
-            return "\(fileURL.lastPathComponent) can't be displayed as text."
-        }
-    }
-
-    private func saveFile() {
-        guard case .text = loader.phase else { return }
-        do {
-            try loader.content.write(to: fileURL, atomically: true, encoding: .utf8)
-            loader.markSaved()
-            refreshGitState()
-        } catch {
-            saveError = error.localizedDescription
-        }
-    }
-
-    private func refreshGitState() {
+    private func save() {
+        guard project.isLocal else { return }
         Task {
             do {
-                async let gutter = GitRepository.shared.gutterDiff(for: fileURL, in: directoryURL)
-                async let snapshots = GitRepository.shared.statusSnapshots(in: directoryURL)
-                gutterDiff = try await gutter
-                gitState = try await fileGitState(from: snapshots)
+                try await loader.save(fileURL, in: project)
             } catch {
-                gutterDiff = .empty
-                gitState = FileGitState()
+                saveError = error.localizedDescription
             }
         }
     }
 
-    private func fileGitState(from snapshots: [GitRepositoryStatusSnapshot]) throws -> FileGitState {
-        let standardizedURL = fileURL.standardizedFileURL
-        var state = FileGitState()
-
-        for snapshot in snapshots {
-            if let stagedMatch = snapshot.stagedFiles.first(where: { $0.fileURL.standardizedFileURL == standardizedURL }) {
-                state.stagedKind = stagedMatch.kind
-            }
-            if let unstagedMatch = snapshot.unstagedFiles.first(where: { $0.fileURL.standardizedFileURL == standardizedURL }) {
-                state.unstagedKind = unstagedMatch.kind
-            }
+    private func loadGutter() async {
+        guard case .text = loader.phase,
+              case .gutter(let staged, let unstaged) = try? await project.git(.gutterDiff(file: fileURL), in: project.root) else {
+            gutterDiff = .empty
+            return
         }
-
-        return state
+        gutterDiff = GutterDiffParser.merge(
+            unstaged: GutterDiffParser.parse(unstaged, stage: .unstaged),
+            staged: GutterDiffParser.parse(staged, stage: .staged)
+        )
     }
+}
+
+/// Reloads the gutter for a newly loaded file and whenever the project's Git status changes.
+private struct GutterID: Equatable {
+    let url: URL?
+    let repositories: [GitRepositoryStatus]?
 }

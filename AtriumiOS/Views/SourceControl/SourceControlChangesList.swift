@@ -1,16 +1,14 @@
 import SwiftUI
 
 struct SourceControlChangesList: View {
-    @Environment(CompanionClient.self) private var client
-    let workspaceID: UUID
-    /// Nil until the host has sent the repository's status.
-    let status: WireGitStatus?
+    let source: SourceControl
     let onDiscard: (SourceControlDiscard) -> Void
     @State private var isUnpushedExpanded = true
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
 
     var body: some View {
+        let status = source.status
         List {
             if let status, !status.unpushedCommits.isEmpty {
                 Section {
@@ -27,7 +25,7 @@ struct SourceControlChangesList: View {
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Unpushed Commits", systemImage: "arrow.up.circle", isExpanded: $isUnpushedExpanded) {
-                        Button("Push to Remote", systemImage: "arrow.up") { send(.push) }
+                        Button("Push to Remote", systemImage: "arrow.up") { source.send(.push(branch: status.branchName)) }
                     }
                 }
             }
@@ -36,12 +34,14 @@ struct SourceControlChangesList: View {
                 Section {
                     if isStagedExpanded {
                         ForEach(status.stagedFiles) { file in
-                            SourceControlFileRow(workspaceID: workspaceID, file: file, isStaged: true, onDiscard: nil)
+                            SourceControlFileRow(source: source, file: file, isStaged: true, onDiscard: nil)
                         }
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Staged Changes", systemImage: "checkmark.circle", isExpanded: $isStagedExpanded) {
-                        Button("Unstage All", systemImage: "tray.and.arrow.up") { send(.unstageAll) }
+                        Button("Unstage All", systemImage: "tray.and.arrow.up") {
+                            source.send(.unstage(paths: status.stagedFiles.map(\.repositoryRelativePath)))
+                        }
                     }
                 }
             }
@@ -50,32 +50,33 @@ struct SourceControlChangesList: View {
                 Section {
                     if isChangesExpanded {
                         ForEach(status.unstagedFiles) { file in
-                            SourceControlFileRow(workspaceID: workspaceID, file: file, isStaged: false) {
-                                onDiscard(SourceControlDiscard(paths: [file.path]))
+                            SourceControlFileRow(source: source, file: file, isStaged: false) {
+                                onDiscard(SourceControlDiscard(files: [file]))
                             }
                         }
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Changes", systemImage: "circle.dashed", isExpanded: $isChangesExpanded) {
-                        Button("Stage All", systemImage: "tray.and.arrow.down") { send(.stageAll) }
+                        Button("Stage All", systemImage: "tray.and.arrow.down") {
+                            source.send(.stage(paths: status.unstagedFiles.map(\.repositoryRelativePath)))
+                        }
                         Button("Discard All", systemImage: "arrow.uturn.backward", role: .destructive) {
-                            onDiscard(SourceControlDiscard(paths: nil))
+                            onDiscard(SourceControlDiscard(files: nil))
                         }
                     }
                 }
             }
         }
-        // .listStyle(.sidebar)
         .overlay {
-            if let status {
-                if !status.hasRepository {
+            if let repositories = source.repositories {
+                if let status, status.unpushedCommits.isEmpty && status.stagedFiles.isEmpty && status.unstagedFiles.isEmpty {
+                    ContentUnavailableView("No Changes", systemImage: "checkmark.circle", description: Text("The working tree is clean."))
+                } else if repositories.isEmpty {
                     ContentUnavailableView(
                         "No Repository",
                         systemImage: "arrow.triangle.branch",
                         description: Text("This project folder isn’t a Git repository.")
                     )
-                } else if status.unpushedCommits.isEmpty && status.stagedFiles.isEmpty && status.unstagedFiles.isEmpty {
-                    ContentUnavailableView("No Changes", systemImage: "checkmark.circle", description: Text("The working tree is clean."))
                 }
             } else {
                 ProgressView()
@@ -84,7 +85,4 @@ struct SourceControlChangesList: View {
         }
     }
 
-    private func send(_ action: CompanionGitAction) {
-        client.send(.git(workspaceID: workspaceID, action: action))
-    }
 }

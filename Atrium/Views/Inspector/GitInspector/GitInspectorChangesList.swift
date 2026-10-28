@@ -1,14 +1,12 @@
 import SwiftUI
 
 struct GitInspectorChangesList: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
-    var onShowInFileTree: ((URL) -> Void)?
-
-    @Environment(EditorPanel.self) private var editorPanel
     @Environment(\.openWindow) private var openWindow
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var project: Project { state.project }
+
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     var body: some View {
         List(selection: $state.selectedFileID) {
@@ -38,10 +36,10 @@ struct GitInspectorChangesList: View {
                                     },
                                     onShowChanges: {
                                         openWindow(value: GitCommitDiffSheetItem(
+                                            project: project.id,
                                             hash: commit.hash,
                                             message: commit.message,
-                                            repositoryRootURL: snapshot.repositoryRootURL,
-                                            preloadedFiles: nil
+                                            repositoryRootURL: snapshot.repositoryRootURL
                                         ))
                                     }
                                 )
@@ -107,7 +105,7 @@ struct GitInspectorChangesList: View {
         } primaryAction: { items in
             for id in items {
                 if let (file, _, _) = resolveFile(id: id) {
-                    editorPanel.openFile(file.fileURL)
+                    project.editor.openFile(file.fileURL)
                 }
             }
         }
@@ -116,7 +114,7 @@ struct GitInspectorChangesList: View {
             guard old.owner == new.owner,
                   let id = new.selection,
                   let (file, stage, snap) = resolveFile(id: id) else { return }
-            editorPanel.openDiff(file.fileURL, in: snap.repositoryRootURL, stage: stage, kind: file.kind)
+            project.editor.openDiff(file.fileURL, in: snap.repositoryRootURL, stage: stage, kind: file.kind)
         }
     }
 
@@ -149,11 +147,11 @@ struct GitInspectorChangesList: View {
     }
 
     @ViewBuilder
-    private func fileRows(_ files: [GitChangedFile], staged: Bool, snapshot: GitRepositoryStatusSnapshot) -> some View {
+    private func fileRows(_ files: [GitChangedFile], staged: Bool, snapshot: GitRepositoryStatus) -> some View {
         let prefix = staged ? "staged" : "unstaged"
         let rows = files.map { GitFileRow(id: "\(prefix):\($0.repositoryRelativePath)", file: $0) }
         ForEach(rows) { row in
-            FileLabel(name: row.file.fileURL.lastPathComponent, icon: row.file.fileURL.fileIcon) {
+            FileLabel(name: row.file.name, icon: FileIcon.image(for: row.file.fileURL)) {
                 GitStatusBadge(kind: row.file.kind, staged: staged)
                     .overlay {
                         Menu {
@@ -174,7 +172,7 @@ struct GitInspectorChangesList: View {
 
     // MARK: - Bindings & Helpers
 
-    private func resolveFile(id: String) -> (GitChangedFile, GitDiffStage, GitRepositoryStatusSnapshot)? {
+    private func resolveFile(id: String) -> (GitChangedFile, GitDiffStage, GitRepositoryStatus)? {
         guard let snapshot else { return nil }
 
         let staged = id.hasPrefix("staged:")
@@ -191,14 +189,14 @@ struct GitInspectorChangesList: View {
     private func handleAction(_ action: GitAction) {
         switch action {
         case .showInFileTree(let url):
-            onShowInFileTree?(url)
+            project.reveal(url)
         case .commit:
             // Commit is handled by the commit area; ignore from list-side menus.
             break
         case .push(let snap) where !snap.hasTrackingBranch:
             state.showPushUpstreamAlert = true
         default:
-            state.perform(action, directoryURL: directoryURL)
+            state.perform(action)
         }
     }
 }

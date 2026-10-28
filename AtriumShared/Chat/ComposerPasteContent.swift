@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// Decodes clipboard attachments for both the desktop and Companion composers.
+/// Decodes clipboard attachments for both the desktop and iOS composers.
 nonisolated enum ComposerPasteContent: Sendable {
     case text(String)
     case image(ComposerImage)

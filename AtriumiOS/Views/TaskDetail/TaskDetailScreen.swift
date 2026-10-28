@@ -1,51 +1,49 @@
 import SwiftUI
 
-/// One task's conversation, with a prompt field that sends to its agent on the host.
+/// One task's conversation, with a prompt field that sends to its agent on its host.
 struct TaskDetailScreen: View {
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(CompanionClient.self) private var client
-    let taskID: String
+    @Environment(HostDirectory.self) private var hosts
+    let ref: TaskRef
     @State private var showingScratchPad = false
-    @State private var showingDetails = false
-    @State private var taskToRename: WireTask?
-    @State private var taskToDelete: WireTask?
     @State private var composer = TaskComposer()
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptSendAnimator()
     /// Drafts left in other tasks, restored when their task opens again.
-    @State private var stashedComposers: [String: TaskComposer] = [:]
+    @State private var stashedComposers: [TaskRef: TaskComposer] = [:]
 
-    /// The task's info menu is hidden for now; its actions stay wired up.
-    private static let showsInfoMenu = false
+    private var host: HostClient? { hosts.host(ref.hostID) }
 
     /// The task a draft has become, once the host creates it, so the screen
     /// carries on with it in place.
-    private var resolvedTaskID: String { client.drafts[taskID]?.taskID ?? taskID }
+    private var resolvedRef: TaskRef { TaskRef(hostID: ref.hostID, taskID: host?.resolvedTaskID(ref.taskID) ?? ref.taskID) }
 
-    private var hostTask: WireTask? { client.task(resolvedTaskID) }
+    private var hostTask: WireTask? { host?.task(resolvedRef.taskID) }
 
     /// The host's task, or what a draft shows until the host lists it.
-    private var task: WireTask? { hostTask ?? client.draftTask(resolvedTaskID) }
+    private var item: HostTask? { hosts.task(resolvedRef) }
+    private var task: WireTask? { item?.task }
+    private var workspace: WorkspaceRef? { task?.workspaceID.map { WorkspaceRef(hostID: ref.hostID, workspaceID: $0) } }
 
     /// A draft's model can't be changed until the host has created its task.
-    private var models: [AgentModel] { hostTask.map { client.models(for: $0.provider) } ?? [] }
+    private var models: [AgentModel] { hostTask.flatMap { task in host?.models(for: task.provider) } ?? [] }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         Group {
-            if let task {
-                TaskChatView(task: task)
-            } else if client.tasks == nil || client.isReconnecting {
+            if let item {
+                TaskChatView(item: item)
+            } else if host?.tasks == nil || host?.isConnected != true {
                 ProgressView()
                     .controlSize(.large)
             } else {
                 ContentUnavailableView(
                     "Task Unavailable",
                     systemImage: "questionmark.bubble",
-                    description: Text("It may still be starting, or it was deleted on your host.")
+                    description: Text("It may still be starting, or it was deleted on its host.")
                 )
             }
         }
@@ -56,30 +54,29 @@ struct TaskDetailScreen: View {
             if phase == .background { composer.dictation.cancel() }
         }
         .onAppear {
-            client.setVisibleTask(resolvedTaskID)
-            client.onPendingPromptShown = { [sendAnimator] promptID, messageID in
+            hosts.setVisibleTask(resolvedRef)
+            host?.onPendingPromptShown = { [sendAnimator] promptID, messageID in
                 sendAnimator.confirm(promptID, as: messageID)
             }
         }
         .onDisappear {
-            client.clearVisibleTask(resolvedTaskID)
-            client.onPendingPromptShown = nil
+            if hosts.visibleTask == resolvedRef { hosts.setVisibleTask(nil) }
+            host?.onPendingPromptShown = nil
             composer.dictation.cancel()
             sendAnimator.cancelAll()
         }
         .navigationTitle(task?.title ?? "Task")
         .modifier(ConnectionStatusSubtitle(
-            subtitle: task?.projectName ?? "",
+            hosts: host.map { [$0] } ?? [],
+            subtitle: subtitle,
             showsStatus: isPhone
         ))
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
-                if isPhone, task.workspaceID != nil {
+                if isPhone, task.workspaceID != nil, let item {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("New Session", systemImage: "square.and.pencil") {
-                            client.openDraft(matching: task)
-                        }
+                        Button("New Session", systemImage: "square.and.pencil") { hosts.openDraft(matching: item) }
                     }
                 }
                 if isPhone {
@@ -89,18 +86,13 @@ struct TaskDetailScreen: View {
                                 if !models.isEmpty {
                                     Section {
                                         TaskModelMenu(provider: task.provider, selection: task.modelSelection, models: models) { action in
-                                            client.send(.task(id: task.id, action: action))
+                                            host?.send(.task(id: task.id, action: action))
                                         }
                                     }
                                 }
-                                if let workspaceID = task.workspaceID {
+                                if let workspace {
                                     Section {
-                                        NavigationLink(value: Route.commands(workspaceID)) {
-                                            Label("Commands", systemImage: "terminal")
-                                        }
-                                        NavigationLink(value: Route.sourceControl(workspaceID)) {
-                                            Label("Source Control", systemImage: "arrow.triangle.branch")
-                                        }
+                                        ProjectLinks(workspace: workspace, root: projectPath)
                                         Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                                     }
                                 }
@@ -118,7 +110,7 @@ struct TaskDetailScreen: View {
                                 provider: task.provider,
                                 selection: task.modelSelection,
                                 models: models,
-                                perform: { action in client.send(.task(id: task.id, action: action)) },
+                                perform: { action in host?.send(.task(id: task.id, action: action)) },
                                 showsToolbarLabel: true
                             )
                             .labelStyle(.titleOnly)
@@ -127,30 +119,12 @@ struct TaskDetailScreen: View {
                             ToolbarSpacer(.fixed, placement: .primaryAction)
                         }
                     }
-                    if let workspaceID = task.workspaceID {
+                    if let workspace {
                         ToolbarItem(placement: .navigation) {
                             Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                         }
                         ToolbarItemGroup(placement: .primaryAction) {
-                            NavigationLink(value: Route.commands(workspaceID)) {
-                                Label("Commands", systemImage: "terminal")
-                            }
-                            NavigationLink(value: Route.sourceControl(workspaceID)) {
-                                Label("Source Control", systemImage: "arrow.triangle.branch")
-                            }
-                        }
-                    }
-                    if Self.showsInfoMenu {
-                        if task.workspaceID != nil {
-                            ToolbarSpacer(.fixed, placement: .primaryAction)
-                        }
-                        ToolbarItem(placement: .primaryAction) {
-                            TaskInfoMenu(
-                                task: task,
-                                taskToRename: $taskToRename,
-                                taskToDelete: $taskToDelete,
-                                showingDetails: $showingDetails
-                            )
+                            ProjectLinks(workspace: workspace, root: projectPath)
                         }
                     }
                 }
@@ -169,16 +143,16 @@ struct TaskDetailScreen: View {
                     ToolbarSpacer(.fixed, placement: .bottomBar)
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    if let task, task.actions.contains(.interrupt) {
+                    if let item, item.task.actions.contains(.interrupt) {
                         Button("Stop", systemImage: "stop.fill", role: .destructive) {
-                            client.send(.interrupt(taskID: task.id))
+                            item.host.interrupt(item.task.id)
                         }
                         .tint(.red)
                     }
                 }
             }
         }
-        .taskComposer(composer, task: task, prompt: "Ask anything…", submit: sendDraft)
+        .taskComposer(composer, item: item, prompt: "Ask anything…", submit: sendDraft)
         .composerAttachmentPickers(composer)
         .alert("Couldn’t Dictate", isPresented: Binding(
             get: { composer.dictation.error != nil },
@@ -190,22 +164,17 @@ struct TaskDetailScreen: View {
         }
         .environment(composer)
         .environment(sendAnimator)
-        .sheet(isPresented: $showingDetails) {
-            if let task { TaskDetailsSheet(task: task) }
-        }
         .sheet(isPresented: $showingScratchPad) {
-            if let workspaceID = task?.workspaceID {
-                ScratchPadSheet(workspaceID: workspaceID)
+            if let host, let workspaceID = task?.workspaceID {
+                ScratchPadSheet(host: host, workspaceID: workspaceID)
             }
         }
-        .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
         .modifier(AgentInteractionPresentation(
             requests: hostTask?.interactions ?? [],
             respond: { interaction, decision in
-                _ = try await client.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
+                _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },
-            canPresent: scenePhase == .active && !showingDetails && !showingScratchPad
-                && taskToRename == nil && taskToDelete == nil
+            canPresent: scenePhase == .active && !showingScratchPad
                 && !composer.isPickingPhotos && !composer.isTakingPhoto
                 && composer.dictation.error == nil,
             prepareToPresent: { composer.isFocused = false }
@@ -213,33 +182,43 @@ struct TaskDetailScreen: View {
         // The screen outlives its task when another opens, so each task keeps
         // its own draft and images, waiting for it to open again. A new task
         // opened from the screen's draft carries on with the draft's.
-        .onChange(of: resolvedTaskID) { oldID, newID in
-            client.setVisibleTask(newID)
-            guard client.drafts[oldID]?.taskID != newID else { return }
+        .onChange(of: resolvedRef) { oldRef, newRef in
+            hosts.setVisibleTask(newRef)
+            guard oldRef.hostID != newRef.hostID || host?.drafts[oldRef.taskID]?.taskID != newRef.taskID else { return }
             composer.dictation.cancel()
             sendAnimator.cancelAll()
             composer.isFocused = false
             // A draft that's left isn't opened again.
-            if composer.hasContent, !TaskDraft.isDraftID(oldID) {
-                stashedComposers[oldID] = composer
+            if composer.hasContent, !TaskDraft.isDraftID(oldRef.taskID) {
+                stashedComposers[oldRef] = composer
             }
-            composer = stashedComposers.removeValue(forKey: newID) ?? TaskComposer()
+            composer = stashedComposers.removeValue(forKey: newRef) ?? TaskComposer()
         }
-        .task(id: resolvedTaskID) {
+        .task(id: resolvedRef) {
             // The host has no transcript for a draft.
-            guard !TaskDraft.isDraftID(resolvedTaskID) else { return }
-            await client.follow(.transcript(taskID: resolvedTaskID))
+            guard !TaskDraft.isDraftID(resolvedRef.taskID) else { return }
+            await host?.follow(.transcript(taskID: resolvedRef.taskID))
         }
         .task(id: task) {
             // Viewing a finished task reads it, as selecting it does on the host.
             if let task, task.hasUnreadResult {
-                client.send(.task(id: task.id, action: .viewed))
+                host?.send(.task(id: task.id, action: .viewed))
             }
         }
     }
 
+    private var projectPath: String {
+        host?.workspace(task?.workspaceID)?.path ?? ""
+    }
+
+    private var subtitle: String {
+        guard let task else { return "" }
+        return hosts.showsHostNames || hosts.filter != nil && hosts.hosts.count > 1
+            ? "\(task.projectName) · \(host?.name ?? "")" : task.projectName
+    }
+
     private func sendDraft(from sourceFrame: CGRect?) -> Bool {
-        guard let task else { return false }
-        return composer.submit(to: task, using: client, animator: sendAnimator, from: sourceFrame)
+        guard let item else { return false }
+        return composer.submit(to: item, animator: sendAnimator, from: sourceFrame)
     }
 }

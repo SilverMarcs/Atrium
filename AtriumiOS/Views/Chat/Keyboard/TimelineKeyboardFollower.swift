@@ -170,6 +170,15 @@ final class TimelineKeyboardFollower {
         if follow?.isShowing == true {
             endFollow(settling: true)
         }
+        // Closing the composer, UIKit can collapse the safe area in one step
+        // and commit the clamped offset before another pass runs, which draws
+        // one frame of the timeline already settled under the raised composer.
+        // Starting now, while nothing has moved, lets the offset observation
+        // hold the timeline in place within that same commit.
+        if follow == nil, !hasFollowedThisDismissal, let scrollView, scrollView.window != nil,
+           let y = composerY() {
+            beginHideFollowIfNeeded(in: scrollView, composerY: y)
+        }
     }
 
     private func keyboardDidHide() {

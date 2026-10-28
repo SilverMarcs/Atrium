@@ -1,19 +1,22 @@
 import SwiftUI
 
+/// The agents this Mac's own host runs tasks with.
 struct IntegrationsSettingsView: View {
-    @Environment(AgentIntegrationStore.self) private var integrations
+    @Environment(AppModel.self) private var app
 
     var body: some View {
-        @Bindable var integrations = integrations
         Form {
             Section {
-                ForEach(integrations.providers) { provider in
-                    Toggle(isOn: $integrations[isEnabled: provider]) {
+                ForEach(app.localHost?.tasks?.providers ?? []) { provider in
+                    Toggle(isOn: Binding(
+                        get: { provider.isEnabled },
+                        set: { app.localHost?.send(.setProviderEnabled(provider.provider, $0)) }
+                    )) {
                         Label {
-                            Text(provider.name)
+                            Text(provider.provider.name)
                         } icon: {
-                            Image(provider.symbolName)
-                                .foregroundStyle(provider.color)
+                            Image(provider.provider.symbolName)
+                                .foregroundStyle(provider.provider.color)
                         }
                     }
                 }

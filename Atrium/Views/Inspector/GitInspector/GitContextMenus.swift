@@ -4,15 +4,15 @@ import SwiftUI
 // MARK: - Action Enum
 
 enum GitAction {
-    case stage([GitChangedFile], GitRepositoryStatusSnapshot)
-    case unstage([GitChangedFile], GitRepositoryStatusSnapshot)
-    case stageAll(GitRepositoryStatusSnapshot)
-    case unstageAll(GitRepositoryStatusSnapshot)
-    case discard([GitChangedFile], GitRepositoryStatusSnapshot)
-    case discardAll(GitRepositoryStatusSnapshot)
+    case stage([GitChangedFile], GitRepositoryStatus)
+    case unstage([GitChangedFile], GitRepositoryStatus)
+    case stageAll(GitRepositoryStatus)
+    case unstageAll(GitRepositoryStatus)
+    case discard([GitChangedFile], GitRepositoryStatus)
+    case discardAll(GitRepositoryStatus)
     case commit
     case showInFileTree(URL)
-    case push(GitRepositoryStatusSnapshot)
+    case push(GitRepositoryStatus)
 }
 
 // MARK: - Context Menus
@@ -22,7 +22,7 @@ struct GitRepoContextMenu: View {
     /// actions are enabled so the staged header can't offer stage/discard and the
     /// unstaged header can't offer unstage/commit.
     let staged: Bool
-    let snapshot: GitRepositoryStatusSnapshot
+    let snapshot: GitRepositoryStatus
     let onAction: (GitAction) -> Void
 
     var body: some View {
@@ -92,7 +92,7 @@ struct GitCommitContextMenu: View {
 struct GitFileContextMenu: View {
     let files: [GitChangedFile]
     let staged: Bool
-    let snapshot: GitRepositoryStatusSnapshot
+    let snapshot: GitRepositoryStatus
     let onAction: (GitAction) -> Void
 
     var body: some View {

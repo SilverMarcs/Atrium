@@ -1,56 +1,74 @@
 import Foundation
+import Observation
 
+enum GitInspectorDiscardTarget {
+    case files([GitChangedFile], GitRepositoryStatus)
+    case all(GitRepositoryStatus)
+}
+
+struct PendingBranchSwitch {
+    var branch: String
+    var repositoryRootURL: URL
+}
+
+/// The Git inspector of one project: which repository it shows and the
+/// alerts and sheets in flight, with the actions behind them.
 @MainActor
-extension GitInspectorState {
-    func refresh(directoryURL: URL) async {
-        await model.refresh(directoryURL: directoryURL, worktreeOverrides: worktreeOverrides)
+@Observable
+final class GitInspectorState {
+    unowned let project: Project
+    let model: GitInspectorModel
+    var selectedRepoURL: URL?
+    var selectedFileID: String?
+    var commitMessage = ""
+    var discardTarget: GitInspectorDiscardTarget?
+    var pendingBranchSwitch: PendingBranchSwitch?
+    var showNewBranchSheet = false
+    var newBranchName = ""
+    var showStashAlert = false
+    var stashMessage = ""
+    var unpushedExpanded = true
+    var stagedExpanded = true
+    var unstagedExpanded = true
+    var showPushUpstreamAlert = false
+    var showPullRebaseAlert = false
+    var showPullConflictAlert = false
+    var showStashConflictAlert = false
+    var showRenameCommitAlert = false
+    var renameCommitMessage = ""
+    var showUndoLastCommitAlert = false
+    var showSyncWithBranchSheet = false
+    var showCommitLogSheet = false
+    var showBranchListSheet = false
+    var showStashListSheet = false
+
+    init(project: Project) {
+        self.project = project
+        model = GitInspectorModel(project: project)
     }
 
-    /// Reconciles inspector navigation after the branch manager changes a checkout.
-    func finishBranchOperation(mainRepositoryURL: URL, previousRoot: URL, directoryURL: URL, didConvert: Bool) async {
-        if didConvert {
-            worktreeOverrides.removeValue(forKey: mainRepositoryURL)
-            selectedRepoURL = mainRepositoryURL
-        }
-        let directory = directoryURL.standardizedFileURL.resolvingSymlinksInPath()
-        let leftLinkedCheckout = didConvert && previousRoot != mainRepositoryURL
-            && (previousRoot == directory || previousRoot.isAncestor(of: directory))
-        await refresh(directoryURL: leftLinkedCheckout ? mainRepositoryURL : directoryURL)
+    var currentSnapshot: GitRepositoryStatus? {
+        model.snapshots.first { $0.mainRepositoryURL == selectedRepoURL } ?? model.snapshots.first
     }
 
     /// Handles state-only actions. View-specific actions (`.commit`, `.showInFileTree`)
     /// are no-ops here and must be dispatched by the calling view.
-    func perform(_ action: GitAction, directoryURL: URL) {
+    func perform(_ action: GitAction) {
         switch action {
         case .stage(let files, let snapshot):
-            Task {
-                await model.stage(files: files, snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-            }
+            Task { await model.stage(files: files, snapshot: snapshot) }
         case .unstage(let files, let snapshot):
-            Task {
-                await model.unstage(files: files, snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-            }
+            Task { await model.unstage(files: files, snapshot: snapshot) }
         case .stageAll(let snapshot):
-            Task {
-                await model.stageAll(snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-            }
+            Task { await model.stageAll(snapshot: snapshot) }
         case .unstageAll(let snapshot):
-            Task {
-                await model.unstageAll(snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-            }
+            Task { await model.unstageAll(snapshot: snapshot) }
         case .discard(let files, let snapshot):
             discardTarget = .files(files, snapshot)
         case .discardAll(let snapshot):
             discardTarget = .all(snapshot)
         case .push(let snapshot):
-            Task {
-                await model.push(snapshot: snapshot)
-                await refresh(directoryURL: directoryURL)
-            }
+            Task { await model.push(snapshot: snapshot) }
         case .commit, .showInFileTree:
             break
         }
@@ -59,163 +77,117 @@ extension GitInspectorState {
     /// Plain branches live in the repository's main worktree, so a branch switch
     /// always targets that root — a linked worktree in view is left untouched (it's
     /// isolated) and the dirty check runs against the main worktree, not it.
-    func switchBranch(to branch: String, directoryURL: URL, snapshot: GitRepositoryStatusSnapshot) {
+    func switchBranch(to branch: String, snapshot: GitRepositoryStatus) {
         let rootURL = snapshot.mainRepositoryURL
         Task {
             let isDirty = rootURL == snapshot.repositoryRootURL
                 ? snapshot.isDirty
-                : await GitRepository.shared.hasUncommittedChanges(at: rootURL)
+                : await model.hasUncommittedChanges(at: rootURL)
             if isDirty {
                 pendingBranchSwitch = PendingBranchSwitch(branch: branch, repositoryRootURL: rootURL)
             } else {
                 await model.switchBranch(to: branch, at: rootURL)
-                await finishBranchSwitch(at: rootURL, directoryURL: directoryURL)
+                project.worktrees[rootURL] = nil
             }
         }
     }
 
-    func confirmStashAndSwitch(directoryURL: URL) {
+    func confirmStashAndSwitch() {
         guard let pending = pendingBranchSwitch else { return }
         Task {
             await model.stashAndSwitch(to: pending.branch, at: pending.repositoryRootURL)
-            await finishBranchSwitch(at: pending.repositoryRootURL, directoryURL: directoryURL)
+            project.worktrees[pending.repositoryRootURL] = nil
         }
     }
 
     /// Points a repository at one of its worktrees (or back at the main one).
-    /// The override change re-fires the inspector's scan task, so no manual refresh.
-    func activateWorktree(_ worktree: GitWorktreeInfo, in snapshot: GitRepositoryStatusSnapshot) {
+    /// Changing the project's checkouts follows a new Git scope, so no refresh.
+    func activateWorktree(_ worktree: GitWorktreeInfo, in snapshot: GitRepositoryStatus) {
         let rootURL = snapshot.mainRepositoryURL
-        if worktree.isMain {
-            worktreeOverrides.removeValue(forKey: rootURL)
-        } else {
-            worktreeOverrides[rootURL] = worktree.path.standardizedFileURL
-        }
+        project.worktrees[rootURL] = worktree.isMain ? nil : worktree.path.standardizedFileURL
         selectedRepoURL = rootURL
     }
 
-    /// Views the checkout a task runs in: the linked worktree it relocated into, or
-    /// its repository's main checkout. Like a picker switch, the user can move away.
-    func showCheckout(containing directoryURL: URL) {
-        guard let checkout = GitCheckout(containing: directoryURL) else { return }
-        let rootURL = checkout.mainCheckoutURL
-        if worktreeOverrides[rootURL] != checkout.linkedWorktreeURL {
-            worktreeOverrides[rootURL] = checkout.linkedWorktreeURL
-        }
-        if selectedRepoURL != rootURL {
-            selectedRepoURL = rootURL
-        }
+    /// Reconciles inspector navigation after the branch manager changes a checkout.
+    func finishBranchOperation(mainRepositoryURL: URL, didConvert: Bool) {
+        guard didConvert else { return }
+        project.worktrees[mainRepositoryURL] = nil
+        selectedRepoURL = mainRepositoryURL
     }
 
-    /// After a switch that leaves a linked worktree, dropping the override hands the
-    /// refresh to the view's scan task; an in-place switch refreshes here, with a
-    /// best-effort quiet fetch so the new branch's upstream state reflects reality.
-    private func finishBranchSwitch(at rootURL: URL, directoryURL: URL) async {
-        if worktreeOverrides.removeValue(forKey: rootURL) == nil {
-            await refresh(directoryURL: directoryURL)
-            try? await GitRepository.shared.fetchIfStale(at: rootURL)
-            await refresh(directoryURL: directoryURL)
-        }
-    }
-
-    func confirmStashAll(directoryURL: URL) {
+    func confirmStashAll() {
         guard let snapshot = currentSnapshot else { return }
         let message = stashMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
         Task {
             await model.stashAll(message: message, snapshot: snapshot)
             stashMessage = ""
-            await refresh(directoryURL: directoryURL)
         }
     }
 
-    func applyLatestStash(directoryURL: URL) {
+    func applyLatestStash() {
         guard let snapshot = currentSnapshot else { return }
         Task {
-            let canApply = await model.canApplyStashCleanly(snapshot: snapshot)
-            guard canApply else {
+            guard await model.canApplyStashCleanly(snapshot: snapshot) else {
                 showStashConflictAlert = true
                 return
             }
             await model.applyLatestStash(snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
         }
     }
 
-    func undoLastCommit(directoryURL: URL) {
+    func undoLastCommit() {
         guard let snapshot = currentSnapshot else { return }
-        Task {
-            await model.undoLastCommit(snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
+        Task { await model.undoLastCommit(snapshot: snapshot) }
     }
 
-    func renameLastCommit(directoryURL: URL) {
+    func renameLastCommit() {
         guard let snapshot = currentSnapshot else { return }
         let message = renameCommitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
         Task {
             await model.amendCommitMessage(message, snapshot: snapshot)
             renameCommitMessage = ""
-            await refresh(directoryURL: directoryURL)
         }
     }
 
-    func syncWithBranch(_ branch: String, directoryURL: URL) {
+    func syncWithBranch(_ branch: String) {
         guard let snapshot = currentSnapshot else { return }
-        Task {
-            await model.syncWithBranch(branch, snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
+        Task { await model.syncWithBranch(branch, snapshot: snapshot) }
     }
 
-    func pullPreservingChanges(directoryURL: URL) {
+    func pullPreservingChanges() {
         guard let snapshot = currentSnapshot else { return }
         Task {
-            let result = await model.pullPreservingChanges(snapshot: snapshot)
-            if result == .wouldConflict {
+            if await model.pullPreservingChanges(snapshot: snapshot) == .wouldConflict {
                 showPullConflictAlert = true
             }
-            await refresh(directoryURL: directoryURL)
         }
     }
 
-    func syncWithRemote(directoryURL: URL) {
+    func syncWithRemote() {
         guard let snapshot = currentSnapshot else { return }
-        Task {
-            await model.syncWithRemote(snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
+        Task { await model.syncWithRemote(snapshot: snapshot) }
     }
 
-    func pushSetUpstream(directoryURL: URL) {
-        guard let snapshot = currentSnapshot,
-              let branch = snapshot.branchName else { return }
-        Task {
-            await model.pushSetUpstream(branch: branch, snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
-    }
-
-    func fetch(directoryURL: URL) {
+    func pushSetUpstream() {
         guard let snapshot = currentSnapshot else { return }
-        Task {
-            await model.fetch(snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
+        Task { await model.push(snapshot: snapshot) }
     }
 
-    func createBranch(named name: String, directoryURL: URL) {
+    func fetch() {
+        guard let snapshot = currentSnapshot else { return }
+        Task { await model.fetch(snapshot: snapshot) }
+    }
+
+    func createBranch(named name: String) {
         guard let snapshot = currentSnapshot else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        Task {
-            await model.createBranch(named: trimmed, snapshot: snapshot)
-            await refresh(directoryURL: directoryURL)
-        }
+        Task { await model.createBranch(named: trimmed, snapshot: snapshot) }
     }
 
-    func performDiscard(_ target: GitInspectorDiscardTarget, directoryURL: URL) {
+    func performDiscard(_ target: GitInspectorDiscardTarget) {
         Task {
             switch target {
             case .files(let files, let snapshot):
@@ -223,12 +195,6 @@ extension GitInspectorState {
             case .all(let snapshot):
                 await model.discardAllChanges(snapshot: snapshot)
             }
-            await refresh(directoryURL: directoryURL)
         }
-    }
-
-    var currentSnapshot: GitRepositoryStatusSnapshot? {
-        model.snapshots.first { $0.mainRepositoryURL == selectedRepoURL }
-            ?? model.snapshots.first
     }
 }

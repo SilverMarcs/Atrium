@@ -3,16 +3,15 @@ import SwiftUI
 /// The inline composer's Send button. While the agent works and there's no
 /// draft to send, it stops the agent instead.
 struct ComposerSendButton: View {
-    @Environment(CompanionClient.self) private var client
     @Environment(TaskComposer.self) private var composer
-    let task: WireTask?
+    let item: HostTask?
     let send: () -> Void
 
     var body: some View {
         Group {
-            if let task, task.actions.contains(.interrupt), !composer.hasContent, !composer.dictation.isActive, !composer.isSubmittingDictation {
+            if let item, item.task.actions.contains(.interrupt), !composer.hasContent, !composer.dictation.isActive, !composer.isSubmittingDictation {
                 Button(role: .destructive) {
-                    client.send(.interrupt(taskID: task.id))
+                    item.host.interrupt(item.task.id)
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
                         .labelStyle(.iconOnly)
@@ -37,6 +36,6 @@ struct ComposerSendButton: View {
     }
 
     private var isSendDisabled: Bool {
-        task == nil || composer.isSubmittingDictation || (!composer.hasContent && !composer.dictation.isActive)
+        item == nil || composer.isSubmittingDictation || (!composer.hasContent && !composer.dictation.isActive)
     }
 }

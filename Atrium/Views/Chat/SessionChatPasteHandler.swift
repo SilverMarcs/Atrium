@@ -5,7 +5,7 @@ struct SessionChatPasteHandler: ViewModifier {
   @Binding var prompt: String
   @Binding var images: [ComposerImage]
   let isFocused: Bool
-  @Environment(AppState.self) private var appState
+  @Environment(AppModel.self) private var app
   @State private var eventMonitor: Any?
   @State private var hostingView = NSView()
   @State private var importError: String?
@@ -16,7 +16,7 @@ struct SessionChatPasteHandler: ViewModifier {
       .onAppear(perform: installMonitor)
       .onDisappear(perform: removeMonitor)
       .onChange(of: isFocused) { installMonitor() }
-      .onChange(of: appState.selectedThreadID) { installMonitor() }
+      .onChange(of: app.selection) { installMonitor() }
       .alert(
         "Couldn’t Paste Attachment",
         isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })
@@ -52,7 +52,7 @@ struct SessionChatPasteHandler: ViewModifier {
       return item.types.contains(.png) || item.types.contains(.tiff)
     }
     guard !items.isEmpty else { return false }
-    let threadID = appState.selectedThreadID
+    let threadID = app.selection
     let editor = hostingView.window?.firstResponder as? NSTextView
     Task {
       for item in items {
@@ -68,7 +68,7 @@ struct SessionChatPasteHandler: ViewModifier {
           }
           switch content {
           case .text(let text):
-            if appState.selectedThreadID == threadID,
+            if app.selection == threadID,
               let editor, editor.window?.firstResponder === editor, editor.string == prompt {
               editor.insertText(text, replacementRange: editor.selectedRange())
             } else {

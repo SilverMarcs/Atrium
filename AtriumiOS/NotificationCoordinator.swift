@@ -6,17 +6,15 @@ import UserNotifications
 final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationCoordinator()
 
-    weak var client: CompanionClient?
+    weak var hosts: HostDirectory?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         let info = notification.request.content.userInfo
-        if let hostID = info["hostID"] as? String,
-           hostID == client?.currentHost?.id,
-           let taskID = info["taskID"] as? String,
-           taskID == client?.visibleTaskID { return [] }
+        if let hostID = info["hostID"] as? String, let taskID = info["taskID"] as? String,
+           hosts?.isShowing(TaskRef(hostID: hostID, taskID: taskID)) == true { return [] }
         return [.banner, .sound]
     }
 
@@ -25,7 +23,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
-        guard let taskID = info["taskID"] as? String else { return }
-        client?.openNotification(hostID: info["hostID"] as? String, taskID: taskID)
+        guard let hostID = info["hostID"] as? String, let taskID = info["taskID"] as? String else { return }
+        hosts?.openNotification(hostID: hostID, taskID: taskID)
     }
 }

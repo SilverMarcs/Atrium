@@ -2,10 +2,9 @@ import SwiftUI
 
 struct DiffPanel: View {
     let reference: GitDiffReference
+    let project: Project
     @State private var loader = DiffLoadModel()
     @State private var scrollAnchor = DiffScrollAnchor()
-
-    @Environment(EditorPanel.self) private var panel
 
     private var isImageFile: Bool {
         reference.fileURL.isPreviewableImage
@@ -20,7 +19,7 @@ struct DiffPanel: View {
 
     var body: some View {
         PanelLayout {
-            Image(nsImage: reference.fileURL.fileIcon)
+            Image(nsImage: FileIcon.image(for: reference.fileURL))
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(reference.repositoryRelativePath)
@@ -32,15 +31,14 @@ struct DiffPanel: View {
                 diffStats(stats)
             }
         } actions: {
-            Button {
-                panel.openFile(reference.fileURL, scrollToLine: scrollAnchor.currentNewFileLine())
-            } label: {
-                Image(systemName: "arrow.up.forward.square")
+            Button("Open File", systemImage: "arrow.up.forward.square") {
+                project.editor.openFile(reference.fileURL, scrollToLine: scrollAnchor.currentNewFileLine())
             }
+            .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
             .help("Open File")
         } content: {
-            DiffBodyView(reference: reference, loader: loader, scrollAnchor: scrollAnchor)
+            DiffBodyView(reference: reference, project: project, loader: loader, scrollAnchor: scrollAnchor)
         }
     }
 
@@ -64,6 +62,7 @@ struct DiffPanel: View {
 
 struct DiffBodyView: View {
     let reference: GitDiffReference
+    let project: Project
     let loader: DiffLoadModel
     var scrollAnchor: DiffScrollAnchor?
 
@@ -91,8 +90,9 @@ struct DiffBodyView: View {
                         fileExtension: reference.fileURL.pathExtension.lowercased(),
                         hunks: file?.hunks ?? [],
                         reference: reference,
+                        hunkTarget: HunkTarget(project: project, repository: reference.repositoryRootURL),
                         scrollAnchor: scrollAnchor,
-                        onReload: { await loader.reloadInPlace(reference: reference) }
+                        onReload: { await loader.reloadInPlace(reference, in: project) }
                     )
                 }
             case .message(let text):
@@ -103,7 +103,7 @@ struct DiffBodyView: View {
             }
         }
         .onChange(of: reference, initial: true) { _, newReference in
-            loader.load(reference: newReference)
+            loader.load(newReference, in: project)
         }
     }
 }

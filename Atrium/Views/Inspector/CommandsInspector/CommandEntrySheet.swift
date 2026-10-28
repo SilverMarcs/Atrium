@@ -1,11 +1,10 @@
 import SwiftUI
 
 struct CommandEntrySheet: View {
-    let workspace: Workspace
-    var terminal: Terminal?
+    let project: Project
+    var command: WireCommand?
 
     @Environment(\.dismiss) private var dismiss
-
     @State private var name = ""
     @State private var script = ""
 
@@ -17,24 +16,20 @@ struct CommandEntrySheet: View {
         NavigationStack {
             Form {
                 TextField("Name", text: $name)
-
                 TextField("Script", text: $script, axis: .vertical)
                     .lineLimit(5, reservesSpace: true)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.body.monospaced())
                     .labelsHidden()
             }
             .formStyle(.grouped)
-            .navigationTitle(terminal == nil ? "New Command" : "Edit Command")
+            .navigationTitle(command == nil ? "New Command" : "Edit Command")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) {
-                        dismiss()
-                    }
+                    Button("Cancel", role: .cancel) { dismiss() }
                 }
-
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(terminal == nil ? "Add" : "Save") {
+                    Button(command == nil ? "Add" : "Save") {
                         save()
                         dismiss()
                     }
@@ -43,26 +38,21 @@ struct CommandEntrySheet: View {
             }
         }
         .onAppear {
-            if let terminal {
-                name = terminal.title
-                script = terminal.runScript ?? ""
+            if let command {
+                name = command.title
+                script = command.script ?? ""
             }
         }
     }
 
     private func save() {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        let trimmedScript = script.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
-
-        if let terminal {
-            terminal.title = trimmedName
-            terminal.runScript = trimmedScript.isEmpty ? nil : trimmedScript
+        let name = name.trimmingCharacters(in: .whitespaces)
+        let script = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        if let command {
+            project.send(.update(title: name, script: script.isEmpty ? nil : script), to: command)
         } else {
-            workspace.addCommand(
-                title: trimmedName,
-                runScript: trimmedScript.isEmpty ? nil : trimmedScript
-            )
+            project.send(.addCommand(title: name, script: script.isEmpty ? nil : script))
         }
     }
 }

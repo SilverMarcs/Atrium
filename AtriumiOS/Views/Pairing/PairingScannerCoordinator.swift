@@ -2,11 +2,11 @@ import VisionKit
 
 @MainActor
 final class PairingScannerCoordinator: NSObject, DataScannerViewControllerDelegate {
-    private let onScan: (CompanionPairingLink) -> Void
+    private let onScan: (PairingLink) -> Void
     private let onError: (String) -> Void
     private(set) var hasScanned = false
 
-    init(onScan: @escaping (CompanionPairingLink) -> Void, onError: @escaping (String) -> Void) {
+    init(onScan: @escaping (PairingLink) -> Void, onError: @escaping (String) -> Void) {
         self.onScan = onScan
         self.onError = onError
     }
@@ -16,7 +16,7 @@ final class PairingScannerCoordinator: NSObject, DataScannerViewControllerDelega
             guard !hasScanned, case .barcode(let barcode) = item,
                   let value = barcode.payloadStringValue,
                   let url = URL(string: value),
-                  let link = CompanionPairingLink(url: url) else { continue }
+                  let link = PairingLink(url: url) else { continue }
             hasScanned = true
             dataScanner.stopScanning()
             onScan(link)

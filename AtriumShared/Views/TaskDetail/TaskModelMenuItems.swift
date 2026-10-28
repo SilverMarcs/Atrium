@@ -7,7 +7,7 @@ import SwiftUI
 struct TaskModelMenuItems: View {
   let selection: TaskModelSelection
   let models: [AgentModel]
-  let perform: (CompanionTaskAction) -> Void
+  let perform: (TaskAction) -> Void
 
   private var currentModel: AgentModel? { models.model(running: selection.model) }
   private var isFastMode: Bool { selection.isFastMode }

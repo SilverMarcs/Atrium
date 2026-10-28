@@ -3,7 +3,7 @@ import SwiftUI
 import VisionKit
 
 struct PairingScannerSheet: View {
-    let onScan: (CompanionPairingLink) -> Void
+    let onScan: (PairingLink) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var cameraReady = false
     @State private var error: String?

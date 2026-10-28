@@ -3,7 +3,7 @@ import Vision
 import VisionKit
 
 struct PairingCodeScanner: UIViewControllerRepresentable {
-    let onScan: (CompanionPairingLink) -> Void
+    let onScan: (PairingLink) -> Void
     let onError: (String) -> Void
 
     func makeCoordinator() -> PairingScannerCoordinator {

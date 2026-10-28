@@ -2,21 +2,23 @@ import SwiftUI
 
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.
 struct TaskChatView: View {
-    @Environment(CompanionClient.self) private var client
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let task: WireTask
+    let item: HostTask
     @State private var pin = TimelinePin()
     @State private var anchorSpace = TimelineAnchorSpace()
     @State private var scrollPolicy = ConversationScrollPolicy()
 
     private static let bottomID = "bottom"
 
+    private var task: WireTask { item.task }
+    private var host: HostClient { item.host }
+
     var body: some View {
-        let messages = client.transcripts[task.id]
-        let pendingPrompts = client.pendingPrompts[task.id] ?? []
+        let messages = host.conversations.transcripts[task.id]
+        let pendingPrompts = host.conversations.pendingPrompts[task.id] ?? []
         // A prompt just sent shows the agent working with it, before the host
         // reports so, so the indicator arrives with the prompt's row.
-        let footerStatus = client.conversations.footerStatus(for: task.id, status: task.status)
+        let footerStatus = host.conversations.footerStatus(for: task.id, status: task.status)
         let newestPromptID = pendingPrompts.last?.timelineID ?? messages?.last { $0.role == .user }?.id
         // A prompt sent from this device starts the latest turn, held at the
         // top. A pending prompt held there hands over to the transcript's
@@ -37,7 +39,7 @@ struct TaskChatView: View {
                             TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
                         }
                         ForEach(sections.historyPendingPrompts) { prompt in
-                            PendingPromptView(prompt: prompt, taskID: task.id)
+                            PendingPromptView(prompt: prompt, item: item)
                         }
                         if sections.hasTurn {
                             // At least the resting viewport's height, so its
@@ -47,7 +49,7 @@ struct TaskChatView: View {
                                     TranscriptMessageRow(message: message, isStreaming: message.id == streamingMessageID)
                                 }
                                 ForEach(sections.turnPendingPrompts) { prompt in
-                                    PendingPromptView(prompt: prompt, taskID: task.id)
+                                    PendingPromptView(prompt: prompt, item: item)
                                 }
                                 TaskChatStatusFooter(status: footerStatus)
                             }
@@ -71,8 +73,8 @@ struct TaskChatView: View {
                 }
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
-                .followsComposerOnKeyboard { [client, anchorSpace, taskID = task.id] in
-                    client.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
+                .followsComposerOnKeyboard { [host, anchorSpace, taskID = task.id] in
+                    host.conversations.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
                 }
             }
             // The container is what shows between the bars and keyboard. The
@@ -107,15 +109,15 @@ struct TaskChatView: View {
                 count: (messages?.count ?? 0) + pendingPrompts.count,
                 lastID: pendingPrompts.last?.timelineID ?? messages?.last?.id
             ), initial: true) { oldTracker, newTracker in
-                if client.drafts[oldTracker.taskID]?.taskID == newTracker.taskID, anchorSpace.anchorID == nil {
+                if host.drafts[oldTracker.taskID]?.taskID == newTracker.taskID, anchorSpace.anchorID == nil {
                     anchorSpace.anchorID = pendingPrompts.last?.timelineID
-                        ?? client.conversations.displayMessages(for: task.id).last {
+                        ?? host.conversations.displayMessages(for: task.id).last {
                             $0.role == .user && $0.id.hasPrefix("pending-")
                         }?.id
                 }
                 let continuesConversation = oldTracker.taskID == newTracker.taskID || TaskDraft.isDraftID(oldTracker.taskID)
                 let preservesTurn = continuesConversation && anchorSpace.anchorID.map {
-                    client.conversations.containsTimelineID($0, in: task.id)
+                    host.conversations.containsTimelineID($0, in: task.id)
                 } == true
                 if scrollPolicy.observe(from: oldTracker, to: newTracker, preservingTurn: preservesTurn) {
                     pin = TimelinePin()
@@ -176,12 +178,20 @@ struct TaskChatView: View {
                 scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
             }
             .overlay {
-                if messages == nil {
+                if messages == nil, let error = host.transcriptErrors[task.id] {
+                    ContentUnavailableView {
+                        Label("Couldn’t Load Conversation", systemImage: "exclamationmark.bubble")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Retry") { host.reload(.transcript(taskID: task.id)) }
+                    }
+                } else if messages == nil {
                     ProgressView()
                         .controlSize(.large)
                 } else if messages?.isEmpty == true, pendingPrompts.isEmpty {
-                    if let draft = client.drafts[task.id] {
-                        DraftAgentPicker(draft: draft)
+                    if let draft = host.drafts[task.id] {
+                        DraftAgentPicker(host: host, draft: draft)
                     } else {
                         ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
                     }

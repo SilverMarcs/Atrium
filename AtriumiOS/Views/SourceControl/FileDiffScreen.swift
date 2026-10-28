@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct FileDiffScreen: View {
-    @Environment(CompanionClient.self) private var client
+    let host: HostClient
     let workspaceID: UUID
-    let file: WireGitFile
+    let file: GitChangedFile
+    let repository: URL
     let isStaged: Bool
     @State private var hunks: [DiffHunk]?
     @State private var message: String?
@@ -32,9 +33,16 @@ struct FileDiffScreen: View {
     }
 
     private func load() async {
+        let reference = GitDiffReference(
+            repositoryRootURL: repository,
+            fileURL: file.fileURL,
+            repositoryRelativePath: file.repositoryRelativePath,
+            stage: isStaged ? .staged : .unstaged,
+            kind: file.kind
+        )
         do {
-            guard case .diff(let text) = try await client.request(.gitDiff(workspaceID: workspaceID, path: file.path, isStaged: isStaged)) else {
-                throw CompanionClientError.unexpectedReply
+            guard case .diff(let text, _) = try await host.git(.diff(reference), in: repository, workspace: workspaceID) else {
+                throw HostClientError.unexpectedReply
             }
             let presentation = text.isEmpty ? nil : DiffFilePresentation(raw: text)
             hunks = presentation?.hunks ?? []

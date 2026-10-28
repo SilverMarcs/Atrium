@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The folded work behind a reply: how many steps it took and the kinds of tools
-/// it used. Opens every step in order.
+/// The folded work behind a reply: how many tool calls it took. Opens every step
+/// in order.
 struct AssistantStepsButton: View {
     let steps: [TranscriptBlock]
     @State private var showingSteps = false
@@ -15,7 +15,7 @@ struct AssistantStepsButton: View {
                     Image(systemName: symbol)
                         .imageScale(.small)
                 }
-                Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
+                Text(TranscriptBlock.toolCalls(steps.reduce(0) { $0 + $1.toolCount }))
                     .font(.caption.monospacedDigit())
                 Image(systemName: "chevron.right")
                     .imageScale(.small)
@@ -34,6 +34,6 @@ struct AssistantStepsButton: View {
     /// Each kind of step once, in the order it first happened.
     private var symbols: [String] {
         var seen = Set<String>()
-        return steps.map { $0.kind == .text ? "text.alignleft" : $0.symbolName }.filter { seen.insert($0).inserted }
+        return steps.map(\.symbolName).filter { seen.insert($0).inserted }
     }
 }

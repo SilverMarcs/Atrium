@@ -16,7 +16,7 @@ struct SessionChatMessageRow: View {
           prompt: pendingPrompt, retry: retry, sendFlight: { $0.flight(forTimelineID: message.id) })
       } else {
         UserMessageView(
-          text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
+          text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: message.images ?? [],
           sendFlight: { $0.flight(forTimelineID: message.id) })
       }

@@ -11,8 +11,9 @@ struct TaskFilterMenu: View {
                 }
             }
         } label: {
-            Label("Filter", systemImage: "line.3.horizontal.decrease")
-                .foregroundStyle(filter == .all ? Color.primary : Color.accentColor)
+            Image(systemName: "line.3.horizontal.decrease")
+                .foregroundStyle(filter != .all ? .accent : .primary)
         }
+        .accessibilityLabel("Filter")
     }
 }

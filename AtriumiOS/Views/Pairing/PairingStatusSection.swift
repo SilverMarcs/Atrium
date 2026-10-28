@@ -2,10 +2,10 @@ import SwiftUI
 
 /// A pairing in progress, or why the last attempt failed.
 struct PairingStatusSection: View {
-    @Environment(CompanionClient.self) private var client
+    @Environment(HostDirectory.self) private var hosts
 
     var body: some View {
-        if client.isPairing {
+        if hosts.pairing != nil {
             Section {
                 Label {
                     Text("Pairing…")
@@ -14,7 +14,7 @@ struct PairingStatusSection: View {
                 }
                 .foregroundStyle(.secondary)
             }
-        } else if let error = client.pairingError {
+        } else if let error = hosts.pairingError {
             Section {
                 Text(error)
                     .foregroundStyle(.red)

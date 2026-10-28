@@ -1,10 +1,9 @@
 import SwiftUI
 
 struct GitInspectorCommitArea: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     private var currentAction: SourceControlAction {
         guard let snapshot else { return .commit }
@@ -48,12 +47,10 @@ struct GitInspectorCommitArea: View {
             Task {
                 await state.model.commit(message: message, snapshot: snapshot)
                 state.commitMessage = ""
-                await state.refresh(directoryURL: directoryURL)
             }
         case .push, .pull:
             Task {
                 await state.model.fetch(snapshot: snapshot)
-                await state.refresh(directoryURL: directoryURL)
                 guard state.model.errorMessage == nil,
                       let refreshed = state.currentSnapshot else { return }
                 dispatchSyncAction(snapshot: refreshed)
@@ -61,7 +58,7 @@ struct GitInspectorCommitArea: View {
         }
     }
 
-    private func dispatchSyncAction(snapshot: GitRepositoryStatusSnapshot) {
+    private func dispatchSyncAction(snapshot: GitRepositoryStatus) {
         switch currentAction {
         case .push:
             if needsUpstream {
@@ -73,20 +70,17 @@ struct GitInspectorCommitArea: View {
                 return
             }
             guard !snapshot.unpushedCommits.isEmpty else { return }
-            state.perform(.push(snapshot), directoryURL: directoryURL)
+            state.perform(.push(snapshot))
         case .pull:
             if !snapshot.unpushedCommits.isEmpty {
                 state.showPullRebaseAlert = true
                 return
             }
             if snapshot.isDirty {
-                state.pullPreservingChanges(directoryURL: directoryURL)
+                state.pullPreservingChanges()
                 return
             }
-            Task {
-                await state.model.pull(snapshot: snapshot)
-                await state.refresh(directoryURL: directoryURL)
-            }
+            Task { await state.model.pull(snapshot: snapshot) }
         case .commit:
             return
         }

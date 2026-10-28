@@ -6,7 +6,7 @@ import SwiftUI
 struct TaskInputBar: View {
     @Environment(TaskComposer.self) private var composer
     @Environment(PromptSendAnimator.self) private var sendAnimator
-    let task: WireTask?
+    let item: HostTask?
     let prompt: String
     /// Sends the draft from the field at the given frame, if known, returning
     /// whether it was sent.
@@ -56,7 +56,7 @@ struct TaskInputBar: View {
                     }
                     .glassEffect(in: .rect(cornerRadius: 20))
 
-                    ComposerSendButton(task: task, send: send)
+                    ComposerSendButton(item: item, send: send)
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, 8)

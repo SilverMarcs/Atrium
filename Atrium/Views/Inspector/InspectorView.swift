@@ -1,10 +1,10 @@
 import SwiftUI
 
+/// The selected task's project: its files, search, Git and commands, from
+/// whichever host it's on.
 struct InspectorView: View {
-    let workspace: Workspace
-    @Environment(AppState.self) private var appState
-
-    private var state: InspectorViewState { workspace.inspectorState }
+    @Bindable var project: Project
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         // Toolbar must hang off a stable container, not the tabContent switch:
@@ -22,15 +22,13 @@ struct InspectorView: View {
                 ToolbarSpacer(.flexible)
               
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        appState.showingInspector.toggle()
-                    } label: {
-                        Image(systemName: "sidebar.trailing")
+                    Button("Inspector", systemImage: "sidebar.trailing") {
+                        app.showingInspector.toggle()
                     }
                 }
             }
             .safeAreaBar(edge: .top) {
-                Picker("Inspector", selection: Bindable(state).selectedTab) {
+                Picker("Inspector", selection: $project.selectedTab) {
                     ForEach(InspectorTab.allCases) { tab in
                         Image(systemName: iconName(for: tab))
                             .help(tab.label)
@@ -49,17 +47,15 @@ struct InspectorView: View {
     // type (Button <-> Menu) inside the ToolbarItem makes NSToolbar recreate
     // the item, flashing the whole toolbar on workspace switches.
     private var runCommandControl: some View {
-        let runnable = workspace.commands.filter { cmd in
-            !(cmd.runScript?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
-        }
-        let defaultCommand = workspace.defaultCommand
+        let runnable = project.commands.filter(\.canRun)
+        let defaultCommand = project.defaultCommand
 
         return Menu {
             Picker("Default Command", selection: Binding(
                 get: { defaultCommand?.id ?? runnable.first?.id },
                 set: { newID in
-                    if let cmd = workspace.commands.first(where: { $0.id == newID }) {
-                        workspace.setDefaultCommand(cmd)
+                    if let command = project.commands.first(where: { $0.id == newID }) {
+                        project.send(.setDefault, to: command)
                     }
                 }
             )) {
@@ -82,16 +78,12 @@ struct InspectorView: View {
         .disabled(defaultCommand == nil)
     }
 
-    private func trigger(_ cmd: Terminal) {
-        if cmd.isRunning {
-            cmd.stop()
-        } else {
-            workspace.runCommand(cmd)
-        }
+    private func trigger(_ command: WireCommand) {
+        project.send(command.isRunning ? .stop : .run, to: command)
     }
 
     private func iconName(for tab: InspectorTab) -> String {
-        if tab == .commands && workspace.commands.contains(where: { $0.isRunning }) {
+        if tab == .commands && project.commands.contains(where: { $0.isRunning }) {
             return "terminal.fill"
         }
         return tab.icon
@@ -99,17 +91,15 @@ struct InspectorView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        switch state.selectedTab {
+        switch project.selectedTab {
         case .files:
-            FileTreeView(directoryURL: workspace.effectiveURL, state: state.fileTree)
+            FileTreeView(project: project)
         case .search:
-            SearchInspectorView(directoryURL: workspace.effectiveURL, state: state.search)
+            SearchInspectorView(project: project)
         case .git:
-            GitInspectorView(directoryURL: workspace.effectiveURL, state: state.git) { url in
-                state.revealInFileTree(url, relativeTo: workspace.effectiveURL)
-            }
+            GitInspectorView(state: project.git)
         case .commands:
-            CommandsInspectorView(workspace: workspace)
+            CommandsInspectorView(project: project)
         }
     }
 

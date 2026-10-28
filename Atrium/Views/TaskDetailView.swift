@@ -1,106 +1,113 @@
 import SwiftUI
 
+/// A task's chat and, on this Mac's own host, its terminal, above its
+/// project's editor panel.
 struct TaskDetailView: View {
-  let session: TaskSession
-  @Environment(AgentIntegrationStore.self) private var integrations
-  @Environment(TaskSessionController.self) private var sessions
-  @Environment(WorkspaceStore.self) private var workspaces
-  @SceneStorage("taskPresentation") private var presentation = "chat"
-  @State private var showingScratchPad = false
+    let item: HostTask
+    @Environment(AppModel.self) private var app
+    @SceneStorage("taskPresentation") private var presentation = "chat"
+    @State private var showingScratchPad = false
 
-  private var workspace: Workspace { session.workspace }
-  private var thread: AgentThread {
-    integrations.threads.first { $0.id == session.id } ?? session.thread
-  }
-  private var modelSelection: TaskModelSelection {
-    TaskModelSelection(
-      model: thread.model,
-      reasoningEffort: thread.reasoningEffort,
-      isFastMode: thread.isFastMode == true,
-      canSelectModel: sessions.menuState(for: thread).allowed.contains(.selectModel)
-    )
-  }
+    private var task: WireTask { item.task }
+    private var models: [AgentModel] { item.host.models(for: task.provider) }
+    private var project: Project? {
+        task.workspaceID.flatMap { app.project(WorkspaceRef(hostID: item.host.id, workspaceID: $0)) }
+    }
+    /// The task's terminal, which only its own host shows.
+    private var session: TaskSession? {
+        item.host.isLocal ? app.terminals.session(for: task.id) : nil
+    }
+    private var showsTerminal: Bool { session != nil && presentation == "terminal" }
 
-  var body: some View {
-    ZStack {
-      if session.isTerminalAttached {
-        TaskTerminalView(session: session, acceptsInputFocus: presentation == "terminal")
-        .scrollEdgeEffectHidden()
-        .opacity(presentation == "terminal" ? 1 : 0)
-        .allowsHitTesting(presentation == "terminal")
-        .accessibilityHidden(presentation != "terminal")
-      }
-      if presentation == "terminal", !session.isTerminalAttached {
-        if let error = session.terminalError {
-          ContentUnavailableView {
-            Label("Couldn’t Attach Terminal", systemImage: "terminal")
-          } description: {
-            Text(error)
-          } actions: {
-            Button("Retry") { Task { await sessions.attachTerminal(to: session) } }
-          }
-        } else { ProgressView("Attaching terminal…") }
-      }
-      if presentation == "chat" {
-        SessionChatView(session: session)
-          .id(session.id)
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .task(id: session.id + ":" + presentation) {
-      session.isTerminalVisible = presentation == "terminal"
-      if presentation == "terminal" { await sessions.attachTerminal(to: session) }
-    }
-    .onDisappear { session.isTerminalVisible = false }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      BottomSheetView(directoryURL: workspace.url)
-    }
-    .toolbarBackgroundVisibility(presentation == "chat" ? .automatic : .hidden, for: .windowToolbar)
-    .toolbar {
-      if presentation == "chat" {
-        ToolbarItem(placement: .automatic) {
-          TaskModelMenu(
-            provider: thread.provider,
-            selection: modelSelection, models: integrations.models[thread.provider] ?? [],
-            perform: performModelAction, showsToolbarLabel: true
-          )
-          .disabled(integrations.models[thread.provider]?.isEmpty != false)
+    var body: some View {
+        ZStack {
+            if let session {
+                if session.isTerminalAttached {
+                    TaskTerminalView(session: session, terminals: app.terminals, acceptsInputFocus: showsTerminal)
+                        .scrollEdgeEffectHidden()
+                        .opacity(showsTerminal ? 1 : 0)
+                        .allowsHitTesting(showsTerminal)
+                        .accessibilityHidden(!showsTerminal)
+                } else if showsTerminal {
+                    if let error = session.terminalError {
+                        ContentUnavailableView {
+                            Label("Couldn’t Attach Terminal", systemImage: "terminal")
+                        } description: {
+                            Text(error)
+                        } actions: {
+                            Button("Retry") { Task { await app.terminals.attachTerminal(to: session) } }
+                        }
+                    } else {
+                        ProgressView("Attaching terminal…")
+                    }
+                }
+            }
+            if !showsTerminal {
+                SessionChatView(item: item, project: project)
+                    .id(item.id)
+            }
         }
-      }
-      ToolbarItem(placement: .automatic) {
-        Picker("Session View", selection: $presentation) {
-          Label("Chat", systemImage: "bubble.left").tag("chat")
-          Label("Terminal", systemImage: "terminal").tag("terminal")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: "\(task.id):\(showsTerminal)") {
+            session?.isTerminalVisible = showsTerminal
+            if showsTerminal, let session { await app.terminals.attachTerminal(to: session) }
         }
-        .pickerStyle(.segmented)
-        .labelStyle(.iconOnly)
-      }
-      ToolbarItem(placement: .navigation) {
-        Button("Scratch Pad", systemImage: "note.text") {
-          showingScratchPad = true
+        .onDisappear { session?.isTerminalVisible = false }
+        #if DEBUG
+        .onAppear {
+            // Development builds can open on the terminal with ATRIUM_DEBUG_PRESENTATION.
+            if let debug = ProcessInfo.processInfo.environment["ATRIUM_DEBUG_PRESENTATION"] { presentation = debug }
         }
-        .keyboardShortcut(".")
-      }
+        #endif
+        .task(id: task.hasUnreadResult) {
+            // Viewing a finished task reads it, on whichever host it's on.
+            if task.hasUnreadResult { item.host.send(.task(id: task.id, action: .viewed)) }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let project {
+                BottomSheetView(project: project, showsCollapsedHeader: showsTerminal)
+            }
+        }
+        .toolbarBackgroundVisibility(showsTerminal ? .hidden : .automatic, for: .windowToolbar)
+        .toolbar {
+            if !showsTerminal {
+                ToolbarItem {
+                    TaskModelMenu(
+                        provider: task.provider, selection: task.modelSelection, models: models,
+                        perform: { item.host.send(.task(id: task.id, action: $0)) }, showsToolbarLabel: true
+                    )
+                    .disabled(models.isEmpty)
+                }
+            }
+            if session != nil {
+                ToolbarItem {
+                    Picker("Session View", selection: $presentation) {
+                        Label("Chat", systemImage: "bubble.left").tag("chat")
+                        Label("Terminal", systemImage: "terminal").tag("terminal")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelStyle(.iconOnly)
+                }
+            }
+            if project != nil {
+                ToolbarItem(placement: .navigation) {
+                    Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
+                        .keyboardShortcut(".")
+                }
+            }
+        }
+        .sheet(isPresented: $showingScratchPad) {
+            if let workspaceID = task.workspaceID {
+                ScratchPadSheet(host: item.host, workspaceID: workspaceID)
+            }
+        }
+        .navigationTitle(String(task.title.prefix(50)))
+        .navigationSubtitle(subtitle)
+        .focusedSceneValue(\.editorPanel, project?.editor)
     }
-    .sheet(isPresented: $showingScratchPad) {
-      ScratchPadSheet(workspace: workspace)
-    }
-    .navigationTitle(String(session.thread.title.prefix(50)))
-    .navigationSubtitle(workspace.directory.replacing(NSHomeDirectory(), with: "~"))
-    .environment(workspace.editorPanel)
-    .environment(\.showInFileTree) { url in
-      workspace.inspectorState.revealInFileTree(url, relativeTo: workspace.url)
-    }
-  }
 
-  private func performModelAction(_ action: CompanionTaskAction) {
-    let service = CompanionTaskService(
-      integrations: integrations, sessions: sessions, workspaces: workspaces)
-    Task {
-      if case .failed(let message) = await service.perform(action, onTask: session.id) {
-        integrations.actionError = message
-      }
+    private var subtitle: String {
+        let directory = project?.workspace?.directory ?? task.directory
+        return item.host.isLocal ? directory : "\(item.host.name) · \(directory)"
     }
-  }
-
 }

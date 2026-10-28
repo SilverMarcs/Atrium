@@ -2,19 +2,18 @@ import SwiftUI
 
 /// Committing and remote operations for the selected repository.
 struct SourceControlActionsMenu: View {
-    @Environment(CompanionClient.self) private var client
-    let workspaceID: UUID
-    let status: WireGitStatus?
+    let source: SourceControl
     /// Asks for a message to commit the staged changes with.
     let onCommit: () -> Void
 
     var body: some View {
+        let status = source.status
         Menu {
-            Button("Push", systemImage: "arrow.up") { send(.push) }
+            Button("Push", systemImage: "arrow.up") { source.send(.push(branch: status?.branchName)) }
                 .disabled(status.map { $0.unpushedCommits.isEmpty && $0.hasTrackingBranch } ?? true)
-            Button("Pull", systemImage: "arrow.down") { send(.pull) }
+            Button("Pull", systemImage: "arrow.down") { source.send(.pull) }
                 .disabled(status?.hasTrackingBranch != true)
-            Button("Fetch", systemImage: "arrow.clockwise") { send(.fetch) }
+            Button("Fetch", systemImage: "arrow.clockwise") { source.send(.fetch) }
 
             Divider()
 
@@ -23,10 +22,7 @@ struct SourceControlActionsMenu: View {
         } label: {
             Label("Actions", systemImage: "point.topleft.down.curvedto.point.bottomright.up.fill")
         }
-        .disabled(status?.hasRepository != true)
+        .disabled(status == nil)
     }
 
-    private func send(_ action: CompanionGitAction) {
-        client.send(.git(workspaceID: workspaceID, action: action))
-    }
 }

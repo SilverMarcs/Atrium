@@ -1,7 +1,46 @@
 import SwiftUI
 
+/// What a diff window shows: a commit's, a stash's, or a branch comparison's
+/// changes, in a project on one of the hosts.
+struct GitCommitDiffSheetItem: Identifiable, Hashable, Codable {
+    let project: WorkspaceRef
+    let hash: String
+    let message: String
+    let repositoryRootURL: URL
+    /// When set, this represents a stash: its files and diffs come from the stash ref.
+    var stashIndex: Int?
+    /// When set, this compares the committed contents of two branches.
+    /// `hash` carries head; `message` carries the title text.
+    var range: GitBranchRange?
+
+    var id: String {
+        if let range { return "range:\(range.base)..\(range.head)" }
+        if let stashIndex { return "stash:\(stashIndex)" }
+        return hash
+    }
+
+    init(project: WorkspaceRef, hash: String, message: String, repositoryRootURL: URL, stashIndex: Int? = nil) {
+        self.project = project
+        self.hash = hash
+        self.message = message
+        self.repositoryRootURL = repositoryRootURL
+        self.stashIndex = stashIndex
+    }
+
+    init(project: WorkspaceRef, range: GitBranchRange, message: String, repositoryRootURL: URL) {
+        self.init(project: project, hash: range.head, message: message, repositoryRootURL: repositoryRootURL)
+        self.range = range
+    }
+}
+
+struct GitBranchRange: Hashable, Codable {
+    var base: String
+    var head: String
+}
+
 struct GitCommitDiffWindow: View {
     let item: GitCommitDiffSheetItem
+    @Environment(AppModel.self) private var app
     @State private var diffLoader = DiffLoadModel()
     @State private var files: [GitChangedFile] = []
     @State private var isLoading = false
@@ -47,8 +86,8 @@ struct GitCommitDiffWindow: View {
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 3000, max: 420)
         } detail: {
-            if let selection {
-                DiffBodyView(reference: reference(for: selection), loader: diffLoader)
+            if let selection, let project = app.project(item.project) {
+                DiffBodyView(reference: reference(for: selection), project: project, loader: diffLoader)
                     .navigationTitle(selection.fileURL.lastPathComponent)
                     .navigationSubtitle(selection.repositoryRelativePath)
             } else if !files.isEmpty {
@@ -69,7 +108,7 @@ struct GitCommitDiffWindow: View {
     @ViewBuilder
     private func fileRow(_ file: GitChangedFile) -> some View {
         HStack(spacing: 8) {
-            Image(nsImage: file.fileURL.fileIcon)
+            Image(nsImage: FileIcon.image(for: file.fileURL))
                 .resizable()
                 .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 2) {
@@ -106,21 +145,22 @@ struct GitCommitDiffWindow: View {
 
     private func load() async {
         loadError = nil
-        if let preloaded = item.preloadedFiles {
-            files = preloaded
-            selection = selection ?? preloaded.first
+        guard let project = app.project(item.project) else {
+            loadError = "This project’s host is no longer connected."
             return
         }
         isLoading = true
         defer { isLoading = false }
         do {
-            let loaded: [GitChangedFile]
-            if let range = item.range {
-                loaded = try await GitRepository.shared.changedFiles(base: range.base, head: range.head, at: item.repositoryRootURL)
+            let operation: GitOperation = if let range = item.range {
+                .rangeFiles(base: range.base, head: range.head)
             } else if let stashIndex = item.stashIndex {
-                loaded = try await GitRepository.shared.stashChangedFiles(index: stashIndex, at: item.repositoryRootURL)
+                .stashFiles(index: stashIndex)
             } else {
-                loaded = try await GitRepository.shared.changedFiles(forCommit: item.hash, at: item.repositoryRootURL)
+                .commitFiles(hash: item.hash)
+            }
+            guard case .files(let loaded) = try await project.git(operation, in: item.repositoryRootURL) else {
+                throw HostClientError.unexpectedReply
             }
             files = loaded
             selection = loaded.first

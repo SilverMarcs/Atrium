@@ -8,13 +8,13 @@ struct AssistantReply {
     let finalText: String?
 
     init(blocks: [TranscriptBlock]) {
-        let trailingText = blocks.reversed().prefix { $0.kind == .text }
+        let trailingText = blocks.reversed().prefix { $0.text != nil }
         if trailingText.isEmpty {
             steps = blocks
             finalText = nil
         } else {
             steps = Array(blocks.dropLast(trailingText.count))
-            finalText = trailingText.reversed().map(\.text).joined(separator: "\n\n")
+            finalText = trailingText.reversed().compactMap(\.text).joined(separator: "\n\n")
         }
     }
 }

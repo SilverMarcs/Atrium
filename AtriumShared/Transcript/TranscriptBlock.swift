@@ -1,24 +1,41 @@
 import Foundation
 
-nonisolated struct TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
-    enum Kind: String, Codable, Sendable {
-        /// Markdown written by the user or the agent.
-        case text
-        /// A tool the agent ran; `text` is a one-line summary such as the command or file.
-        case tool
+nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
+    /// Markdown written by the user or the agent.
+    case text(String, id: String)
+    /// A run of consecutive tool calls. Only how many there were is kept, so
+    /// long tasks stay small on the wire and in memory.
+    case tools(count: Int, id: String)
+
+    var id: String {
+        switch self {
+        case .text(_, let id), .tools(_, let id): id
+        }
     }
 
-    var id: String
-    var kind: Kind
-    var text: String
-    /// The tool's name, such as "Bash" or "Edit", for tool blocks.
-    var toolName: String?
-
-    static func text(_ text: String, id: String) -> TranscriptBlock {
-        TranscriptBlock(id: id, kind: .text, text: text)
+    /// The markdown of a text block.
+    var text: String? {
+        if case .text(let text, _) = self { text } else { nil }
     }
 
-    static func tool(_ name: String, summary: String, id: String) -> TranscriptBlock {
-        TranscriptBlock(id: id, kind: .tool, text: summary, toolName: name)
+    /// How many calls a tools block stands for.
+    var toolCount: Int {
+        if case .tools(let count, _) = self { count } else { 0 }
+    }
+
+    private enum TextCodingKeys: String, CodingKey {
+        case _0 = "text"
+        case id
+    }
+}
+
+nonisolated extension [TranscriptBlock] {
+    /// Counts a tool call into the run it continues, or starts a run after text.
+    mutating func appendToolCall(id: String) {
+        if case .tools(let count, let runID)? = last {
+            self[endIndex - 1] = .tools(count: count + 1, id: runID)
+        } else {
+            append(.tools(count: 1, id: id))
+        }
     }
 }

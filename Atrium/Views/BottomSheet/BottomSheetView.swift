@@ -1,22 +1,27 @@
 import SwiftUI
 
 struct BottomSheetView: View {
-    let directoryURL: URL
-    @Environment(EditorPanel.self) private var panel
+    let project: Project
+    let showsCollapsedHeader: Bool
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
     @State private var headerHeight: CGFloat = 30
+
+    private var panel: EditorPanel { project.editor }
 
     var body: some View {
         VStack(spacing: 0) {
             dragBorder
             content
         }
-        .frame(maxHeight: panel.isOpen ? panelHeight : headerHeight + 1, alignment: .top)
+        .frame(maxHeight: panel.isOpen ? panelHeight : (showsCollapsedHeader ? headerHeight + 1 : 0), alignment: .top)
         .clipped()
+        .allowsHitTesting(panel.isOpen || showsCollapsedHeader)
+        .accessibilityHidden(!panel.isOpen && !showsCollapsedHeader)
         .background(colorScheme == .dark ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.bar))
         .environment(\.editorFontSize, CGFloat(editorFontSize))
+        .environment(project.editor)
         .onPreferenceChange(PanelHeaderHeightKey.self) { headerHeight = $0 }
     }
 
@@ -42,9 +47,9 @@ struct BottomSheetView: View {
     private var content: some View {
         switch panel.content {
         case .file(let url):
-            FileEditorPanel(fileURL: url, directoryURL: directoryURL)
+            FileEditorPanel(fileURL: url, project: project)
         case .diff(let ref):
-            DiffPanel(reference: ref)
+            DiffPanel(reference: ref, project: project)
         case .none:
             PanelLayout {
                 // no title

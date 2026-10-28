@@ -11,8 +11,8 @@ struct SettingsView: View {
                 IntegrationsSettingsView()
             }
 
-            Tab("Companion", systemImage: "iphone") {
-                CompanionSettingsView()
+            Tab("Hosts", systemImage: "network") {
+                HostsSettingsView()
             }
 
             Tab("Updates", systemImage: "arrow.down.circle") {
@@ -27,17 +27,6 @@ struct SettingsView: View {
                 CreditsSettingsView()
             }
         }
-        .frame(width: 480, height: 460)
+        .frame(width: 480, height: 520)
     }
-}
-
-#Preview {
-    let integrations = AgentIntegrationStore(adapters: [])
-    let appState = AppState()
-    let workspaces = WorkspaceStore()
-    let sessions = TaskSessionController(integrations: integrations, appState: appState, workspaces: workspaces)
-    SettingsView()
-        .environment(UpdaterManager())
-        .environment(integrations)
-        .environment(CompanionServer(integrations: integrations, sessions: sessions, workspaces: workspaces))
 }

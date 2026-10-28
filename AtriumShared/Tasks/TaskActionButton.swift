@@ -9,13 +9,25 @@ struct TaskActionButton: View {
     let perform: (TaskMenuAction) -> Void
 
     var body: some View {
-        Button(title, systemImage: systemImage, role: role) { perform(action) }
+        Button(action.title, systemImage: action.systemImage, role: role) { perform(action) }
             .tint(tint)
             .disabled(!state.allowed.allows(action))
     }
 
-    private var title: String {
+    private var tint: Color? {
         switch action {
+        case .settle: .green
+        case .snooze: .indigo
+        case .markRead, .markUnread: .blue
+        case .delete: .red
+        case .restore, .unsnooze, .fork, .rename: nil
+        }
+    }
+}
+
+extension TaskMenuAction {
+    var title: String {
+        switch self {
         case .settle: "Settle Thread"
         case .restore: "Restore Thread"
         case .snooze: "Snooze for a Day"
@@ -28,8 +40,8 @@ struct TaskActionButton: View {
         }
     }
 
-    private var systemImage: String {
-        switch action {
+    var systemImage: String {
+        switch self {
         case .settle: "checkmark"
         case .restore: "arrow.uturn.backward"
         case .snooze: "moon.zzz"
@@ -39,16 +51,6 @@ struct TaskActionButton: View {
         case .markRead: "envelope.open"
         case .markUnread: "envelope.badge"
         case .delete: "trash"
-        }
-    }
-
-    private var tint: Color? {
-        switch action {
-        case .settle: .green
-        case .snooze: .indigo
-        case .markRead, .markUnread: .blue
-        case .delete: .red
-        case .restore, .unsnooze, .fork, .rename: nil
         }
     }
 }

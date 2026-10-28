@@ -8,7 +8,7 @@ struct GitCommitLogSheet: View {
     @State private var entries: [GitLogEntry] = []
     @State private var isLoading = true
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     var body: some View {
         NavigationStack {
@@ -49,10 +49,10 @@ struct GitCommitLogSheet: View {
     private func openDiffs(for entry: GitLogEntry) {
         guard let snapshot else { return }
         openWindow(value: GitCommitDiffSheetItem(
+            project: state.project.id,
             hash: entry.hash,
             message: entry.subject,
-            repositoryRootURL: snapshot.repositoryRootURL,
-            preloadedFiles: nil
+            repositoryRootURL: snapshot.repositoryRootURL
         ))
         dismiss()
     }

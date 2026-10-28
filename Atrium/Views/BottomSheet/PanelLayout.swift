@@ -16,7 +16,7 @@ struct PanelHeaderHeightKey: PreferenceKey {
 /// buttons, the separator, and the trailing toggle button.
 struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     @Environment(EditorPanel.self) private var panel
-    @Environment(AppState.self) private var appState
+    @Environment(AppModel.self) private var app
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
 
@@ -76,11 +76,11 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         if isFocusMode {
-                            appState.sidebarVisibility = .automatic
-                            appState.showingInspector = true
+                            app.sidebarVisibility = .automatic
+                            app.showingInspector = true
                         } else {
-                            appState.sidebarVisibility = .detailOnly
-                            appState.showingInspector = false
+                            app.sidebarVisibility = .detailOnly
+                            app.showingInspector = false
                         }
                     }
                 } label: {
@@ -110,7 +110,7 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     }
 
     private var isFocusMode: Bool {
-        appState.sidebarVisibility == .detailOnly && !appState.showingInspector
+        app.sidebarVisibility == .detailOnly && !app.showingInspector
     }
 
     @State private var dragStartHeight: Double?

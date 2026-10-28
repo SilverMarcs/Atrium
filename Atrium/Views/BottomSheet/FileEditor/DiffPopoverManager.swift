@@ -6,7 +6,7 @@ enum DiffPopoverPresenter {
         for hunk: GutterDiffHunk,
         at point: NSPoint,
         in textView: EditorTextView,
-        repositoryRootURL: URL?,
+        hunkTarget: HunkTarget?,
         onReload: (() async -> Void)?
     ) {
         let gutterWidth = EditorTextViewConstants.gutterWidth
@@ -90,16 +90,11 @@ enum DiffPopoverPresenter {
                 addedCount: addedCount,
                 removedCount: removedCount,
                 stage: hunk.stage,
-                onDiscard: repositoryRootURL.map { rootURL in
+                onDiscard: hunkTarget.map { target in
                     {
                         Task {
                             do {
-                                try await GitRepository.shared.applyPatch(
-                                    hunk.patchText,
-                                    reverse: true,
-                                    cached: false,
-                                    at: rootURL
-                                )
+                                try await target.apply(hunk.patchText, reverse: true, cached: false)
                                 await onReload?()
                             } catch {
                                 await DiffPopoverPresenter.showError("Discard failed: \(error.localizedDescription)")
@@ -108,16 +103,11 @@ enum DiffPopoverPresenter {
                         }
                     }
                 },
-                onUnstage: repositoryRootURL.map { rootURL in
+                onUnstage: hunkTarget.map { target in
                     {
                         Task {
                             do {
-                                try await GitRepository.shared.applyPatch(
-                                    hunk.patchText,
-                                    reverse: true,
-                                    cached: true,
-                                    at: rootURL
-                                )
+                                try await target.apply(hunk.patchText, reverse: true, cached: true)
                                 await onReload?()
                             } catch {
                                 await DiffPopoverPresenter.showError("Unstage failed: \(error.localizedDescription)")
@@ -126,16 +116,11 @@ enum DiffPopoverPresenter {
                         }
                     }
                 },
-                onStage: repositoryRootURL.map { rootURL in
+                onStage: hunkTarget.map { target in
                     {
                         Task {
                             do {
-                                try await GitRepository.shared.applyPatch(
-                                    hunk.patchText,
-                                    reverse: false,
-                                    cached: true,
-                                    at: rootURL
-                                )
+                                try await target.apply(hunk.patchText, reverse: false, cached: true)
                                 await onReload?()
                             } catch {
                                 await DiffPopoverPresenter.showError("Stage failed: \(error.localizedDescription)")

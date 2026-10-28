@@ -9,7 +9,7 @@ struct TranscriptMessageRow: View {
         switch message.role {
         case .user:
             UserMessageView(
-                text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
+                text: message.blocks.compactMap(\.text).joined(separator: "\n"),
                 images: message.images ?? [],
                 sendFlight: { [id = message.id] in $0.flight(forConfirmed: id) }
             )

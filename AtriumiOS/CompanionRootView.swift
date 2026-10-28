@@ -1,42 +1,34 @@
 import SwiftUI
 
 struct CompanionRootView: View {
-    @Environment(CompanionClient.self) private var client
+    @Environment(HostDirectory.self) private var hosts
     @State private var dictationSettings = DictationSettings()
-    @State private var selectedTaskID: String?
-    @State private var navigationHostID: String?
+    @State private var selectedTask: TaskRef?
     /// The task the detail column keeps showing once going back on iPhone has
-    /// cleared the selection. See `detailTaskID`.
-    @State private var lastSelectedTaskID: String?
+    /// cleared the selection. See `detailTask`.
+    @State private var lastSelectedTask: TaskRef?
     @State private var detailPath: [Route] = []
     @State private var showingHosts = false
 
     var body: some View {
         Group {
-            if client.isPaired {
+            if !hosts.hosts.isEmpty {
                 // Tasks in the sidebar and the selected task in the detail column on
                 // iPad; on iPhone the split view collapses into a single stack.
                 NavigationSplitView {
-                    TasksScreen(selection: $selectedTaskID) { showingHosts = true }
+                    TasksScreen(selection: $selectedTask) { showingHosts = true }
                         .navigationSplitViewColumnWidth(min: 300, ideal: 340)
                 } detail: {
                     NavigationStack(path: $detailPath) {
                         Group {
-                            if let detailTaskID {
-                                TaskDetailScreen(taskID: detailTaskID)
+                            if let detailTask {
+                                TaskDetailScreen(ref: detailTask)
                             } else {
                                 ContentUnavailableView("No Task Selected", systemImage: "sidebar.left")
                             }
                         }
                         .navigationDestination(for: Route.self) { route in
-                            switch route {
-                            case .sourceControl(let workspaceID):
-                                SourceControlScreen(workspaceID: workspaceID)
-                            case .fileDiff(let workspaceID, let file, let isStaged):
-                                FileDiffScreen(workspaceID: workspaceID, file: file, isStaged: isStaged)
-                            case .commands(let workspaceID):
-                                CommandsScreen(workspaceID: workspaceID)
-                            }
+                            RouteDestination(route: route)
                         }
                     }
                 }
@@ -47,32 +39,26 @@ struct CompanionRootView: View {
             }
         }
         .environment(dictationSettings)
-        .onOpenURL { url in client.handle(url) }
-        .task(id: client.isPaired) {
-            guard client.isPaired else { return }
-            await client.follow(.tasks)
-        }
-        .onChange(of: selectedTaskID) { _, id in
-            if let id {
-                // A draft is forgotten once another task opens. Going back on
-                // iPhone keeps it, since its screen stays in the detail column.
-                if let lastSelectedTaskID, lastSelectedTaskID != id { client.closeDraft(lastSelectedTaskID) }
-                lastSelectedTaskID = id
-            }
+        .onOpenURL { url in hosts.handle(url) }
+        .onChange(of: selectedTask) { _, ref in
+            if let ref { lastSelectedTask = ref }
             detailPath = []
         }
-        .onChange(of: [client.currentHost?.id, client.pendingTaskID], initial: true) {
-            if navigationHostID != client.currentHost?.id {
-                navigationHostID = client.currentHost?.id
-                selectedTaskID = nil
-                lastSelectedTaskID = nil
-                detailPath = []
+        .onChange(of: hosts.pendingTask, initial: true) { _, ref in
+            guard let ref else { return }
+            selectedTask = ref
+            detailPath = []
+            hosts.pendingTask = nil
+            #if DEBUG
+            if let route = Route.debugLaunch(for: ref, in: hosts) {
+                // After the selection change has reset the path.
+                Task { detailPath = [route] }
             }
-            if let id = client.pendingTaskID {
-                selectedTaskID = id
-                detailPath = []
-                client.pendingTaskID = nil
-            }
+            #endif
+        }
+        .onChange(of: hosts.hosts.map(\.id)) { _, ids in
+            if let selected = selectedTask, !ids.contains(selected.hostID) { selectedTask = nil }
+            if let last = lastSelectedTask, !ids.contains(last.hostID) { lastSelectedTask = nil }
         }
         .sheet(isPresented: $showingHosts) {
             HostsSheet()
@@ -80,11 +66,11 @@ struct CompanionRootView: View {
         }
         .alert(
             "Couldn’t Complete Action",
-            isPresented: Binding(get: { client.actionError != nil }, set: { if !$0 { client.actionError = nil } })
+            isPresented: Binding(get: { hosts.actionError != nil }, set: { if !$0 { hosts.actionError = nil } })
         ) {
-            Button("OK") { client.actionError = nil }
+            Button("OK") { hosts.actionError = nil }
         } message: {
-            Text(client.actionError ?? "")
+            Text(hosts.actionError ?? "")
         }
     }
 
@@ -95,7 +81,32 @@ struct CompanionRootView: View {
     /// run twice (subscribing, unsubscribing and resubscribing to the
     /// transcript, and marking it read twice) and its search-field composer is
     /// installed twice, bouncing the bottom bar.
-    private var detailTaskID: String? {
-        selectedTaskID ?? lastSelectedTaskID
+    private var detailTask: TaskRef? {
+        selectedTask ?? lastSelectedTask
+    }
+}
+
+/// The screen a route pushes, in its project on its host.
+private struct RouteDestination: View {
+    @Environment(HostDirectory.self) private var hosts
+    let route: Route
+
+    var body: some View {
+        switch route {
+        case .sourceControl(let ref):
+            if let host = hosts.host(ref.hostID) { SourceControlScreen(host: host, workspaceID: ref.workspaceID) }
+        case .fileDiff(let ref, let file, let repository, let isStaged):
+            if let host = hosts.host(ref.hostID) {
+                FileDiffScreen(host: host, workspaceID: ref.workspaceID, file: file, repository: repository, isStaged: isStaged)
+            }
+        case .commands(let ref):
+            if let host = hosts.host(ref.hostID) { CommandsScreen(host: host, workspaceID: ref.workspaceID) }
+        case .files(let ref, let folder):
+            if let host = hosts.host(ref.hostID) { FilesScreen(host: host, workspaceID: ref.workspaceID, folder: folder) }
+        case .file(let ref, let path, let line):
+            if let host = hosts.host(ref.hostID) { FilePreviewScreen(host: host, workspaceID: ref.workspaceID, path: path, line: line) }
+        case .search(let ref):
+            if let host = hosts.host(ref.hostID) { SearchScreen(host: host, workspaceID: ref.workspaceID) }
+        }
     }
 }

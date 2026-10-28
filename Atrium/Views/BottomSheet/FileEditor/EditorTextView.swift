@@ -33,7 +33,7 @@ final class EditorTextView: NSTextView {
     var diffLineNumbers: [Int: GitDiffLineNumbers] = [:]
     var isDiffMode: Bool { !diffLineKinds.isEmpty }
     var diffGutterClickHandler: ((Int, NSPoint) -> Void)?
-    var repositoryRootURL: URL?
+    var hunkTarget: HunkTarget?
     var gutterDiffReloadHandler: (() async -> Void)?
     var saveHandler: (() -> Void)?
 
@@ -1051,7 +1051,7 @@ final class EditorTextView: NSTextView {
             for: hunk,
             at: localPoint,
             in: self,
-            repositoryRootURL: repositoryRootURL,
+            hunkTarget: hunkTarget,
             onReload: gutterDiffReloadHandler
         )
     }

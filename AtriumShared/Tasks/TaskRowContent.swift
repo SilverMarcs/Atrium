@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// A sidebar row, shared by the Mac and the companion: the title and status,
-/// then the project, any snooze time, and the agent, grayed out once its
-/// session has ended.
+/// A task list row, shared by every client: the title and status, then the
+/// project and, when several hosts are listed, the host it's on, any snooze
+/// time, and the agent, grayed out once its session has ended.
 struct TaskRowContent<ProjectIcon: View>: View {
     let title: String
     let projectName: String
+    var hostName: String? = nil
     let provider: AgentProvider
     let status: AgentThreadStatus
     let hasUnreadResult: Bool
@@ -29,6 +30,11 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 projectIcon
                 Text(projectName)
                     .lineLimit(1)
+                if let hostName {
+                    Text(hostName)
+                        .lineLimit(1)
+                        .foregroundStyle(.tertiary)
+                }
 
                 Spacer(minLength: 0)
 

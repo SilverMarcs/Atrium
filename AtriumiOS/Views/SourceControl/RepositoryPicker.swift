@@ -2,21 +2,15 @@ import SwiftUI
 
 /// Repositories in the project, grouped under the branch each has checked out.
 struct RepositoryPicker: View {
-    let status: WireGitStatus
-    let onSelect: (String) -> Void
+    let repositories: [GitRepositoryStatus]
+    @Binding var selection: URL
 
     var body: some View {
-        Picker("Repository", selection: Binding(
-            get: { status.selectedRepositoryPath ?? "" },
-            set: { path in
-                guard !path.isEmpty, path != status.selectedRepositoryPath else { return }
-                onSelect(path)
-            }
-        )) {
+        Picker("Repository", selection: $selection) {
             ForEach(groups, id: \.branch) { group in
                 Section(group.branch) {
-                    ForEach(group.repositories) { repository in
-                        Text(repository.name).tag(repository.path)
+                    ForEach(group.repositories, id: \.mainRepositoryURL) { repository in
+                        Text(repository.name).tag(repository.mainRepositoryURL)
                     }
                 }
             }
@@ -24,10 +18,10 @@ struct RepositoryPicker: View {
     }
 
     /// Branches keep first-seen order so the menu stays stable across refreshes.
-    private var groups: [(branch: String, repositories: [WireGitRepository])] {
+    private var groups: [(branch: String, repositories: [GitRepositoryStatus])] {
         var order: [String] = []
-        var buckets: [String: [WireGitRepository]] = [:]
-        for repository in status.repositories {
+        var buckets: [String: [GitRepositoryStatus]] = [:]
+        for repository in repositories {
             let branch = repository.branchName ?? "—"
             if buckets[branch] == nil { order.append(branch) }
             buckets[branch, default: []].append(repository)

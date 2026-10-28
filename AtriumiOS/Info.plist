@@ -41,6 +41,12 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_atrium._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Atrium connects directly to your Macs on the same network instead of going through the relay.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

@@ -2,10 +2,9 @@ import AppKit
 import SwiftUI
 
 struct GitInspectorBranchBar: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -86,7 +85,7 @@ struct GitInspectorBranchBar: View {
             .disabled(snapshot?.isDirty != true)
 
             Button {
-                state.applyLatestStash(directoryURL: directoryURL)
+                state.applyLatestStash()
             } label: {
                 Label("Apply Latest Stash", systemImage: "tray.and.arrow.up")
             }
@@ -108,7 +107,7 @@ struct GitInspectorBranchBar: View {
             .disabled((snapshot?.localBranches.count ?? 0) < 2)
 
             Button {
-                state.syncWithRemote(directoryURL: directoryURL)
+                state.syncWithRemote()
             } label: {
                 Label("Sync with Remote", systemImage: "arrow.2.squarepath")
             }
@@ -133,7 +132,7 @@ struct GitInspectorBranchBar: View {
             Divider()
 
             Button {
-                state.fetch(directoryURL: directoryURL)
+                state.fetch()
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
@@ -150,7 +149,7 @@ struct GitInspectorBranchBar: View {
     /// Branches listed under "Branches": all local branches except those checked out
     /// in a linked worktree (each of those is represented by its worktree entry). Pure
     /// function of the branch/worktree lists — identical no matter which is in view.
-    private func branchNames(in snapshot: GitRepositoryStatusSnapshot) -> [String] {
+    private func branchNames(in snapshot: GitRepositoryStatus) -> [String] {
         let linked = linkedWorktrees(in: snapshot)
         return snapshot.localBranches.filter { branch in
             !linked.contains { $0.branch == branch }
@@ -159,14 +158,14 @@ struct GitInspectorBranchBar: View {
 
     /// The linked worktrees (everything that isn't the primary or a bare entry). Does
     /// not depend on the current selection, so the list stays stable across switches.
-    private func linkedWorktrees(in snapshot: GitRepositoryStatusSnapshot) -> [GitWorktreeInfo] {
+    private func linkedWorktrees(in snapshot: GitRepositoryStatus) -> [GitWorktreeInfo] {
         snapshot.worktrees.filter { !$0.isMain && !$0.isBare }
     }
 
     /// Where the checkmark sits and what a selection does. Only this — not the list —
     /// reflects the current context: a linked worktree checkmarks in Worktrees, any
     /// other branch (including the main worktree's) checkmarks in Branches.
-    private func contextSelection(_ snapshot: GitRepositoryStatusSnapshot) -> Binding<GitContextItem> {
+    private func contextSelection(_ snapshot: GitRepositoryStatus) -> Binding<GitContextItem> {
         Binding(
             get: {
                 if let current = snapshot.worktrees.first(where: { $0.isCurrent }), !current.isMain {
@@ -181,7 +180,7 @@ struct GitInspectorBranchBar: View {
                     if let worktree = snapshot.worktrees.first(where: { $0.branch == branch }) {
                         state.activateWorktree(worktree, in: snapshot)
                     } else {
-                        state.switchBranch(to: branch, directoryURL: directoryURL, snapshot: snapshot)
+                        state.switchBranch(to: branch, snapshot: snapshot)
                     }
                 case .worktree(let path):
                     guard let worktree = snapshot.worktrees.first(where: { $0.path == path }),
@@ -246,7 +245,6 @@ private func pullRequestWebURL(remoteURL: String, branch: String) -> URL? {
 }
 
 struct SyncWithBranchSheet: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
     @State private var selectedBranch: String?
 
@@ -271,7 +269,7 @@ struct SyncWithBranchSheet: View {
                     Button("Sync") {
                         if let branch = selectedBranch {
                             state.showSyncWithBranchSheet = false
-                            state.syncWithBranch(branch, directoryURL: directoryURL)
+                            state.syncWithBranch(branch)
                         }
                     }
                     .disabled(selectedBranch == nil)

@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct GitStashListSheet: View {
-    let directoryURL: URL
     @Bindable var state: GitInspectorState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var stashes: [GitStashEntry] = []
     @State private var isLoading = true
 
-    private var snapshot: GitRepositoryStatusSnapshot? { state.currentSnapshot }
+    private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     var body: some View {
         NavigationStack {
@@ -87,10 +86,10 @@ struct GitStashListSheet: View {
     private func openDiffs(for entry: GitStashEntry) {
         guard let snapshot else { return }
         openWindow(value: GitCommitDiffSheetItem(
+            project: state.project.id,
             hash: entry.hash,
             message: entry.message,
             repositoryRootURL: snapshot.repositoryRootURL,
-            preloadedFiles: nil,
             stashIndex: entry.index
         ))
         dismiss()
@@ -99,9 +98,8 @@ struct GitStashListSheet: View {
     private func drop(_ entry: GitStashEntry) {
         guard let snapshot else { return }
         Task {
-            _ = await state.model.dropStash(index: entry.index, snapshot: snapshot)
+            await state.model.dropStash(index: entry.index, snapshot: snapshot)
             await load()
-            await state.refresh(directoryURL: directoryURL)
         }
     }
 
@@ -109,7 +107,6 @@ struct GitStashListSheet: View {
         guard let snapshot else { return }
         Task {
             await state.model.applyStash(index: entry.index, snapshot: snapshot)
-            await state.refresh(directoryURL: directoryURL)
         }
     }
 

@@ -3,7 +3,7 @@ import SwiftUI
 /// Pairing happens through the host's QR code: scanning it with the Camera opens
 /// the app with the link, or the link can be pasted here.
 struct PairingScreen: View {
-    @Environment(CompanionClient.self) private var client
+    @Environment(HostDirectory.self) private var hosts
 
     @State private var pairingLink = ""
     @State private var showsScanner = false
@@ -12,7 +12,7 @@ struct PairingScreen: View {
         Form {
             Section {
                 Label {
-                    Text("Open Atrium → Settings → Companion on your host and turn on the iPhone companion.")
+                    Text("Open Atrium → Settings → Hosts on your Mac and turn on remote access.")
                 } icon: {
                     Image(systemName: "macbook")
                 }
@@ -41,7 +41,7 @@ struct PairingScreen: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .disabled(client.isPairing)
+                    .disabled((hosts.pairing != nil))
                     .onChange(of: pairingLink) { pairWithEnteredLink() }
             }
 
@@ -54,13 +54,13 @@ struct PairingScreen: View {
                 Button("Scan QR Code", systemImage: "qrcode.viewfinder") {
                     showsScanner = true
                 }
-                .disabled(client.isPairing)
+                .disabled((hosts.pairing != nil))
             }
         }
         .sheet(isPresented: $showsScanner) {
             PairingScannerSheet { link in
                 showsScanner = false
-                client.pair(with: link)
+                hosts.pair(with: link)
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -68,9 +68,9 @@ struct PairingScreen: View {
     }
 
     private func pairWithEnteredLink() {
-        guard !client.isPairing,
+        guard !(hosts.pairing != nil),
               let url = URL(string: pairingLink.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let link = CompanionPairingLink(url: url) else { return }
-        client.pair(with: link)
+              let link = PairingLink(url: url) else { return }
+        hosts.pair(with: link)
     }
 }

@@ -12,7 +12,7 @@ struct SessionChatComposer: View {
   let send: () -> Void
   let interrupt: () -> Void
   var noteSourceFrame: (CGRect) -> Void = { _ in }
-  @Environment(AppState.self) private var appState
+  @Environment(AppModel.self) private var app
   @FocusState private var isFocused: Bool
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
@@ -102,7 +102,7 @@ struct SessionChatComposer: View {
           .keyboardShortcut("l", modifiers: .command)
       }
     }
-    .task(id: appState.selectedThreadID) {
+    .task(id: app.selection) {
       await Task.yield()
       guard !Task.isCancelled else { return }
       isFocused = true

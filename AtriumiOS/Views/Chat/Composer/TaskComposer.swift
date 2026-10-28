@@ -58,8 +58,7 @@ final class TaskComposer {
     /// - Returns: Whether the prompt was sent.
     @discardableResult
     func submit(
-        to task: WireTask,
-        using client: CompanionClient,
+        to item: HostTask,
         animator: PromptSendAnimator,
         from sourceFrame: CGRect? = nil
     ) -> Bool {
@@ -70,31 +69,27 @@ final class TaskComposer {
             Task {
                 defer { isSubmittingDictation = false }
                 guard await dictation.finish(session: session),
-                      let currentTask = client.task(task.id) ?? client.draftTask(task.id) else { return }
-                _ = sendDraft(to: currentTask, using: client, animator: animator, from: sourceFrame)
+                      let current = item.host.displayedTask(item.task.id) else { return }
+                _ = sendDraft(to: HostTask(host: item.host, task: current), animator: animator, from: sourceFrame)
             }
             return false
         }
-        return sendDraft(to: task, using: client, animator: animator, from: sourceFrame)
+        return sendDraft(to: item, animator: animator, from: sourceFrame)
     }
 
-    private func sendDraft(
-        to task: WireTask,
-        using client: CompanionClient,
-        animator: PromptSendAnimator,
-        from sourceFrame: CGRect?
-    ) -> Bool {
+    private func sendDraft(to item: HostTask, animator: PromptSendAnimator, from sourceFrame: CGRect?) -> Bool {
         guard hasContent else { return false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let task = item.task
         guard task.actions.contains(.prompt) else {
-            client.actionError = task.status == .waiting
+            item.host.actionError = task.status == .waiting
                 ? "\(task.provider.name) is waiting for an answer. Reply on your host."
                 : "\(task.provider.name) can’t take a prompt right now."
             return false
         }
         let animationSource = sourceFrame ?? animator.sourceFrame?()
         draft = ""
-        let promptID = client.sendPrompt(text, images: images.map(\.data), to: task.id)
+        let promptID = item.host.sendPrompt(text, images: images.map(\.data), to: task.id)
         animator.begin(promptID, text: text, from: animationSource)
         images = []
         return true

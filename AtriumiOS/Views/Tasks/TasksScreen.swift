@@ -1,27 +1,27 @@
 import SwiftUI
 
-/// The host sidebar on iPhone: active tasks, then collapsible Snoozed and
-/// Settled sections. The filter shows a single section instead.
+/// Every connected host's tasks in one list: active tasks, then collapsible
+/// Snoozed and Settled sections. The filter shows a single section instead,
+/// and the title menu narrows the list to one host.
 struct TasksScreen: View {
-    @Environment(CompanionClient.self) private var client
-    @Binding var selection: String?
+    @Environment(HostDirectory.self) private var hosts
+    @Binding var selection: TaskRef?
     let onEditHosts: () -> Void
     @State private var searchText = ""
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
     @State private var isSettledExpanded = false
     @State private var showingNewTask = false
-    @State private var taskToRename: WireTask?
-    @State private var taskToDelete: WireTask?
+    @State private var taskToRename: HostTask?
+    @State private var taskToDelete: HostTask?
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
-        let sections = TaskSections(
-            tasks: client.tasks?.tasks ?? [],
-            workspaces: client.tasks?.workspaces ?? [],
-            query: searchText
-        )
+        let tasks = hosts.tasks.filter { item in
+            TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.workspace?.name, item.host.name)
+        }
+        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.snoozedUntil != nil })
         let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
 
         // The same sections are always declared and only shown or hidden, so
@@ -44,15 +44,25 @@ struct TasksScreen: View {
         .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id)])
         .animation(.default, value: filter)
         .refreshable {
-            if client.isConnected { await client.perform(.refreshTasks) } else { client.retryNow() }
+            await withDiscardingTaskGroup { group in
+                for host in hosts.visibleHosts {
+                    if host.isConnected {
+                        group.addTask { await host.perform(.refreshTasks) }
+                    } else {
+                        host.retryNow()
+                    }
+                }
+            }
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search tasks")
         .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .navigationTitle(client.pairedHostName ?? "Tasks")
-        .modifier(ConnectionStatusSubtitle())
+        .navigationTitle(hosts.filterTitle)
+        .modifier(ConnectionStatusSubtitle(hosts: hosts.visibleHosts))
         .navigationBarTitleDisplayMode(.inline)
         .toolbarTitleMenu {
-            HostSwitcherMenuItems(onEdit: onEditHosts)
+            HostFilterPicker(hosts: hosts)
+            Divider()
+            Button("Edit Hosts…", systemImage: "pencil", action: onEditHosts)
         }
         .toolbar {
             // iPad leaves out the filter and starts tasks from the top bar.
@@ -62,30 +72,30 @@ struct TasksScreen: View {
                 }
             } else {
                 ToolbarItem(placement: .topBarLeading) {
-                    NewTaskButton(action: { showingNewTask = true }, openProject: { openDraft(in: $0) })
+                    NewTaskButton { showingNewTask = true }
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             if isPhone {
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    NewTaskButton(action: { showingNewTask = true }, openProject: { openDraft(in: $0) })
+                    NewTaskButton { showingNewTask = true }
                 }
             }
         }
         .overlay {
-            TasksPlaceholder(isLoaded: client.tasks != nil, isSearching: isSearching, isEmpty: visibleTasksAreEmpty(sections))
+            TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching, isEmpty: visibleTasksAreEmpty(sections))
         }
         .sheet(isPresented: $showingNewTask) {
-            NewTaskSheet { openDraft(in: $0, provider: $1) }
+            NewTaskSheet { hosts.openDraft(in: $0) }
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
     }
 
     /// Searching, or filtering to this section alone, keeps it expanded, as the
-    /// host sidebar does while searching.
+    /// Mac's sidebar does while searching.
     @ViewBuilder
-    private func collapsibleSection(_ title: String, tasks: [WireTask], isExpanded: Binding<Bool>, isSearching: Bool) -> some View {
+    private func collapsibleSection(_ title: String, tasks: [HostTask], isExpanded: Binding<Bool>, isSearching: Bool) -> some View {
         if !tasks.isEmpty {
             let isForcedOpen = isSearching || filter != .all
             Section(title, isExpanded: Binding(
@@ -97,33 +107,26 @@ struct TasksScreen: View {
         }
     }
 
-    private func rows(_ tasks: [WireTask]) -> some View {
-        ForEach(tasks) { task in
-            TaskRow(task: task)
-                .tag(task.id)
-            .contextMenu {
-                TaskContextMenu(state: task.menuState) { perform($0, on: task) }
-            }
-            .taskSwipeActions(task.menuState) { perform($0, on: task) }
+    private func rows(_ tasks: [HostTask]) -> some View {
+        ForEach(tasks) { item in
+            TaskRow(item: item, showsHost: hosts.showsHostNames)
+                .tag(item.id)
+                .contextMenu {
+                    TaskContextMenu(state: item.task.menuState) { perform($0, on: item) }
+                }
+                .taskSwipeActions(item.task.menuState) { perform($0, on: item) }
         }
     }
 
-    /// Opens a new task as a draft, which the host creates once its first
-    /// prompt is sent.
-    private func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil) {
-        guard let id = client.openDraft(in: workspaceID, provider: provider) else { return }
-        selection = id
-    }
-
-    private func perform(_ action: TaskMenuAction, on task: WireTask) {
+    private func perform(_ action: TaskMenuAction, on item: HostTask) {
         switch action {
-        case .rename: taskToRename = task
-        case .delete: taskToDelete = task
-        default: client.perform(action, on: task)
+        case .rename: taskToRename = item
+        case .delete: taskToDelete = item
+        default: item.host.perform(action, on: item.task)
         }
     }
 
-    private func visibleTasksAreEmpty(_ sections: TaskSections<WireTask>) -> Bool {
+    private func visibleTasksAreEmpty(_ sections: TaskSections<HostTask>) -> Bool {
         switch filter {
         case .all: sections.isEmpty
         case .active: sections.active.isEmpty

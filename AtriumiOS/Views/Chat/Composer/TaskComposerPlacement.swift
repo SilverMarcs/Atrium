@@ -4,7 +4,7 @@ import SwiftUI
 /// iPhone, and the inline input bar along the bottom edge on iPad.
 struct TaskComposerPlacement: ViewModifier {
     let composer: TaskComposer
-    let task: WireTask?
+    let item: HostTask?
     let prompt: String
     /// Sends the draft from the field at the given frame, if known, returning
     /// whether it was sent.
@@ -17,7 +17,7 @@ struct TaskComposerPlacement: ViewModifier {
         } else {
             content
                 .safeAreaBar(edge: .bottom, spacing: 0) {
-                    TaskInputBar(task: task, prompt: prompt, submit: submit)
+                    TaskInputBar(item: item, prompt: prompt, submit: submit)
                 }
         }
     }
@@ -25,7 +25,7 @@ struct TaskComposerPlacement: ViewModifier {
 
 extension View {
     /// Adds the task's prompt composer where the device shows it.
-    func taskComposer(_ composer: TaskComposer, task: WireTask?, prompt: String, submit: @escaping (CGRect?) -> Bool) -> some View {
-        modifier(TaskComposerPlacement(composer: composer, task: task, prompt: prompt, submit: submit))
+    func taskComposer(_ composer: TaskComposer, item: HostTask?, prompt: String, submit: @escaping (CGRect?) -> Bool) -> some View {
+        modifier(TaskComposerPlacement(composer: composer, item: item, prompt: prompt, submit: submit))
     }
 }

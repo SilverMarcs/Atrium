@@ -2,15 +2,14 @@ import SwiftUI
 
 /// A changed file: opens its diff, swipes to stage, unstage or discard.
 struct SourceControlFileRow: View {
-    @Environment(CompanionClient.self) private var client
-    let workspaceID: UUID
-    let file: WireGitFile
+    let source: SourceControl
+    let file: GitChangedFile
     let isStaged: Bool
     /// The screen confirms discards; staged rows can't be discarded.
     let onDiscard: (() -> Void)?
 
     var body: some View {
-        NavigationLink(value: Route.fileDiff(workspaceID: workspaceID, file: file, isStaged: isStaged)) {
+        NavigationLink(value: Route.fileDiff(source.workspace, file: file, repository: source.status?.repositoryRootURL ?? file.fileURL, isStaged: isStaged)) {
             Label {
                 Text(file.name)
                     .lineLimit(1)
@@ -26,12 +25,12 @@ struct SourceControlFileRow: View {
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if isStaged {
                 Button("Unstage", systemImage: "tray.and.arrow.up") {
-                    client.send(.git(workspaceID: workspaceID, action: .unstage(paths: [file.path])))
+                    source.send(.unstage(paths: [file.repositoryRelativePath]))
                 }
                 .tint(.orange)
             } else {
                 Button("Stage", systemImage: "tray.and.arrow.down") {
-                    client.send(.git(workspaceID: workspaceID, action: .stage(paths: [file.path])))
+                    source.send(.stage(paths: [file.repositoryRelativePath]))
                 }
                 .tint(.green)
             }
@@ -45,7 +44,7 @@ struct SourceControlFileRow: View {
     }
 
     private var parent: String? {
-        let directory = (file.path as NSString).deletingLastPathComponent
+        let directory = (file.repositoryRelativePath as NSString).deletingLastPathComponent
         return directory.isEmpty ? nil : directory
     }
 }

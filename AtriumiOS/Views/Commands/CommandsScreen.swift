@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// A remote control for the project's saved commands on the host. Output stays
+/// A remote control for the project's saved commands on its host. Output stays
 /// in the host's Commands inspector.
 struct CommandsScreen: View {
-    @Environment(CompanionClient.self) private var client
+    let host: HostClient
     let workspaceID: UUID
 
-    private var commands: [WireCommand]? { client.commands[workspaceID] }
+    private var commands: [WireCommand]? { host.commands[workspaceID] }
 
     var body: some View {
         List(commands ?? []) { command in
-            CommandRow(workspaceID: workspaceID, command: command)
+            CommandRow(command: command) {
+                host.send(.command(workspaceID: workspaceID, commandID: command.id, action: command.isRunning ? .stop : .run))
+            }
         }
         .contentMargins(.top, 10)
         .overlay {
@@ -21,14 +23,14 @@ struct CommandsScreen: View {
                 ContentUnavailableView(
                     "No Commands",
                     systemImage: "terminal",
-                    description: Text("Add commands in the Commands inspector on your host.")
+                    description: Text("Add commands in the Commands inspector on \(host.name).")
                 )
             }
         }
-        .navigationTitle(client.workspace(workspaceID)?.name ?? "Commands")
+        .navigationTitle(host.workspace(workspaceID)?.name ?? "Commands")
         .toolbarTitleDisplayMode(.inline)
         .task(id: workspaceID) {
-            await client.follow(.commands(workspaceID: workspaceID))
+            await host.follow(.commands(workspaceID: workspaceID))
         }
     }
 }

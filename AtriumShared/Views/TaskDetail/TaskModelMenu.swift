@@ -6,7 +6,7 @@ struct TaskModelMenu: View {
   let provider: AgentProvider
   let selection: TaskModelSelection
   let models: [AgentModel]
-  let perform: (CompanionTaskAction) -> Void
+  let perform: (TaskAction) -> Void
   var showsToolbarLabel = false
 
   var body: some View {

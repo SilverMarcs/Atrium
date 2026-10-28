@@ -3,9 +3,8 @@ import SwiftUI
 /// The source control title menu: the repository's branches to switch to, a new
 /// branch, and the other repositories in the project when there's more than one.
 struct BranchMenuItems: View {
-    @Environment(CompanionClient.self) private var client
-    let workspaceID: UUID
-    let status: WireGitStatus
+    @Bindable var source: SourceControl
+    let status: GitRepositoryStatus
     let onNewBranch: () -> Void
 
     var body: some View {
@@ -13,7 +12,7 @@ struct BranchMenuItems: View {
             get: { status.branchName ?? "" },
             set: { branch in
                 guard !branch.isEmpty, branch != status.branchName else { return }
-                client.send(.git(workspaceID: workspaceID, action: .switchBranch(name: branch)))
+                source.send(.switchBranch(branch))
             }
         )) {
             ForEach(status.localBranches, id: \.self) { branch in
@@ -24,12 +23,13 @@ struct BranchMenuItems: View {
 
         Button("New Branch…", systemImage: "plus", action: onNewBranch)
 
-        if status.repositories.count > 1 {
+        if let repositories = source.repositories, repositories.count > 1 {
             Divider()
             Menu("Repository", systemImage: "folder") {
-                RepositoryPicker(status: status) { path in
-                    client.send(.git(workspaceID: workspaceID, action: .selectRepository(path: path)))
-                }
+                RepositoryPicker(repositories: repositories, selection: Binding(
+                    get: { status.mainRepositoryURL },
+                    set: { source.selectedRepository = $0 }
+                ))
             }
         }
     }

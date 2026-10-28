@@ -1,21 +1,24 @@
 import SwiftUI
 
+/// A project's saved commands. On this Mac's own host each runs in a terminal
+/// shown below the list; on another host they run there, with their state here.
 struct CommandsInspectorView: View {
-    let workspace: Workspace
-    @Environment(AppState.self) private var appState
-    // @State private var showKillAllAlert = false
+    @Bindable var project: Project
+    @Environment(AppModel.self) private var app
+    @State private var editing: CommandEditing?
 
     var body: some View {
-        @Bindable var state = workspace.inspectorState
         VSplitView {
-            List(selection: $state.selectedCommand) {
-                ForEach(workspace.commands) { terminal in
-                    CommandEntryRow(terminal: terminal)
-                        .tag(terminal)
+            List(selection: $project.selectedCommandID) {
+                ForEach(project.commands) { command in
+                    CommandEntryRow(command: command, project: project) { editing = .edit(command) }
+                        .tag(command.id)
                         .listRowSeparator(.hidden)
                 }
                 .onMove { source, destination in
-                    workspace.moveCommands(from: source, to: destination)
+                    guard let index = source.first else { return }
+                    let command = project.commands[index]
+                    project.send(.move(toIndex: destination > index ? destination - 1 : destination), to: command)
                 }
             }
             .safeAreaInset(edge: .top) {
@@ -24,52 +27,48 @@ struct CommandsInspectorView: View {
             .scrollContentBackground(.hidden)
             .layoutPriority(1)
 
-            Group {
-                if let terminal = state.selectedCommand {
-                    CommandTerminalOutputView(terminal: terminal)
-                        // .id(terminal.id)
-                } else {
-                    Color.clear
+            if project.isLocal {
+                Group {
+                    if let id = project.selectedCommandID,
+                       let command = project.commands.first(where: { $0.id == id }),
+                       let terminal = app.terminals.command(id, in: project.workspaceID) {
+                        CommandTerminalOutputView(command: command, terminal: terminal, project: project)
+                    } else {
+                        Color.clear
+                    }
                 }
+                .frame(minHeight: 390, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
             }
-            .frame(minHeight: 390, maxHeight: .infinity)
-            .frame(maxWidth: .infinity)
         }
         .safeAreaBar(edge: .top) {
             HStack {
                 Text("Commands")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-
                 Spacer()
-
-                // Button {
-                //     showKillAllAlert = true
-                // } label: {
-                //     Image(systemName: "xmark")
-                // }
-                // .buttonStyle(.borderless)
-                // .disabled(workspace.commands.isEmpty)
-
-                Button {
-                    let terminal = workspace.addCommand()
-                    state.selectedCommand = terminal
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
+                Button("New Command", systemImage: "plus") { editing = .new }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .padding(.top, 7)
         }
-        // .alert("Kill all terminals?", isPresented: $showKillAllAlert) {
-        //     Button("Kill All", role: .destructive) {
-        //         workspace.removeAllCommands()
-        //     }
-        //     Button("Cancel", role: .cancel) {}
-        // } message: {
-        //     Text("This will terminate every running shell and remove all entries from the list.")
-        // }
+        .sheet(item: $editing) { editing in
+            CommandEntrySheet(project: project, command: editing.command)
+        }
+    }
+}
+
+/// The command sheet being shown: a new command, or one being edited.
+enum CommandEditing: Identifiable {
+    case new
+    case edit(WireCommand)
+
+    var id: UUID? { command?.id }
+
+    var command: WireCommand? {
+        if case .edit(let command) = self { command } else { nil }
     }
 }

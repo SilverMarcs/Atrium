@@ -35,6 +35,7 @@ struct CodeTextEditor: NSViewRepresentable {
             presentation: GitDiffPresentation,
             hunks: [DiffHunk],
             reference: GitDiffReference,
+            hunkTarget: HunkTarget,
             onReload: () async -> Void
         )
     }
@@ -43,7 +44,9 @@ struct CodeTextEditor: NSViewRepresentable {
     private let documentID: AnyHashable?
     let fileExtension: String
     private let mode: Mode
-    private let repositoryRootURL: URL?
+    private let isEditable: Bool
+    /// Where the gutter's hunks are staged, unstaged or discarded.
+    private let hunkTarget: HunkTarget?
     private let onReloadFromDisk: (() async -> Void)?
     private let onSave: (() -> Void)?
     /// Editable mode: line to pin to the top once the file finishes loading
@@ -62,18 +65,20 @@ struct CodeTextEditor: NSViewRepresentable {
         text: Binding<String>,
         documentID: AnyHashable,
         fileExtension: String,
+        isEditable: Bool,
         gutterDiff: GutterDiffResult,
         highlightRequest: HighlightRequest?,
         scrollToLine: Int? = nil,
-        repositoryRootURL: URL? = nil,
+        hunkTarget: HunkTarget?,
         onReloadFromDisk: (() async -> Void)? = nil,
         onSave: (() -> Void)? = nil
     ) {
         self.text = text
         self.documentID = documentID
         self.fileExtension = fileExtension
+        self.isEditable = isEditable
         self.mode = .editable(gutterDiff: gutterDiff, highlightRequest: highlightRequest)
-        self.repositoryRootURL = repositoryRootURL
+        self.hunkTarget = hunkTarget
         self.onReloadFromDisk = onReloadFromDisk
         self.onSave = onSave
         self.scrollToTopLine = scrollToLine
@@ -85,13 +90,15 @@ struct CodeTextEditor: NSViewRepresentable {
         fileExtension: String,
         hunks: [DiffHunk],
         reference: GitDiffReference,
+        hunkTarget: HunkTarget,
         scrollAnchor: DiffScrollAnchor? = nil,
         onReload: @escaping () async -> Void
     ) {
         text = nil
         documentID = nil
         self.fileExtension = fileExtension
-        repositoryRootURL = nil
+        isEditable = false
+        self.hunkTarget = hunkTarget
         onReloadFromDisk = nil
         onSave = nil
         scrollToTopLine = nil
@@ -100,6 +107,7 @@ struct CodeTextEditor: NSViewRepresentable {
             presentation: presentation,
             hunks: hunks,
             reference: reference,
+            hunkTarget: hunkTarget,
             onReload: onReload
         )
     }
@@ -361,7 +369,7 @@ struct CodeTextEditor: NSViewRepresentable {
     private func configureMode(textView: EditorTextView, minimap: EditorMinimap, coordinator: Coordinator) {
         switch mode {
         case .editable(let gutterDiff, let highlightRequest):
-            textView.isEditable = true
+            textView.isEditable = isEditable
             textView.allowsUndo = true
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false
@@ -373,7 +381,7 @@ struct CodeTextEditor: NSViewRepresentable {
             textView.diffLineKinds = [:]
             textView.diffLineNumbers = [:]
             textView.diffGutterClickHandler = nil
-            textView.repositoryRootURL = repositoryRootURL
+            textView.hunkTarget = hunkTarget
             textView.gutterDiffReloadHandler = onReloadFromDisk
             textView.saveHandler = onSave
 
@@ -415,7 +423,7 @@ struct CodeTextEditor: NSViewRepresentable {
 
             finalizeInitialLayout(textView: textView, coordinator: coordinator)
 
-        case .diff(let presentation, let hunks, let reference, let onReload):
+        case .diff(let presentation, let hunks, let reference, let hunkTarget, let onReload):
             textView.isEditable = false
             textView.allowsUndo = false
             textView.textContainerInset = NSSize(width: EditorTextViewConstants.diffGutterWidth, height: 4)
@@ -427,6 +435,7 @@ struct CodeTextEditor: NSViewRepresentable {
             coordinator.presentation = presentation
             coordinator.hunks = hunks
             coordinator.reference = reference
+            coordinator.hunkTarget = hunkTarget
             coordinator.onReload = onReload
             coordinator.buildHunkLookup()
 
@@ -496,7 +505,7 @@ struct CodeTextEditor: NSViewRepresentable {
 
         switch mode {
         case .editable(let gutterDiff, let highlightRequest):
-            textView.isEditable = true
+            textView.isEditable = isEditable
             // Re-assert undo support every update, not just in configureMode.
             // The text view is reused across modes; once it has shown a diff
             // (allowsUndo = false) switching back to editable would otherwise
@@ -507,7 +516,7 @@ struct CodeTextEditor: NSViewRepresentable {
             textView.diffLineKinds = [:]
             textView.diffLineNumbers = [:]
             textView.diffGutterClickHandler = nil
-            textView.repositoryRootURL = repositoryRootURL
+            textView.hunkTarget = hunkTarget
             textView.gutterDiffReloadHandler = onReloadFromDisk
             textView.saveHandler = onSave
 
@@ -559,7 +568,7 @@ struct CodeTextEditor: NSViewRepresentable {
                 }
             }
 
-        case .diff(let presentation, let hunks, let reference, let onReload):
+        case .diff(let presentation, let hunks, let reference, let hunkTarget, let onReload):
             textView.isEditable = false
             textView.allowsUndo = false
             textView.textContainerInset = NSSize(width: EditorTextViewConstants.diffGutterWidth, height: 4)
@@ -571,6 +580,7 @@ struct CodeTextEditor: NSViewRepresentable {
             coordinator.presentation = presentation
             coordinator.hunks = hunks
             coordinator.reference = reference
+            coordinator.hunkTarget = hunkTarget
             coordinator.onReload = onReload
             coordinator.buildHunkLookup()
 
@@ -738,6 +748,7 @@ struct CodeTextEditor: NSViewRepresentable {
         var presentation: GitDiffPresentation?
         var hunks: [DiffHunk] = []
         var reference: GitDiffReference?
+        var hunkTarget: HunkTarget?
         var onReload: (() async -> Void)?
         private var newLineToHunkIndex: [Int: Int] = [:]
         private var oldLineToHunkIndex: [Int: Int] = [:]
@@ -1032,29 +1043,25 @@ struct CodeTextEditor: NSViewRepresentable {
         }
 
         @objc private func menuStageHunk(_ sender: NSMenuItem) {
-            guard let hunk = sender.representedObject as? DiffHunk, let reference else { return }
-            applyHunk(hunk, reverse: false, cached: true, at: reference.repositoryRootURL)
+            guard let hunk = sender.representedObject as? DiffHunk else { return }
+            applyHunk(hunk, reverse: false, cached: true)
         }
 
         @objc private func menuUnstageHunk(_ sender: NSMenuItem) {
-            guard let hunk = sender.representedObject as? DiffHunk, let reference else { return }
-            applyHunk(hunk, reverse: true, cached: true, at: reference.repositoryRootURL)
+            guard let hunk = sender.representedObject as? DiffHunk else { return }
+            applyHunk(hunk, reverse: true, cached: true)
         }
 
         @objc private func menuDiscardHunk(_ sender: NSMenuItem) {
-            guard let hunk = sender.representedObject as? DiffHunk, let reference else { return }
-            applyHunk(hunk, reverse: true, cached: false, at: reference.repositoryRootURL)
+            guard let hunk = sender.representedObject as? DiffHunk else { return }
+            applyHunk(hunk, reverse: true, cached: false)
         }
 
-        private func applyHunk(_ hunk: DiffHunk, reverse: Bool, cached: Bool, at root: URL) {
+        private func applyHunk(_ hunk: DiffHunk, reverse: Bool, cached: Bool) {
+            guard let hunkTarget else { return }
             Task {
                 do {
-                    try await GitRepository.shared.applyPatch(
-                        hunk.patchText,
-                        reverse: reverse,
-                        cached: cached,
-                        at: root
-                    )
+                    try await hunkTarget.apply(hunk.patchText, reverse: reverse, cached: cached)
                     await onReload?()
                 } catch {
                     await DiffPopoverPresenter.showError("Apply failed: \(error.localizedDescription)")
