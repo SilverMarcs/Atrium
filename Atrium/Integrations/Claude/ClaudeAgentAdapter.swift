@@ -270,7 +270,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let sessions = try await listBackgroundSessions()
         guard let session = sessions.first(where: { $0.kind == "background" && $0.sessionID == thread.sessionID }),
               let id = session.id else { return }
-        _ = try await IntegrationProcess.run("claude", arguments: ["stop", id], directory: thread.directory)
+        _ = try await IntegrationProcess.run("claude", arguments: ["stop", id])
         if let pid = session.pid { try await AgentProcessExit.wait(for: pid) }
         try await refreshBackgroundSessions()
     }
