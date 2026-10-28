@@ -65,6 +65,7 @@ struct TaskService {
             // the new turn, matching the client's optimistic move.
             sessions.restore(thread)
             sessions.unsnooze(thread)
+            integrations.resurface(thread)
             return .done
         } catch {
             return .failed(message: error.localizedDescription)

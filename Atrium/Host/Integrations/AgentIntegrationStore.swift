@@ -363,6 +363,13 @@ final class AgentIntegrationStore {
         scheduleSnoozeWake()
     }
 
+    /// Moves a prompted thread to the top before its provider reports the new turn,
+    /// which can wait until a queued prompt is picked up.
+    func resurface(_ thread: AgentThread) {
+        resurface(thread.id, markUnread: false)
+        saveActivity()
+    }
+
     private func wakeExpiredSnoozes(now: Date = .now) {
         let expired = snoozedUntil.filter { $0.value <= now }.map(\.key)
         if !expired.isEmpty {
