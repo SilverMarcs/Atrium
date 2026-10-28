@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .markRead, .markUnread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private var connected = false

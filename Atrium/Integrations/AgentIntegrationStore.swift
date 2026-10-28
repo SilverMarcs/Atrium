@@ -101,14 +101,15 @@ final class AgentIntegrationStore {
     }
 
     func canMarkRead(_ thread: AgentThread) -> Bool {
-        thread.hasUnreadResult && enabled.contains(thread.provider) && thread.readState != nil
-            && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
-            && adapters[thread.provider]?.capabilities.contains(.markRead) == true
+        thread.hasUnreadResult && canChangeReadState(thread)
     }
 
     func canMarkUnread(_ thread: AgentThread) -> Bool {
-        !thread.hasUnreadResult && enabled.contains(thread.provider) && thread.readState != nil && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
-            && adapters[thread.provider]?.capabilities.contains(.markUnread) == true
+        !thread.hasUnreadResult && canChangeReadState(thread)
+    }
+
+    private func canChangeReadState(_ thread: AgentThread) -> Bool {
+        enabled.contains(thread.provider) && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
     }
 
     func supportsDeletion(_ thread: AgentThread) -> Bool {
@@ -407,8 +408,13 @@ final class AgentIntegrationStore {
         await updateReadState(thread, unread: true)
     }
 
+    /// Threads with provider read state stay in sync with the provider's own clients; others are tracked by Atrium alone.
     private func updateReadState(_ thread: AgentThread, unread: Bool) async {
         guard let adapter = adapters[thread.provider] else { return }
+        guard thread.readState != nil else {
+            updateLocalReadState(thread, unread: unread)
+            return
+        }
         let generation = generations[thread.provider, default: 0]
         do {
             let updated = try await (unread ? adapter.markUnread(thread) : adapter.markRead(thread))
@@ -428,6 +434,19 @@ final class AgentIntegrationStore {
         } catch {
             if isCurrent(thread.provider, generation: generation) { actionError = error.localizedDescription }
         }
+    }
+
+    private func updateLocalReadState(_ thread: AgentThread, unread: Bool) {
+        guard let index = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        if unread {
+            if viewedThreadID == thread.id { viewedThreadID = nil }
+            activity[thread.id, default: ThreadActivity(thread: threads[index])].markUnread()
+        } else {
+            activity[thread.id]?.markRead(threads[index])
+        }
+        threads[index] = reconcile(threads[index])
+        revisions[thread.id, default: 0] += 1
+        saveActivity()
     }
 
     func setViewedThread(_ id: String?) {

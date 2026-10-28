@@ -38,6 +38,10 @@ struct ThreadActivity: Codable {
         readRevision = thread.readState?.revision
     }
 
+    mutating func markUnread() {
+        unread = true
+    }
+
     mutating func resurface(now: Date = .now, markUnread: Bool) {
         date = max(date, now)
         if markUnread { unread = true }

@@ -2,8 +2,6 @@
 struct AgentCapabilities: OptionSet, Sendable {
     let rawValue: Int
 
-    static let markRead = Self(rawValue: 1 << 5)
-    static let markUnread = Self(rawValue: 1 << 0)
     static let deleteThread = Self(rawValue: 1 << 1)
     static let deleteDescendants = Self(rawValue: 1 << 2)
     static let forkThread = Self(rawValue: 1 << 4)
