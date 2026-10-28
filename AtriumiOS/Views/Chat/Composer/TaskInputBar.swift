@@ -74,9 +74,11 @@ struct TaskInputBar: View {
         }
     }
 
-    /// Sends the draft, keeping the keyboard up for the next prompt.
+    /// Sends the draft, preserving whether the composer was focused.
     private func send() {
+        let wasFocused = isFocused
         _ = submit(nil)
+        guard wasFocused else { return }
         // Wait a turn so focus lands after Return's own focus change.
         Task {
             await Task.yield()
