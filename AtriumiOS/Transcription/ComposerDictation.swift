@@ -1,10 +1,16 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 @MainActor
 @Observable
 final class ComposerDictation {
-    private(set) var isRecording = false
+    private(set) var isRecording = false {
+        didSet {
+            guard isRecording != oldValue else { return }
+            UIApplication.shared.isIdleTimerDisabled = isRecording
+        }
+    }
     private(set) var isBusy = false
     var error: String?
     var isActive: Bool { isRecording || isBusy }
