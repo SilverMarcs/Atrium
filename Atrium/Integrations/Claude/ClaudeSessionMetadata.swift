@@ -3,6 +3,7 @@ import Foundation
 /// The small part of a Claude transcript needed by the sidebar, read from bounded head/tail windows.
 nonisolated struct ClaudeSessionMetadata: Sendable {
     var title: String
+    let hasProviderTitle: Bool
     /// The kebab-case name Claude gives a background session, which also replaces its readable title.
     let agentName: String?
     let directory: String
@@ -25,6 +26,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         let reply = latestReply(in: tail)
         return Self(
             title: title,
+            hasProviderTitle: name != nil,
             agentName: string("agentName", in: tail, last: true) ?? string("agentName", in: head, last: true),
             directory: string("relocatedCwd", in: tail, last: true) ?? originalDirectory
                 ?? string("cwd", in: tail, last: true) ?? "",

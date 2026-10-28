@@ -23,6 +23,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var subscriptionTasks: [String: Task<Void, Never>] = [:]
     private var decisions: [String: ClaudePendingDecision] = [:]
     private var isEnabled = true
+    private var historyWatcher: FileSystemWatcher?
     private var outgoing: [String: [ClaudeOutgoingPrompt]] = [:]
     private var liveStatuses: [String: AgentThreadStatus] = [:]
     /// Settings typed into each thread's terminal that its transcript doesn't show yet.
@@ -50,19 +51,48 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func listThreads() async throws -> [AgentThread] {
+        try watchHistory()
         try await refreshBackgroundSessions()
         let saved = try await history.listThreads()
         var threads = Dictionary(saved.map { ($0.sessionID, $0) }, uniquingKeysWith: { _, new in new })
         for thread in backgroundSessions.values.compactMap(\.thread) where threads[thread.sessionID] == nil {
             threads[thread.sessionID] = thread
         }
-        for thread in store.threads { threads[thread.sessionID] = thread }
+        for thread in store.threads {
+            threads[thread.sessionID] = withHistoryTitle(thread, saved: threads[thread.sessionID])
+        }
         return AgentThread.unique(threads.values.map(withStatus))
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
-        if let thread = store.thread(id) { return withStatus(thread) }
-        return try await (history.readThread(id) ?? backgroundSessions[id]?.thread).map(withStatus)
+        let saved = try await history.readThread(id)
+        if let thread = store.thread(id) { return withStatus(withHistoryTitle(thread, saved: saved)) }
+        return (saved ?? backgroundSessions[id]?.thread).map(withStatus)
+    }
+
+    private func withHistoryTitle(_ thread: AgentThread, saved: AgentThread?) -> AgentThread {
+        guard !thread.hasProviderTitle, let saved, saved.hasProviderTitle else { return thread }
+        var updated = thread
+        updated.title = saved.title
+        updated.hasProviderTitle = true
+        return updated
+    }
+
+    private func watchHistory() throws {
+        guard historyWatcher == nil else { return }
+        let projects = configDirectory.appending(path: "projects")
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        historyWatcher = FileSystemWatcher(url: projects, latency: 0.3, ignoredSubstrings: [], onPathsChanged: { [weak self] paths in
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                for path in paths {
+                    let url = URL(fileURLWithPath: path)
+                    let id = url.lastPathComponent == "custom-title.json"
+                        ? url.deletingLastPathComponent().lastPathComponent : url.deletingPathExtension().lastPathComponent
+                    if UUID(uuidString: id) != nil { self.onEvent?(.threadInvalidated(sessionID: id)) }
+                }
+            }
+        })
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
@@ -252,6 +282,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     func setEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
         if !isEnabled {
+            historyWatcher?.stop()
+            historyWatcher = nil
             for id in Array(subscriptions.keys) { closeSubscription(id) }
             for id in Array(subscriptionTasks.keys) { closeSubscription(id) }
             for id in Set(decisions.values.map(\.sessionID)) { resolveDecisions(sessionID: id) }
@@ -265,6 +297,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false) async throws -> ClaudeBackgroundSession {
+        try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settings = try await hooks.start()
         let existingBackground: Bool

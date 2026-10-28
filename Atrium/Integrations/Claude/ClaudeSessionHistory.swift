@@ -260,9 +260,8 @@ actor ClaudeSessionHistory {
     private static let readableTitleScanLimit = 8 * 1024 * 1024
 
     private func thread(_ file: File, metadata: ClaudeSessionMetadata) -> AgentThread {
-        // The previous SDK helper treated its summary (including a prompt fallback) as an authoritative title.
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
-                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: true, projectDirectory: metadata.projectDirectory,
+                    updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: metadata.hasProviderTitle, projectDirectory: metadata.projectDirectory,
                     model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode)
     }
 }
