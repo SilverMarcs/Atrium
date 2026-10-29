@@ -81,6 +81,41 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return try await listThreads(archived: false)
     }
 
+    /// A one-time account snapshot; rate-limit notifications don't update Settings.
+    func usageSnapshot() async throws -> AgentUsageSnapshot {
+        try await connect()
+        let accountData = try await request("account/read", params: ["refreshToken": false], disconnectOnTimeout: false)
+        let response = try JSONSerialization.jsonObject(with: accountData) as? [String: Any]
+        guard let account = response?["account"] as? [String: Any] else {
+            return AgentUsageSnapshot(status: "Not signed in", usageMessage: "Sign in using the Codex CLI.")
+        }
+        var snapshot = AgentUsageSnapshot(status: "Signed in", plan: (account["planType"] as? String)?.capitalized)
+        guard account["type"] as? String != "apiKey" else {
+            snapshot.plan = "API key"
+            snapshot.usageMessage = "Not available for API accounts."
+            return snapshot
+        }
+        // Preserve the account status if just the usage request fails.
+        guard let data = try? await request("account/rateLimits/read", params: [:], disconnectOnTimeout: false),
+              let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return snapshot }
+        let buckets = result["rateLimitsByLimitId"] as? [String: [String: Any]]
+        guard let limits = buckets?["codex"] ?? result["rateLimits"] as? [String: Any] else { return snapshot }
+        snapshot.windows = ["primary", "secondary"].compactMap { key in
+            guard let window = limits[key] as? [String: Any],
+                  let percent = window["usedPercent"] as? Double else { return nil }
+            let minutes = window["windowDurationMins"] as? Int
+            let title = switch minutes {
+            case 300: "5-hour usage"
+            case 10_080: "Weekly usage"
+            case .some(let value): "\(value)-minute usage"
+            case nil: key == "primary" ? "Usage" : "Secondary usage"
+            }
+            return AgentUsageWindow(id: key, title: title, usedPercent: percent,
+                                    resetsAt: (window["resetsAt"] as? Double).map(Date.init(timeIntervalSince1970:)))
+        }
+        return snapshot
+    }
+
     private func listThreads(archived: Bool) async throws -> [AgentThread] {
         let data = try await request("thread/list", params: [
             "limit": 25, "sortKey": "recency_at", "sortDirection": "desc",
