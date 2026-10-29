@@ -4,7 +4,7 @@ struct ShortcutsSettingsView: View {
     var body: some View {
         Form {
             Section("General") {
-                LabeledContent("Compose", value: "⌘ N")
+                LabeledContent("New Chat", value: "⌘ N")
                 LabeledContent("Go to File", value: "⌘ P")
                 LabeledContent("Find in Files", value: "⇧⌘ F")
             }

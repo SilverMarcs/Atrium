@@ -5,7 +5,7 @@ import Foundation
 struct TaskDraft: Identifiable, Equatable {
     /// Stands in for the task's ID on this device; never sent to the host.
     let id = "\(Self.idPrefix)\(UUID().uuidString)"
-    let workspaceID: UUID
+    var workspaceID: UUID
     /// The agent the host creates the task with.
     var provider: AgentProvider
     var settings: TaskStartSettings? = nil

@@ -38,15 +38,35 @@ extension HostClient {
 
     // MARK: - Drafts
 
+    private static let newTaskProviderKey = "newTaskProvider"
+    private static let newTaskWorkspacesKey = "newTaskWorkspaces"
+    static let newTaskHostKey = "newTaskHost"
+
+    var enabledProviders: [AgentProvider] {
+        tasks?.providers.filter(\.isEnabled).map(\.provider) ?? []
+    }
+
     /// The agent a new task starts with: the one this device last started a
     /// task with, while the host has it enabled, else the host's first.
     var defaultProvider: AgentProvider? {
-        let enabled = tasks?.providers.filter(\.isEnabled).map(\.provider) ?? []
-        let last = UserDefaults.standard.string(forKey: "newTaskProvider").flatMap(AgentProvider.init(rawValue:))
-        return enabled.first { $0 == last } ?? enabled.first
+        let last = UserDefaults.standard.string(forKey: Self.newTaskProviderKey).flatMap(AgentProvider.init(rawValue:))
+        return enabledProviders.first { $0 == last } ?? enabledProviders.first
     }
 
-    /// Opens a new task in a project; see `HostDirectory.openDraft(in:)`.
+    /// The project a new task starts in: the one this device last started a
+    /// task in on this host, while the host still has it, else its first.
+    var defaultWorkspaceID: UUID? {
+        let workspaces = tasks?.workspaces ?? []
+        let last = (UserDefaults.standard.dictionary(forKey: Self.newTaskWorkspacesKey)?[id] as? String).flatMap(UUID.init(uuidString:))
+        return workspaces.first { $0.id == last }?.id ?? workspaces.first?.id
+    }
+
+    /// Whether a new task can start here, with an agent and a project to start it in.
+    var canStartTask: Bool {
+        isConnected && defaultProvider != nil && defaultWorkspaceID != nil
+    }
+
+    /// Opens a new task in a project; see `HostDirectory.openNewChat(in:)`.
     /// - Returns: The draft's ID, or nil while the host has no agent enabled.
     func openDraft(in workspaceID: UUID, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) -> String? {
         guard let provider = provider ?? defaultProvider else { return nil }
@@ -57,18 +77,31 @@ extension HostClient {
         return draft.id
     }
 
-    /// Picks the agent a draft's task is created with, until its first prompt is sent.
-    func setProvider(_ provider: AgentProvider, ofDraft id: String) {
-        guard var draft = drafts[id], !draft.isCreating, draft.taskID == nil, draft.provider != provider else { return }
-        draft.provider = provider
-        draft.settings = nil
-        drafts[draft.id] = draft
+    /// A draft whose first prompt hasn't been sent, which can still change.
+    func unsentDraft(_ id: String) -> TaskDraft? {
+        drafts[id].flatMap { !$0.isCreating && $0.taskID == nil ? $0 : nil }
     }
 
-    /// Forgets a draft another task has opened in place of, unless its first
+    /// Changes a draft's project, agent or settings until its first prompt is sent.
+    func updateDraft(_ id: String, _ update: (inout TaskDraft) -> Void) {
+        guard var draft = unsentDraft(id) else { return }
+        update(&draft)
+        drafts[id] = draft
+    }
+
+    /// Picks the agent a draft's task is created with, until its first prompt is sent.
+    func setProvider(_ provider: AgentProvider, ofDraft id: String) {
+        updateDraft(id) { draft in
+            guard draft.provider != provider else { return }
+            draft.provider = provider
+            draft.settings = nil
+        }
+    }
+
+    /// Forgets a draft another has opened in place of, unless its first
     /// prompt has been sent, which leaves nothing behind on the host.
     func closeDraft(_ id: String) {
-        guard let draft = drafts[id], !draft.isCreating, draft.taskID == nil else { return }
+        guard unsentDraft(id) != nil else { return }
         drafts[id] = nil
         conversations.remove(id)
     }
@@ -145,7 +178,12 @@ extension HostClient {
         draft.isCreating = false
         draft.taskID = taskID
         drafts[draft.id] = draft
-        UserDefaults.standard.set(draft.provider.rawValue, forKey: "newTaskProvider")
+        // The next new chat starts where this one did.
+        var workspaces = UserDefaults.standard.dictionary(forKey: Self.newTaskWorkspacesKey) ?? [:]
+        workspaces[id] = draft.workspaceID.uuidString
+        UserDefaults.standard.set(workspaces, forKey: Self.newTaskWorkspacesKey)
+        UserDefaults.standard.set(id, forKey: Self.newTaskHostKey)
+        UserDefaults.standard.set(draft.provider.rawValue, forKey: Self.newTaskProviderKey)
         if conversations.transcripts[taskID] == nil { conversations.transcripts[taskID] = [] }
         let prompts = conversations.pendingPrompts.removeValue(forKey: draftID) ?? []
         conversations.pendingPrompts[taskID, default: []].append(contentsOf: prompts)

@@ -108,6 +108,6 @@ struct TaskDetailView: View {
 
     private var subtitle: String {
         let directory = project?.workspace?.directory ?? task.directory
-        return item.host.isLocal ? directory : "\(item.host.name) · \(directory)"
+        return item.host.isLocal ? directory : "\(item.host.name) \(directory)"
     }
 }

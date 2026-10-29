@@ -21,7 +21,7 @@ final class AppModel {
             project(WorkspaceRef(hostID: selection.hostID, workspaceID: workspaceID))?.showCheckout(task.task.checkout)
         }
     }
-    var showingCompose = false
+    var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true
     /// A running command the user asked to run again, awaiting confirmation.
@@ -73,10 +73,12 @@ final class AppModel {
     }
 
     /// What's typed in a task's composer, kept per task while others are shown.
+    /// Every draft is the new chat, so what's typed in it stays as it moves between hosts.
     func composer(for ref: TaskRef) -> ComposerDraft {
-        if let composer = composers[ref] { return composer }
+        let key = TaskDraft.isDraftID(ref.taskID) ? TaskRef(hostID: "", taskID: "new-chat") : ref
+        if let composer = composers[key] { return composer }
         let composer = ComposerDraft()
-        composers[ref] = composer
+        composers[key] = composer
         return composer
     }
 

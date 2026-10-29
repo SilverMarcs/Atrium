@@ -39,10 +39,10 @@ struct AppCommands: Commands {
             
             CommandGroup(after: .newItem) {
                 Button("New Chat", systemImage: "square.and.pencil") {
-                    app.showingCompose = true
+                    app.hosts.openNewChat()
                 }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(!app.hosts.hosts.contains { $0.isConnected && $0.defaultProvider != nil })
+                .disabled(!app.hosts.canStartNewChat)
             }
 
             CommandGroup(replacing: .toolbar) {

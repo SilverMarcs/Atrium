@@ -5,6 +5,7 @@ struct TaskChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: HostTask
     @Environment(TaskComposer.self) private var composer
+    @Environment(HostDirectory.self) private var hosts
     @State private var pin = TimelinePin()
     @State private var anchorSpace = TimelineAnchorSpace()
     @State private var scrollPolicy = ConversationScrollPolicy()
@@ -225,7 +226,7 @@ struct TaskChatView: View {
                         .controlSize(.large)
                 } else if messages?.isEmpty == true, pendingPrompts.isEmpty {
                     if let draft = host.drafts[task.id] {
-                        DraftAgentPicker(host: host, draft: draft)
+                        NewChatPicker(hosts: hosts, host: host, draft: draft)
                     } else {
                         ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
                     }

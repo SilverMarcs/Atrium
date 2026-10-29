@@ -16,8 +16,8 @@ extension HostDirectory {
         guard let target = environment["ATRIUM_DEBUG_OPEN"]?.split(separator: "/", maxSplits: 1), target.count == 2,
               let host = host(String(target[0])) else { return }
         if target[1] == "draft" {
-            while host.tasks?.workspaces.first == nil || host.defaultProvider == nil { try? await Task.sleep(for: .milliseconds(100)) }
-            if let workspace = host.tasks?.workspaces.first { openDraft(in: WorkspaceRef(hostID: host.id, workspaceID: workspace.id)) }
+            while !host.canStartTask { try? await Task.sleep(for: .milliseconds(100)) }
+            if let workspace = host.tasks?.workspaces.first { openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspace.id)) }
             return
         }
         // A host lists its tasks once its agents have loaded them.

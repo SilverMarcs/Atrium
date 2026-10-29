@@ -78,7 +78,7 @@ struct TaskDetailScreen: View {
             if let task {
                 if isPhone, task.workspaceID != nil, let item {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("New Session", systemImage: "square.and.pencil") { hosts.openDraft(matching: item) }
+                        Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
                     }
                 }
                 if isPhone {
@@ -204,11 +204,10 @@ struct TaskDetailScreen: View {
             composer.dictation.cancel()
             sendAnimator.cancelAll()
             composer.isFocused = false
-            // A draft that's left isn't opened again.
-            if composer.hasContent, !TaskDraft.isDraftID(oldRef.taskID) {
-                stashedComposers[oldRef] = composer
+            if composer.hasContent {
+                stashedComposers[Self.stashKey(oldRef)] = composer
             }
-            composer = stashedComposers.removeValue(forKey: newRef) ?? TaskComposer()
+            composer = stashedComposers.removeValue(forKey: Self.stashKey(newRef)) ?? TaskComposer()
         }
         .task(id: resolvedRef) {
             // The host has no transcript for a draft.
@@ -221,6 +220,11 @@ struct TaskDetailScreen: View {
                 host?.send(.task(id: task.id, action: .viewed))
             }
         }
+    }
+
+    /// Every draft is the new chat, so what's typed in it stays as it moves between hosts.
+    private static func stashKey(_ ref: TaskRef) -> TaskRef {
+        TaskDraft.isDraftID(ref.taskID) ? TaskRef(hostID: "", taskID: "new-chat") : ref
     }
 
     private var projectPath: String {

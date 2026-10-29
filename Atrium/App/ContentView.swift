@@ -20,7 +20,7 @@ struct ContentView: View {
                 ContentUnavailableView(
                     "No Task Selected",
                     systemImage: "sidebar.left",
-                    description: Text("Select a task or use Compose to get started.")
+                    description: Text("Select a task or start a new chat.")
                 )
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             }

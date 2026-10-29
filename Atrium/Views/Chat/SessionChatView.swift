@@ -97,7 +97,7 @@ struct SessionChatView: View {
         if transcript == nil, rows.isEmpty, transcriptError == nil {
           ProgressView()
         } else if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
-          DraftAgentPicker(host: host, draft: draft)
+          NewChatPicker(hosts: app.hosts, host: host, draft: draft)
         } else if transcript?.isEmpty == true, prompts.isEmpty {
           Image(task.provider.symbolName)
             .resizable()

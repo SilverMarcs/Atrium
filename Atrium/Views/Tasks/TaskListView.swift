@@ -66,17 +66,21 @@ struct TaskListView: View {
         }
         .safeAreaBar(edge: .bottom) {
             HStack {
-                Button("New Chat", systemImage: "square.and.pencil") { app.showingCompose = true }
-                    .disabled(!hosts.hosts.contains { $0.isConnected && $0.defaultProvider != nil })
+                Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
+                    .disabled(!hosts.canStartNewChat)
+                Button("Projects", systemImage: "folder") { app.showingProjects = true }
+                    .labelStyle(.iconOnly)
+                    .help("Manage projects")
+                    .disabled(!hosts.hosts.contains(where: \.isConnected))
                 Spacer()
             }
             .buttonStyle(.plain)
             .padding(13)
         }
-        .sheet(isPresented: Bindable(app).showingCompose) { ComposeThreadView() }
+        .sheet(isPresented: Bindable(app).showingProjects) { ProjectsSheet(hosts: hosts) }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
         .alert("Couldn’t Update Thread", isPresented: Binding(
-            get: { hosts.actionError != nil && !app.showingCompose && taskToRename == nil },
+            get: { hosts.actionError != nil && !app.showingProjects && taskToRename == nil },
             set: { if !$0 { hosts.actionError = nil } }
         )) {
             Button("OK") { hosts.actionError = nil }
@@ -125,7 +129,7 @@ struct TaskListView: View {
             } else if hosts.visibleHosts.contains(where: { $0.tasks?.isRefreshing == true }) {
                 ProgressView("Loading threads…")
             } else {
-                ContentUnavailableView(isSearching ? "No Results" : "No Tasks", systemImage: "bubble.left.and.bubble.right", description: Text("Use Compose to start a task."))
+                ContentUnavailableView(isSearching ? "No Results" : "No Tasks", systemImage: "bubble.left.and.bubble.right", description: Text("Use New Chat to start a task."))
             }
         }
     }

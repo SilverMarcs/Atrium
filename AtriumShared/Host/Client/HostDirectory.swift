@@ -33,8 +33,11 @@ final class HostDirectory {
     /// tried without one, and are tried again as soon as there is one.
     @ObservationIgnored private(set) var hasNetwork = true
     @ObservationIgnored private var isActive = false
-    /// The last task shown, whose draft closes once another task is shown.
+    /// The last task shown, whose draft closes once another task is shown
+    /// unless it's the new chat.
     @ObservationIgnored private var lastShownTask: TaskRef?
+    /// The draft last opened as the new chat, sent or not.
+    private var newChatRef: TaskRef?
     @ObservationIgnored private var notificationDestination: TaskRef?
 
     private static let filterKey = "hostFilter"
@@ -135,20 +138,68 @@ final class HostDirectory {
         pendingTask = ref
     }
 
-    /// Opens a new task in a project as a draft, whose empty chat picks the
-    /// agent. Its host creates the task once its first prompt is sent, so
-    /// leaving a draft unsent leaves nothing behind.
-    func openDraft(in workspace: WorkspaceRef, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) {
-        guard let host = host(workspace.hostID),
-              let id = host.openDraft(in: workspace.workspaceID, provider: provider, settings: settings) else { return }
-        open(TaskRef(hostID: host.id, taskID: id))
+    // MARK: - New chat
+
+    /// Hosts a new chat can start on.
+    var newChatHosts: [HostClient] { hosts.filter(\.canStartTask) }
+
+    /// Whether a new chat can start on any host.
+    var canStartNewChat: Bool { !newChatHosts.isEmpty }
+
+    /// The new chat while its first prompt is unsent. It stays, with whatever's
+    /// typed in it, while other tasks are shown, and its empty chat can still
+    /// move it to another project or host.
+    var newChat: TaskRef? {
+        guard let ref = newChatRef, host(ref.hostID)?.unsentDraft(ref.taskID) != nil else { return nil }
+        return ref
     }
 
-    /// Opens a blank conversation in a task's project with the task's agent and settings.
-    func openDraft(matching item: HostTask) {
+    /// Opens the new chat, starting one in the project this device last
+    /// started a task in if none is unsent.
+    func openNewChat() {
+        if let newChat {
+            open(newChat)
+            return
+        }
+        let lastHost = UserDefaults.standard.string(forKey: HostClient.newTaskHostKey)
+        guard let host = newChatHosts.first(where: { $0.id == lastHost }) ?? newChatHosts.first,
+              let workspaceID = host.defaultWorkspaceID else { return }
+        openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID))
+    }
+
+    /// Opens the new chat in a project on any host, moving an unsent one
+    /// there with what's typed in it. A new task's host creates it once its
+    /// first prompt is sent, so leaving one unsent leaves nothing behind.
+    func openNewChat(in workspace: WorkspaceRef, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) {
+        guard let host = host(workspace.hostID) else { return }
+        let current = newChat
+        if let current, current.hostID == host.id {
+            host.updateDraft(current.taskID) { draft in
+                draft.workspaceID = workspace.workspaceID
+                if let provider {
+                    draft.provider = provider
+                    draft.settings = settings
+                }
+            }
+            open(current)
+            return
+        }
+        // Moving to another host keeps the agent where that host has it enabled.
+        let previous = current.flatMap { self.host($0.hostID)?.drafts[$0.taskID]?.provider }
+        let provider = provider ?? previous.flatMap { host.enabledProviders.contains($0) ? $0 : nil }
+        guard let id = host.openDraft(in: workspace.workspaceID, provider: provider, settings: settings) else { return }
+        // One on screen closes once the new one replaces it.
+        if let current, !isShowing(current) { self.host(current.hostID)?.closeDraft(current.taskID) }
+        let ref = TaskRef(hostID: host.id, taskID: id)
+        newChatRef = ref
+        open(ref)
+    }
+
+    /// Opens the new chat in a task's project with the task's agent and settings.
+    func openNewChat(matching item: HostTask) {
         guard let workspaceID = item.task.workspaceID else { return }
         let task = item.task
-        openDraft(
+        openNewChat(
             in: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
             provider: task.provider,
             settings: TaskStartSettings(model: task.model, reasoningEffort: task.reasoningEffort, isFastMode: task.isFastMode)
@@ -169,8 +220,8 @@ final class HostDirectory {
         guard visibleTask != ref else { return }
         visibleTask = ref
         if let ref {
-            // A draft left for another task before its first prompt leaves nothing behind.
-            if let last = lastShownTask, last != ref { host(last.hostID)?.closeDraft(last.taskID) }
+            // A draft the new chat has moved on from leaves nothing behind.
+            if let last = lastShownTask, last != ref, last != newChatRef { host(last.hostID)?.closeDraft(last.taskID) }
             lastShownTask = ref
         }
         publishActivity()

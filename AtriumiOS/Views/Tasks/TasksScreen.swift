@@ -11,7 +11,7 @@ struct TasksScreen: View {
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
     @State private var isSettledExpanded = false
-    @State private var showingNewTask = false
+    @State private var showingProjects = false
     @State private var taskToRename: HostTask?
     @State private var taskToDelete: HostTask?
 
@@ -65,29 +65,35 @@ struct TasksScreen: View {
             Button("Edit Hosts…", systemImage: "pencil", action: onEditHosts)
         }
         .toolbar {
-            // iPad leaves out the filter and starts tasks from the top bar.
+            // iPad leaves out the filter and projects, and starts chats from the top bar.
             if isPhone {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Projects", systemImage: "folder") { showingProjects = true }
+                        .disabled(!hosts.hosts.contains(where: \.isConnected))
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     TaskFilterMenu(filter: $filter)
                 }
             } else {
                 ToolbarItem(placement: .topBarLeading) {
-                    NewTaskButton { showingNewTask = true }
+                    Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
+                        .disabled(!hosts.canStartNewChat)
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             if isPhone {
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    NewTaskButton { showingNewTask = true }
+                    Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
+                        .disabled(!hosts.canStartNewChat)
                 }
             }
         }
         .overlay {
             TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching, isEmpty: visibleTasksAreEmpty(sections))
         }
-        .sheet(isPresented: $showingNewTask) {
-            NewTaskSheet { hosts.openDraft(in: $0) }
+        .sheet(isPresented: $showingProjects) {
+            ProjectsSheet(hosts: hosts)
         }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
     }
