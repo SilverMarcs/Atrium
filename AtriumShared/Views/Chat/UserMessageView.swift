@@ -17,6 +17,7 @@ struct UserMessageView: View {
                 HStack {
                     ForEach(images.enumerated(), id: \.offset) { _, data in PromptImageThumbnail(data: data) }
                 }
+                .contextMenu { PromptContextMenu(text: text, edit: edit, editEnabled: editEnabled) }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             if !text.isEmpty {
@@ -30,6 +31,11 @@ struct UserMessageView: View {
                 .padding(12)
                 .background(Color.accentColor.quinary)
                 .clipShape(.rect(cornerRadius: 20))
+                // Menu sits on the bubble itself so iOS lifts just the bubble, not the full-width row.
+                #if os(iOS)
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: 20))
+                #endif
+                .contextMenu { PromptContextMenu(text: text, edit: edit, editEnabled: editEnabled) }
                 .modifier(PromptSendEffect(flight: sendFlight))
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 #if os(macOS)
@@ -41,20 +47,27 @@ struct UserMessageView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .textSelection(.enabled)
-        .contextMenu {
-            if let edit {
-                Button("Edit", systemImage: "pencil", action: edit)
-                    .disabled(!editEnabled)
-            }
-            if !text.isEmpty {
-                Button("Copy", systemImage: "doc.on.doc") {
-                    #if os(macOS)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                    #else
-                    UIPasteboard.general.string = text
-                    #endif
-                }
+    }
+}
+
+private struct PromptContextMenu: View {
+    let text: String
+    let edit: (() -> Void)?
+    let editEnabled: Bool
+
+    var body: some View {
+        if let edit {
+            Button("Edit", systemImage: "pencil", action: edit)
+                .disabled(!editEnabled)
+        }
+        if !text.isEmpty {
+            Button("Copy", systemImage: "doc.on.doc") {
+                #if os(macOS)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                #else
+                UIPasteboard.general.string = text
+                #endif
             }
         }
     }
