@@ -58,6 +58,8 @@ nonisolated enum TaskAction: Codable, Sendable {
 }
 
 nonisolated enum WorkspaceAction: Codable, Sendable {
+    /// Names the project; an empty name goes back to its folder's.
+    case rename(String)
     case setScratchpad(String)
     case setProjectType(String)
     case detectProjectType

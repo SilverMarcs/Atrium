@@ -24,6 +24,9 @@ struct WorkspaceService {
     func perform(_ action: WorkspaceAction, on workspace: Workspace, isLocal: Bool) -> HostReply {
         defer { workspaces.scheduleSave() }
         switch action {
+        case .rename(let name):
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            workspace.name = name.isEmpty ? workspace.url.lastPathComponent : name
         case .setScratchpad(let text):
             workspace.scratchPad = text
         case .setProjectType(let raw):
