@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Every step behind a reply, in order: the agent's notes as plain text and each
-/// run of tool calls as its count, set smaller than the reply itself.
+/// run of tool calls as its count, using the default system font.
 struct AssistantStepsSheet: View {
     let steps: [TranscriptBlock]
     @Environment(\.dismiss) private var dismiss
