@@ -3,6 +3,7 @@ import SwiftUI
 struct AgentSettingsSection: View {
     @Environment(AppModel.self) private var app
     @State private var usage = AgentUsageModel()
+    @State private var updates = AgentCLIUpdateModel()
     let provider: WireProvider
 
     var body: some View {
@@ -38,7 +39,27 @@ struct AgentSettingsSection: View {
                 Image(provider.provider.symbolName)
                     .foregroundStyle(provider.provider.color)
             }
+        } footer: {
+            HStack {
+                Text(updates.status)
+                Spacer()
+                Button(updates.buttonTitle, action: update)
+                    .disabled(updates.isDisabled)
+            }
         }
-        .task { await usage.refresh(provider.provider) }
+        .task {
+            async let account: Void = usage.refresh(provider.provider)
+            async let version: Void = updates.refresh(provider.provider)
+            _ = await (account, version)
+        }
+        .alert("Couldn’t Update \(provider.provider.name)", isPresented: $updates.showingError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(updates.errorMessage)
+        }
+    }
+
+    private func update() {
+        Task { await updates.performAction(provider.provider) }
     }
 }

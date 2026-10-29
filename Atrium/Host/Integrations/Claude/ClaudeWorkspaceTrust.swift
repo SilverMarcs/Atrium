@@ -1,41 +1,14 @@
 import Foundation
-import Darwin
 
 /// Projects opened in this personal app are trusted before Claude starts a background session.
 @MainActor
 enum ClaudeWorkspaceTrust {
     static func accept(directory: String) async throws {
-        let folder = URL(fileURLWithPath: directory).standardizedFileURL.resolvingSymlinksInPath()
-        var trustedFolder = folder
-        if let output = try? await IntegrationProcess.run(
-            "git", arguments: ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
-            directory: folder.path
-        ) {
-            let paths = String(decoding: output, as: UTF8.self).split(separator: "\n")
-            if let root = paths.first {
-                trustedFolder = URL(fileURLWithPath: String(root))
-                // Linked worktrees share the main checkout's workspace trust record.
-                if paths.count == 2 {
-                    let common = URL(fileURLWithPath: String(paths[1]))
-                    if common.lastPathComponent == ".git" {
-                        trustedFolder = common.deletingLastPathComponent()
-                    }
-                }
-            }
-        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let configHome = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"]
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home
-        try accept(folder: trustedFolder.standardizedFileURL.resolvingSymlinksInPath(),
-                   configFile: configHome.appending(path: ".claude.json"))
-        // Foundation can collapse /private/var back to /var. Claude's native
-        // background host uses realpath, so retain that spelling as well.
-        if let resolved = trustedFolder.path.withCString({ realpath($0, nil) }) {
-            defer { free(resolved) }
-            let path = String(cString: resolved)
-            if path != trustedFolder.path {
-                try accept(folder: URL(filePath: path), configFile: configHome.appending(path: ".claude.json"))
-            }
+        for path in await AgentWorkspaceTrust.folders(in: directory) {
+            try accept(folder: URL(filePath: path), configFile: configHome.appending(path: ".claude.json"))
         }
     }
 

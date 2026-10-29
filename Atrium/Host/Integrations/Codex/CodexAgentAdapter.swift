@@ -170,6 +170,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func createThread(directory: String) async throws -> AgentThread {
         try await connect()
+        try await trustWorkspace(directory: directory)
         let data = try await request("thread/start", params: ["cwd": directory])
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let row = result["thread"] as? [String: Any], let thread = Self.thread(row) else {
@@ -182,6 +183,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         try await connect()
+        try await trustWorkspace(directory: thread.directory)
         let data = try await request("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
@@ -208,6 +210,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if conversations[thread.sessionID] != nil { return }
         if let opening = openingConversations[thread.sessionID] { return try await opening.value }
         let task = Task {
+            try await self.trustWorkspace(directory: thread.directory)
             _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
@@ -417,6 +420,20 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex is disconnected. Try again.")
         }
         return AgentLaunch(executable: "codex", arguments: ["--remote", "unix://" + socketPath, "resume", thread.sessionID])
+    }
+
+    private func trustWorkspace(directory: String) async throws {
+        let folders = await AgentWorkspaceTrust.folders(in: directory)
+        let data = try await request("config/read", params: [:])
+        let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let config = result?["config"] as? [String: Any]
+        let projects = config?["projects"] as? [String: [String: Any]] ?? [:]
+        let updates = Dictionary(uniqueKeysWithValues: folders.compactMap { path in
+            projects[path]?["trust_level"] as? String == "trusted" ? nil : (path, ["trust_level": "trusted"])
+        })
+        guard !updates.isEmpty else { return }
+        // Let Codex merge and persist its TOML, preserving other project settings.
+        _ = try await request("config/value/write", params: ["keyPath": "projects", "value": updates, "mergeStrategy": "upsert"])
     }
 
     func stopThread(_ thread: AgentThread) async throws {
