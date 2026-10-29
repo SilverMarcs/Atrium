@@ -32,8 +32,8 @@ struct SessionChatView: View {
         ZStack(alignment: .bottom) {
           Color.clear
             .containerRelativeFrame(.vertical)
-          LazyVStack(alignment: .leading, spacing: 16) {
-            ForEach(rows) { row in
+          LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(rows.enumerated(), id: \.element.id) { index, row in
               SessionChatMessageRow(
                 message: row.message,
                 isStreaming: turns.liveIDs.contains(row.id),
@@ -43,19 +43,23 @@ struct SessionChatView: View {
                 pendingPrompt: row.pendingPrompt,
                 retry: { if let prompt = row.pendingPrompt { host.retryPrompt(prompt.id, in: task.id) } }
               )
+              .padding(.top, ChatMessageSpacing.before(row.message.role, after: index > 0 ? rows[index - 1].message.role : nil))
               .transition(.identity)
             }
             TaskChatStatusFooter(status: footerStatus)
+              .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
               .transition(.identity)
             if let transcriptError {
               Label(transcriptError, systemImage: "exclamationmark.triangle")
+                .padding(.top, ChatMessageSpacing.standard)
                 .frame(maxWidth: .infinity)
                 .foregroundStyle(.red)
                 .padding(.vertical)
 
               Button("Retry") { host.reload(.transcript(taskID: task.id)) }
+                .padding(.top, ChatMessageSpacing.standard)
             }
-            Color.clear.frame(height: 32).id("bottom")
+            Color.clear.frame(height: 32).padding(.top, ChatMessageSpacing.standard).id("bottom")
           }
           .padding(.horizontal, 16)
           .padding(.vertical, 4)

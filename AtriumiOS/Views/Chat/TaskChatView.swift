@@ -33,34 +33,39 @@ struct TaskChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(sections.historyMessages) { message in
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(sections.historyMessages.enumerated(), id: \.element.id) { index, message in
                             TranscriptMessageRow(
                                 message: message, isStreaming: turns.liveIDs.contains(message.id),
                                 edit: message.editTarget != nil
                                     ? { composer.beginEditing(message, in: item) } : nil,
                                 editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
                             )
+                            .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.historyMessages[index - 1].role : nil))
                         }
-                        ForEach(sections.historyPendingPrompts) { prompt in
+                        ForEach(sections.historyPendingPrompts.enumerated(), id: \.element.id) { index, prompt in
                             PendingPromptView(prompt: prompt, item: item)
+                                .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.historyMessages.last?.role))
                         }
                         if sections.hasTurn {
                             // At least the resting viewport's height, so its
                             // prompt can scroll to the top.
-                            VStack(alignment: .leading, spacing: 16) {
-                                ForEach(sections.turnMessages) { message in
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(sections.turnMessages.enumerated(), id: \.element.id) { index, message in
                                     TranscriptMessageRow(
                                         message: message, isStreaming: turns.liveIDs.contains(message.id),
                                         edit: message.editTarget != nil
                                             ? { composer.beginEditing(message, in: item) } : nil,
                                         editEnabled: task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
                                     )
+                                    .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.turnMessages[index - 1].role : nil))
                                 }
-                                ForEach(sections.turnPendingPrompts) { prompt in
+                                ForEach(sections.turnPendingPrompts.enumerated(), id: \.element.id) { index, prompt in
                                     PendingPromptView(prompt: prompt, item: item)
+                                        .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.turnMessages.last?.role))
                                 }
                                 TaskChatStatusFooter(status: footerStatus)
+                                    .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                             }
                             .onGeometryChange(for: CGFloat.self) { geometry in
                                 geometry.size.height
@@ -69,8 +74,13 @@ struct TaskChatView: View {
                             }
                             .frame(minHeight: anchorSpace.turnMinimumHeight, alignment: .top)
                             .id(TimelineAnchorSpace.turnID)
+                            .padding(.top, ChatMessageSpacing.before(
+                                sections.turnMessages.first?.role ?? .user,
+                                after: sections.historyPendingPrompts.isEmpty ? sections.historyMessages.last?.role : .user
+                            ))
                         } else {
                             TaskChatStatusFooter(status: footerStatus)
+                                .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                         }
 
                     }
