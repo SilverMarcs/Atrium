@@ -1,24 +1,32 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The source control title menu: the repository's branches to switch to, a new
-/// branch, and the other repositories in the project when there's more than one.
+/// The source control title menu: branches and linked worktrees, a new branch,
+/// and the other repositories in the project when there's more than one.
 struct BranchMenuItems: View {
     @Bindable var source: SourceControl
     let status: GitRepositoryStatus
     let onNewBranch: () -> Void
 
     var body: some View {
-        Picker("Branch", selection: Binding(
-            get: { status.branchName ?? "" },
-            set: { branch in
-                source.selectBranch(branch, in: status)
-            }
-        )) {
-            ForEach(status.localBranches, id: \.self) { branch in
-                Label(branch, systemImage: "arrow.triangle.branch")
-                    .tag(branch)
-            }
+        let linkedBranches = Set(status.worktrees.filter { !$0.isMain && !$0.isBare }.compactMap(\.branch))
+        let branches = status.localBranches.filter { !linkedBranches.contains($0) }
+        let worktrees = status.localBranches.filter { linkedBranches.contains($0) }
+
+        ForEach(branches, id: \.self) { branch in
+            BranchMenuItem(source: source, status: status, branch: branch, isWorktree: false)
+        }
+
+        if !branches.isEmpty && !worktrees.isEmpty {
+            Divider()
+        }
+
+        ForEach(worktrees, id: \.self) { branch in
+            BranchMenuItem(source: source, status: status, branch: branch, isWorktree: true)
+        }
+
+        if !branches.isEmpty || !worktrees.isEmpty {
+            Divider()
         }
 
         Button("New Branch…", systemImage: "plus", action: onNewBranch)
