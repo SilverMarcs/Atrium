@@ -92,4 +92,6 @@ jq -e '.session.interactions | length > 0' turn.json && atrium respond "$session
 atrium send "$session" --id "$(uuidgen)" --follow "Now open a pull request"
 ```
 
+For secure relay connections on Linux, `https_proxy` (or `HTTPS_PROXY`) may specify an `http://` CONNECT proxy, with optional URL-encoded username and password. `no_proxy` (or `NO_PROXY`) bypasses it for comma-separated hostnames, domain suffixes (with an optional leading dot), optional ports, or `*`. Nonempty lowercase values take precedence. Other proxy URL schemes are rejected. The proxy resolves the relay hostname; TLS still validates the relay's certificate and hostname inside the tunnel.
+
 Linux reaches hosts through the relay only; the apps also connect directly on the local network.

@@ -99,6 +99,7 @@ public final class WebSocketChannel: HostChannel {
     }
 
     private nonisolated static func describe(_ error: any Error) -> String {
+        if let error = error as? HTTPProxyError { return error.localizedDescription }
         if let error = error as? ChannelError, case .connectTimeout = error {
             return "The connection timed out."
         }
@@ -116,6 +117,7 @@ public final class WebSocketChannel: HostChannel {
         }
         let isSecure = scheme == "wss"
         let port = url.port ?? (isSecure ? 443 : 80)
+        let proxy = try HTTPProxy.select(for: url, environment: ProcessInfo.processInfo.environment)
         let tls = isSecure ? try NIOSSLContext(configuration: .makeClientConfiguration()) : nil
         var path = url.path(percentEncoded: true)
         if path.isEmpty { path = "/" }
@@ -126,33 +128,40 @@ public final class WebSocketChannel: HostChannel {
 
         let upgrade: EventLoopFuture<UpgradeResult> = try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .connectTimeout(.seconds(10))
-            .connect(host: host, port: port) { channel in
+            .connect(host: proxy?.host ?? host, port: proxy?.port ?? port) { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    if let tls {
-                        try channel.pipeline.syncOperations.addHandler(NIOSSLClientHandler(context: tls, serverHostname: host))
-                    }
-                    let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult>(
-                        maxFrameSize: HostProtocol.maxMessageBytes,
-                        upgradePipelineHandler: { channel, _ in
-                            channel.eventLoop.makeCompletedFuture {
-                                try channel.pipeline.syncOperations.addHandler(NIOWebSocketFrameAggregator(
-                                    minNonFinalFragmentSize: 0,
-                                    maxAccumulatedFrameCount: .max,
-                                    maxAccumulatedFrameSize: HostProtocol.maxMessageBytes
-                                ))
-                                try channel.pipeline.syncOperations.addHandler(FrameHandler(events: events))
-                                return UpgradeResult.upgraded(channel)
+                    let tunnel = try proxy.map {
+                        try HTTPProxyConnectHandler.install(on: channel, proxy: $0, host: host, port: port)
+                    } ?? channel.eventLoop.makeSucceededVoidFuture()
+                    return tunnel.flatMap {
+                        channel.eventLoop.makeCompletedFuture {
+                            if let tls {
+                                try channel.pipeline.syncOperations.addHandler(NIOSSLClientHandler(context: tls, serverHostname: host))
                             }
-                        }
-                    )
-                    let configuration = NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult>(
-                        upgradeRequestHead: head,
-                        upgraders: [upgrader],
-                        notUpgradingCompletionHandler: { channel in channel.eventLoop.makeSucceededFuture(.declined) }
-                    )
-                    return try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
-                        configuration: .init(upgradeConfiguration: configuration)
-                    )
+                            let upgrader = NIOTypedWebSocketClientUpgrader<UpgradeResult>(
+                                maxFrameSize: HostProtocol.maxMessageBytes,
+                                upgradePipelineHandler: { channel, _ in
+                                    channel.eventLoop.makeCompletedFuture {
+                                        try channel.pipeline.syncOperations.addHandler(NIOWebSocketFrameAggregator(
+                                            minNonFinalFragmentSize: 0,
+                                            maxAccumulatedFrameCount: .max,
+                                            maxAccumulatedFrameSize: HostProtocol.maxMessageBytes
+                                        ))
+                                        try channel.pipeline.syncOperations.addHandler(FrameHandler(events: events))
+                                        return UpgradeResult.upgraded(channel)
+                                    }
+                                }
+                            )
+                            let configuration = NIOTypedHTTPClientUpgradeConfiguration<UpgradeResult>(
+                                upgradeRequestHead: head,
+                                upgraders: [upgrader],
+                                notUpgradingCompletionHandler: { channel in channel.eventLoop.makeSucceededFuture(.declined) }
+                            )
+                            return try channel.pipeline.syncOperations.configureUpgradableHTTPClientPipeline(
+                                configuration: .init(upgradeConfiguration: configuration)
+                            )
+                        }.flatMap { $0 }
+                    }
                 }
             }
         switch try await upgrade.get() {
