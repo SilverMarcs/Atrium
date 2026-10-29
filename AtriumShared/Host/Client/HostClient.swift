@@ -418,14 +418,16 @@ final class HostClient: Identifiable {
         case .hello(let hello):
             self.hello = hello
         case .tasks(let snapshot):
+            let previous = hostTasks
             hostTasks = snapshot
-            tasksDidChange()
+            tasksDidChange(from: previous)
             directory?.tasksDidLoad(on: self)
         case .tasksChanged(let delta):
             guard var snapshot = hostTasks else { return }
+            let previous = snapshot
             snapshot.apply(delta)
             hostTasks = snapshot
-            tasksDidChange()
+            tasksDidChange(from: previous)
         case .transcript(let taskID, let messages):
             transcriptErrors[taskID] = nil
             conversations.transcripts[taskID] = messages
@@ -450,11 +452,12 @@ final class HostClient: Identifiable {
         }
     }
 
-    private func tasksDidChange() {
+    private func tasksDidChange(from previous: WireTasksSnapshot?) {
         dropListedDrafts()
         for taskID in Set(conversations.tasksAwaitingAgent.keys).union(conversations.pendingPrompts.keys) {
             if let status = task(taskID)?.status {
-                conversations.noteStatus(status, for: taskID)
+                let previousStatus = previous?.tasks.first { $0.id == taskID }?.status
+                conversations.noteStatus(status, previous: previousStatus, for: taskID)
             } else if draftTask(taskID) == nil {
                 conversations.tasksAwaitingAgent[taskID] = nil
             }

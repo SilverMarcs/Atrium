@@ -101,10 +101,11 @@ final class ConversationStore {
     if tasksAwaitingAgent[taskID] == id { tasksAwaitingAgent[taskID] = nil }
   }
 
-  func noteStatus(_ status: AgentThreadStatus, for taskID: String) {
-    if status == .processing || status == .waiting || status == .done || status == .failed || status == .stopped
-      || status == .unknown
-    {
+  /// Only a change of status answers a prompt: the status it was sent at, such
+  /// as the last turn's `done`, keeps arriving with unrelated task-list changes
+  /// until the agent starts on it.
+  func noteStatus(_ status: AgentThreadStatus, previous: AgentThreadStatus?, for taskID: String) {
+    if let previous, previous != status, status != .idle {
       tasksAwaitingAgent[taskID] = nil
     }
     if status != .processing {

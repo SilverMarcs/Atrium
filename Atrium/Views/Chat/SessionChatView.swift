@@ -137,9 +137,6 @@ struct SessionChatView: View {
           proxy.scrollTo(messageID, anchor: .center)
         }
       }
-      .onChange(of: task.status) { _, status in
-        conversation.noteStatus(status, for: task.id)
-      }
       .task(id: task.id) {
         // A draft has no conversation on the host until its first prompt creates it.
         guard !TaskDraft.isDraftID(task.id) else { return }
