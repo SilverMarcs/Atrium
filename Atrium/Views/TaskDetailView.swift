@@ -2,8 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's chat and, on this Mac's own host, its terminal, above its
-/// project's editor panel.
+/// A task's chat and terminal, on this Mac or a paired host, above its editor.
 struct TaskDetailView: View {
     let item: HostTask
     @Environment(AppModel.self) private var app
@@ -19,10 +18,19 @@ struct TaskDetailView: View {
     private var session: TaskSession? {
         item.host.isLocal ? app.terminals.session(for: task.id) : nil
     }
-    private var showsTerminal: Bool { session != nil && presentation == "terminal" }
+    private var hasTerminal: Bool {
+        session != nil || (!item.host.isLocal && !TaskDraft.isDraftID(task.id)
+            && item.host.enabledProviders.contains(task.provider))
+    }
+    private var showsTerminal: Bool { hasTerminal && presentation == "terminal" }
 
     var body: some View {
         ZStack {
+            if showsTerminal, !item.host.isLocal {
+                RemoteTaskTerminalView(host: item.host, taskID: task.id)
+                    .id(item.id)
+                    .scrollEdgeEffectHidden()
+            }
             if let session {
                 if session.isTerminalAttached {
                     TaskTerminalView(session: session, terminals: app.terminals, acceptsInputFocus: showsTerminal)
@@ -50,7 +58,7 @@ struct TaskDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: "\(task.id):\(showsTerminal)") {
+        .task(id: "\(item.id):\(showsTerminal)") {
             session?.isTerminalVisible = showsTerminal
             if showsTerminal, let session { await app.terminals.attachTerminal(to: session) }
         }
@@ -81,7 +89,7 @@ struct TaskDetailView: View {
                     .disabled(models.isEmpty)
                 }
             }
-            if session != nil {
+            if hasTerminal {
                 ToolbarItem {
                     Picker("Session View", selection: $presentation) {
                         Label("Chat", systemImage: "bubble.left").tag("chat")

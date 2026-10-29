@@ -6,6 +6,7 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
     case tasks
     /// A task's conversation.
     case transcript(taskID: String)
+    case terminal(taskID: String)
     case git(GitScope)
     case commands(workspaceID: UUID)
     /// One folder's entries, watched on the host.
@@ -22,7 +23,7 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
     }
 
     private enum Kind: String, Codable {
-        case tasks, transcript, git, commands, directory, file, remoteAccess
+        case tasks, transcript, terminal, git, commands, directory, file, remoteAccess
     }
 
     public init(from decoder: any Decoder) throws {
@@ -35,6 +36,7 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
         case .tasks: self = .tasks
         case .remoteAccess: self = .remoteAccess
         case .transcript: self = .transcript(taskID: try container.decode(String.self, forKey: .taskID))
+        case .terminal: self = .terminal(taskID: try container.decode(String.self, forKey: .taskID))
         case .git: self = .git(try container.decode(GitScope.self, forKey: .scope))
         case .commands: self = .commands(workspaceID: try container.decode(UUID.self, forKey: .workspaceID))
         case .directory, .file:
@@ -53,6 +55,9 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
             try container.encode(Kind.remoteAccess, forKey: .kind)
         case .transcript(let taskID):
             try container.encode(Kind.transcript, forKey: .kind)
+            try container.encode(taskID, forKey: .taskID)
+        case .terminal(let taskID):
+            try container.encode(Kind.terminal, forKey: .kind)
             try container.encode(taskID, forKey: .taskID)
         case .git(let scope):
             try container.encode(Kind.git, forKey: .kind)

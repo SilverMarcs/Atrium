@@ -7,6 +7,10 @@ import Synchronization
 final class AppTerminalView: LocalProcessTerminalView {
     private var appliedIsDark: Bool?
     nonisolated private let responseWriter = Mutex<TerminalResponseWriter?>(nil)
+    nonisolated private let remoteOutput = TerminalOutputSignal()
+
+    nonisolated var outputRevision: UInt64 { remoteOutput.revision }
+    nonisolated var isCursorVisible: Bool { remoteOutput.cursorVisible }
 
     /// Called after each chunk of process output is fed to the terminal.
     var onOutput: (() -> Void)?
@@ -18,8 +22,21 @@ final class AppTerminalView: LocalProcessTerminalView {
 
     /// Install before launch: startup color probes must not wait for UI work.
     func prepareProcessResponses() {
+        setProcessOutputHandler { [remoteOutput] in
+            remoteOutput.recordOutput()
+        }
         let writer = TerminalResponseWriter(process: process)
         responseWriter.withLock { $0 = writer }
+    }
+
+    nonisolated override func showCursor(source: SwiftTerm.Terminal) {
+        remoteOutput.setCursorVisible(true)
+        super.showCursor(source: source)
+    }
+
+    nonisolated override func hideCursor(source: SwiftTerm.Terminal) {
+        remoteOutput.setCursorVisible(false)
+        super.hideCursor(source: source)
     }
 
     nonisolated override func send(source: SwiftTerm.Terminal, data: ArraySlice<UInt8>) {

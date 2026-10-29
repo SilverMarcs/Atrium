@@ -11,7 +11,7 @@ import Foundation
 /// doesn't recognize decodes as `.unknown` and is ignored, so the version only
 /// tells a client that it's older than its host.
 public nonisolated enum HostProtocol {
-    public static let version = 7
+    public static let version = 8
     /// Bounds a single message so a corrupt or hostile peer can't exhaust memory.
     public static let maxMessageBytes = 16 * 1024 * 1024
 

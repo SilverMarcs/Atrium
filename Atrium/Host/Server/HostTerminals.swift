@@ -1,8 +1,7 @@
 import Foundation
 
-/// The terminals tasks and saved commands run in. They stay on the host, so
-/// only the Mac's own UI shows them; every other client gets commands' state
-/// and run and stop through requests.
+/// Direct access to this Mac's task and saved-command terminals. Remote task
+/// viewers use the terminal topic; commands still expose only run/stop state.
 @MainActor
 struct HostTerminals {
     let sessions: TaskSessionController

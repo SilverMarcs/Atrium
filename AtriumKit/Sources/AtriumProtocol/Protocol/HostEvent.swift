@@ -9,6 +9,8 @@ public nonisolated enum HostEvent: Codable, Sendable {
     case transcriptChanged(taskID: String, delta: WireTranscriptDelta)
     /// The host couldn't load a task's conversation.
     case transcriptUnavailable(taskID: String, message: String)
+    case terminal(taskID: String, frame: WireTerminalFrame)
+    case terminalUnavailable(taskID: String, message: String)
     case git(GitScope, repositories: [GitRepositoryStatus])
     case commands(workspaceID: UUID, commands: [WireCommand])
     /// The entries of a followed folder, whenever they change.

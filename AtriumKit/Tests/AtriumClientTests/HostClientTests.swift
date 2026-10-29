@@ -71,6 +71,65 @@ struct HostClientTests {
         #expect(messages.prompt(1, after: "u3") == nil)
         #expect(messages.prompt(1, after: nil)?.id == "u1")
     }
+
+    @Test func terminalUpdatesAreAcknowledgedAndUnfollowedScreensAreDiscarded() async throws {
+        let connection = FakeConnection()
+        let host = HostClient(localID: "local", name: "Mac") { connection }
+        host.start()
+        await connected(host)
+        let following = Task { await host.follow(.terminal(taskID: "t")) }
+        try await connection.waitForRequests(2)
+        let frame = terminalFrame(sequence: 1)
+        connection.onEvent?(.terminal(taskID: "t", frame: frame))
+        #expect(host.terminals["t"] == frame)
+        try await connection.waitForRequests(3)
+        guard case .terminal("t", .acknowledge(frame.terminalID, 1)) = connection.requests.last?.request else {
+            Issue.record("Expected a terminal acknowledgement"); following.cancel(); return
+        }
+        var next = frame
+        next.sequence = 2
+        next.lines[0].content = "updated"
+        connection.onEvent?(.terminal(taskID: "t", frame: next.changes(since: frame)))
+        #expect(host.terminals["t"] == next)
+        following.cancel()
+        await following.value
+        #expect(host.terminals["t"] == nil)
+        connection.onEvent?(.terminal(taskID: "t", frame: next))
+        #expect(host.terminals["t"] == nil)
+        host.stop()
+    }
+
+    @Test func terminalGapsRequestAFullCheckpointAndRestartsReplaceTheOldScreen() async throws {
+        let connection = FakeConnection()
+        let host = HostClient(localID: "local", name: "Mac") { connection }
+        host.start()
+        await connected(host)
+        let following = Task { await host.follow(.terminal(taskID: "t")) }
+        defer { following.cancel(); host.stop() }
+        try await connection.waitForRequests(2)
+        let frame = terminalFrame(sequence: 1)
+        connection.onEvent?(.terminal(taskID: "t", frame: frame))
+        try await connection.waitForRequests(3)
+        var missing = frame
+        missing.sequence = 3
+        missing.baseSequence = 2
+        connection.onEvent?(.terminal(taskID: "t", frame: missing))
+        #expect(host.terminals["t"] == frame)
+        try await connection.waitForRequests(4)
+        guard case .subscribe(.terminal("t")) = connection.requests.last?.request else {
+            Issue.record("Expected terminal resynchronization"); return
+        }
+        let replacement = terminalFrame(sequence: 1)
+        connection.onEvent?(.terminal(taskID: "t", frame: replacement))
+        #expect(host.terminals["t"]?.terminalID == replacement.terminalID)
+    }
+
+    private func terminalFrame(sequence: UInt64) -> WireTerminalFrame {
+        WireTerminalFrame(terminalID: UUID(), sequence: sequence, columns: 80, rows: 1,
+                          firstRow: 0, screenRow: 0, cursorRow: 0, cursorColumn: 0,
+                          isAlternate: false, inputModes: "", hasExited: false,
+                          lines: [WireTerminalLine(row: 0, content: "prompt")])
+    }
 }
 
 /// Returns once the client has authenticated, as it does on its own after connecting.

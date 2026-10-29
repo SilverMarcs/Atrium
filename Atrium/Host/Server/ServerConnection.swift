@@ -15,6 +15,9 @@ final class ServerConnection {
     var reportsActivity = false
     private var sentTasks: WireTasksSnapshot?
     private var sentTranscripts: [String: [TranscriptMessage]] = [:]
+    private var sentTerminals: [String: WireTerminalFrame] = [:]
+    private var awaitingTerminalAck: Set<String> = []
+    private var pendingTerminals: [String: WireTerminalFrame] = [:]
     private let send: (HostEvent) -> Void
     private let closeChannel: () -> Void
 
@@ -39,6 +42,10 @@ final class ServerConnection {
         switch topic {
         case .tasks: sentTasks = nil
         case .transcript(let taskID): sentTranscripts[taskID] = nil
+        case .terminal(let taskID):
+            sentTerminals[taskID] = nil
+            pendingTerminals[taskID] = nil
+            awaitingTerminalAck.remove(taskID)
         default: break
         }
     }
@@ -46,6 +53,11 @@ final class ServerConnection {
     func unsubscribe(_ topic: HostTopic) {
         topics.remove(topic)
         if case .transcript(let taskID) = topic { sentTranscripts[taskID] = nil }
+        if case .terminal(let taskID) = topic {
+            sentTerminals[taskID] = nil
+            pendingTerminals[taskID] = nil
+            awaitingTerminalAck.remove(taskID)
+        }
     }
 
     func sendHello(_ hello: HostHello) {
@@ -60,8 +72,37 @@ final class ServerConnection {
             push(tasks: snapshot)
         case .transcript(let taskID, let messages):
             push(transcript: messages, of: taskID)
+        case .terminal(let taskID, let frame):
+            push(terminal: frame, of: taskID)
+        case .terminalUnavailable(let taskID, _):
+            sentTerminals[taskID] = nil
+            pendingTerminals[taskID] = nil
+            awaitingTerminalAck.remove(taskID)
+            send(event)
         default:
             send(event)
+        }
+    }
+
+    /// Only one terminal frame is in flight per task. New output replaces the
+    /// pending frame; its delta is computed against what the client actually got.
+    private func push(terminal frame: WireTerminalFrame, of taskID: String) {
+        if awaitingTerminalAck.contains(taskID) {
+            pendingTerminals[taskID] = frame
+            return
+        }
+        guard sentTerminals[taskID] != frame else { return }
+        let previous = sentTerminals[taskID]
+        sentTerminals[taskID] = frame
+        awaitingTerminalAck.insert(taskID)
+        send(.terminal(taskID: taskID, frame: frame.changes(since: previous)))
+    }
+
+    func acknowledgeTerminal(taskID: String, terminalID: UUID, sequence: UInt64) {
+        guard let sent = sentTerminals[taskID], sent.terminalID == terminalID,
+              sent.sequence == sequence, awaitingTerminalAck.remove(taskID) != nil else { return }
+        if let pending = pendingTerminals.removeValue(forKey: taskID) {
+            push(terminal: pending, of: taskID)
         }
     }
 

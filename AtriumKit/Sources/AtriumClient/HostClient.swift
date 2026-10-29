@@ -36,8 +36,8 @@ public final class HostClient: Identifiable {
     }
 
     public let id: String
-    /// Whether this is the host running in this app, which alone can change
-    /// files and projects and show terminals.
+    /// Whether this is the host running in this app. Its terminal views are
+    /// accessed directly; paired hosts publish copied terminal state.
     public let isLocal: Bool
     public private(set) var pairedHost: PairedHost?
     /// A name the user chose for this Mac's own host, shown instead of its own.
@@ -71,6 +71,8 @@ public final class HostClient: Identifiable {
     public let conversations = ConversationStore()
     /// Why a followed conversation couldn't be loaded, by task.
     public private(set) var transcriptErrors: [String: String] = [:]
+    public private(set) var terminals: [String: WireTerminalFrame] = [:]
+    public private(set) var terminalErrors: [String: String] = [:]
     /// New tasks opened on this device, by draft ID. One stays after its first
     /// prompt until the task list shows the task the host created for it.
     public internal(set) var drafts: [String: TaskDraft] = [:]
@@ -329,18 +331,35 @@ public final class HostClient: Identifiable {
         let remaining = (topicCounts[topic] ?? 1) - 1
         topicCounts[topic] = remaining > 0 ? remaining : nil
         if remaining <= 0, isConnected {
-            Task { try? await request(.unsubscribe(topic)) }
+            Task {
+                guard (topicCounts[topic] ?? 0) <= 0 else { return }
+                try? await request(.unsubscribe(topic))
+            }
+        }
+        if remaining <= 0, case .terminal(let taskID) = topic {
+            terminals[taskID] = nil
+            terminalErrors[taskID] = nil
         }
     }
 
     /// Subscribes again, which has the host reload what it can.
     public func reload(_ topic: HostTopic) {
         if case .transcript(let taskID) = topic { transcriptErrors[taskID] = nil }
+        if case .terminal(let taskID) = topic { terminalErrors[taskID] = nil }
         if isConnected { subscribe(topic) }
     }
 
     private func subscribe(_ topic: HostTopic) {
-        Task { try? await request(.subscribe(topic)) }
+        Task {
+            guard (topicCounts[topic] ?? 0) > 0 else { return }
+            do {
+                _ = try await request(.subscribe(topic))
+            } catch {
+                if case .terminal(let taskID) = topic, isConnected, (topicCounts[topic] ?? 0) > 0 {
+                    terminalErrors[taskID] = error.localizedDescription
+                }
+            }
+        }
     }
 
     // MARK: - Changes
@@ -475,6 +494,20 @@ public final class HostClient: Identifiable {
             reconcilePendingPrompts(for: taskID)
         case .transcriptUnavailable(let taskID, let message):
             transcriptErrors[taskID] = message
+        case .terminal(let taskID, let frame):
+            guard (topicCounts[.terminal(taskID: taskID)] ?? 0) > 0 else { return }
+            guard let state = frame.applying(to: terminals[taskID]) else {
+                // An invalid complete checkpoint cannot be repaired by resubscribing.
+                if frame.baseSequence != nil { reload(.terminal(taskID: taskID)) }
+                else { terminalErrors[taskID] = "The host sent an unsupported terminal screen." }
+                return
+            }
+            terminals[taskID] = state
+            terminalErrors[taskID] = nil
+            send(.terminal(taskID: taskID, action: .acknowledge(terminalID: frame.terminalID, sequence: frame.sequence)))
+        case .terminalUnavailable(let taskID, let message):
+            guard (topicCounts[.terminal(taskID: taskID)] ?? 0) > 0 else { return }
+            terminalErrors[taskID] = message
         case .git(let scope, let repositories):
             gitStatuses[scope] = repositories
         case .commands(let workspaceID, let commands):
@@ -523,7 +556,7 @@ private extension HostRequest {
     /// Losing that connection isn't a failed user action.
     var isAutomatic: Bool {
         switch self {
-        case .activity, .registerPush, .subscribe, .unsubscribe, .task(_, .viewed): true
+        case .activity, .registerPush, .subscribe, .unsubscribe, .task(_, .viewed), .terminal(_, .acknowledge): true
         default: false
         }
     }

@@ -1,6 +1,7 @@
 import AtriumProtocol
 import Foundation
 import Observation
+import SwiftTerm
 import SystemConfiguration
 
 /// The host: the only part of Atrium that touches projects, Git, the file
@@ -68,7 +69,7 @@ final class HostServer {
         )
     }
 
-    /// Task terminals, which only this Mac's own UI shows.
+    /// The task terminals owned by this host, including ones viewed remotely.
     var terminals: HostTerminals { HostTerminals(sessions: sessions, workspaces: workspaces) }
 
     @ObservationIgnored private let integrations: AgentIntegrationStore
@@ -266,6 +267,31 @@ final class HostServer {
             return reply
         case .interrupt(let taskID):
             return await tasks.interrupt(task: taskID)
+        case .terminal(let taskID, let action):
+            guard connection.topics.contains(.terminal(taskID: taskID)) else {
+                return .failed(message: "Open this task’s terminal first.")
+            }
+            switch action {
+            case .acknowledge(let terminalID, let sequence):
+                connection.acknowledgeTerminal(taskID: taskID, terminalID: terminalID, sequence: sequence)
+                return .done
+            case .input(let terminalID, let data):
+                guard !data.isEmpty, data.count <= 65_536,
+                      let session = sessions.sessions[taskID], session.terminal.id == terminalID,
+                      !session.terminal.hasExited, let view = session.terminal.localProcessTerminalView else {
+                    return .failed(message: "This terminal changed or closed. Reopen it before typing.")
+                }
+                view.send(data: Array(data)[...])
+                return .done
+            case .resume:
+                guard let session = sessions.session(for: taskID) else {
+                    return .failed(message: "This task’s terminal is no longer available.")
+                }
+                await sessions.attachTerminal(to: session)
+                feeds[.terminal(taskID: taskID)]?.refresh()
+                if let error = session.terminalError { return .failed(message: error) }
+                return .done
+            }
         case .addWorkspace(let path):
             guard connection.isLocal else { return .hostOnly }
             return WorkspaceService(workspaces: workspaces).add(path: path)
@@ -322,6 +348,9 @@ final class HostServer {
         case .transcript(let taskID):
             guard integrations.threads.contains(where: { $0.id == taskID }) else { return nil }
             feed = TranscriptFeed(taskID: taskID, integrations: integrations)
+        case .terminal(let taskID):
+            guard let session = sessions.session(for: taskID) else { return nil }
+            feed = TerminalFeed(session: session, sessions: sessions)
         case .git(let scope):
             guard let workspace = workspace(scope.workspaceID) else { return nil }
             feed = GitFeed(scope: scope, workspace: workspace)

@@ -19,6 +19,7 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case prompt(taskID: String, text: String, images: [Data])
     /// Stops the agent's current turn.
     case interrupt(taskID: String)
+    case terminal(taskID: String, action: TerminalAction)
     /// Adds a folder on the host as a project. Only the host itself may.
     case addWorkspace(path: String)
     case workspace(id: UUID, action: WorkspaceAction)
