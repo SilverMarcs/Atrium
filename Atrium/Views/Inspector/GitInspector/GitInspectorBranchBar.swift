@@ -1,4 +1,5 @@
 import AppKit
+import AtriumProtocol
 import SwiftUI
 
 struct GitInspectorBranchBar: View {

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// Repositories in the project, grouped under the branch each has checked out.

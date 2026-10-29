@@ -1,4 +1,6 @@
 import AppKit
+import AtriumClient
+import AtriumProtocol
 import Foundation
 
 /// Loads one file's diff from the project's host.

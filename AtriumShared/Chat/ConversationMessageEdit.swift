@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import Foundation
 import Observation
 
@@ -40,11 +42,7 @@ final class ConversationMessageEdit: Identifiable {
         let replacementImages = addedImages.map(\.data)
         defer { isSubmitting = false }
         do {
-            guard case .rewound(let messages, let originalImages) = try await host.request(
-                .task(id: taskID, action: .rewind(messageID: target))
-            ) else { throw HostClientError.unexpectedReply }
-            host.conversations.transcripts[taskID] = messages
-            host.conversations.reconcile(taskID: taskID)
+            let originalImages = try await host.rewind(taskID, before: target)
             send(replacementText, originalImages + replacementImages)
             return true
         } catch {

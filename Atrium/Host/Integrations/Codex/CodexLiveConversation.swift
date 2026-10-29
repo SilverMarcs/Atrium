@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// App-server snapshots and item events share their IDs, so completed items can

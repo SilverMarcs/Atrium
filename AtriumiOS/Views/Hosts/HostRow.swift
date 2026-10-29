@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 struct HostRow: View {

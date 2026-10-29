@@ -29,6 +29,12 @@ Every Mac running Atrium is a host. The host alone touches projects, Git, files 
 
 Turn on remote access in Settings → Hosts, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Hosts on another Mac.
 
+Every client shares one implementation, the `AtriumKit` package: `AtriumProtocol` holds the messages, the Noise encryption and the channels they travel over, and `AtriumClient` holds pairing, credentials, reconnection, requests, subscriptions and conversation state. The apps add their own screens, composer, notifications and which task is on screen; the Mac's host (`Atrium/Host`) uses `AtriumProtocol` alone. The package builds on Linux too, where SwiftNIO and swift-crypto stand in for Network and CryptoKit.
+
+## Command line
+
+`atrium` drives a host's sessions from another computer, Linux included, for people and agents alike: list projects and sessions, read and follow conversations, start sessions, send prompts, interrupt, and answer questions and approvals, all as JSON. See [AtriumCLI/README.md](AtriumCLI/README.md).
+
 ## Editing conversation messages
 
 Choose **Edit** from a user message’s context menu on Mac or iOS. The existing composer loads a separate edit draft and scrolls to the selected message, without dimming other messages. The checkmark saves it and continues the conversation; **Copy** copies a message’s text. Cancelling leaves the conversation untouched and restores the ordinary composer draft. Submission removes the original message and later replies from active history, keeps earlier conversation and original image attachments, and sends the replacement through normal messaging. Editing is available once the agent finishes or you stop it with the existing Stop control. On iOS the replacement prompt anchors at the top, including when the conversation shrinks; macOS follows its usual send-to-bottom behavior.

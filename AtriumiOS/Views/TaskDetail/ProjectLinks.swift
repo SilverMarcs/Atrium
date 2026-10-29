@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 /// The places a task's project opens: its commands, source control and files.

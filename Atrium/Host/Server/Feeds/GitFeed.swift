@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// The Git status of a project's repositories, each seen through the checkout

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 import Observation
 import SystemConfiguration
@@ -25,6 +26,7 @@ final class HostServer {
     private(set) var status: Status = .stopped
     private(set) var connectedDevices: [ClientDevice] = []
     private let pairing = Pairing()
+    private let ledger = RequestLedger()
 
     /// Reachable through the relay from any network. Keeps the Mac awake while on.
     var isRemoteAccessEnabled: Bool {
@@ -142,7 +144,7 @@ final class HostServer {
                 return
             }
             Task {
-                let reply = await self.handle(frame.request, from: connection)
+                let reply = await self.handle(frame.request, from: connection, key: frame.key)
                 guard let data = try? HostCodec.encode(ServerFrame.reply(id: frame.id, reply: reply)) else { return }
                 channel.send(data)
             }
@@ -160,8 +162,11 @@ final class HostServer {
     }
 
     private func authenticate(_ connection: ServerConnection, as device: ClientDevice) {
-        // A device that reconnects after its socket dropped replaces the stale connection.
-        for other in connections.values where other !== connection && other.device?.id == device.id {
+        // A device that reconnects after its socket dropped replaces the stale
+        // connection, whose foreground presence would otherwise keep steering
+        // alerts. Connections that never reported presence, such as several
+        // commands from the command-line client at once, share their device.
+        for other in connections.values where other !== connection && other.device?.id == device.id && other.reportsActivity {
             NotificationRouting.shared.remove(connectionID: other.id)
             other.close()
         }
@@ -176,7 +181,9 @@ final class HostServer {
 
     // MARK: - Requests
 
-    func handle(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
+    /// Answers a client's request. One sent with a key is performed once per
+    /// device; see `RequestLedger`.
+    func handle(_ request: HostRequest, from connection: ServerConnection, key: UUID? = nil) async -> HostReply {
         switch request {
         case .pair(let secret, let device):
             guard let token = pairing.pair(secret: secret, device: device) else {
@@ -194,7 +201,11 @@ final class HostServer {
             guard connection.isAuthenticated else { return .failed(message: "Pair with this host first.") }
             // Any request from a device in the foreground means it's in use.
             if !connection.isLocal { NotificationRouting.shared.used(connectionID: connection.id) }
-            return await handleAuthenticated(request, from: connection)
+            guard let key else { return await handleAuthenticated(request, from: connection) }
+            let client = connection.device?.id.uuidString ?? "local"
+            return await ledger.perform(key, for: client) { [weak self, connection] in
+                await self?.handleAuthenticated(request, from: connection) ?? HostReply.failed(message: "This host has stopped.")
+            }
         }
     }
 
@@ -206,6 +217,7 @@ final class HostServer {
         case .unsupported:
             return .unsupported
         case .activity(let activity):
+            connection.reportsActivity = true
             if connection.isLocal {
                 NotificationRouting.shared.macTaskID = activity.taskID
                 integrations.setViewedThread(activity.isActive ? activity.taskID : nil)

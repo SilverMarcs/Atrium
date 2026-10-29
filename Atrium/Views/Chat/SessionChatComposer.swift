@@ -1,4 +1,5 @@
 import AppKit
+import AtriumProtocol
 import SwiftUI
 
 /// Relay's desktop composer geometry, backed by the shared task service.

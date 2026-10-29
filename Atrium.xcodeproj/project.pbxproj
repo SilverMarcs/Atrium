@@ -17,6 +17,10 @@
 		0A7C00000000000000000222 /* RelayIconDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000212 /* RelayIconDownloader.swift */; };
 		0A7C00000000000000000223 /* ProjectNotificationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000215 /* ProjectNotificationContent.swift */; };
 		0A7C00000000000000000224 /* AtriumNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000201 /* AtriumNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0A7C00000000000000000312 /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000302 /* AtriumClient */; };
+		0A7C00000000000000000313 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000303 /* AtriumProtocol */; };
+		0A7C00000000000000000314 /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000304 /* AtriumClient */; };
+		0A7C00000000000000000315 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000305 /* AtriumProtocol */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -96,6 +100,8 @@
                 AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */,
 				08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
+				0A7C00000000000000000312 /* AtriumClient in Frameworks */,
+				0A7C00000000000000000313 /* AtriumProtocol in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,6 +110,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
+				0A7C00000000000000000314 /* AtriumClient in Frameworks */,
+				0A7C00000000000000000315 /* AtriumProtocol in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -175,6 +183,8 @@
                 0A7C00000000000000000103 /* SwiftMarkdownView */,
 				08BEFC292F74722D009C370E /* Sparkle */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
+				0A7C00000000000000000302 /* AtriumClient */,
+				0A7C00000000000000000303 /* AtriumProtocol */,
 			);
 			productName = Atrium;
 			productReference = 08D10C4A2F64897100754649 /* Atrium.app */;
@@ -201,6 +211,8 @@
 			name = AtriumiOS;
 			packageProductDependencies = (
 				0A7C00000000000000000103 /* SwiftMarkdownView */,
+				0A7C00000000000000000304 /* AtriumClient */,
+				0A7C00000000000000000305 /* AtriumProtocol */,
 			);
 			productName = AtriumiOS;
 			productReference = 0A7C00000000000000000001 /* Atrium.app */;
@@ -265,6 +277,7 @@
 				08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
+				0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D10C4B2F64897100754649 /* Products */;
@@ -748,6 +761,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = AtriumKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -803,6 +823,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */;
 			productName = SwiftMarkdownView;
+		};
+		0A7C00000000000000000302 /* AtriumClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
+			productName = AtriumClient;
+		};
+		0A7C00000000000000000303 /* AtriumProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
+			productName = AtriumProtocol;
+		};
+		0A7C00000000000000000304 /* AtriumClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
+			productName = AtriumClient;
+		};
+		0A7C00000000000000000305 /* AtriumProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
+			productName = AtriumProtocol;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import Foundation
 
 /// Destinations pushed within a task's detail column, each in a project on one host.

@@ -1,4 +1,5 @@
 import AVFoundation
+import AtriumProtocol
 import SwiftUI
 import VisionKit
 

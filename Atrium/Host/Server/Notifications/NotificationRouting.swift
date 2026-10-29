@@ -1,4 +1,5 @@
 import AppKit
+import AtriumProtocol
 import CoreGraphics
 
 /// One decision shared by Mac alerts and companion pushes: alerts go to the

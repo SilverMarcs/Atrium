@@ -1,4 +1,6 @@
 import AppKit
+import AtriumClient
+import AtriumProtocol
 import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {

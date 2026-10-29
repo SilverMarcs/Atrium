@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// The model picker's items: fast mode, when the task's model offers it, then

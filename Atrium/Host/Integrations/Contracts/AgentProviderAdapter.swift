@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Provider boundary. Implementations own connections, SDKs, wire formats, and CLI options.

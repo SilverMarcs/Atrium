@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// One native decision form for the host and companion.

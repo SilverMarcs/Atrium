@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// A command's terminal on this Mac's own host.

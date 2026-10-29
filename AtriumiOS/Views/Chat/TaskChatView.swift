@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.

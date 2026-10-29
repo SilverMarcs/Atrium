@@ -1,4 +1,6 @@
 import AppKit
+import AtriumClient
+import AtriumProtocol
 import Foundation
 
 /// One file in the editor, read from the project's host. Only a project on

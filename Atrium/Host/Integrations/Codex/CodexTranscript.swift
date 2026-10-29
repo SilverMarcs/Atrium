@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Turns Codex thread turns (app-server `ThreadItem`s) into transcript messages.

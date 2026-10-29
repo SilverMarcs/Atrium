@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// The task's model picker, named for the model and effort it runs with: a

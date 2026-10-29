@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 struct ClaudeBackgroundSession: Decodable, Sendable, Equatable {

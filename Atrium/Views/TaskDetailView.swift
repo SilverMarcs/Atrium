@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// A task's chat and, on this Mac's own host, its terminal, above its

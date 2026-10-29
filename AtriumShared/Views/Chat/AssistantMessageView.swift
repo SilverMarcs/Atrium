@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// An agent's reply. One chip above its text counts every tool call folded

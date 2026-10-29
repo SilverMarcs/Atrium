@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// The inline composer's Send button. While the agent works and there's no

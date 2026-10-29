@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// Pairing happens through the host's QR code: scanning it with the Camera opens

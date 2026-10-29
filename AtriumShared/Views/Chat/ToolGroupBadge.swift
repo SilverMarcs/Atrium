@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// A capsule counting a run of tool calls while the agent works.

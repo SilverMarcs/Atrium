@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// The selected task's project: its files, search, Git and commands, from

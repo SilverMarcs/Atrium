@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// One task's conversation, with a prompt field that sends to its agent on its host.

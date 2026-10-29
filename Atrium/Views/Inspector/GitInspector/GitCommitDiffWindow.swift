@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// What a diff window shows: a commit's, a stash's, or a branch comparison's

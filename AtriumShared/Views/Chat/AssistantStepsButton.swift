@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// The folded work behind a reply: how many tool calls it took. Opens every step

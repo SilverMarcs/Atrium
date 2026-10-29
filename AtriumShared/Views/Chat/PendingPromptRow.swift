@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 /// Both clients show delivery and retry in the same bubble that later gets confirmed.

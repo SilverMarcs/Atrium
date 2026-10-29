@@ -1,4 +1,6 @@
 import AppKit
+import AtriumClient
+import AtriumProtocol
 import Observation
 import SwiftUI
 

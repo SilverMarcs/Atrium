@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 /// Names a host on this device only; an empty name goes back to the host's own.

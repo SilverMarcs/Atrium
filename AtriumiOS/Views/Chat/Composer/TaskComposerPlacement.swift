@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 /// Places the task's composer for the device: the bottom-bar search field on

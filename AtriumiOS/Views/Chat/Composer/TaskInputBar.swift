@@ -1,3 +1,4 @@
+import AtriumClient
 import SwiftUI
 
 /// The inline composer used on iPad, in place of the iPhone's bottom-bar

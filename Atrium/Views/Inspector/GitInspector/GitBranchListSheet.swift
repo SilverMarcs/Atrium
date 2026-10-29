@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 struct GitBranchListSheet: View {

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// What the bottom editor panel should display.

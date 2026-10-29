@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// A project's scratch pad, kept on its host and shared by every client.

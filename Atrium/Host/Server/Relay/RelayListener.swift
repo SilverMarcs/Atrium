@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Accepts clients through the Atrium relay. The host keeps one control

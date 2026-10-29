@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// A task's conversation, reloaded whenever its agent reports a change while a

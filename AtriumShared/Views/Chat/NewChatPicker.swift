@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// The new chat's empty timeline, where the host, project and agent its task

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// Presents the oldest pending request and keeps it available after dismissing the sheet.

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// A discard awaiting confirmation: some working-tree files, or all of them.

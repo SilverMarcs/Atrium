@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import Foundation
 
 /// A task's prompt draft with its attached images, and whether the

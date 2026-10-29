@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// A client allowed to connect. Only a hash of its token is kept, so the

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// A task list row, shared by every client: the title and status, then the

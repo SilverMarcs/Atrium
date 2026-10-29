@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Performs task actions for clients through the controllers that own tasks,

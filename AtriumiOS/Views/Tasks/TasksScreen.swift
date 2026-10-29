@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// Every connected host's tasks in one list: active tasks, then collapsible
@@ -128,7 +130,7 @@ struct TasksScreen: View {
         switch action {
         case .rename: taskToRename = item
         case .delete: taskToDelete = item
-        default: item.host.perform(action, on: item.task)
+        default: hosts.perform(action, on: item)
         }
     }
 

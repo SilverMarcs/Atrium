@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// A file from the project's host in the bottom panel: editable on this Mac's

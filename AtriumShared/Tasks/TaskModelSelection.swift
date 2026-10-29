@@ -1,3 +1,5 @@
+import AtriumProtocol
+
 /// The same model-menu state for a local task or a mirrored companion task.
 nonisolated struct TaskModelSelection: Equatable, Sendable {
     var model: String?

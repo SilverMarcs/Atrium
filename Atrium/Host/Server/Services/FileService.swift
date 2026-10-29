@@ -1,4 +1,5 @@
 import AppKit
+import AtriumProtocol
 import Foundation
 
 /// Serves a project's files to clients: folder listings one level at a time,

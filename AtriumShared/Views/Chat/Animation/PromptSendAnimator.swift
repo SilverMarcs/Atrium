@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// Flies just-sent prompt bubbles in from the composer. Owns only short-lived

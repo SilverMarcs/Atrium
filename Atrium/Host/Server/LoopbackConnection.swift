@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import Foundation
 
 /// The Mac UI's connection to its own host: requests are calls and events are
@@ -20,9 +22,9 @@ final class LoopbackConnection: HostConnection {
         onReady?()
     }
 
-    func request(_ request: HostRequest) async throws -> HostReply {
+    func request(_ request: HostRequest, key: UUID?) async throws -> HostReply {
         guard let connection else { throw HostClientError.notConnected }
-        return await server.handle(request, from: connection)
+        return await server.handle(request, from: connection, key: key)
     }
 
     func close() {

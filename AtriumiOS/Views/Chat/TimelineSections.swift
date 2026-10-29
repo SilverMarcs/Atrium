@@ -1,3 +1,6 @@
+import AtriumClient
+import AtriumProtocol
+
 /// A timeline's rows split around the prompt that starts its latest turn:
 /// the history before it, and the turn itself.
 struct TimelineSections {

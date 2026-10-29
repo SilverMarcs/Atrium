@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Resolves the CLI Atrium actually launches and keeps updates with its existing installer.

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// The source control title menu: the repository's branches to switch to, a new

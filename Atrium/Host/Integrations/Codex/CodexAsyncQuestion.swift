@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Default-mode questions arrive as messages, without a pending JSON-RPC request.

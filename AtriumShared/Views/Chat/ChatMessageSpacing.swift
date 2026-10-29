@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// Related prompts sit closer together than messages from different speakers.

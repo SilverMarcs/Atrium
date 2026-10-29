@@ -1,3 +1,5 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// Every connected host's tasks in one list, narrowed by the host filter.
@@ -142,7 +144,7 @@ struct TaskListView: View {
         case .delete:
             taskToDelete = item
         default:
-            item.host.perform(action, on: item.task)
+            hosts.perform(action, on: item)
             registerUndo(of: action, on: item)
         }
     }

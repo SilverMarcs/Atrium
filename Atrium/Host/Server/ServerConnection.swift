@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// One client of this host: the Mac's own UI in process, or a device through
@@ -9,6 +10,9 @@ final class ServerConnection {
     let isLocal: Bool
     private(set) var device: ClientDevice?
     private(set) var topics: Set<HostTopic> = []
+    /// Whether this client has said if it's in the foreground, which makes it
+    /// one that alerts are routed by.
+    var reportsActivity = false
     private var sentTasks: WireTasksSnapshot?
     private var sentTranscripts: [String: [TranscriptMessage]] = [:]
     private let send: (HostEvent) -> Void
@@ -81,10 +85,7 @@ final class ServerConnection {
     /// leave the window from its end, as a rolled-back turn does, are removed.
     private func push(transcript messages: [TranscriptMessage], of taskID: String) {
         if let sent = sentTranscripts[taskID] {
-            var held = messages
-            if let first = messages.first, let start = sent.firstIndex(where: { $0.id == first.id }) {
-                held.insert(contentsOf: sent[..<start], at: 0)
-            }
+            let held = sent.extended(by: messages)
             let delta = WireTranscriptDelta(from: sent, to: held)
             guard !delta.isEmpty else { return }
             send(.transcriptChanged(taskID: taskID, delta: delta))
