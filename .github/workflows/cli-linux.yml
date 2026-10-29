@@ -44,8 +44,9 @@ jobs:
         run: |
           mkdir dist
           for arch in x86_64 aarch64; do
-            swift build --package-path AtriumCLI -c release --swift-sdk "$arch-swift-linux-musl" -Xlinker --strip-all
-            install -D -m 755 "AtriumCLI/.build/$arch-swift-linux-musl/release/atrium" "stage/$arch/atrium"
+            set -- --package-path AtriumCLI -c release --swift-sdk "$arch-swift-linux-musl" -Xlinker --strip-all
+            swift build "$@"
+            install -D -m 755 "$(swift build "$@" --show-bin-path)/atrium" "stage/$arch/atrium"
             tar -C "stage/$arch" -czf "dist/atrium-linux-$arch.tar.gz" atrium
           done
           cd dist && sha256sum atrium-linux-*.tar.gz > atrium-linux-sha256.txt
