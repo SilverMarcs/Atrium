@@ -1,0 +1,58 @@
+# Builds the Linux command-line client for a release. release.sh starts it
+# with the commit it releases and waits for the archives, so the macOS app and
+# both Linux builds publish together. The binaries are fully static, so they
+# run on any x86_64 or arm64 Linux without Swift installed.
+name: CLI for Linux
+run-name: CLI ${{ inputs.version }} (${{ inputs.ref }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit to build
+        required: true
+      version:
+        description: Version the binaries report
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: swift:6.4.1-noble
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install the static Linux SDK
+        run: >
+          swift sdk install
+          https://download.swift.org/swift-6.4.1-release/static-sdk/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz
+          --checksum cef5592d7430ed3c5ae1ddda479849c6f5252bd94a5723db1559f984caf38a7c
+
+      - name: Stamp the version
+        run: |
+          printf '/// The Atrium release this build belongs to.\nlet atriumVersion = "%s"\n' "$VERSION" \
+            > AtriumCLI/Sources/AtriumCLI/Version.swift
+
+      - name: Build
+        run: |
+          mkdir dist
+          for arch in x86_64 aarch64; do
+            swift build --package-path AtriumCLI -c release --swift-sdk "$arch-swift-linux-musl" -Xlinker --strip-all
+            install -D -m 755 "AtriumCLI/.build/$arch-swift-linux-musl/release/atrium" "stage/$arch/atrium"
+            tar -C "stage/$arch" -czf "dist/atrium-linux-$arch.tar.gz" atrium
+          done
+          cd dist && sha256sum atrium-linux-*.tar.gz > atrium-linux-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atrium-cli-linux
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
