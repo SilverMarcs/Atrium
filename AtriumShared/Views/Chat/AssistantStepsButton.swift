@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The folded work behind a reply: how many tool calls it took. Opens every step
-/// in order.
+/// in order, updating while the agent still works.
 struct AssistantStepsButton: View {
     let steps: [TranscriptBlock]
     @State private var showingSteps = false
@@ -15,7 +15,7 @@ struct AssistantStepsButton: View {
                     Image(systemName: symbol)
                         .imageScale(.small)
                 }
-                Text(TranscriptBlock.toolCalls(steps.reduce(0) { $0 + $1.toolCount }))
+                Text(label)
                     .font(.caption.monospacedDigit())
                 Image(systemName: "chevron.right")
                     .imageScale(.small)
@@ -29,6 +29,13 @@ struct AssistantStepsButton: View {
         .sheet(isPresented: $showingSteps) {
             AssistantStepsSheet(steps: steps)
         }
+    }
+
+    /// Notes folded before any tool call has run are counted instead.
+    private var label: String {
+        let toolCount = steps.reduce(0) { $0 + $1.toolCount }
+        guard toolCount == 0 else { return TranscriptBlock.toolCalls(toolCount) }
+        return steps.count == 1 ? "1 note" : "\(steps.count) notes"
     }
 
     /// Each kind of step once, in the order it first happened.
