@@ -4,7 +4,7 @@
 
 ## Install
 
-Every Atrium release carries static binaries for x86_64 and arm64 Linux. They need nothing else installed, so on any distribution:
+Atrium releases carry static binaries for x86_64 and arm64 Linux. They need nothing else installed, so on any distribution:
 
 ```sh
 mkdir -p ~/.local/bin
