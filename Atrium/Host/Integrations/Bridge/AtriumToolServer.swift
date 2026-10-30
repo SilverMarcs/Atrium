@@ -11,7 +11,7 @@ nonisolated enum AtriumToolServer {
 
     private static let instructions = """
         Atrium shows this chat to the user in its own app, on Mac, iPad and iPhone.
-        Most answers need no page. Use `render_html` only when a visual makes the answer clearer than text would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, table, mockup or report). Never start a server or open a browser to show one. A text description or a screenshot on disk does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
+        Most answers need no page. Use `render_html` only when a visual makes the answer clearer than text would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, mockup or report). A plain table or list belongs in Markdown in your reply, not a page. Never start a server or open a browser to show one. A text description or a screenshot on disk does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
         """
 
     private static let pageGuide = """
@@ -27,7 +27,7 @@ nonisolated enum AtriumToolServer {
         "name": renderHTML,
         "title": "Render HTML",
         "description": """
-            Show a finished HTML page (chart, diagram, table, mockup) inline in this chat, above your final reply, when a visual explains more than text would or the user asks for one. Call it once the page is final, just before you reply. Do not announce, describe or restate the page in your reply. To revise a page, call it again with the whole updated document; earlier versions stay in the chat.
+            Show a finished HTML page (chart, diagram, mockup) inline in this chat, above your final reply, when a visual explains more than text would or the user asks for one. Call it once the page is final, just before you reply. Do not announce, describe or restate the page in your reply. To revise a page, call it again with the whole updated document; earlier versions stay in the chat.
             \(pageGuide)
             """,
         "inputSchema": [
