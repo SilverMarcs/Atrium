@@ -18,6 +18,7 @@ struct TaskConfirmations: ViewModifier {
             }
             .alert("Delete Thread?", isPresented: isPresenting($deleting), presenting: deleting) { item in
                 Button("Delete", role: .destructive) { item.host.send(.task(id: item.task.id, action: .delete)) }
+                    .keyboardShortcut(.defaultAction)
                 Button("Cancel", role: .cancel) {}
             } message: { item in
                 Text(item.host.deletionMessage(for: item.task))
