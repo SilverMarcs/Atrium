@@ -34,8 +34,9 @@ struct ChatPageSheet: View {
             .toolbarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button(role: .close) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
             }
         }
