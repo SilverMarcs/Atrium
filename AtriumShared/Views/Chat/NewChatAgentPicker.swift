@@ -29,6 +29,7 @@ struct NewChatAgentPicker: View {
                     Image(draft.provider.symbolName)
                         .resizable()
                         .scaledToFit()
+                        .foregroundStyle(draft.provider.color)
                 }
             }
             .disabled(host.enabledProviders.count < 2)
