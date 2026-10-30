@@ -111,6 +111,7 @@ struct TaskChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
                 anchorSpace.keyboardDidHide()
             }
+            .environment(\.earlierPageIDs, turns.earlierPageIDs)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)

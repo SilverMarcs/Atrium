@@ -53,6 +53,9 @@ struct ChatPageFrame: View {
         }
         .frame(height: min(max(contentHeight ?? CGFloat(page.height ?? 240), Self.minimumHeight), Self.maximumHeight))
         .frame(maxWidth: .infinity)
+        #if os(macOS)
+        .background(ScrollWheelPassthrough(isEnabled: fits))
+        #endif
         .onHover { isHovering = $0 }
         .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
         .task(id: isVisible) {

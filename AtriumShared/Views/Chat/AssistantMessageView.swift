@@ -9,6 +9,7 @@ import SwiftUI
 struct AssistantMessageView: View {
     let blocks: [TranscriptBlock]
     let isStreaming: Bool
+    @Environment(\.earlierPageIDs) private var earlierPageIDs
 
     var body: some View {
         let reply = AssistantReply(blocks: blocks, isStreaming: isStreaming)
@@ -21,7 +22,7 @@ struct AssistantMessageView: View {
             }
             ForEach(reply.pages) { block in
                 if let page = block.page {
-                    ChatPageView(page: page)
+                    ChatPageView(page: page, isEarlierVersion: earlierPageIDs.contains(block.id))
                 }
             }
             // The shown notes read as one document, so they select together.

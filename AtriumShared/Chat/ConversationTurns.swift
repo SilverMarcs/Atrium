@@ -14,6 +14,8 @@ struct ConversationTurns {
     let messages: [TranscriptMessage]
     /// The running turn's replies.
     let liveIDs: Set<String>
+    /// Pages a later page with the same title revised, by block ID.
+    let earlierPageIDs: Set<String>
 
     init(messages: [TranscriptMessage], pendingPrompts: [PendingPrompt], status: AgentThreadStatus) {
         // A prompt on its way that isn't a steer starts a new turn, so the one
@@ -24,6 +26,20 @@ struct ConversationTurns {
         let running = messages[start...]
         self.messages = Self.fold(messages[..<start]) + running
         liveIDs = Set(running.filter { $0.role == .assistant }.map(\.id))
+        earlierPageIDs = Self.earlierPages(in: messages)
+    }
+
+    /// An agent revises a page by showing it again in full, usually under the
+    /// same title, so every version but the last one with a title is earlier.
+    private static func earlierPages(in messages: [TranscriptMessage]) -> Set<String> {
+        var latest: [String: String] = [:]
+        var earlier: Set<String> = []
+        for block in messages.lazy.filter({ $0.role == .assistant }).flatMap(\.blocks) {
+            guard let page = block.page else { continue }
+            let title = page.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let previous = latest.updateValue(block.id, forKey: title) { earlier.insert(previous) }
+        }
+        return earlier
     }
 
     private static func fold(_ messages: ArraySlice<TranscriptMessage>) -> [TranscriptMessage] {
