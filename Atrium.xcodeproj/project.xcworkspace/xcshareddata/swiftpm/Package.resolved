@@ -114,8 +114,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SilverMarcs/SwiftMarkdownView",
       "state" : {
-        "revision" : "d5fcb61633c09bcef1571ec371139ad91ddb51ce",
-        "version" : "1.2.2"
+        "revision" : "4069da06b74b2c8617dfefd0f695b444a9e810e1",
+        "version" : "1.2.3"
       }
     },
     {
