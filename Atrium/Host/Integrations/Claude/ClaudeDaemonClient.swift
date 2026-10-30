@@ -63,13 +63,25 @@ final class ClaudeDaemonClient {
     }
 
     func interrupt(jobID: String) async throws {
+        try await press([0x1b], jobID: jobID)
+    }
+
+    /// Has the running turn take in the prompts queued behind it now, as the terminal's send-now
+    /// key does: Claude moves running tools to the background or stops the turn for them.
+    /// It does nothing when no prompt waits or no turn is running.
+    func sendQueuedNow(jobID: String) async throws {
+        // Ctrl+X Ctrl+S, Claude's default binding for sending now.
+        try await press([0x18, 0x13], jobID: jobID)
+    }
+
+    private func press(_ keys: [UInt8], jobID: String) async throws {
         let connection = UnixJSONConnection()
         defer { connection.close() }
         let data = try await connection.request(path: socketPath, data: request("attach", jobID: jobID, values: ["cols": 120, "rows": 40]), rawAfterFirstLine: true)
         try validate(data)
         // The attach channel accepts raw terminal input after its JSON handshake.
         // This does not launch a terminal process or render a terminal view.
-        try await connection.sendRaw(Data([0x1b]))
+        try await connection.sendRaw(Data(keys))
     }
 
     private func validate(_ data: Data) throws {

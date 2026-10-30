@@ -248,10 +248,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let questionIDs = Set(conversations[thread.sessionID]?.pendingQuestions.map(\.itemID) ?? [])
         var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
         if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
-        if let turnID = try await activeTurnID(of: thread.sessionID) {
-            // A steered turn keeps its settings; any chosen ones wait for the next turn.
-            _ = try await request("turn/steer", params: ["threadId": thread.sessionID, "input": input, "expectedTurnId": turnID])
-        } else {
+        // A steered turn keeps its settings; any chosen ones wait for the next turn.
+        let isSteered = if let turnID = try await activeTurnID(of: thread.sessionID) {
+            try await steer(thread.sessionID, turnID: turnID, with: input)
+        } else { false }
+        if !isSteered {
             let settings = pendingSettings[thread.sessionID] ?? [:]
             var params: [String: Any] = ["threadId": thread.sessionID, "input": input]
             params.merge(settings) { $1 }
@@ -269,6 +270,22 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         conversations[thread.sessionID]?.resolveQuestions(questionIDs)
         refreshAsyncQuestions(sessionID: thread.sessionID)
         generateTitleIfNeeded(for: thread, prompt: text.isEmpty ? "Discuss an attached image" : text)
+    }
+
+    /// Adds input to a running turn.
+    /// - Returns: False when the turn ended before Codex got the input, so it should start the next one.
+    private func steer(_ threadID: String, turnID: String, with input: [[String: Any]]) async throws -> Bool {
+        do {
+            _ = try await request("turn/steer", params: ["threadId": threadID, "input": input, "expectedTurnId": turnID])
+            return true
+        } catch let error as IntegrationError where error.message.localizedStandardContains("no active turn")
+            || error.message.localizedStandardContains("expected active turn id") {
+            // The turn this adapter knew of ended, and another may have started since.
+            guard let turn = try await turns(of: threadID).last, turn["status"] as? String == "inProgress",
+                  let currentID = turn["id"] as? String else { return false }
+            _ = try await request("turn/steer", params: ["threadId": threadID, "input": input, "expectedTurnId": currentID])
+            return true
+        }
     }
 
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
