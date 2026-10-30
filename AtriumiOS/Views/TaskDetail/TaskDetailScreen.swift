@@ -29,17 +29,32 @@ struct TaskDetailScreen: View {
     private var task: WireTask? { item?.task }
     private var workspace: WorkspaceRef? { task?.workspaceID.map { WorkspaceRef(hostID: ref.hostID, workspaceID: $0) } }
 
-    /// A draft's model can't be changed until the host has created its task.
-    private var models: [AgentModel] { hostTask.flatMap { task in host?.models(for: task.provider) } ?? [] }
+    /// Drafts choose a model beside the composer; only created chats also
+    /// show the picker in the detail toolbar or More menu.
+    private var models: [AgentModel] {
+        guard let task, !TaskDraft.isDraftID(task.id) else { return [] }
+        return host?.models(for: task.provider) ?? []
+    }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    private var newChatDraft: TaskDraft? {
+        guard let item,
+              item.host.conversations.transcripts[item.task.id]?.isEmpty == true,
+              item.host.conversations.pendingPrompts[item.task.id]?.isEmpty != false else { return nil }
+        return item.host.drafts[item.task.id]
+    }
 
     var body: some View {
         let targetComposer = composer
         let editing = composer.messageEdit
         Group {
             if let item {
-                TaskChatView(item: item)
+                if let draft = newChatDraft {
+                    NewChatPlaceholder(provider: draft.provider)
+                } else {
+                    TaskChatView(item: item)
+                }
             } else if host?.tasks == nil || host?.isConnected != true {
                 ProgressView()
                     .controlSize(.large)
@@ -154,6 +169,11 @@ struct TaskDetailScreen: View {
                         .tint(.red)
                     }
                 }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let item, let draft = newChatDraft {
+                NewChatPicker(hosts: hosts, host: item.host, draft: draft)
             }
         }
         .taskComposer(composer, item: item, prompt: "Ask anything…", submit: sendDraft)

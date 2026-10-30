@@ -80,7 +80,7 @@ struct TaskDetailView: View {
         }
         .toolbarBackgroundVisibility(showsTerminal ? .hidden : .automatic, for: .windowToolbar)
         .toolbar {
-            if !showsTerminal {
+            if !showsTerminal, !TaskDraft.isDraftID(task.id) {
                 ToolbarItem {
                     TaskModelMenu(
                         provider: task.provider, selection: task.modelSelection, models: models,

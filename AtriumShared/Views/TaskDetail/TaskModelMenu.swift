@@ -9,6 +9,7 @@ struct TaskModelMenu: View {
   let models: [AgentModel]
   let perform: (TaskAction) -> Void
   var showsToolbarLabel = false
+  var isNewChatRow = false
 
   var body: some View {
     let name = models.model(running: selection.model)?.name ?? selection.model ?? "Model"
@@ -17,7 +18,11 @@ struct TaskModelMenu: View {
     Menu {
       TaskModelMenuItems(selection: selection, models: models, perform: perform)
     } label: {
-      if showsToolbarLabel {
+      if isNewChatRow {
+        NewChatPickerLabel(title: [name, detail].filter { !$0.isEmpty }.joined(separator: " · ")) {
+          Image(systemName: "cpu")
+        }
+      } else if showsToolbarLabel {
         #if os(macOS)
         Label {
           Text(name)
@@ -40,5 +45,7 @@ struct TaskModelMenu: View {
     #if os(macOS)
     .labelStyle(.titleAndIcon)
     #endif
+    .accessibilityLabel("Model")
+    .accessibilityValue([name, detail].filter { !$0.isEmpty }.joined(separator: " · "))
   }
 }

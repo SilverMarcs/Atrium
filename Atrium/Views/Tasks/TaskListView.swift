@@ -70,11 +70,11 @@ struct TaskListView: View {
             HStack {
                 Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
                     .disabled(!hosts.canStartNewChat)
+                Spacer()
                 Button("Projects", systemImage: "folder") { app.showingProjects = true }
                     .labelStyle(.iconOnly)
                     .help("Manage projects")
                     .disabled(!hosts.hosts.contains(where: \.isConnected))
-                Spacer()
             }
             .buttonStyle(.plain)
             .padding(13)

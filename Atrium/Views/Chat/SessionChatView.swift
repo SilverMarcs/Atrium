@@ -98,29 +98,38 @@ struct SessionChatView: View {
       .overlay {
         if transcript == nil, rows.isEmpty, transcriptError == nil {
           ProgressView()
-        } else if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
-          NewChatPicker(hosts: app.hosts, host: host, draft: draft)
         } else if transcript?.isEmpty == true, prompts.isEmpty {
-          Image(task.provider.symbolName)
-            .resizable()
-            .scaledToFit()
-            .frame(width: 100, height: 100)
-            .foregroundStyle(task.provider.color.gradient)
-            .saturation(0)
-            .allowsHitTesting(false)
+          let draft = host.drafts[task.id]
+          if draft == nil || !host.enabledProviders.isEmpty {
+            let provider = draft?.provider ?? task.provider
+            Image(provider.symbolName)
+              .resizable()
+              .scaledToFit()
+              .frame(width: 109, height: 109)
+              .foregroundStyle(.tertiary)
+              .contentTransition(.symbolEffect(.replace))
+              .accessibilityLabel(provider.name)
+              .allowsHitTesting(false)
+          }
         }
       }
       .safeAreaBar(edge: .bottom) {
-        SessionChatComposer(
-          prompt: $composer.inputText, images: $composer.inputImages, provider: task.provider,
-          isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
-          actions: task.actions,
-          send: { send(composer) },
-          interrupt: { host.interrupt(task.id) },
-          edit: composer.messageEdit,
-          cancelEdit: { composer.messageEdit = nil },
-          noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
-        )
+        VStack(spacing: 0) {
+          if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
+            NewChatPicker(hosts: app.hosts, host: host, draft: draft)
+              .padding(.top, 8)
+          }
+          SessionChatComposer(
+            prompt: $composer.inputText, images: $composer.inputImages, provider: task.provider,
+            isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
+            actions: task.actions,
+            send: { send(composer) },
+            interrupt: { host.interrupt(task.id) },
+            edit: composer.messageEdit,
+            cancelEdit: { composer.messageEdit = nil },
+            noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
+          )
+        }
         .frame(maxWidth: SessionChatLayout.maximumWidth)
         .frame(maxWidth: .infinity)
       }

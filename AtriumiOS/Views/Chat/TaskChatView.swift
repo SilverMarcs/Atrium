@@ -114,7 +114,8 @@ struct TaskChatView: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)
-            .contentMargins([.horizontal, .bottom], 20, for: .scrollContent)
+            .contentMargins(.horizontal, 15, for: .scrollContent)
+            .contentMargins(.bottom, 20, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
@@ -227,11 +228,7 @@ struct TaskChatView: View {
                     ProgressView()
                         .controlSize(.large)
                 } else if messages?.isEmpty == true, pendingPrompts.isEmpty {
-                    if let draft = host.drafts[task.id] {
-                        NewChatPicker(hosts: hosts, host: host, draft: draft)
-                    } else {
-                        ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
-                    }
+                    ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
                 }
             }
         }
