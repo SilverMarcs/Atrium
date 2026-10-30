@@ -28,7 +28,12 @@ struct UserMessageView: View {
                     Text(text)
                     #endif
                 }
+                #if os(macOS)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                #else
                 .padding(12)
+                #endif
                 .background(Color.accentColor.quinary)
                 .clipShape(.rect(cornerRadius: 20))
                 // Menu sits on the bubble itself so iOS lifts just the bubble, not the full-width row.
