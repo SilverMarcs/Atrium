@@ -250,9 +250,15 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let configured = await Task.detached { () -> TaskStartSettings in
             let data = try? Data(contentsOf: configDirectory.appending(path: "settings.json"))
             let settings = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let model = environment["ANTHROPIC_MODEL"] ?? settings["model"] as? String ?? environment["ANTHROPIC_DEFAULT_MODEL"]
+            // Claude remembers the effort last chosen for each model under its full ID,
+            // which outranks the older top-level effort.
+            let resolvedModel = options.first { $0.value == (model ?? "default") }?.resolvedModel ?? model
+            let modelSettings = settings["modelSettings"] as? [String: [String: Any]]
+            let modelEffort = resolvedModel.flatMap { modelSettings?[$0]?["effortLevel"] as? String }
             return TaskStartSettings(
-                model: environment["ANTHROPIC_MODEL"] ?? settings["model"] as? String ?? environment["ANTHROPIC_DEFAULT_MODEL"],
-                reasoningEffort: environment["CLAUDE_CODE_EFFORT_LEVEL"] ?? settings["effortLevel"] as? String,
+                model: model,
+                reasoningEffort: environment["CLAUDE_CODE_EFFORT_LEVEL"] ?? modelEffort ?? settings["effortLevel"] as? String,
                 isFastMode: settings["fastMode"] as? Bool
             )
         }.value
