@@ -4,6 +4,95 @@ import Foundation
 import Testing
 
 struct HostClientTests {
+    @Test(arguments: [AgentProvider.codex, .claude])
+    func draftModelsStayLocalUntilCreation(provider: AgentProvider) async throws {
+        let connection = FakeConnection()
+        let host = HostClient(localID: "local", name: "Mac") { connection }
+        host.start()
+        await connected(host)
+        try await connection.waitForRequests(1)
+        connection.onEvent?(.tasks(modelSnapshot()))
+        let draftID = host.openDraft(in: UUID(), provider: provider)
+        #expect(host.draftTask(draftID)?.model == "standard")
+        #expect(host.draftTask(draftID)?.reasoningEffort == "medium")
+        #expect(host.draftTask(draftID)?.actions.contains(.selectModel) == true)
+        #expect(host.drafts[draftID]?.settings == nil)
+
+        let requestsBeforeSelection = connection.requests.count
+        host.send(.task(id: draftID, action: .selectModel(id: "advanced", reasoningEffort: "high")))
+        host.send(.task(id: draftID, action: .setFastMode(true)))
+        #expect(connection.requests.count == requestsBeforeSelection)
+        #expect(host.draftTask(draftID)?.model == "advanced")
+        #expect(host.draftTask(draftID)?.reasoningEffort == "high")
+        #expect(host.draftTask(draftID)?.isFastMode == true)
+        let nextDraftID = host.openDraft(in: UUID(), provider: provider)
+        #expect(host.draftTask(nextDraftID)?.model == "standard")
+        #expect(host.drafts[nextDraftID]?.settings == nil)
+
+        connection.reply = .task(id: "created")
+        host.sendPrompt("Hello", to: draftID)
+        // Creation and the first prompt are separate requests, in that order.
+        try await connection.waitForRequests(requestsBeforeSelection + 2)
+        let creation = try #require(connection.requests.first { if case .compose = $0.request { true } else { false } })
+        guard case .compose(let actualProvider, _, let settings) = creation.request else { return }
+        #expect(actualProvider == provider)
+        #expect(settings == TaskStartSettings(model: "advanced", reasoningEffort: "high", isFastMode: true))
+        #expect(host.drafts[draftID]?.taskID == "created")
+        guard case .prompt(let taskID, let text, _) = connection.requests.last?.request else {
+            Issue.record("Expected the first prompt after creation"); return
+        }
+        #expect(taskID == "created")
+        #expect(text == "Hello")
+        host.stop()
+    }
+
+    @Test func draftDefaultsFollowProviderAndResetWhenAgentChanges() async throws {
+        let connection = FakeConnection()
+        let host = HostClient(localID: "local", name: "Mac") { connection }
+        host.start()
+        await connected(host)
+        try await connection.waitForRequests(1)
+        connection.onEvent?(.tasks(modelSnapshot()))
+        let draftID = host.openDraft(in: UUID(), provider: .codex)
+        var snapshot = modelSnapshot()
+        snapshot.providers[0].defaultSettings?.model = "advanced"
+        connection.onEvent?(.tasks(snapshot))
+        #expect(host.draftTask(draftID)?.model == "advanced")
+        #expect(host.drafts[draftID]?.settings == nil)
+
+        _ = try await host.request(.task(id: draftID, action: .selectModel(id: "plain", reasoningEffort: nil)))
+        #expect(host.draftTask(draftID)?.reasoningEffort == nil)
+        #expect(host.draftTask(draftID)?.isFastMode == false)
+        await #expect(throws: HostClientError.self) {
+            try await host.request(.task(id: draftID, action: .setFastMode(true)))
+        }
+        host.setProvider(.claude, ofDraft: draftID)
+        #expect(host.drafts[draftID]?.settings == nil)
+        #expect(host.draftTask(draftID)?.model == "standard")
+        #expect(host.draftTask(draftID)?.reasoningEffort == "medium")
+
+        host.updateDraft(draftID) { $0.isCreating = true }
+        #expect(host.draftTask(draftID)?.actions.contains(.selectModel) == false)
+        await #expect(throws: HostClientError.self) {
+            try await host.request(.task(id: draftID, action: .selectModel(id: "advanced", reasoningEffort: "high")))
+        }
+        #expect(connection.requests.count == 1)
+        host.stop()
+    }
+
+    private func modelSnapshot() -> WireTasksSnapshot {
+        let models = [
+            AgentModel(id: "standard", resolvedID: "standard", name: "Standard", summary: "", reasoningEfforts: ["medium"], supportsFastMode: true),
+            AgentModel(id: "advanced", resolvedID: "advanced", name: "Advanced", summary: "", reasoningEfforts: ["high"], supportsFastMode: true),
+            AgentModel(id: "plain", resolvedID: "plain", name: "Plain", summary: "", reasoningEfforts: [], supportsFastMode: false)
+        ]
+        return WireTasksSnapshot(tasks: [], workspaces: [], providers: [AgentProvider.codex, .claude].map {
+            WireProvider(provider: $0, isEnabled: true, models: models,
+                         defaultSettings: TaskStartSettings(model: "standard", reasoningEffort: "medium", isFastMode: true),
+                         deletionMessage: "")
+        })
+    }
+
     @Test func connectsSubscribesAndAppliesEvents() async throws {
         let connection = FakeConnection()
         let host = HostClient(localID: "local", name: "Mac") { connection }

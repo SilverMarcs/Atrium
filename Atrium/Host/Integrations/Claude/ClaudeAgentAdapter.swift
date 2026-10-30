@@ -5,6 +5,7 @@ import Foundation
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
     let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel, .editMessage]
+    private(set) var defaultSettings: TaskStartSettings?
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
     private let configDirectory: URL
@@ -234,6 +235,23 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
         let file = globalConfigFile
         let allowsFastMode = await Task.detached { Self.organizationAllowsFastMode(configFile: file) }.value
+        let environment = IntegrationProcess.environment
+        let configDirectory = self.configDirectory
+        let configured = await Task.detached { () -> TaskStartSettings in
+            let data = try? Data(contentsOf: configDirectory.appending(path: "settings.json"))
+            let settings = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            return TaskStartSettings(
+                model: environment["ANTHROPIC_MODEL"] ?? settings["model"] as? String ?? environment["ANTHROPIC_DEFAULT_MODEL"],
+                reasoningEffort: environment["CLAUDE_CODE_EFFORT_LEVEL"] ?? settings["effortLevel"] as? String,
+                isFastMode: settings["fastMode"] as? Bool
+            )
+        }.value
+        let fallback = options.first { $0.value == "default" }?.resolvedModel
+        defaultSettings = TaskStartSettings(
+            model: configured.model == "default" ? fallback : configured.model ?? fallback,
+            reasoningEffort: configured.reasoningEffort,
+            isFastMode: allowsFastMode && configured.isFastMode == true
+        )
         // "default" stands for one of the other rows, which tasks report running instead.
         return options.filter { $0.value != "default" }.map { $0.model(allowingFastMode: allowsFastMode) }
     }
@@ -277,13 +295,20 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
-    func createThread(directory: String) async throws -> AgentThread {
-        let session = try await startBackgroundSession(directory: directory)
+    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
+        let session = try await startBackgroundSession(directory: directory, settings: settings)
         guard var thread = session.thread else {
             throw IntegrationError(message: "Claude did not provide a session identifier.")
         }
         thread.title = "New Claude thread"
         thread.status = .idle
+        if let model = settings?.model {
+            let change = AgentSettingsChange.model(model, reasoningEffort: settings?.reasoningEffort)
+            var override = ClaudeSettingsOverride(reportedBy: thread)
+            override.append(change)
+            settingsOverrides[thread.sessionID] = override
+            thread = change.applying(to: thread)
+        }
         return thread
     }
 
@@ -344,7 +369,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
     }
 
-    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false) async throws -> ClaudeBackgroundSession {
+    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settings = try await hooks.start()
@@ -355,6 +380,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // Any new options on a saved background job tell Claude to COPY it,
         // even if those options equal its old ones. Preserve the job's options.
         var arguments = existingBackground ? ["--bg"] : ["--bg", "--settings", settings.path]
+        if let model = startSettings?.model { arguments += ["--model", model] }
+        if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
         if forking { arguments.append("--fork-session") }
         let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, timeout: .seconds(120))

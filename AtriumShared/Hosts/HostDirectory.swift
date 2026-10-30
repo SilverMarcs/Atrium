@@ -206,14 +206,13 @@ final class HostDirectory {
         open(ref)
     }
 
-    /// Opens the new chat in a task's project with the task's agent and settings.
+    /// Opens the new chat in a task's project with its agent's own defaults.
     func openNewChat(matching item: HostTask) {
         guard let workspaceID = item.task.workspaceID else { return }
         let task = item.task
         openNewChat(
             in: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-            provider: task.provider,
-            settings: TaskStartSettings(model: task.model, reasoningEffort: task.reasoningEffort, isFastMode: task.isFastMode)
+            provider: task.provider
         )
     }
 

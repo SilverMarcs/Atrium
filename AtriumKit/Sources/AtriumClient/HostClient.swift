@@ -386,6 +386,10 @@ public final class HostClient: Identifiable {
     /// declines it. A `key` makes repeating the same change safe: the host
     /// performs it once and answers a repeat with the first success.
     public func request(_ request: HostRequest, key: UUID? = nil) async throws -> HostReply {
+        if let reply = performDraftRequest(request) {
+            if case .failed(let message) = reply { throw HostClientError.rejected(message) }
+            return reply
+        }
         guard let connection, isConnected else { throw HostClientError.notConnected }
         let update = OptimisticTaskUpdate(request)
         if let update { taskUpdates.append(update) }
@@ -402,6 +406,10 @@ public final class HostClient: Identifiable {
 
     /// Sends a request whose only result is success, reporting failures as `actionError`.
     public func send(_ request: HostRequest) {
+        if let reply = performDraftRequest(request) {
+            if case .failed(let message) = reply { actionError = message }
+            return
+        }
         Task { await perform(request) }
     }
 

@@ -21,6 +21,7 @@ final class AgentIntegrationStore {
     private(set) var snoozedUntil: [String: Date]
     /// The models each provider's threads can switch to, once listed.
     private(set) var models: [AgentProvider: [AgentModel]] = [:]
+    private(set) var defaultSettings: [AgentProvider: TaskStartSettings] = [:]
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
@@ -94,6 +95,7 @@ final class AgentIntegrationStore {
             generations[provider, default: 0] += 1
             errors[provider] = nil
             models[provider] = nil
+            defaultSettings[provider] = nil
             modelsRefreshDates[provider] = nil
             adapters[provider]?.setEnabled(newValue)
             if !newValue {
@@ -598,10 +600,18 @@ final class AgentIntegrationStore {
         return fork
     }
 
-    func createThread(provider: AgentProvider, directory: String) async throws -> AgentThread {
+    func createThread(provider: AgentProvider, directory: String, settings: TaskStartSettings? = nil) async throws -> AgentThread {
         let adapter = try enabledAdapter(for: provider)
         let generation = generations[provider, default: 0]
-        let thread = try await adapter.createThread(directory: directory)
+        var settings = settings
+        if let model = settings?.model {
+            settings?.model = models[provider]?.model(running: model)?.id ?? model
+            try validate(.model(settings?.model ?? model, reasoningEffort: settings?.reasoningEffort), provider: provider, model: settings?.model)
+        }
+        if let isFastMode = settings?.isFastMode {
+            try validate(.fastMode(isFastMode), provider: provider, model: settings?.model ?? defaultSettings[provider]?.model)
+        }
+        let thread = try await adapter.createThread(directory: directory, settings: settings)
         try Task.checkCancellation()
         guard isCurrent(provider, generation: generation) else { throw CancellationError() }
         return thread
@@ -685,6 +695,7 @@ final class AgentIntegrationStore {
                 let listed = try await adapter.models()
                 guard isCurrent(provider, generation: generation) else { return }
                 models[provider] = listed
+                defaultSettings[provider] = adapter.defaultSettings
                 modelsRefreshDates[provider] = .now.addingTimeInterval(30 * 60)
             } catch {
                 guard isCurrent(provider, generation: generation) else { return }
@@ -696,17 +707,21 @@ final class AgentIntegrationStore {
     /// Checks a settings change against the models the provider lists, so only
     /// a choice its own picker offers reaches it.
     func validate(_ change: AgentSettingsChange, for thread: AgentThread) throws {
-        let models = models[thread.provider] ?? []
+        try validate(change, provider: thread.provider, model: thread.model)
+    }
+
+    private func validate(_ change: AgentSettingsChange, provider: AgentProvider, model: String?) throws {
+        let models = models[provider] ?? []
         switch change {
         case .model(let id, let reasoningEffort):
             guard let model = models.first(where: { $0.id == id }) else {
-                throw IntegrationError(message: "\(thread.provider.name) doesn’t offer that model.")
+                throw IntegrationError(message: "\(provider.name) doesn’t offer that model.")
             }
             if let reasoningEffort, !model.reasoningEfforts.contains(reasoningEffort) {
                 throw IntegrationError(message: "\(model.name) doesn’t offer that reasoning effort.")
             }
         case .fastMode(let isOn):
-            if isOn, models.model(running: thread.model)?.supportsFastMode != true {
+            if isOn, models.model(running: model)?.supportsFastMode != true {
                 throw IntegrationError(message: "Fast mode isn’t available with this model.")
             }
         }

@@ -33,22 +33,16 @@ final class TaskSessionController {
         defer { isOpening = false }
         do {
             try validateDirectory(workspace.directory)
-            var thread = try await integrations.createThread(provider: provider, directory: workspace.directory)
+            var thread = try await integrations.createThread(provider: provider, directory: workspace.directory, settings: settings)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             let launch = try await integrations.prepareLaunch(for: thread, isNew: true)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             integrations.registerDraft(thread)
-            // Apply inherited settings before a client can deliver its first prompt.
+            // Model and effort were passed at creation; fast mode can be applied
+            // once the provider has opened the conversation.
             if let settings {
-                if let model = settings.model {
-                    let modelID = integrations.models[provider]?.model(running: model)?.id ?? model
-                    let change = AgentSettingsChange.model(modelID, reasoningEffort: settings.reasoningEffort)
-                    try integrations.validate(change, for: thread)
-                    try await integrations.changeSettings(change, of: thread)
-                    thread = change.applying(to: thread)
-                }
                 if let isFastMode = settings.isFastMode {
                     let change = AgentSettingsChange.fastMode(isFastMode)
                     try integrations.validate(change, for: thread)

@@ -27,6 +27,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var defaultModel: String?
     private var defaultReasoningEffort: String?
     private var defaultServiceTier: String?
+    var defaultSettings: TaskStartSettings? {
+        TaskStartSettings(
+            model: defaultModel, reasoningEffort: defaultReasoningEffort,
+            isFastMode: defaultModel.flatMap { fastServiceTiers[$0] }.map { $0 == defaultServiceTier } ?? false
+        )
+    }
     /// The service tier that makes each model fast, for models that have one.
     private var fastServiceTiers: [String: String] = [:]
     /// Model settings chosen in Atrium for each thread, sent with the next turn
@@ -169,14 +175,25 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return state
     }
 
-    func createThread(directory: String) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
-        let data = try await request("thread/start", params: ["cwd": directory])
+        var params: [String: Any] = ["cwd": directory]
+        if let model = settings?.model { params["model"] = model }
+        if let effort = settings?.reasoningEffort { params["config"] = ["model_reasoning_effort": effort] }
+        let data = try await request("thread/start", params: params)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let row = result["thread"] as? [String: Any], let thread = Self.thread(row) else {
+              let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
+        if let settings, let model = settings.model {
+            pendingSettings[thread.sessionID] = ["model": model]
+            pendingSettings[thread.sessionID]?["effort"] = settings.reasoningEffort
+            thread.model = model
+            thread.reasoningEffort = settings.reasoningEffort ?? thread.reasoningEffort
+        }
+        thread.model = settings?.model ?? result["model"] as? String ?? thread.model
+        thread.reasoningEffort = settings?.reasoningEffort ?? result["reasoningEffort"] as? String ?? thread.reasoningEffort
         conversations[thread.sessionID] = CodexLiveConversation(turns: [])
         desiredConversations[thread.sessionID] = thread
         return thread
@@ -358,6 +375,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func models() async throws -> [AgentModel] {
         try await connect()
+        await readDefaults()
         return try await listModels()
     }
 
@@ -805,6 +823,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             )
         }
         fastServiceTiers = tiers
+        let defaultRow = rows.first { row in
+            if let defaultModel { return row["id"] as? String == defaultModel || row["model"] as? String == defaultModel }
+            return row["isDefault"] as? Bool == true
+        }
+        defaultModel = defaultModel ?? defaultRow?["model"] as? String ?? defaultRow?["id"] as? String
+        defaultReasoningEffort = defaultReasoningEffort ?? defaultRow?["defaultReasoningEffort"] as? String
         titleModel = rows.first(where: { $0["model"] as? String == "gpt-5.6-luna" })?["model"] as? String
         return models
     }

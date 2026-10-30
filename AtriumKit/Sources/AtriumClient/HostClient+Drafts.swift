@@ -53,6 +53,14 @@ extension HostClient {
     public func draftTask(_ id: String) -> WireTask? {
         guard let draft = drafts[id] ?? drafts.values.first(where: { $0.taskID == id }) else { return nil }
         let workspace = workspace(draft.workspaceID)
+        let defaults = tasks?.providers.first { $0.provider == draft.provider }?.defaultSettings
+        let model = draft.settings?.model ?? defaults?.model
+        let reasoningEffort = draft.settings?.reasoningEffort ?? (draft.settings?.model == nil ? defaults?.reasoningEffort : nil)
+        let supportsFastMode = models(for: draft.provider).model(running: model)?.supportsFastMode == true
+        var actions: TaskActions = .prompt
+        if !draft.isCreating, draft.taskID == nil, enabledProviders.contains(draft.provider), !models(for: draft.provider).isEmpty {
+            actions.insert(.selectModel)
+        }
         return WireTask(
             id: draft.taskID ?? draft.id,
             title: "New Task",
@@ -65,11 +73,45 @@ extension HostClient {
             hasUnreadResult: false,
             isSettled: false,
             supportsDeletion: false,
-            actions: .prompt,
-            model: draft.settings?.model,
-            reasoningEffort: draft.settings?.reasoningEffort,
-            isFastMode: draft.settings?.isFastMode
+            actions: actions,
+            model: model,
+            reasoningEffort: reasoningEffort,
+            isFastMode: supportsFastMode && (draft.settings?.isFastMode ?? defaults?.isFastMode ?? false)
         )
+    }
+
+    /// Draft model choices belong only to this device until the first prompt.
+    /// Never send a draft ID to the host as though it were an existing task.
+    func performDraftRequest(_ request: HostRequest) -> HostReply? {
+        guard case .task(let id, let action) = request, TaskDraft.isDraftID(id) else { return nil }
+        guard let draft = unsentDraft(id), draftTask(id)?.actions.contains(.selectModel) == true else {
+            return .failed(message: "This new chat can’t be changed right now.")
+        }
+        switch action {
+        case .selectModel(let id, let reasoningEffort):
+            guard let model = models(for: draft.provider).first(where: { $0.id == id }),
+                  reasoningEffort.map({ model.reasoningEfforts.contains($0) }) ?? true else {
+                return .failed(message: "That model or reasoning effort is no longer available.")
+            }
+            updateDraft(draft.id) {
+                $0.settings = TaskStartSettings(
+                    model: model.id, reasoningEffort: reasoningEffort,
+                    isFastMode: model.supportsFastMode ? $0.settings?.isFastMode : false
+                )
+            }
+        case .setFastMode(let isOn):
+            guard !isOn || models(for: draft.provider).model(running: draftTask(id)?.model)?.supportsFastMode == true else {
+                return .failed(message: "Fast mode isn’t available with this model.")
+            }
+            updateDraft(id) {
+                var settings = $0.settings ?? TaskStartSettings()
+                settings.isFastMode = isOn
+                $0.settings = settings
+            }
+        default:
+            return .failed(message: "This action needs an existing chat.")
+        }
+        return .done
     }
 
     /// The host's task, or what a draft shows until the host lists it.

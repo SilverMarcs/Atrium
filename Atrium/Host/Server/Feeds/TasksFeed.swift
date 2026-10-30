@@ -57,6 +57,7 @@ final class TasksFeed: TopicFeed {
                     isEnabled: integrations.enabledProviders.contains(provider),
                     error: integrations.errors[provider],
                     models: integrations.models[provider],
+                    defaultSettings: integrations.defaultSettings[provider],
                     deletionMessage: integrations.deletionMessage(for: provider)
                 )
             },

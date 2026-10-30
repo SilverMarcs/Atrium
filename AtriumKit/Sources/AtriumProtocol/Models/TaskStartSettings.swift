@@ -1,5 +1,5 @@
 /// Settings inherited by a blank conversation, independently of its history.
-public nonisolated struct TaskStartSettings: Codable, Sendable, Equatable {
+public nonisolated struct TaskStartSettings: Codable, Sendable, Hashable {
     public var model: String?
     public var reasoningEffort: String?
     public var isFastMode: Bool?

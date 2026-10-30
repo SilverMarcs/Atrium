@@ -7,6 +7,7 @@ import Foundation
 protocol AgentProviderAdapter: AnyObject {
     var provider: AgentProvider { get }
     var capabilities: AgentCapabilities { get }
+    var defaultSettings: TaskStartSettings? { get }
     var onEvent: ((AgentEvent) -> Void)? { get set }
 
     /// Opens the provider connection, independently of any terminal attachment.
@@ -16,7 +17,7 @@ protocol AgentProviderAdapter: AnyObject {
     func listThreads() async throws -> [AgentThread]
     func readThread(_ sessionID: String) async throws -> AgentThread?
     func forkThread(_ thread: AgentThread) async throws -> AgentThread
-    func createThread(directory: String) async throws -> AgentThread
+    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch
     func stopThread(_ thread: AgentThread) async throws
     func renameThread(_ thread: AgentThread, to title: String) async throws
@@ -45,6 +46,7 @@ protocol AgentProviderAdapter: AnyObject {
 
 extension AgentProviderAdapter {
     var capabilities: AgentCapabilities { [] }
+    var defaultSettings: TaskStartSettings? { nil }
 
     func openConversation(_ thread: AgentThread) async throws {}
 

@@ -3,6 +3,14 @@ import Foundation
 import Testing
 
 struct ProtocolTests {
+    @Test func providerDefaultsAreOptionalOnTheWire() throws {
+        let old = try HostCodec.decode(WireProvider.self, from: Data(#"{"provider":"codex","isEnabled":true,"deletionMessage":""}"#.utf8))
+        #expect(old.defaultSettings == nil)
+        var provider = old
+        provider.defaultSettings = TaskStartSettings(model: "chosen", reasoningEffort: "high", isFastMode: true)
+        #expect(try HostCodec.decode(WireProvider.self, from: HostCodec.encode(provider)) == provider)
+    }
+
     @Test func framesCarryTheirKey() throws {
         let key = UUID()
         let frame = try HostCodec.decode(ClientFrame.self, from: HostCodec.encode(
