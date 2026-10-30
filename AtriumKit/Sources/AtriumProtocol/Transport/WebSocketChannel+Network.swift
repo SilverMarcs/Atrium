@@ -59,7 +59,7 @@ public final class WebSocketChannel: HostChannel {
         let context = NWConnection.ContentContext(identifier: "message", metadata: [metadata])
         connection.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self] error in
             guard let error else { return }
-            MainActor.assumeIsolated { self?.finish(error.localizedDescription) }
+            MainActor.assumeIsolated { self?.finish(error.connectionReason) }
         })
     }
 
@@ -73,7 +73,7 @@ public final class WebSocketChannel: HostChannel {
             onReady?()
         case .waiting(let error), .failed(let error):
             // A dialed host that is unreachable waits indefinitely; callers decide when to retry.
-            finish(error.localizedDescription)
+            finish(error.connectionReason)
         case .cancelled:
             finish(nil)
         default:
@@ -86,7 +86,7 @@ public final class WebSocketChannel: HostChannel {
             MainActor.assumeIsolated {
                 guard let self, !self.isClosed else { return }
                 if let error {
-                    self.finish(error.localizedDescription)
+                    self.finish(error.connectionReason)
                     return
                 }
                 let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata

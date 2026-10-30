@@ -13,8 +13,9 @@ final class RelayClientChannel: HostChannel {
     var onMessage: ((Data) -> Void)?
     var onClose: ((String?) -> Void)?
     /// Called when the relay holds the channel open until the host connects.
-    var onHostOffline: ((String) -> Void)?
+    var onHostOffline: (() -> Void)?
 
+    /// Why pairing failed, which unlike a paired host's status has room to explain.
     private static let offlineReason = "The host isn’t connected to the relay. Make sure it’s awake with remote access turned on in Atrium."
 
     private let socket: WebSocketChannel
@@ -65,7 +66,7 @@ final class RelayClientChannel: HostChannel {
             case "offline" where waitsForHost:
                 timeout?.cancel()
                 startKeepAlive()
-                onHostOffline?(Self.offlineReason)
+                onHostOffline?()
             case "offline":
                 close(reason: Self.offlineReason)
             case "connecting":
@@ -84,7 +85,7 @@ final class RelayClientChannel: HostChannel {
         timeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(20))
             guard let self, !Task.isCancelled, !self.isReady else { return }
-            self.close(reason: "The host didn’t answer through the relay.")
+            self.close(reason: "Not responding")
         }
     }
 
@@ -99,7 +100,7 @@ final class RelayClientChannel: HostChannel {
                 try? await Task.sleep(for: .seconds(30))
                 guard let self, !Task.isCancelled else { return }
                 if self.unansweredPings >= 2 {
-                    self.close(reason: "Lost the connection to the relay.")
+                    self.close(reason: "Connection lost")
                     return
                 }
                 self.unansweredPings += 1

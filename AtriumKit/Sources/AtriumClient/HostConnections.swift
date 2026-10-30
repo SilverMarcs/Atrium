@@ -31,6 +31,8 @@ public final class HostConnections {
     #if canImport(Network)
     @ObservationIgnored private let localNetwork = LocalHostBrowser()
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
+    /// The network interfaces last available, such as Wi-Fi and cellular.
+    @ObservationIgnored private var interfaces: Set<String>?
     #endif
 
     public init(localHost: HostClient? = nil, credentials: any CredentialStore) {
@@ -54,20 +56,37 @@ public final class HostConnections {
         localNetwork.start()
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let hasNetwork = path.status == .satisfied
-            MainActor.assumeIsolated { self?.networkChanged(hasNetwork) }
+            let interfaces = Set(path.availableInterfaces.map(\.name))
+            MainActor.assumeIsolated { self?.networkChanged(hasNetwork, interfaces: interfaces) }
         }
         pathMonitor.start(queue: .main)
         #endif
         for host in hosts { host.start() }
     }
 
-    private func networkChanged(_ hasNetwork: Bool) {
+    /// Looks for hosts on the local network afresh and retries any that aren't
+    /// connected, as when the app returns to the foreground. A host found
+    /// nearby moves off the relay.
+    public func resume() {
+        #if canImport(Network)
+        localNetwork.restart()
+        #endif
+        for host in hosts where !host.isConnected { host.retryNow() }
+    }
+
+    #if canImport(Network)
+    private func networkChanged(_ hasNetwork: Bool, interfaces: Set<String>) {
+        // Joining or leaving a network, such as Wi-Fi alongside cellular, can
+        // bring a host nearby without the network going away.
+        if let previous = self.interfaces, previous != interfaces { localNetwork.restart() }
+        self.interfaces = interfaces
         guard hasNetwork != self.hasNetwork else { return }
         self.hasNetwork = hasNetwork
         if hasNetwork {
             for host in hosts where !host.isConnected { host.retryNow() }
         }
     }
+    #endif
 
     #if canImport(Network)
     /// Where a host advertises itself on the local network, if it does.

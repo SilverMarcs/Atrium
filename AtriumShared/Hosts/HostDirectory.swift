@@ -249,9 +249,7 @@ final class HostDirectory {
     func setActive(_ isActive: Bool) {
         self.isActive = isActive
         publishActivity()
-        if isActive {
-            for host in hosts where !host.isConnected { host.retryNow() }
-        }
+        if isActive { connections.resume() }
     }
 
     func setVisibleTask(_ ref: TaskRef?) {

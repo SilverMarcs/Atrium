@@ -88,6 +88,9 @@ public final class HostClient: Identifiable {
     @ObservationIgnored private var connectingRoute: Route?
     /// Set after the local network failed, until the host is found there again.
     @ObservationIgnored private var skipsLocalNetwork = false
+    /// A direct connection authenticating alongside the one through the relay,
+    /// which it replaces once it's in.
+    @ObservationIgnored private var upgrade: (any HostConnection)?
     @ObservationIgnored private var authentication: Authentication
     @ObservationIgnored private var connection: (any HostConnection)?
     /// The relay channel under `connection`, which can wait for the host to come online.
@@ -156,6 +159,8 @@ public final class HostClient: Identifiable {
     public func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        upgrade?.close()
+        upgrade = nil
         connection?.close()
         connection = nil
         route = nil
@@ -186,9 +191,9 @@ public final class HostClient: Identifiable {
         connectingRoute = .relay
         // A paired host that's offline is waited for at the relay; pairing fails instead.
         let relay = RelayClientChannel(hostID: id, waitsForHost: !isPairing)
-        relay.onHostOffline = { [weak self, weak relay] reason in
+        relay.onHostOffline = { [weak self, weak relay] in
             guard let self, let relay, self.relayChannel === relay else { return }
-            self.hostIsOffline(reason)
+            self.hostIsOffline()
         }
         relayChannel = relay
         return RemoteHostConnection(host: pairedHost, over: relay)
@@ -196,9 +201,9 @@ public final class HostClient: Identifiable {
 
     /// The relay holds the connection until the host comes online, so this
     /// client shows it offline without retrying.
-    private func hostIsOffline(_ reason: String) {
+    private func hostIsOffline() {
         ClientLog.info("Waiting for \(name) to come online")
-        state = .offline(reason)
+        state = .offline("Offline")
     }
 
     /// The host appeared on or left the local network. A connection through the
@@ -206,15 +211,78 @@ public final class HostClient: Identifiable {
     func localNetworkChanged() {
         skipsLocalNetwork = false
         guard !isLocal, !isPairing, connections?.isOnLocalNetwork(id) == true, route != .localNetwork else { return }
-        stop()
-        connect()
+        if isConnected {
+            upgradeToLocalNetwork()
+        } else if connection == nil || connectingRoute != .localNetwork {
+            stop()
+            connect()
+        }
+    }
+
+    /// Moves a connection through the relay onto the local network without
+    /// dropping it: a direct connection authenticates alongside, then takes
+    /// over. If it can't, the relay carries on until the host is found nearby
+    /// again, as after the network changes or the app returns to the foreground.
+    private func upgradeToLocalNetwork() {
+        #if canImport(Network)
+        guard route == .relay, upgrade == nil, !skipsLocalNetwork, case .token(let token) = authentication, let pairedHost,
+              let device = connections?.credentials.device, let endpoint = connections?.localEndpoint(for: id) else { return }
+        let candidate = RemoteHostConnection(host: pairedHost, over: FramedChannel(endpoint: endpoint))
+        upgrade = candidate
+        candidate.onEvent = { [weak self, weak candidate] event in
+            guard let self, self.connection === candidate else { return }
+            self.apply(event)
+        }
+        candidate.onReady = { [weak self, weak candidate] in
+            guard let self, let candidate, self.upgrade === candidate else { return }
+            Task {
+                do {
+                    let reply = try await candidate.request(.authenticate(token: token, deviceID: device.id), key: nil)
+                    if case .failed(let message) = reply { throw HostClientError.rejected(message) }
+                    self.adopt(candidate)
+                } catch {
+                    self.upgradeFailed(candidate, reason: error.localizedDescription)
+                }
+            }
+        }
+        candidate.onClose = { [weak self, weak candidate] reason in
+            guard let self, let candidate else { return }
+            if self.upgrade === candidate {
+                self.upgradeFailed(candidate, reason: reason)
+            } else if self.connection === candidate {
+                self.connectionDidClose(reason)
+            }
+        }
+        candidate.start()
+        #endif
+    }
+
+    private func adopt(_ candidate: any HostConnection) {
+        guard upgrade === candidate else { return }
+        upgrade = nil
+        // The host closes the relay connection too, now that this device is in again.
+        connection?.close()
+        connection = candidate
+        connectingRoute = .localNetwork
+        ClientLog.info("Moved \(name) onto the local network")
+        didAuthenticate()
+    }
+
+    private func upgradeFailed(_ candidate: any HostConnection, reason: String?) {
+        guard upgrade === candidate else { return }
+        upgrade = nil
+        candidate.close()
+        skipsLocalNetwork = true
+        ClientLog.info("Couldn’t reach \(name) on the local network: \(reason ?? "closed")")
+        // The relay connection closed while this was tried.
+        if connection == nil { connectionDidClose(nil) }
     }
 
     private func connect() {
         guard connection == nil, reconnectTask == nil else { return }
         // Nothing to try without a network; the connections retry once there is one.
         if !isLocal, connections?.hasNetwork == false {
-            let reason = "This device isn’t connected to a network."
+            let reason = "No network connection"
             if isPairing { connections?.pairingFailed(self, message: reason) } else { state = .offline(reason) }
             return
         }
@@ -257,14 +325,9 @@ public final class HostClient: Identifiable {
             }
             guard connection === authenticating else { return }
             ClientLog.info("Connected to \(name)")
-            route = connectingRoute
-            state = .connected
-            failedAttempts = 0
-            if activity.isActive || activity.taskID != nil { send(.activity(activity)) }
-            connections?.delegate?.hostDidConnect(self)
-            for topic in topicCounts.keys { subscribe(topic) }
+            didAuthenticate()
             // Found nearby while connecting through the relay, as during pairing.
-            if route == .relay, !skipsLocalNetwork, connections?.isOnLocalNetwork(id) == true { localNetworkChanged() }
+            upgradeToLocalNetwork()
         } catch {
             guard connection === authenticating else { return }
             switch (authentication, error) {
@@ -283,10 +346,23 @@ public final class HostClient: Identifiable {
         }
     }
 
+    /// The connection in use is in; requests can follow.
+    private func didAuthenticate() {
+        route = connectingRoute
+        state = .connected
+        failedAttempts = 0
+        if activity.isActive || activity.taskID != nil { send(.activity(activity)) }
+        connections?.delegate?.hostDidConnect(self)
+        for topic in topicCounts.keys { subscribe(topic) }
+    }
+
     private func connectionDidClose(_ reason: String?) {
         connection = nil
         route = nil
-        let reason = reason ?? HostClientError.disconnected.localizedDescription
+        // The host closes the relay connection as a direct one authenticates,
+        // which may be heard first; that one takes over once it's in.
+        if upgrade != nil { return }
+        let reason = reason ?? "Connection lost"
         ClientLog.info("Lost \(name): \(reason)")
         // A host found on the local network but not reachable there is tried
         // through the relay straight away.

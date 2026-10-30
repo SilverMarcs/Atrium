@@ -49,7 +49,7 @@ public final class FramedChannel: HostChannel {
         let frame = Data(bytes: &length, count: 4) + data
         connection.send(content: frame, completion: .contentProcessed { [weak self] error in
             guard let error else { return }
-            MainActor.assumeIsolated { self?.finish(error.localizedDescription) }
+            MainActor.assumeIsolated { self?.finish(error.connectionReason) }
         })
     }
 
@@ -63,7 +63,7 @@ public final class FramedChannel: HostChannel {
             timeout?.cancel()
             onReady?()
         case .waiting(let error), .failed(let error):
-            finish(error.localizedDescription)
+            finish(error.connectionReason)
         case .cancelled:
             finish(nil)
         default:
@@ -94,7 +94,7 @@ public final class FramedChannel: HostChannel {
             MainActor.assumeIsolated {
                 guard let self, !self.isClosed else { return }
                 if let error {
-                    self.finish(error.localizedDescription)
+                    self.finish(error.connectionReason)
                 } else if let content, content.count == count {
                     handle(content)
                 } else if isComplete {
