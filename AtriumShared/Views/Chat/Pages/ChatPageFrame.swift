@@ -16,6 +16,11 @@ struct ChatPageFrame: View {
     @State private var measuredHeight: CGFloat?
     @State private var isExpanded = false
     @State private var isHovering = false
+    /// The format just saved, shown with a checkmark for a moment.
+    @State private var savedFormat: ChatPageExport.Format?
+    /// A file waiting for the person to choose where it goes.
+    @State private var pendingExport: ChatPageExport?
+    @State private var exportError: String?
 
     private static let minimumHeight: CGFloat = 80
     private static let maximumHeight: CGFloat = 2000
@@ -41,13 +46,18 @@ struct ChatPageFrame: View {
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if showsExpandButton {
-                Button("Open \(page.title)", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    isExpanded = true
+            if showsControls {
+                HStack(spacing: 6) {
+                    ChatPageControl(title: "Download HTML", systemImage: savedFormat == .html ? "checkmark" : "chevron.left.forwardslash.chevron.right") {
+                        download(.html)
+                    }
+                    ChatPageControl(title: "Download PNG", systemImage: savedFormat == .png ? "checkmark" : "photo") {
+                        download(.png)
+                    }
+                    ChatPageControl(title: "Open \(page.title)", systemImage: "arrow.up.left.and.arrow.down.right") {
+                        isExpanded = true
+                    }
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.glass)
-                .controlSize(.small)
                 .padding(8)
             }
         }
@@ -73,9 +83,41 @@ struct ChatPageFrame: View {
         .sheet(isPresented: $isExpanded) {
             ChatPageSheet(page: page)
         }
+        .fileExporter(
+            isPresented: Binding { pendingExport != nil } set: { if !$0 { pendingExport = nil } },
+            item: pendingExport,
+            contentTypes: pendingExport.map { [$0.format.type] } ?? [],
+            defaultFilename: pendingExport?.filename
+        ) { _ in }
+        .alert("Couldn’t Save Page", isPresented: Binding { exportError != nil } set: { if !$0 { exportError = nil } }) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "")
+        }
     }
 
-    private var showsExpandButton: Bool {
+    /// Saves straight into Downloads on Mac, where a browser would; elsewhere
+    /// the person picks a place in Files.
+    private func download(_ format: ChatPageExport.Format) {
+        guard let model else { return }
+        Task {
+            do {
+                let file = try await model.export(format, title: page.title)
+                #if os(macOS)
+                _ = try file.saveToDownloads()
+                savedFormat = format
+                try? await Task.sleep(for: .seconds(2))
+                if savedFormat == format { savedFormat = nil }
+                #else
+                pendingExport = file
+                #endif
+            } catch {
+                exportError = error.localizedDescription
+            }
+        }
+    }
+
+    private var showsControls: Bool {
         guard model?.phase == .loaded else { return false }
         #if os(macOS)
         return isHovering

@@ -11,10 +11,11 @@ nonisolated enum AtriumToolServer {
 
     private static let instructions = """
         Atrium shows this chat to the user in its own app, on Mac, iPad and iPhone.
-        Answer data with a trend or comparison with a chart, and show any visual the user asks to see here (a diagram, table, mockup or report), with `render_html`. Never start a server or open a browser to show one. A text description or a screenshot on disk does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
+        Most answers need no page. Use `render_html` only when a visual makes the answer clearer than text would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, table, mockup or report). Never start a server or open a browser to show one. A text description or a screenshot on disk does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
         """
 
     private static let pageGuide = """
+        Keep it light: one clear point, about a screen tall at most (under 600px). Help the user understand without overwhelming them; when there is more to show, put it behind tabs, a picker or toggles rather than making the page longer.
         One complete, self-contained HTML document: inline <style> and <script>. Remote URLs load as-is; local files do not, so inline any image as a data: URL.
         Layout: the page sits on the chat background at reply width (about 700px on Mac, narrower on iPad; iPhone opens it in a sheet). Leave html and body without a background color, outer card, border, banner title or side padding. A box that needs its own background gets 16px padding and var(--radius) corners. Give charts fixed pixel heights. Let content set the page's height: never use vh units or height:100% on html or body.
         Theme: Atrium sets these CSS variables on :root for light and dark mode. Use them, not fixed colors: --background, --foreground, --muted-foreground, --card, --border, --accent, --accent-foreground, --success, --warning, --destructive, --chart-1 to --chart-5, --font-sans, --font-mono, --radius. The base sheet already sets the text color and font.
@@ -24,7 +25,7 @@ nonisolated enum AtriumToolServer {
         "name": renderHTML,
         "title": "Render HTML",
         "description": """
-            Show a finished HTML page (chart, diagram, table, mockup) inline in this chat, above your final reply. Call it once the page is final, just before you reply. Do not announce, describe or restate the page in your reply. To revise a page, call it again with the whole updated document; earlier versions stay in the chat.
+            Show a finished HTML page (chart, diagram, table, mockup) inline in this chat, above your final reply, when a visual explains more than text would or the user asks for one. Call it once the page is final, just before you reply. Do not announce, describe or restate the page in your reply. To revise a page, call it again with the whole updated document; earlier versions stay in the chat.
             \(pageGuide)
             """,
         "inputSchema": [

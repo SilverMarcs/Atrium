@@ -18,6 +18,7 @@ final class ChatPageModel {
     private(set) var phase = Phase.loading
     /// The page's height as it lays out, once it has.
     private(set) var contentHeight: CGFloat?
+    private var html: String?
 
     init(openURL: OpenURLAction) {
         var configuration = WebPage.Configuration()
@@ -37,8 +38,18 @@ final class ChatPageModel {
             phase = .unavailable
             return
         }
+        self.html = html
         webPage.load(html: html)
         phase = .loaded
+    }
+
+    /// The page as the agent wrote it, or a picture of it as it looks here.
+    func export(_ format: ChatPageExport.Format, title: String) async throws -> ChatPageExport {
+        let data = switch format {
+        case .html: Data((html ?? "").utf8)
+        case .png: try await ChatPageExport.png(of: webPage)
+        }
+        return ChatPageExport(data: data, format: format, title: title)
     }
 }
 
