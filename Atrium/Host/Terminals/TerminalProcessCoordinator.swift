@@ -136,8 +136,8 @@ final class TerminalProcessCoordinator: NSObject, LocalProcessTerminalViewDelega
     /// SwiftTerm reposts link activation (click on an OSC 8 hyperlink or an
     /// implicitly detected URL/path) here. A link that resolves to a file
     /// inside the terminal's project opens in the bottom editor panel — same
-    /// as clicking it in the file tree; everything else keeps SwiftTerm's
-    /// default NSWorkspace behavior.
+    /// as clicking it in the file tree; a file elsewhere shows in Finder, and
+    /// anything else opens in its default app.
     func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
         let terminal = (source as? LocalProcessTerminalView)
             .flatMap { viewMap[ObjectIdentifier($0)]?.value }
@@ -145,9 +145,7 @@ final class TerminalProcessCoordinator: NSObject, LocalProcessTerminalViewDelega
             if let terminal, await openFileLink?(link, terminal) == true {
                 return
             }
-            if let url = URL(string: link) {
-                NSWorkspace.shared.open(url)
-            }
+            FileService.openOutsideProject(link, relativeTo: terminal?.currentDirectory)
         }
     }
 

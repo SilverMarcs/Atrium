@@ -185,11 +185,14 @@ struct SessionChatView: View {
     })
     .environment(sendAnimator)
     .environment(\.openURL, OpenURLAction { url in
-      // Links to files in the project open in its editor; anything else goes to the system.
+      // Links to files in the project open in its editor, and on this Mac files
+      // elsewhere show in Finder; anything else goes to the system.
       guard let project, url.isFileURL || url.scheme == nil else { return .systemAction }
       let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
       Task {
-        if await !project.openLink(link), project.isLocal { NSWorkspace.shared.open(url) }
+        if await !project.openLink(link), project.isLocal {
+          FileService.openOutsideProject(link, relativeTo: project.root.path)
+        }
       }
       return .handled
     })

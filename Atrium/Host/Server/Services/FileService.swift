@@ -178,8 +178,9 @@ enum FileService {
     /// Resolves a clicked link to a file inside the project, or nil if it isn't
     /// one. Handles `file:` URLs, absolute, `~/`, and relative paths (against
     /// the given folders in order), plus a trailing `:line[:column]` suffix
-    /// from compiler-style output.
-    static func resolve(_ link: String, relativeTo roots: [String], access: WorkspaceAccess) -> (path: String, line: Int?)? {
+    /// from compiler-style output. Without `access`, any file or folder on
+    /// this Mac resolves.
+    static func resolve(_ link: String, relativeTo roots: [String], access: WorkspaceAccess?) -> (path: String, line: Int?)? {
         let rawPath: String
         if link.hasPrefix("file:") {
             guard let url = URL(string: link), url.isFileURL else { return nil }
@@ -204,12 +205,25 @@ enum FileService {
             }
             for url in resolved.map(\.standardizedFileURL) {
                 var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                      !isDirectory.boolValue, access.allows(url) else { continue }
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+                if let access {
+                    guard !isDirectory.boolValue, access.allows(url) else { continue }
+                }
                 return (url.filePath, line)
             }
         }
         return nil
+    }
+
+    /// Opens a link that isn't a file in a project: a file or folder elsewhere
+    /// on this Mac shows in Finder, and anything else, such as a web address,
+    /// goes to its default app.
+    static func openOutsideProject(_ link: String, relativeTo directory: String?) {
+        if let location = resolve(link, relativeTo: directory.map { [$0] } ?? [], access: nil) {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: location.path)])
+        } else if let url = URL(string: link), url.scheme != nil {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private static func availableURL(named name: String, in folder: URL) -> URL {
