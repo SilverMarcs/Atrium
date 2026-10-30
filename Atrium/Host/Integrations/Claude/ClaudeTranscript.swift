@@ -156,7 +156,11 @@ nonisolated enum ClaudeTranscript {
             guard let text = content["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             blocks.append(.text(text, id: id))
         case "tool_use":
-            blocks.appendToolCall(id: id)
+            if content["name"] as? String == AtriumToolServer.claudeRenderHTML, let page = ChatPageStore.page(arguments: content["input"]) {
+                blocks.append(.page(page, id: id))
+            } else {
+                blocks.appendToolCall(id: id)
+            }
         default:
             break
         }

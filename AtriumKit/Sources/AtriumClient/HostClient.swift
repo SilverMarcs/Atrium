@@ -96,6 +96,8 @@ public final class HostClient: Identifiable {
     /// How many callers follow each topic. Every client always follows a host's tasks.
     @ObservationIgnored private var topicCounts: [HostTopic: Int] = [.tasks: 1]
     @ObservationIgnored private var icons: [String: Data] = [:]
+    /// The pages fetched most recently, oldest first, so scrolling back past one doesn't fetch it again.
+    @ObservationIgnored private var pages: [(key: String, html: String)] = []
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var failedAttempts = 0
     @ObservationIgnored private let localName: String
@@ -474,6 +476,16 @@ public final class HostClient: Identifiable {
         guard case .icon(let data) = try? await request(.icon(key: key)) else { return nil }
         icons[key] = data
         return data
+    }
+
+    /// A page an agent showed in a transcript, or nil if the host can't provide it.
+    public func page(forKey key: String) async -> String? {
+        if let page = pages.first(where: { $0.key == key }) { return page.html }
+        guard case .page(let html) = try? await request(.page(key: key)) else { return nil }
+        pages.removeAll { $0.key == key }
+        pages.append((key, html))
+        if pages.count > 8 { pages.removeFirst() }
+        return html
     }
 
     // MARK: - Events

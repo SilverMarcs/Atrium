@@ -1,17 +1,30 @@
 import Foundation
 import Network
 
-/// Claude calls directly into Atrium. Persistent endpoint settings let running workers reconnect after relaunch.
+/// Agents call directly into Atrium: Claude's hooks at `/claude`, and every agent's
+/// Atrium tools at `/mcp`. A persistent endpoint lets running agents reconnect after relaunch.
 @MainActor
-final class ClaudeHookServer {
-    var onEvent: ((Data) async throws -> Data)?
-    private let storage: URL
+final class AgentBridgeServer {
+    struct Endpoint: Equatable {
+        let port: UInt16
+        let token: String
+
+        var authorization: String { "Bearer " + token }
+
+        func url(_ path: String) -> String { "http://127.0.0.1:\(port)/\(path)" }
+    }
+
+    var onClaudeHook: ((Data) async throws -> Data)?
+    /// Where agents' launch files that point at the endpoint are kept.
+    let storage: URL
     private var listener: NWListener?
-    private var connections: [UUID: ClaudeHookHTTPConnection] = [:]
-    private var startup: Task<URL, Error>?
-    private var settingsURL: URL?
+    private var connections: [UUID: AgentBridgeConnection] = [:]
+    private var startup: Task<Endpoint, Error>?
+    private var endpoint: Endpoint?
 
     init() {
+        // Claude identifies jobs started with Atrium's hooks by their settings
+        // file, which lives here, so the folder keeps its original name.
         #if DEBUG
         let folder = "ClaudeBridge-Development"
         #else
@@ -20,8 +33,8 @@ final class ClaudeHookServer {
         self.storage = HostStorage.directory.appending(path: folder, directoryHint: .isDirectory)
     }
 
-    func start() async throws -> URL {
-        if let settingsURL, listener != nil { return settingsURL }
+    func start() async throws -> Endpoint {
+        if let endpoint, listener != nil { return endpoint }
         if let startup { return try await startup.value }
         let task = Task { try await self.listen() }
         startup = task
@@ -29,27 +42,17 @@ final class ClaudeHookServer {
         return try await task.value
     }
 
-    func stop() {
-        startup?.cancel()
-        startup = nil
-        listener?.cancel()
-        listener = nil
-        settingsURL = nil
-        for connection in Array(connections.values) { connection.close() }
-        connections.removeAll()
-    }
-
-    func stopAndWait() async {
-        guard let listener else { stop(); return }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            listener.stateUpdateHandler = { state in
-                if case .cancelled = state { continuation.resume() }
-            }
-            stop()
+    private func route(_ path: String, body: Data) async throws -> Data? {
+        switch path {
+        case "/claude":
+            guard let onClaudeHook else { return Data("{}".utf8) }
+            return try await onClaudeHook(body)
+        default:
+            return AtriumToolServer.respond(to: body)
         }
     }
 
-    private func listen() async throws -> URL {
+    private func listen() async throws -> Endpoint {
         try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let endpointFile = storage.appending(path: "endpoint.json")
         let saved = (try? Data(contentsOf: endpointFile)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
@@ -64,9 +67,9 @@ final class ClaudeHookServer {
             Task { @MainActor [weak self] in
                 guard let self, self.listener === listener else { connection.cancel(); return }
                 let id = UUID()
-                let client = ClaudeHookHTTPConnection(connection: connection, token: token) { [weak self] body in
-                    guard let onEvent = self?.onEvent else { return Data("{}".utf8) }
-                    return try await onEvent(body)
+                let client = AgentBridgeConnection(connection: connection, token: token) { [weak self] path, body in
+                    guard let self else { return Data("{}".utf8) }
+                    return try await self.route(path, body: body)
                 } finished: { [weak self] in self?.connections[id] = nil }
                 self.connections[id] = client
                 client.start()
@@ -98,17 +101,19 @@ final class ClaudeHookServer {
                 listener.start(queue: .global(qos: .utility))
             }
         } onCancel: { listener.cancel() }
-        let endpoint = try JSONSerialization.data(withJSONObject: ["port": actualPort, "token": token])
-        try endpoint.write(to: endpointFile, options: .atomic)
+        let data = try JSONSerialization.data(withJSONObject: ["port": actualPort, "token": token])
+        try data.write(to: endpointFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: endpointFile.path)
-        let events = ["UserPromptSubmit", "MessageDisplay", "PreToolUse", "PermissionRequest", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"]
-        let hook: [String: Any] = ["type": "http", "url": "http://127.0.0.1:\(actualPort)/claude", "headers": ["Authorization": "Bearer " + token], "timeout": 600]
-        let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
-        let settings: [String: Any] = ["hooks": hooks, "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"]]
-        let file = storage.appending(path: "settings.json")
-        try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys]).write(to: file, options: .atomic)
+        let endpoint = Endpoint(port: actualPort, token: token)
+        self.endpoint = endpoint
+        return endpoint
+    }
+
+    /// Writes a launch file only Atrium's user can read, since it holds the endpoint's token.
+    func writePrivateFile(_ object: [String: Any], named name: String) throws -> URL {
+        let file = storage.appending(path: name)
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        settingsURL = file
         return file
     }
 }

@@ -8,6 +8,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
+    private let bridge: AgentBridgeServer
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
@@ -49,7 +50,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var titleResponses: [String: CodexTitleResponse] = [:]
     private var titleModel: String?
 
-    init() {
+    init(bridge: AgentBridgeServer) {
+        self.bridge = bridge
         socket.onMessage = { [weak self] in self?.receive($0) }
         socket.onClose = { [weak self] in self?.disconnect(error: $0) }
     }
@@ -175,12 +177,25 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return state
     }
 
+    /// Gives a thread Atrium's tools. Codex loads a thread's config when it
+    /// starts or resumes it, so threads it already has loaded keep theirs.
+    private func toolConfig() async throws -> [String: Any] {
+        let endpoint = try await bridge.start()
+        return ["mcp_servers.\(AtriumToolServer.name)": [
+            "url": endpoint.url("mcp"),
+            "http_headers": ["Authorization": endpoint.authorization],
+            // Atrium's own tools only add to the chat, so they never need approval.
+            "default_tools_approval_mode": "approve"
+        ]]
+    }
+
     func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
-        var params: [String: Any] = ["cwd": directory]
+        var config = try await toolConfig()
+        if let effort = settings?.reasoningEffort { config["model_reasoning_effort"] = effort }
+        var params: [String: Any] = ["cwd": directory, "config": config]
         if let model = settings?.model { params["model"] = model }
-        if let effort = settings?.reasoningEffort { params["config"] = ["model_reasoning_effort": effort] }
         let data = try await request("thread/start", params: params)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
@@ -202,7 +217,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
-        let data = try await request("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
+        let data = try await request("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await toolConfig()])
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
@@ -229,7 +244,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if let opening = openingConversations[thread.sessionID] { return try await opening.value }
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
-            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true])
+            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await self.toolConfig()])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
             self.refreshAsyncQuestions(sessionID: thread.sessionID)

@@ -3,7 +3,9 @@ import Foundation
 
 /// Splits a reply into the text the timeline shows and the steps folded behind
 /// it. A finished reply shows its closing text, written after the last tool
-/// call. A running one shows its latest notes, so the work so far stays short.
+/// call or page. A running one shows its latest notes, so the work so far
+/// stays short. Pages the agent showed never fold: they stay above the text,
+/// where the agent was told they appear.
 struct AssistantReply {
     /// How many of a running reply's latest notes stay in the timeline.
     static let runningNoteLimit = 4
@@ -12,6 +14,8 @@ struct AssistantReply {
     let steps: [TranscriptBlock]
     /// The shown notes as one document.
     let text: String?
+    /// Every page the agent showed, in order.
+    let pages: [TranscriptBlock]
 
     var hasIntermediaryText: Bool {
         steps.contains { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
@@ -28,7 +32,7 @@ struct AssistantReply {
             Array((blocks.lastIndex { $0.text == nil }.map { $0 + 1 } ?? 0)..<blocks.endIndex)
         }
         var steps: [TranscriptBlock] = []
-        for index in blocks.indices where !shown.contains(index) {
+        for index in blocks.indices where !shown.contains(index) && blocks[index].page == nil {
             if case .tools(let count, _) = blocks[index], case .tools(let previous, let id)? = steps.last {
                 steps[steps.endIndex - 1] = .tools(count: previous + count, id: id)
             } else {
@@ -36,6 +40,7 @@ struct AssistantReply {
             }
         }
         self.steps = steps
+        pages = blocks.filter { $0.page != nil }
         let texts = shown.compactMap { blocks[$0].text }
         text = texts.isEmpty ? nil : texts.joined(separator: "\n\n")
     }

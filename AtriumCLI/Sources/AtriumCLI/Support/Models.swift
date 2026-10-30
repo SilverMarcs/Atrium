@@ -110,7 +110,7 @@ struct MessageJSON: Encodable, Equatable {
     var role: String
     /// The message's text blocks, joined by blank lines.
     var text: String
-    /// Text and tool-call runs in the order the agent produced them.
+    /// Text, tool-call runs and shown pages in the order the agent produced them.
     var blocks: [Block]
     var imageCount: Int
     /// Sent while the agent was working, so it joined that turn.
@@ -120,6 +120,8 @@ struct MessageJSON: Encodable, Equatable {
         var type: String
         var text: String?
         var toolCalls: Int?
+        /// A shown page's title; its HTML stays on the host.
+        var title: String?
     }
 
     init(_ message: TranscriptMessage) {
@@ -130,6 +132,7 @@ struct MessageJSON: Encodable, Equatable {
             switch block {
             case .text(let text, _): Block(type: "text", text: text)
             case .tools(let count, _): Block(type: "tools", toolCalls: count)
+            case .page(let page, _): Block(type: "page", title: page.title)
             }
         }
         imageCount = message.images?.count ?? 0

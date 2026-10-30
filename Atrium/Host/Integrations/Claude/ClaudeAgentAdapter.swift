@@ -17,7 +17,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var statusRevision = 0
     private var backgroundListTask: Task<[ClaudeBackgroundSession], Error>?
     private let daemon: ClaudeDaemonClient
-    private let hooks: ClaudeHookServer
+    private let bridge: AgentBridgeServer
+    /// The launch files written for the bridge endpoint they point at.
+    private var launchFiles: (endpoint: AgentBridgeServer.Endpoint, settings: URL, tools: URL)?
     private var live: [String: ClaudeLiveTranscript] = [:]
     private var transcriptLoads: [String: Task<[TranscriptMessage], Error>] = [:]
     private var subscriptions: [String: UnixJSONConnection] = [:]
@@ -37,8 +39,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Settings typed into each thread's terminal that its transcript doesn't show yet.
     private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
 
-    init(configDirectory: URL? = nil) {
-        hooks = ClaudeHookServer()
+    init(bridge: AgentBridgeServer, configDirectory: URL? = nil) {
+        self.bridge = bridge
         let configured = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"]
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         let directory = configDirectory ?? configured
@@ -49,7 +51,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // The global config sits beside the default config directory, or inside a custom one.
         globalConfigFile = (configDirectory ?? configured)?.appending(path: ".claude.json")
             ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude.json")
-        hooks.onEvent = { [weak self] body in
+        bridge.onClaudeHook = { [weak self] body in
             guard let self, self.isEnabled else { return Data("{}".utf8) }
             return try await self.receiveHook(body)
         }
@@ -122,7 +124,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     func openConversation(_ thread: AgentThread) async throws {
         guard UUID(uuidString: thread.sessionID) != nil else { throw IntegrationError(message: "Invalid Claude session identifier.") }
-        _ = try await hooks.start()
+        _ = try await bridge.start()
         let sessions = try await listBackgroundSessions()
         let session: ClaudeBackgroundSession
         if let existing = sessions.first(where: { $0.kind == "background" && $0.sessionID == thread.sessionID && $0.isRunning }) {
@@ -367,7 +369,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             for id in Array(subscriptions.keys) { closeSubscription(id) }
             for id in Array(subscriptionTasks.keys) { closeSubscription(id) }
             for id in Set(decisions.values.map(\.sessionID)) { resolveDecisions(sessionID: id) }
-            hooks.stop()
             live.removeAll()
             unsavedTurns.removeAll()
             outgoing.removeAll()
@@ -380,14 +381,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
-        let settings = try await hooks.start()
+        let files = try await launchFilesForBridge()
         let existingBackground: Bool
         if let sessionID, !forking {
             existingBackground = try await listBackgroundSessions().contains { $0.kind == "background" && $0.sessionID == sessionID }
         } else { existingBackground = false }
         // Any new options on a saved background job tell Claude to COPY it,
         // even if those options equal its old ones. Preserve the job's options.
-        var arguments = existingBackground ? ["--bg"] : ["--bg", "--settings", settings.path]
+        var arguments = existingBackground ? ["--bg"] : ["--bg", "--mcp-config", files.tools.path, "--settings", files.settings.path]
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
@@ -685,9 +686,29 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Whether a job was launched with Atrium's hooks, which carry its chat and
     /// questions here. Claude keeps a job's launch options to restart it with.
     private func hasHooks(jobID: String) async throws -> Bool {
-        let settings = try await hooks.start().path
+        let settings = try await launchFilesForBridge().settings.path
         let options = try daemon.launchOptions(jobID: jobID)
         return zip(options, options.dropFirst()).contains { $0 == "--settings" && $1 == settings }
+    }
+
+    /// The settings that send Claude's hooks to Atrium, and the MCP config
+    /// that gives it Atrium's tools, pointing at the bridge's current endpoint.
+    private func launchFilesForBridge() async throws -> (settings: URL, tools: URL) {
+        let endpoint = try await bridge.start()
+        if let launchFiles, launchFiles.endpoint == endpoint { return (launchFiles.settings, launchFiles.tools) }
+        let events = ["UserPromptSubmit", "MessageDisplay", "PreToolUse", "PermissionRequest", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"]
+        let hook: [String: Any] = ["type": "http", "url": endpoint.url("claude"), "headers": ["Authorization": endpoint.authorization], "timeout": 600]
+        let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
+        let settings = try bridge.writePrivateFile([
+            "hooks": hooks,
+            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"],
+            "permissions": ["allow": [AtriumToolServer.claudeRenderHTML]]
+        ], named: "settings.json")
+        let tools = try bridge.writePrivateFile([
+            "mcpServers": [AtriumToolServer.name: ["type": "http", "url": endpoint.url("mcp"), "headers": ["Authorization": endpoint.authorization]]]
+        ], named: "mcp.json")
+        launchFiles = (endpoint, settings, tools)
+        return (settings, tools)
     }
 
     /// Starting a worker is not starting a conversation turn.
