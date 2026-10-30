@@ -18,6 +18,6 @@ struct RemoteTerminalRepresentable: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ viewport: RemoteTerminalViewport, coordinator: ()) {
-        viewport.terminal.sendInput = nil
+        viewport.close()
     }
 }

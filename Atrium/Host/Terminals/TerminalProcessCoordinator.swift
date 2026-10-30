@@ -53,7 +53,8 @@ final class TerminalProcessCoordinator: NSObject, LocalProcessTerminalViewDelega
         tv.changeScrollback(TerminalProcessRegistry.scrollback)
         let fontSize = terminal.isTaskTerminal ? TerminalProcessRegistry.fontSize : TerminalProcessRegistry.commandFontSize
         tv.font = NSFont(descriptor: tv.font.fontDescriptor, size: fontSize) ?? tv.font
-        try? tv.setUseMetal(true)
+        // The local and remote presentation hosts enable rendering only while
+        // visible. A process started in the background needs no GPU resources.
         terminal.localProcessTerminalView = tv
         terminal.processDelegate = self
         terminal.hasExited = false

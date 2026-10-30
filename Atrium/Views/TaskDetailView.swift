@@ -31,14 +31,11 @@ struct TaskDetailView: View {
                     .id(item.id)
                     .scrollEdgeEffectHidden()
             }
-            if let session {
+            if showsTerminal, let session {
                 if session.isTerminalAttached {
                     TaskTerminalView(session: session, terminals: app.terminals, acceptsInputFocus: showsTerminal)
                         .scrollEdgeEffectHidden()
-                        .opacity(showsTerminal ? 1 : 0)
-                        .allowsHitTesting(showsTerminal)
-                        .accessibilityHidden(!showsTerminal)
-                } else if showsTerminal {
+                } else {
                     if let error = session.terminalError {
                         ContentUnavailableView {
                             Label("Couldn’t Attach Terminal", systemImage: "terminal")

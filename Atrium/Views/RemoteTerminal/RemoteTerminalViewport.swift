@@ -8,6 +8,7 @@ final class RemoteTerminalViewport: NSScrollView {
     let terminal = RemoteTerminalCanvas(frame: .zero)
     private var displayed: WireTerminalFrame?
     private var isDark: Bool?
+    private lazy var rendering = TerminalRendering(terminal: terminal)
 
     init() {
         super.init(frame: .zero)
@@ -20,18 +21,25 @@ final class RemoteTerminalViewport: NSScrollView {
         terminal.changeScrollback(WireTerminalFrame.scrollbackRows)
         let size = TerminalProcessRegistry.fontSize
         terminal.font = NSFont(descriptor: terminal.font.fontDescriptor, size: size) ?? terminal.font
-        try? terminal.setUseMetal(true)
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        rendering.setVisible(window != nil)
         guard window != nil else { return }
         Task { @MainActor [weak self] in
             guard let self, self.window != nil else { return }
             self.window?.makeFirstResponder(self.terminal)
         }
+    }
+
+    func close() {
+        terminal.sendInput = nil
+        rendering.close()
+        documentView = nil
+        displayed = nil
     }
 
     func update(_ frame: WireTerminalFrame, isDark: Bool) {

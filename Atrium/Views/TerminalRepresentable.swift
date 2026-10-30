@@ -29,4 +29,8 @@ struct TerminalContainerRepresentable: NSViewRepresentable {
 
         container.host(terminalView)
     }
+
+    static func dismantleNSView(_ container: TerminalHostView, coordinator: ()) {
+        container.releaseCurrentTerminalView()
+    }
 }

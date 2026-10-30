@@ -1,4 +1,5 @@
 import AppKit
+import SwiftTerm
 
 /// Attaches a retained process view while SwiftUI replaces its host.
 final class TerminalHostView: NSView {
@@ -18,13 +19,15 @@ final class TerminalHostView: NSView {
     }
 
     private static var owners: [ObjectIdentifier: WeakHost] = [:]
-    private weak var terminalView: NSView?
+    private weak var terminalView: TerminalView?
+    private var rendering: TerminalRendering?
 
-    func host(_ terminalView: NSView) {
+    func host(_ terminalView: TerminalView) {
         let terminalChanged = self.terminalView !== terminalView
         if terminalChanged {
             releaseCurrentTerminalView()
             self.terminalView = terminalView
+            rendering = TerminalRendering(terminal: terminalView)
         }
 
         terminalView.translatesAutoresizingMaskIntoConstraints = true
@@ -42,6 +45,7 @@ final class TerminalHostView: NSView {
 
         guard window != nil else {
             releaseOwnership()
+            detachTerminalView()
             return
         }
 
@@ -76,7 +80,7 @@ final class TerminalHostView: NSView {
         attach(terminalView)
     }
 
-    private func attach(_ terminalView: NSView) {
+    private func attach(_ terminalView: TerminalView) {
         for subview in subviews where subview !== terminalView {
             subview.removeFromSuperview()
         }
@@ -99,15 +103,24 @@ final class TerminalHostView: NSView {
         if terminalView.frame != frame {
             terminalView.frame = frame
         }
+        rendering?.setVisible(true)
     }
 
-    private func releaseCurrentTerminalView() {
-        guard let terminalView else { return }
+    func releaseCurrentTerminalView() {
         releaseOwnership()
+        detachTerminalView()
+        self.terminalView = nil
+        rendering = nil
+    }
+
+    private func detachTerminalView() {
+        guard let terminalView else { return }
         if terminalView.superview === self {
             terminalView.removeFromSuperview()
         }
-        self.terminalView = nil
+        // A retiring host must not release a renderer another window adopted.
+        guard terminalView.window == nil else { return }
+        rendering?.setVisible(false)
     }
 
     private func releaseOwnership() {
