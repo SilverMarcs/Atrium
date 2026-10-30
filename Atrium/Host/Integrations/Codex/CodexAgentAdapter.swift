@@ -532,6 +532,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             if method == "serverRequest/resolved", let requestID = Self.decisionID(params["requestId"]) {
                 decisions[requestID] = nil
                 onEvent?(.interactionResolved(id: requestID))
+                onEvent?(.threadInvalidated(sessionID: id))
                 return
             }
             if let conversation = conversations[id] {
@@ -552,10 +553,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                     serviceTiers[id] = nil
                 }
                 onEvent?(.transcriptChanged(sessionID: id))
-                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
+                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status(.processing, sessionID: id), updatedAt: .now, startsNewTurn: true)))
                 onEvent?(.threadInvalidated(sessionID: id))
             } else if method == "thread/status/changed" {
-                let status = Self.status(params["status"] as? [String: Any])
+                let status = status(Self.status(params["status"] as? [String: Any]), sessionID: id)
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status)))
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -570,9 +571,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.transcriptChanged(sessionID: id))
                 let turn = params["turn"] as? [String: Any]
                 switch turn?["status"] as? String {
-                case "completed": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .done)))
-                case "failed": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .failed)))
-                case "interrupted": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .stopped)))
+                case "completed": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status(.done, sessionID: id))))
+                case "failed": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status(.failed, sessionID: id))))
+                case "interrupted": onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status(.stopped, sessionID: id))))
                 default: break
                 }
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -669,6 +670,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         onEvent?(.interactionRequested(AgentInteraction(id: id, taskID: "codex:" + threadID,
                                                        title: supported ? (questions.isEmpty ? "Allow Codex to continue?" : "Codex needs your input") : "Continue in Terminal",
                                                        detail: detail, questions: questions, supportsResponse: supported)))
+        onEvent?(.threadUpdated(sessionID: threadID, update: AgentThreadUpdate(status: .waiting)))
     }
 
     func respond(to interactionID: String, with decision: AgentDecision) async throws {
@@ -699,6 +701,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         socket.send(try JSONSerialization.data(withJSONObject: ["id": rawID, "result": result]))
         decisions[interactionID] = nil
         onEvent?(.interactionResolved(id: interactionID))
+        onEvent?(.threadInvalidated(sessionID: pending.sessionID))
     }
 
     private func resolveDecisions(sessionID: String) {
@@ -712,6 +715,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private func refreshAsyncQuestions(sessionID: String) {
         let requests = (conversations[sessionID]?.pendingQuestions ?? []).map { $0.interaction(sessionID: sessionID) }
         let ids = Set(requests.map(\.id))
+        let previousIDs = Set(asyncQuestions.values.filter { $0.taskID == "codex:" + sessionID }.map(\.id))
         for (id, request) in asyncQuestions where request.taskID == "codex:" + sessionID && !ids.contains(id) {
             asyncQuestions[id] = nil
             onEvent?(.interactionResolved(id: id))
@@ -720,6 +724,20 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             asyncQuestions[request.id] = request
             onEvent?(.interactionRequested(request))
         }
+        if previousIDs != ids {
+            if !ids.isEmpty {
+                onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .waiting)))
+            } else {
+                onEvent?(.threadInvalidated(sessionID: sessionID))
+            }
+        }
+    }
+
+    /// Async questions can outlive a turn or arrive while Codex keeps working.
+    private func status(_ reported: AgentThreadStatus, sessionID: String) -> AgentThreadStatus {
+        let hasPendingInput = asyncQuestions.values.contains { $0.taskID == "codex:" + sessionID }
+            || decisions.values.contains { $0.sessionID == sessionID }
+        return hasPendingInput ? .waiting : reported
     }
 
     private static func readState(_ value: [String: Any]?) -> AgentReadState? {
@@ -795,6 +813,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// settings chosen in Atrium until its next turn.
     private func withDefaults(_ thread: AgentThread?) -> AgentThread? {
         guard var thread else { return nil }
+        thread.status = status(thread.status, sessionID: thread.sessionID)
         let pending = pendingSettings[thread.sessionID] ?? [:]
         thread.model = pending["model"] ?? thread.model ?? defaultModel
         thread.reasoningEffort = pending["effort"] ?? thread.reasoningEffort ?? defaultReasoningEffort
