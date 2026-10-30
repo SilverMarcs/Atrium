@@ -39,3 +39,15 @@ struct ComposerDropHandler: ViewModifier {
         return true
     }
 }
+
+extension View {
+    /// Drops into the composer's draft. A drop that lands after the edit it
+    /// started over has been submitted or cancelled is discarded.
+    func composerDropHandler(_ composer: TaskComposer, isEnabled: Bool = true) -> some View {
+        let editing = composer.messageEdit
+        return modifier(ComposerDropHandler(isEnabled: isEnabled && editing?.isSubmitting != true) { content in
+            guard composer.messageEdit === editing, editing?.isSubmitting != true else { return }
+            try composer.receive(content)
+        })
+    }
+}

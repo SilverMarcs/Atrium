@@ -9,12 +9,9 @@ struct TaskDetailScreen: View {
     @Environment(HostDirectory.self) private var hosts
     let ref: TaskRef
     @State private var showingScratchPad = false
-    @State private var composer = TaskComposer()
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptSendAnimator()
-    /// Drafts left in other tasks, restored when their task opens again.
-    @State private var stashedComposers: [TaskRef: TaskComposer] = [:]
 
     private var host: HostClient? { hosts.host(ref.hostID) }
 
@@ -23,6 +20,9 @@ struct TaskDetailScreen: View {
     private var resolvedRef: TaskRef { TaskRef(hostID: ref.hostID, taskID: host?.resolvedTaskID(ref.taskID) ?? ref.taskID) }
 
     private var hostTask: WireTask? { host?.task(resolvedRef.taskID) }
+
+    /// Each task keeps its own draft and images while others are shown.
+    private var composer: TaskComposer { hosts.composer(for: resolvedRef) }
 
     /// The host's task, or what a draft shows until the host lists it.
     private var item: HostTask? { hosts.task(resolvedRef) }
@@ -46,8 +46,7 @@ struct TaskDetailScreen: View {
     }
 
     var body: some View {
-        let targetComposer = composer
-        let editing = composer.messageEdit
+        let composer = composer
         Group {
             if let item {
                 if let draft = newChatDraft {
@@ -68,12 +67,6 @@ struct TaskDetailScreen: View {
                 )
             }
         }
-        .onChange(of: dictationSettings.isEnabled) { _, enabled in
-            if !enabled { composer.dictation.cancel() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { composer.dictation.cancel() }
-        }
         .onAppear {
             hosts.setVisibleTask(resolvedRef)
             host?.onPendingPromptShown = { [sendAnimator] promptID, messageID in
@@ -83,8 +76,8 @@ struct TaskDetailScreen: View {
         .onDisappear {
             if hosts.visibleTask == resolvedRef { hosts.setVisibleTask(nil) }
             host?.onPendingPromptShown = nil
-            composer.dictation.cancel()
             sendAnimator.cancelAll()
+            hosts.releaseComposer(for: resolvedRef)
         }
         .navigationTitle(task?.title ?? "Task")
         .modifier(ConnectionStatusSubtitle(
@@ -185,23 +178,8 @@ struct TaskDetailScreen: View {
             }
         }
         .composerAttachmentPickers(composer)
-        .modifier(ComposerDropHandler(isEnabled: item != nil && editing?.isSubmitting != true) { content in
-            guard targetComposer.messageEdit === editing, editing?.isSubmitting != true else { return }
-            switch content {
-            case .text(let text):
-                targetComposer.draft += text
-            case .image(let image):
-                try targetComposer.attachPastedImage(image)
-            }
-        })
-        .alert("Couldn’t Dictate", isPresented: Binding(
-            get: { composer.dictation.error != nil },
-            set: { if !$0 { composer.dictation.error = nil } }
-        )) {
-            Button("OK") { composer.dictation.error = nil }
-        } message: {
-            Text(composer.dictation.error ?? "")
-        }
+        .composerDropHandler(composer, isEnabled: item != nil)
+        .composerDictationLifecycle(composer)
         .environment(composer)
         .environment(sendAnimator)
         .sheet(isPresented: $showingScratchPad) {
@@ -219,19 +197,17 @@ struct TaskDetailScreen: View {
                 && composer.dictation.error == nil,
             prepareToPresent: { composer.isFocused = false }
         ))
-        // The screen outlives its task when another opens, so each task keeps
-        // its own draft and images, waiting for it to open again. A new task
-        // opened from the screen's draft carries on with the draft's.
+        // The screen outlives its task when another opens, so the task it
+        // leaves keeps its draft for when it opens again. A new task opened
+        // from the screen's draft carries on with the draft's composer.
         .onChange(of: resolvedRef) { oldRef, newRef in
             hosts.setVisibleTask(newRef)
             guard oldRef.hostID != newRef.hostID || host?.drafts[oldRef.taskID]?.taskID != newRef.taskID else { return }
-            composer.dictation.cancel()
+            let previous = hosts.composer(for: oldRef)
+            previous.dictation.cancel()
+            previous.isFocused = false
             sendAnimator.cancelAll()
-            composer.isFocused = false
-            if composer.hasContent {
-                stashedComposers[Self.stashKey(oldRef)] = composer
-            }
-            composer = stashedComposers.removeValue(forKey: Self.stashKey(newRef)) ?? TaskComposer()
+            hosts.releaseComposer(for: oldRef)
         }
         .task(id: resolvedRef) {
             // The host has no transcript for a draft.
@@ -244,11 +220,6 @@ struct TaskDetailScreen: View {
                 host?.send(.task(id: task.id, action: .viewed))
             }
         }
-    }
-
-    /// Every draft is the new chat, so what's typed in it stays as it moves between hosts.
-    private static func stashKey(_ ref: TaskRef) -> TaskRef {
-        TaskDraft.isDraftID(ref.taskID) ? TaskRef(hostID: "", taskID: "new-chat") : ref
     }
 
     private var projectPath: String {

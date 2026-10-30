@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Relay's desktop composer geometry, backed by the shared task service.
 struct SessionChatComposer: View {
-  @Bindable var composer: ComposerDraft
+  @Bindable var composer: TaskComposer
   let provider: AgentProvider
   let isSending: Bool
   let isProcessing: Bool
@@ -16,8 +16,8 @@ struct SessionChatComposer: View {
   @FocusState private var isFocused: Bool
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
-  private var prompt: String { composer.inputText }
-  private var images: [ComposerImage] { composer.inputImages }
+  private var prompt: String { composer.draft }
+  private var images: [ComposerImage] { composer.images }
   private var edit: ConversationMessageEdit? { composer.messageEdit }
   private var dictation: ComposerDictation { composer.dictation }
 
@@ -40,15 +40,15 @@ struct SessionChatComposer: View {
       VStack(spacing: 0) {
         if let edit { ConversationEditContent(edit: edit) }
         if !images.isEmpty {
-          SessionChatAttachmentStrip(images: $composer.inputImages)
+          SessionChatAttachmentStrip(images: $composer.images)
         }
 
         HStack(alignment: .bottom) {
-          SessionChatInputMenu(images: $composer.inputImages)
+          SessionChatInputMenu(images: $composer.images)
             .offset(y: -1)
 
           if edit != nil {
-            ConversationEditCancelButton { composer.messageEdit = nil }
+            ConversationEditCancelButton(action: composer.cancelEdit)
           }
 
           HStack(alignment: .bottom, spacing: 0) {
@@ -60,7 +60,7 @@ struct SessionChatComposer: View {
                   .allowsHitTesting(false)
               }
 
-              TextEditor(text: $composer.inputText)
+              TextEditor(text: $composer.draft)
                 .padding(.leading, -4)
                 .frame(maxHeight: 350)
                 .fixedSize(horizontal: false, vertical: true)
@@ -78,7 +78,7 @@ struct SessionChatComposer: View {
           }
           .font(.body)
           .glassEffect(in: .rect(cornerRadius: 16))
-          .modifier(SessionChatPasteHandler(prompt: $composer.inputText, images: $composer.inputImages, isFocused: isFocused))
+          .modifier(SessionChatPasteHandler(prompt: $composer.draft, images: $composer.images, isFocused: isFocused))
 
           Button {
             showsStop ? interrupt() : send()
@@ -139,8 +139,8 @@ struct SessionChatComposer: View {
       guard !Task.isCancelled else { return }
       isFocused = true
     }
-    .task(id: composer.dictationFocusRequestID) {
-      guard composer.dictationFocusRequestID != nil, !isFocused else { return }
+    .task(id: composer.focusRequestID) {
+      guard composer.focusRequestID != nil, !isFocused else { return }
       // Leave an already focused field undisturbed.
       await Task.yield()
       guard !Task.isCancelled, !isFocused else { return }

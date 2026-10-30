@@ -11,9 +11,7 @@ struct ComposerDictationButton: View {
     var body: some View {
         if settings.isEnabled {
             Button {
-                composer.dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey)) { text in
-                    composer.appendTranscription(text)
-                }
+                composer.toggleDictation(using: settings)
             } label: {
                 Group {
                     if composer.dictation.isBusy {

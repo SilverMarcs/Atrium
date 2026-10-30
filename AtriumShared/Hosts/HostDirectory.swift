@@ -39,6 +39,8 @@ final class HostDirectory {
     /// The draft last opened as the new chat, sent or not.
     private var newChatRef: TaskRef?
     @ObservationIgnored private var notificationDestination: TaskRef?
+    /// What's typed in each task's composer, kept while other tasks are shown.
+    @ObservationIgnored private var composers: [TaskRef: TaskComposer] = [:]
 
     private static let filterKey = "hostFilter"
     private static let localHostNameKey = "localHostName"
@@ -119,6 +121,32 @@ final class HostDirectory {
 
     func open(_ ref: TaskRef) {
         pendingTask = ref
+    }
+
+    // MARK: - Composers
+
+    /// Every draft is the new chat, so what's typed in it stays as it moves
+    /// between hosts.
+    private static let newChatComposer = TaskRef(hostID: "", taskID: "new-chat")
+
+    private static func composerKey(_ ref: TaskRef) -> TaskRef {
+        TaskDraft.isDraftID(ref.taskID) ? newChatComposer : ref
+    }
+
+    /// The task's composer, keeping what's typed in it while other tasks are shown.
+    func composer(for ref: TaskRef) -> TaskComposer {
+        let key = Self.composerKey(ref)
+        if let composer = composers[key] { return composer }
+        let composer = TaskComposer()
+        composers[key] = composer
+        return composer
+    }
+
+    /// Forgets a composer that's left the screen with nothing in it.
+    func releaseComposer(for ref: TaskRef) {
+        let key = Self.composerKey(ref)
+        guard let composer = composers[key], !composer.hasContent, composer.messageEdit == nil else { return }
+        composers[key] = nil
     }
 
     /// Performs a task menu action that needs no confirmation. Rename and
@@ -328,6 +356,11 @@ extension HostDirectory: HostConnectionsDelegate {
 
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft) {
         host.rememberNewTask(draft)
+        // The new chat's composer carries on as the task's, and the next new
+        // chat starts empty.
+        if let composer = composers.removeValue(forKey: Self.newChatComposer) {
+            composers[TaskRef(hostID: host.id, taskID: taskID)] = composer
+        }
         // A task started on a host the lists are narrowed away from shows them all.
         if let filter, filter != host.id { self.filter = nil }
         // A draft on screen carries on as its task.

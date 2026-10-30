@@ -20,8 +20,7 @@ struct SessionChatView: View {
   private var transcriptError: String? { host.transcriptErrors[task.id] }
 
   var body: some View {
-    @Bindable var composer = app.composer(for: item.id)
-    let editing = composer.messageEdit
+    let composer = app.hosts.composer(for: item.id)
     let transcript = conversation.transcripts[task.id]
     let prompts = conversation.pendingPrompts[task.id] ?? []
     let turns = ConversationTurns(
@@ -40,7 +39,7 @@ struct SessionChatView: View {
                 message: row.message,
                 isStreaming: turns.liveIDs.contains(row.id),
                 edit: row.pendingPrompt == nil && row.message.editTarget != nil
-                    ? { composer.messageEdit = ConversationMessageEdit(message: row.message, item: item) } : nil,
+                    ? { composer.beginEditing(row.message, in: item) } : nil,
                 editEnabled: task.actions.contains(.editMessage) && prompts.isEmpty && composer.messageEdit?.isSubmitting != true,
                 pendingPrompt: row.pendingPrompt,
                 retry: { if let prompt = row.pendingPrompt { host.retryPrompt(prompt.id, in: task.id) } }
@@ -126,7 +125,7 @@ struct SessionChatView: View {
             composer: composer, provider: task.provider,
             isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
             actions: task.actions,
-            send: { composer.submit { send(composer) } },
+            send: { send(composer) },
             interrupt: { host.interrupt(task.id) },
             noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
           )
@@ -144,6 +143,11 @@ struct SessionChatView: View {
       ) { old, new in
         if scrollPolicy.observe(from: old, to: new) {
           scrollToBottom(proxy, animated: false)
+        } else if new.lastID != old.lastID, new.lastID?.hasPrefix("pending-") == true {
+          // A prompt sent from here follows the conversation down, even when
+          // the reader had scrolled up or an edit shortened it.
+          scrollPolicy.noteSend()
+          isPinned = true
         }
       }
       .onChange(of: composer.messageEdit?.id) { _, id in
@@ -160,6 +164,7 @@ struct SessionChatView: View {
       }
       .onDisappear {
         sendAnimator.cancelAll()
+        app.hosts.releaseComposer(for: item.id)
       }
     }
     .modifier(AgentInteractionPresentation(
@@ -169,19 +174,8 @@ struct SessionChatView: View {
       }
     ))
     .font(.system(size: chatFontSize))
-    .modifier(SessionChatDictationLifecycle(composer: composer))
-    .modifier(ComposerDropHandler(isEnabled: editing?.isSubmitting != true) { content in
-      guard composer.messageEdit === editing, editing?.isSubmitting != true else { return }
-      switch content {
-      case .text(let text):
-        composer.inputText += text
-      case .image(let image):
-        try ComposerPasteContent.checkImageLimit(
-          composer.inputImages.count + (editing?.images.count ?? 0), maximum: 10
-        )
-        composer.inputImages.append(image)
-      }
-    })
+    .composerDictationLifecycle(composer)
+    .composerDropHandler(composer)
     .environment(sendAnimator)
     .environment(\.openURL, OpenURLAction { url in
       // Links to files in the project open in its editor, and on this Mac files
@@ -197,32 +191,12 @@ struct SessionChatView: View {
     })
   }
 
-  private func send(_ composer: ComposerDraft) {
-    if let edit = composer.messageEdit {
-      Task {
-        if await edit.submit(send: { text, images in send(text, images: images) }) {
-          composer.messageEdit = nil
-        }
-      }
-      return
-    }
-    let text = composer.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || !composer.images.isEmpty, !conversation.isSending(in: task.id) else { return }
-    send(text, images: composer.images.map(\.data))
-    composer.prompt = ""
-    composer.images = []
-  }
-
-  private func send(_ text: String, images: [Data]) {
-    scrollPolicy.noteSend()
+  /// Sends with nothing else animating; the sent bubble flies in on its own.
+  private func send(_ composer: TaskComposer) {
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
     withTransaction(transaction) {
-      let id = host.sendPrompt(text, images: images, to: task.id)
-      if !reduceMotion {
-        sendAnimator.begin(id, text: text, from: sendAnimator.sourceFrame?())
-      }
-      isPinned = true
+      composer.submit(to: item, animator: sendAnimator)
     }
   }
 

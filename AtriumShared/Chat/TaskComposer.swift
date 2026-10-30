@@ -1,18 +1,17 @@
 import AtriumClient
 import AtriumProtocol
-import Foundation
+import SwiftUI
 
-/// A task's prompt draft with its attached images, and whether the
-/// search-field composer has focus.
+/// A task's prompt draft with its attached images, its dictation, and any
+/// message being edited. The Mac and iOS composers both present one.
 @MainActor
 @Observable
 final class TaskComposer {
     let dictation = ComposerDictation()
-    @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
-    var pasteError: String?
     private var ordinaryDraft = ""
-    var messageEdit: ConversationMessageEdit?
+    private(set) var messageEdit: ConversationMessageEdit?
     private(set) var editedPromptID: UUID?
+    /// Editing uses a separate draft, leaving the ordinary composer untouched.
     var draft: String {
         get { messageEdit?.text ?? ordinaryDraft }
         set {
@@ -21,15 +20,20 @@ final class TaskComposer {
         }
     }
     private(set) var isSubmittingDictation = false
+    /// Changes when a transcript lands in the draft, so the field can take focus.
     private(set) var focusRequestID: UUID?
     private var ordinaryImages: [ComposerImage] = []
-    private(set) var images: [ComposerImage] {
+    var images: [ComposerImage] {
         get { messageEdit?.addedImages ?? ordinaryImages }
         set {
             if let messageEdit { messageEdit.addedImages = newValue }
             else { ordinaryImages = newValue }
         }
     }
+
+    #if os(iOS)
+    @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
+    var pasteError: String?
     var isPickingPhotos = false
     var isTakingPhoto = false
     /// Mirrors the composer's focus, where the timeline observes it to scroll
@@ -39,6 +43,9 @@ final class TaskComposer {
     static let maxImages = 4
     /// As in Relay, context-menu dismissal must finish before it restores keyboard focus.
     static let contextMenuDismissalDelay: Duration = .milliseconds(200)
+    #else
+    static let maxImages = 10
+    #endif
 
     func beginEditing(_ message: TranscriptMessage, in item: HostTask) {
         guard messageEdit?.isSubmitting != true,
@@ -53,9 +60,14 @@ final class TaskComposer {
         messageEdit = nil
     }
 
-    func appendTranscription(_ text: String) {
-        draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
-        focusRequestID = UUID()
+    /// Starts recording, or stops and appends its transcript to the draft.
+    func toggleDictation(using settings: DictationSettings) {
+        guard !isSubmittingDictation, settings.isEnabled else { return }
+        dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey)) { [weak self] text in
+            guard let self else { return }
+            draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
+            focusRequestID = UUID()
+        }
     }
 
     var remainingImageSlots: Int { max(Self.maxImages - images.count - (messageEdit?.images.count ?? 0), 0) }
@@ -78,12 +90,24 @@ final class TaskComposer {
         images.append(image)
     }
 
+    /// Adds dropped text to the draft, or a dropped image to its attachments.
+    func receive(_ content: ComposerPasteContent) throws {
+        switch content {
+        case .text(let text):
+            draft += text
+        case .image(let image):
+            try attachPastedImage(image)
+        }
+    }
+
     func remove(_ image: ComposerImage) {
         images.removeAll { $0.id == image.id }
     }
 
     /// Sends the draft and its images to the task's agent, or explains why it
     /// can't take a prompt right now. The draft is kept when nothing is sent.
+    /// A recording is transcribed into the draft first; cancellation or a
+    /// failed transcription never sends a partial draft.
     /// - Parameters:
     ///   - animator: Flies the sent prompt's bubble in from the composer.
     ///   - sourceFrame: The field the prompt was sent from, which its bubble

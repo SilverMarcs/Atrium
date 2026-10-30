@@ -30,7 +30,6 @@ final class AppModel {
     var pendingRunReplacement: (project: Project, command: WireCommand)?
 
     @ObservationIgnored private var projects: [WorkspaceRef: Project] = [:]
-    @ObservationIgnored private var composers: [TaskRef: ComposerDraft] = [:]
 
     /// The app delegate reaches the app through this for notification taps.
     static private(set) weak var shared: AppModel?
@@ -74,77 +73,10 @@ final class AppModel {
         return project
     }
 
-    /// What's typed in a task's composer, kept per task while others are shown.
-    /// Every draft is the new chat, so what's typed in it stays as it moves between hosts.
-    func composer(for ref: TaskRef) -> ComposerDraft {
-        let key = TaskDraft.isDraftID(ref.taskID) ? TaskRef(hostID: "", taskID: "new-chat") : ref
-        if let composer = composers[key] { return composer }
-        let composer = ComposerDraft()
-        composers[key] = composer
-        return composer
-    }
-
-
     /// Opens a terminal link that names a file in the terminal's project.
     private func openLink(_ link: String, from terminal: Terminal) async -> Bool {
         guard let localHost, let workspaceID = terminal.workspace?.id,
               let project = project(WorkspaceRef(hostID: localHost.id, workspaceID: workspaceID)) else { return false }
         return await project.openLink(link, from: terminal.currentDirectory)
-    }
-}
-
-/// A task's unsent prompt and images.
-@MainActor
-@Observable
-final class ComposerDraft {
-    let dictation = ComposerDictation()
-    private(set) var isSubmittingDictation = false
-    private(set) var dictationFocusRequestID: UUID?
-    var prompt = ""
-    var images: [ComposerImage] = []
-    /// A recording belongs to the draft it started in, so entering or leaving
-    /// an edit discards it.
-    var messageEdit: ConversationMessageEdit? {
-        didSet { if messageEdit !== oldValue { dictation.cancel() } }
-    }
-
-    /// Editing uses a separate draft, leaving the ordinary composer untouched.
-    var inputText: String {
-        get { messageEdit?.text ?? prompt }
-        set {
-            if let messageEdit { messageEdit.text = newValue }
-            else { prompt = newValue }
-        }
-    }
-
-    var inputImages: [ComposerImage] {
-        get { messageEdit?.addedImages ?? images }
-        set {
-            if let messageEdit { messageEdit.addedImages = newValue }
-            else { images = newValue }
-        }
-    }
-
-    func toggleDictation(using settings: DictationSettings) {
-        guard !isSubmittingDictation, settings.isEnabled else { return }
-        dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey)) { [weak self] text in
-            guard let self else { return }
-            inputText += (inputText.isEmpty || inputText.last?.isWhitespace == true ? "" : " ") + text
-            dictationFocusRequestID = UUID()
-        }
-    }
-
-    /// Runs `send` once any recording has been transcribed into the draft.
-    /// Cancellation or a failed transcription must never send a partial draft.
-    func submit(_ send: @escaping @MainActor () -> Void) {
-        guard !isSubmittingDictation else { return }
-        guard dictation.isActive else { return send() }
-        let session = dictation.sessionID
-        isSubmittingDictation = true
-        Task {
-            defer { isSubmittingDictation = false }
-            guard await dictation.finish(session: session) else { return }
-            send()
-        }
     }
 }

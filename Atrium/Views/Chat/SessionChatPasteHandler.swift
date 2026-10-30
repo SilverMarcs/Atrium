@@ -61,7 +61,7 @@ struct SessionChatPasteHandler: ViewModifier {
           if let url = fileURL(from: item) {
             content = try await ComposerPasteContent.load(contentsOf: url)
           } else if let data = item.data(forType: .png) ?? item.data(forType: .tiff) {
-            try ComposerPasteContent.checkImageLimit(images.count, maximum: 10)
+            try ComposerPasteContent.checkImageLimit(images.count, maximum: TaskComposer.maxImages)
             content = try await ComposerPasteContent.load(imageData: data)
           } else {
             continue
@@ -75,7 +75,7 @@ struct SessionChatPasteHandler: ViewModifier {
               prompt += text
             }
           case .image(let image):
-            try ComposerPasteContent.checkImageLimit(images.count, maximum: 10)
+            try ComposerPasteContent.checkImageLimit(images.count, maximum: TaskComposer.maxImages)
             images.append(image)
           }
         } catch { importError = error.localizedDescription }

@@ -3,7 +3,7 @@ import SwiftUI
 /// Relay's inline dictation control, shown inside the prompt field once an
 /// OpenAI key is saved in Settings.
 struct SessionChatDictationButton: View {
-  let composer: ComposerDraft
+  let composer: TaskComposer
   @ScaledMetric(relativeTo: .body) private var symbolSize = 20
   @Environment(DictationSettings.self) private var settings
 
@@ -32,7 +32,7 @@ struct SessionChatDictationButton: View {
           }
           .frame(width: symbolSize)
           .foregroundStyle(composer.dictation.isRecording ? Color.accentColor : .secondary)
-          .frame(width: 44)
+          .frame(width: 36)
           .padding(.vertical, 8)
           .contentShape(.rect)
       }

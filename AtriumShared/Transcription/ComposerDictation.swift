@@ -20,9 +20,6 @@ final class ComposerDictation {
     var isActive: Bool { isRecording || isBusy }
     private(set) var sessionID = UUID()
     private var finishRecording: (() -> Void)?
-    #if os(iOS)
-    private var ownsAudioSession = false
-    #endif
     private var recorder: AVAudioRecorder?
     private var operation: Task<Void, Never>?
 
@@ -72,7 +69,6 @@ final class ComposerDictation {
                     let session = AVAudioSession.sharedInstance()
                     try session.setCategory(.record, mode: .default)
                     try session.setActive(true)
-                    ownsAudioSession = true
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
                     let recorder = try AVAudioRecorder(url: url, settings: [
@@ -121,8 +117,6 @@ final class ComposerDictation {
 
     private func deactivateAudio() {
         #if os(iOS)
-        guard ownsAudioSession else { return }
-        ownsAudioSession = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
     }

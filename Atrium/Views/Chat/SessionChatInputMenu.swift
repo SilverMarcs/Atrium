@@ -74,8 +74,8 @@ struct SessionChatInputMenu: View {
   }
 
   private func checkImageLimit() throws {
-    guard images.count < 10 else {
-      throw IntegrationError(message: "Attach up to 10 images at a time.")
+    guard images.count < TaskComposer.maxImages else {
+      throw IntegrationError(message: "Attach up to \(TaskComposer.maxImages) images at a time.")
     }
   }
 
