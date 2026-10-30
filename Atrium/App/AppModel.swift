@@ -97,9 +97,16 @@ final class AppModel {
 @MainActor
 @Observable
 final class ComposerDraft {
+    let dictation = ComposerDictation()
+    private(set) var isSubmittingDictation = false
+    private(set) var dictationFocusRequestID: UUID?
     var prompt = ""
     var images: [ComposerImage] = []
-    var messageEdit: ConversationMessageEdit?
+    /// A recording belongs to the draft it started in, so entering or leaving
+    /// an edit discards it.
+    var messageEdit: ConversationMessageEdit? {
+        didSet { if messageEdit !== oldValue { dictation.cancel() } }
+    }
 
     /// Editing uses a separate draft, leaving the ordinary composer untouched.
     var inputText: String {
@@ -115,6 +122,29 @@ final class ComposerDraft {
         set {
             if let messageEdit { messageEdit.addedImages = newValue }
             else { images = newValue }
+        }
+    }
+
+    func toggleDictation(using settings: DictationSettings) {
+        guard !isSubmittingDictation, settings.isEnabled else { return }
+        dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey)) { [weak self] text in
+            guard let self else { return }
+            inputText += (inputText.isEmpty || inputText.last?.isWhitespace == true ? "" : " ") + text
+            dictationFocusRequestID = UUID()
+        }
+    }
+
+    /// Runs `send` once any recording has been transcribed into the draft.
+    /// Cancellation or a failed transcription must never send a partial draft.
+    func submit(_ send: @escaping @MainActor () -> Void) {
+        guard !isSubmittingDictation else { return }
+        guard dictation.isActive else { return send() }
+        let session = dictation.sessionID
+        isSubmittingDictation = true
+        Task {
+            defer { isSubmittingDictation = false }
+            guard await dictation.finish(session: session) else { return }
+            send()
         }
     }
 }

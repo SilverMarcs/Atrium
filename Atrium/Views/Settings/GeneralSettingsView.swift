@@ -82,6 +82,8 @@ struct GeneralSettingsView: View {
                 Text("Editor")
             }
 
+            DictationSettingsSection()
+
             #if DEBUG
             Section {
                 LabeledContent("Reset Onboarding") {
@@ -102,4 +104,5 @@ struct GeneralSettingsView: View {
 
 #Preview {
     GeneralSettingsView()
+        .environment(DictationSettings())
 }

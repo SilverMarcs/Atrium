@@ -8,7 +8,9 @@ struct DictationSettingsSection: View {
         Section {
             SecureField("OpenAI API key", text: $key)
                 .textContentType(.password)
+                #if os(iOS)
                 .textInputAutocapitalization(.never)
+                #endif
                 .autocorrectionDisabled()
             Button("Save API Key") { settings.save(key) }
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines) == settings.apiKey)

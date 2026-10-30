@@ -5,11 +5,13 @@ struct AtriumApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var app = AppModel()
     @State private var updater = UpdaterManager()
+    @State private var dictationSettings = DictationSettings()
 
     var body: some Scene {
         Window("Atrium", id: "atrium") {
             ContentView()
                 .environment(app)
+                .environment(dictationSettings)
                 .frame(minWidth: 600, minHeight: 400)
         }
         .defaultSize(width: 900, height: 600)
@@ -41,6 +43,7 @@ struct AtriumApp: App {
             SettingsView()
                 .environment(updater)
                 .environment(app)
+                .environment(dictationSettings)
         }
     }
 }

@@ -4,29 +4,35 @@ import SwiftUI
 
 /// Relay's desktop composer geometry, backed by the shared task service.
 struct SessionChatComposer: View {
-  @Binding var prompt: String
-  @Binding var images: [ComposerImage]
+  @Bindable var composer: ComposerDraft
   let provider: AgentProvider
   let isSending: Bool
   let isProcessing: Bool
   var actions: TaskActions = [.prompt, .interrupt]
   let send: () -> Void
   let interrupt: () -> Void
-  var edit: ConversationMessageEdit?
-  var cancelEdit: () -> Void = {}
   var noteSourceFrame: (CGRect) -> Void = { _ in }
   @Environment(AppModel.self) private var app
   @FocusState private var isFocused: Bool
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
+  private var prompt: String { composer.inputText }
+  private var images: [ComposerImage] { composer.inputImages }
+  private var edit: ConversationMessageEdit? { composer.messageEdit }
+  private var dictation: ComposerDictation { composer.dictation }
+
   private var canSend: Bool {
     !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty || edit?.images.isEmpty == false
   }
 
-  private var showsStop: Bool { isProcessing && actions.contains(.interrupt) && !canSend }
+  private var showsStop: Bool {
+    isProcessing && actions.contains(.interrupt) && !canSend && !dictation.isActive && !composer.isSubmittingDictation
+  }
 
+  /// A recording counts as content: sending transcribes it first.
   private var isButtonDisabled: Bool {
-    isSending || edit?.isSubmitting == true || (edit != nil && edit?.canSubmit != true) || (!showsStop && (!canSend || !actions.contains(.prompt)))
+    isSending || composer.isSubmittingDictation || edit?.isSubmitting == true || (edit != nil && edit?.canSubmit != true)
+      || (!showsStop && ((!canSend && !dictation.isActive) || !actions.contains(.prompt)))
   }
 
   var body: some View {
@@ -34,41 +40,45 @@ struct SessionChatComposer: View {
       VStack(spacing: 0) {
         if let edit { ConversationEditContent(edit: edit) }
         if !images.isEmpty {
-          SessionChatAttachmentStrip(images: $images)
+          SessionChatAttachmentStrip(images: $composer.inputImages)
         }
 
         HStack(alignment: .bottom) {
-          SessionChatInputMenu(images: $images)
+          SessionChatInputMenu(images: $composer.inputImages)
             .offset(y: -1)
 
           if edit != nil {
-            ConversationEditCancelButton(action: cancelEdit)
+            ConversationEditCancelButton { composer.messageEdit = nil }
           }
 
-          ZStack(alignment: .leading) {
-            if prompt.isEmpty {
-              Text(edit == nil ? "Message \(provider.name)..." : "Edit message…")
-                .padding(.leading, 1)
-                .foregroundStyle(.placeholder)
-                .allowsHitTesting(false)
-            }
+          HStack(alignment: .bottom, spacing: 0) {
+            ZStack(alignment: .leading) {
+              if prompt.isEmpty {
+                Text(edit == nil ? "Message \(provider.name)..." : "Edit message…")
+                  .padding(.leading, 1)
+                  .foregroundStyle(.placeholder)
+                  .allowsHitTesting(false)
+              }
 
-            TextEditor(text: $prompt)
-              .padding(.leading, -4)
-              .frame(maxHeight: 350)
-              .fixedSize(horizontal: false, vertical: true)
-              .scrollContentBackground(.hidden)
-              .focused($isFocused)
-              .onKeyPress(.return, action: handleReturnKey)
-              .disabled(edit?.isSubmitting == true)
+              TextEditor(text: $composer.inputText)
+                .padding(.leading, -4)
+                .frame(maxHeight: 350)
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollContentBackground(.hidden)
+                .focused($isFocused)
+                .onKeyPress(.return, action: handleReturnKey)
+                .disabled(edit?.isSubmitting == true)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .padding(6)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { noteSourceFrame($0) }
+
+            SessionChatDictationButton(composer: composer)
           }
           .font(.body)
-          .padding(.horizontal, 7)
-          .padding(.vertical, 3)
-          .padding(6)
-          .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { noteSourceFrame($0) }
           .glassEffect(in: .rect(cornerRadius: 16))
-          .modifier(SessionChatPasteHandler(prompt: $prompt, images: $images, isFocused: isFocused))
+          .modifier(SessionChatPasteHandler(prompt: $composer.inputText, images: $composer.inputImages, isFocused: isFocused))
 
           Button {
             showsStop ? interrupt() : send()
@@ -129,6 +139,13 @@ struct SessionChatComposer: View {
       guard !Task.isCancelled else { return }
       isFocused = true
     }
+    .task(id: composer.dictationFocusRequestID) {
+      guard composer.dictationFocusRequestID != nil, !isFocused else { return }
+      // Leave an already focused field undisturbed.
+      await Task.yield()
+      guard !Task.isCancelled, !isFocused else { return }
+      isFocused = true
+    }
   }
 
   private func handleReturnKey() -> KeyPress.Result {
@@ -136,7 +153,7 @@ struct SessionChatComposer: View {
     guard enterToSendChat, modifiers.intersection([.shift, .option, .command]).isEmpty else {
       return .ignored
     }
-    if canSend && !isButtonDisabled && actions.contains(.prompt) { send() }
+    if (canSend || dictation.isActive) && !isButtonDisabled && actions.contains(.prompt) { send() }
     return .handled
   }
 }

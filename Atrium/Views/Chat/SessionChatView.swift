@@ -123,13 +123,11 @@ struct SessionChatView: View {
               .padding(.top, 8)
           }
           SessionChatComposer(
-            prompt: $composer.inputText, images: $composer.inputImages, provider: task.provider,
+            composer: composer, provider: task.provider,
             isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
             actions: task.actions,
-            send: { send(composer) },
+            send: { composer.submit { send(composer) } },
             interrupt: { host.interrupt(task.id) },
-            edit: composer.messageEdit,
-            cancelEdit: { composer.messageEdit = nil },
             noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
           )
         }
@@ -171,6 +169,7 @@ struct SessionChatView: View {
       }
     ))
     .font(.system(size: chatFontSize))
+    .modifier(SessionChatDictationLifecycle(composer: composer))
     .modifier(ComposerDropHandler(isEnabled: editing?.isSubmitting != true) { content in
       guard composer.messageEdit === editing, editing?.isSubmitting != true else { return }
       switch content {

@@ -17,6 +17,8 @@
 	<array>
 		<string>_atrium._tcp</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record your voice to transcribe a prompt with OpenAI.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Atrium connects directly to your Macs on the same network, and lets your other devices connect to this Mac, instead of going through the relay.</string>
 	<key>NSUserActivityTypes</key>

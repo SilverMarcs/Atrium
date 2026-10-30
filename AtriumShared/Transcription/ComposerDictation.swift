@@ -1,14 +1,18 @@
 import AVFoundation
 import Foundation
+#if os(iOS)
 import UIKit
+#endif
 
 @MainActor
 @Observable
 final class ComposerDictation {
     private(set) var isRecording = false {
         didSet {
+            #if os(iOS)
             guard isRecording != oldValue else { return }
             UIApplication.shared.isIdleTimerDisabled = isRecording
+            #endif
         }
     }
     private(set) var isBusy = false
@@ -16,6 +20,9 @@ final class ComposerDictation {
     var isActive: Bool { isRecording || isBusy }
     private(set) var sessionID = UUID()
     private var finishRecording: (() -> Void)?
+    #if os(iOS)
+    private var ownsAudioSession = false
+    #endif
     private var recorder: AVAudioRecorder?
     private var operation: Task<Void, Never>?
 
@@ -52,13 +59,21 @@ final class ComposerDictation {
             operation = Task {
                 defer { isBusy = false }
                 do {
-                    guard await AVAudioApplication.requestRecordPermission() else {
+                    #if os(macOS)
+                    let allowed = await AVCaptureDevice.requestAccess(for: .audio)
+                    #else
+                    let allowed = await AVAudioApplication.requestRecordPermission()
+                    #endif
+                    guard allowed else {
                         throw NSError(domain: "Dictation", code: 1, userInfo: [NSLocalizedDescriptionKey: "Allow microphone access in Settings to dictate."])
                     }
                     try Task.checkCancellation()
+                    #if os(iOS)
                     let session = AVAudioSession.sharedInstance()
                     try session.setCategory(.record, mode: .default)
                     try session.setActive(true)
+                    ownsAudioSession = true
+                    #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
                     let recorder = try AVAudioRecorder(url: url, settings: [
                         AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -105,6 +120,10 @@ final class ComposerDictation {
     }
 
     private func deactivateAudio() {
+        #if os(iOS)
+        guard ownsAudioSession else { return }
+        ownsAudioSession = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 }
