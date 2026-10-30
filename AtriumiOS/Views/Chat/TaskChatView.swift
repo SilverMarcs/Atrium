@@ -26,9 +26,13 @@ struct TaskChatView: View {
         let newestPromptID = pendingPrompts.last?.timelineID ?? messages?.last { $0.role == .user }?.id
         // A prompt sent from this device starts the latest turn, held at the
         // top. A pending prompt held there hands over to the transcript's
-        // message once that shows it.
+        // message once that shows it. A host can also give the held prompt a
+        // new ID, as Claude does once it saves the turn; the prompt that
+        // starts the latest turn then stays held in its place.
         let anchorID = pendingPrompts.last?.timelineID ?? anchorSpace.anchorID.flatMap { id in
-            id.hasPrefix("pending-") ? newestPromptID : id
+            if id.hasPrefix("pending-") { return newestPromptID }
+            guard messages?.contains(where: { $0.id == id }) == false else { return id }
+            return messages?.last { $0.role == .user && !$0.isSteer }?.id
         }
         let turns = ConversationTurns(messages: messages ?? [], pendingPrompts: pendingPrompts, status: task.status)
         let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
@@ -51,6 +55,17 @@ struct TaskChatView: View {
                                 .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.historyMessages.last?.role))
                         }
                         if sections.hasTurn {
+                            // The space above the turn is a row of its own: a
+                            // lazy stack scrolls to a row's whole frame, so as
+                            // the turn's padding it would hold the prompt that
+                            // far below the top, showing the end of the
+                            // message before it.
+                            Color.clear
+                                .frame(height: ChatMessageSpacing.before(
+                                    sections.turnMessages.first?.role ?? .user,
+                                    after: sections.historyPendingPrompts.isEmpty ? sections.historyMessages.last?.role : .user
+                                ))
+                                .accessibilityHidden(true)
                             // At least the resting viewport's height, so its
                             // prompt can scroll to the top.
                             VStack(alignment: .leading, spacing: 0) {
@@ -77,10 +92,6 @@ struct TaskChatView: View {
                             }
                             .frame(minHeight: anchorSpace.turnMinimumHeight, alignment: .top)
                             .id(TimelineAnchorSpace.turnID)
-                            .padding(.top, ChatMessageSpacing.before(
-                                sections.turnMessages.first?.role ?? .user,
-                                after: sections.historyPendingPrompts.isEmpty ? sections.historyMessages.last?.role : .user
-                            ))
                         } else {
                             TaskChatStatusFooter(status: footerStatus)
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
@@ -115,7 +126,9 @@ struct TaskChatView: View {
             .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)
             .contentMargins(.horizontal, 15, for: .scrollContent)
-            .contentMargins(.bottom, 20, for: .scrollContent)
+            // Three times the gap between messages, so the last one reads as
+            // the end of the timeline rather than running into the composer.
+            .contentMargins(.bottom, ChatMessageSpacing.standard * 3, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
