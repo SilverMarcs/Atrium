@@ -34,6 +34,7 @@ struct ChatPageFrame: View {
                     .webViewContentBackground(.hidden)
                     .scrollBounceBehavior(.basedOnSize)
                     .scrollDisabled(fits)
+                    .chatPageMenu(model, expand: { isExpanded = true }, download: { download($0) })
                     .opacity(model.contentHeight == nil ? 0 : 1)
             }
             if model?.phase == .unavailable {

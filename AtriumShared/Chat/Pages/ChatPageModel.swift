@@ -43,6 +43,16 @@ final class ChatPageModel {
         phase = .loaded
     }
 
+    #if os(macOS)
+    /// Copies the text selected in the page, as the menu's Copy item.
+    func copySelection() async {
+        guard let text = try? await webPage.callJavaScript("return window.getSelection().toString()") as? String,
+              !text.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+    #endif
+
     /// The page as the agent wrote it, or a picture of it as it looks here.
     func export(_ format: ChatPageExport.Format, title: String) async throws -> ChatPageExport {
         let data = switch format {

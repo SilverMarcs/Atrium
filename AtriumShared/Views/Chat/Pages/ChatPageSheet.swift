@@ -18,6 +18,7 @@ struct ChatPageSheet: View {
                     WebView(model.webPage)
                         .webViewContentBackground(.hidden)
                         .scrollBounceBehavior(.basedOnSize)
+                        .chatPageMenu(model)
                         // Pages leave out side padding to line up with the reply inline.
                         .padding(.horizontal)
                 } else if model?.phase == .unavailable {
