@@ -328,6 +328,8 @@ extension HostDirectory: HostConnectionsDelegate {
 
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft) {
         host.rememberNewTask(draft)
+        // A task started on a host the lists are narrowed away from shows them all.
+        if let filter, filter != host.id { self.filter = nil }
         // A draft on screen carries on as its task.
         if isShowing(TaskRef(hostID: host.id, taskID: draft.id)) {
             open(TaskRef(hostID: host.id, taskID: taskID))
