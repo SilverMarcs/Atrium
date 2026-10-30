@@ -27,7 +27,9 @@ struct ScratchPadSheet: View {
                     scheduleSend(text)
                 }
                 .navigationTitle("Scratch Pad")
+                #if os(iOS)
                 .navigationSubtitle(host.workspace(workspaceID)?.name ?? "")
+                #endif
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
