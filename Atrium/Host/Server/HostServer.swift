@@ -94,7 +94,8 @@ final class HostServer {
 
     init() {
         workspaces = WorkspaceStore()
-        integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(), ClaudeAgentAdapter()])
+        let bridge = AgentBridgeServer()
+        integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(bridge: bridge), ClaudeAgentAdapter(bridge: bridge)])
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces)
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
@@ -249,6 +250,9 @@ final class HostServer {
                 return .failed(message: "That icon is no longer available.")
             }
             return .icon(data: data)
+        case .page(let key):
+            guard let html = ChatPageStore.html(forKey: key) else { return .failed(message: "That page is no longer available.") }
+            return .page(html: html)
         case .refreshTasks:
             await integrations.refresh()
             return .done

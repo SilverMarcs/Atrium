@@ -54,6 +54,8 @@ struct TaskDetailScreen: View {
                     NewChatPlaceholder(provider: draft.provider)
                 } else {
                     TaskChatView(item: item)
+                        // Pages agents show in replies load from the task's host.
+                        .environment(item.host)
                 }
             } else if host?.tasks == nil || host?.isConnected != true {
                 ProgressView()

@@ -44,6 +44,16 @@ struct ProtocolTests {
         #expect(messages.extended(by: unrelated).map(\.id) == ["x"])
     }
 
+    @Test func pageBlocksRoundTrip() throws {
+        let blocks: [TranscriptBlock] = [
+            .text("Here", id: "1"), .tools(count: 2, id: "2"),
+            .page(TranscriptPage(key: "abc", title: "Revenue", height: 320), id: "3")
+        ]
+        #expect(try HostCodec.decode([TranscriptBlock].self, from: HostCodec.encode(blocks)) == blocks)
+        let encoded = String(decoding: try HostCodec.encode(blocks[2]), as: UTF8.self)
+        #expect(encoded.contains(#""page":{"#))
+    }
+
     @Test func tasksDeltasApplyToSnapshots() {
         func task(_ id: String, _ title: String) -> WireTask {
             WireTask(

@@ -1,22 +1,24 @@
 import Foundation
 import Network
 
-/// A single, authenticated HTTP hook call. Cancellation also cancels a pending native decision.
+/// A single, authenticated HTTP call from an agent. Cancellation also cancels a pending native decision.
 @MainActor
-final class ClaudeHookHTTPConnection {
+final class AgentBridgeConnection {
     private let connection: NWConnection
     private let authorization: String
-    private let handler: (Data) async throws -> Data
+    /// Answers a request body sent to a path; nil accepts it without a reply.
+    private let handler: (_ path: String, _ body: Data) async throws -> Data?
     private let finished: () -> Void
     private var buffer = Data()
     private var bodyOffset: Int?
     private var bodyLength = 0
+    private var path = ""
     private var handling: Task<Void, Never>?
     private var headerTimeout: Task<Void, Never>?
     private var closed = false
     private let maximumSize = 16 * 1024 * 1024
 
-    init(connection: NWConnection, token: String, handler: @escaping (Data) async throws -> Data, finished: @escaping () -> Void) {
+    init(connection: NWConnection, token: String, handler: @escaping (_ path: String, _ body: Data) async throws -> Data?, finished: @escaping () -> Void) {
         self.connection = connection
         authorization = "Bearer " + token
         self.handler = handler
@@ -69,7 +71,12 @@ final class ClaudeHookHTTPConnection {
                 return
             }
             let lines = String(decoding: buffer[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
-            guard lines.first == "POST /claude HTTP/1.1" else { reply(status: 404, body: Data()); return }
+            let requestLine = lines.first?.split(separator: " ") ?? []
+            guard requestLine.count == 3, requestLine[2] == "HTTP/1.1",
+                  ["/claude", "/mcp"].contains(requestLine[1]) else { reply(status: 404, body: Data()); return }
+            // Atrium's tools reply to each request; there is no event stream to open.
+            guard requestLine[0] == "POST" else { reply(status: 405, body: Data()); return }
+            path = String(requestLine[1])
             var headers: [String: String] = [:]
             for line in lines.dropFirst() {
                 guard let colon = line.firstIndex(of: ":") else { reply(status: 400, body: Data()); return }
@@ -90,9 +97,9 @@ final class ClaudeHookHTTPConnection {
         handling = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await self.handler(body)
+                let result = try await self.handler(self.path, body)
                 guard !Task.isCancelled else { return }
-                self.reply(status: 200, body: result)
+                if let result { self.reply(status: 200, body: result) } else { self.reply(status: 202, body: Data()) }
             } catch {
                 guard !Task.isCancelled else { return }
                 // A hook that cannot reach its native UI must leave Claude's terminal fallback usable.
@@ -103,7 +110,11 @@ final class ClaudeHookHTTPConnection {
 
     private func reply(status: Int, body: Data) {
         guard !closed else { return }
-        let reason = status == 200 ? "OK" : "Error"
+        let reason = switch status {
+        case 200: "OK"
+        case 202: "Accepted"
+        default: "Error"
+        }
         var response = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
         response.append(body)
         connection.send(content: response, completion: .contentProcessed { [weak self] _ in

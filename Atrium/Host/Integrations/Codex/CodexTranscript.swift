@@ -48,6 +48,8 @@ nonisolated enum CodexTranscript {
                     }
                 } else if item["type"] as? String == "agentMessage" {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
+                } else if let page = page(in: item) {
+                    blocks.append(.page(page, id: id))
                 } else if toolTypes.contains(item["type"] as? String ?? "") {
                     blocks.appendToolCall(id: id)
                 }
@@ -55,6 +57,13 @@ nonisolated enum CodexTranscript {
             flushAssistant()
         }
         return messages
+    }
+
+    /// The page a finished `render_html` call showed.
+    private static func page(in item: [String: Any]) -> TranscriptPage? {
+        guard item["type"] as? String == "mcpToolCall", item["server"] as? String == AtriumToolServer.name,
+              item["tool"] as? String == AtriumToolServer.renderHTML, item["status"] as? String == "completed" else { return nil }
+        return ChatPageStore.page(arguments: item["arguments"])
     }
 
     private static let toolTypes: Set = ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch",

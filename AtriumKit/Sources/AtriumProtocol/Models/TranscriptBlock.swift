@@ -6,10 +6,12 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
     /// A run of consecutive tool calls. Only how many there were is kept, so
     /// long tasks stay small on the wire and in memory.
     case tools(count: Int, id: String)
+    /// A page the agent showed with Atrium's `render_html` tool.
+    case page(TranscriptPage, id: String)
 
     public var id: String {
         switch self {
-        case .text(_, let id), .tools(_, let id): id
+        case .text(_, let id), .tools(_, let id), .page(_, let id): id
         }
     }
 
@@ -23,8 +25,18 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
         if case .tools(let count, _) = self { count } else { 0 }
     }
 
+    /// The page a page block shows.
+    public var page: TranscriptPage? {
+        if case .page(let page, _) = self { page } else { nil }
+    }
+
     private enum TextCodingKeys: String, CodingKey {
         case _0 = "text"
+        case id
+    }
+
+    private enum PageCodingKeys: String, CodingKey {
+        case _0 = "page"
         case id
     }
 }

@@ -11,6 +11,7 @@ public nonisolated enum HostReply: Codable, Sendable {
     case workspace(id: UUID)
     case command(id: UUID)
     case icon(data: Data)
+    case page(html: String)
     case git(GitReply)
     case files(FileReply)
     /// A reply this client doesn't know, from a newer host.
