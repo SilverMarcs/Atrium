@@ -717,8 +717,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return (settings, tools)
     }
 
-    /// Starting a worker is not starting a conversation turn.
+    /// Starting a worker is not starting a conversation turn, and a question or
+    /// approval Atrium is holding outranks the worker's own activity.
     private func conversationStatus(_ status: AgentThreadStatus, sessionID: String) -> AgentThreadStatus {
+        if status == .processing, decisions.values.contains(where: { $0.sessionID == sessionID }) { return .waiting }
         if status == .processing, live[sessionID]?.messages.isEmpty == true,
            outgoing[sessionID]?.isEmpty != false { return .idle }
         return status
