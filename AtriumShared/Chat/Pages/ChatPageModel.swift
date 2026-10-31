@@ -20,12 +20,17 @@ final class ChatPageModel {
     private(set) var contentHeight: CGFloat?
     private var html: String?
 
-    init(openURL: OpenURLAction) {
+    /// A page in a sheet has room for side margins, and scrolls sideways on a
+    /// screen narrower than the reply it was written for.
+    init(openURL: OpenURLAction, inSheet: Bool = false) {
         var configuration = WebPage.Configuration()
         configuration.websiteDataStore = .nonPersistent()
         let scripts = WKUserContentController()
         scripts.addUserScript(WKUserScript(source: ChatPageScripts.theme, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         scripts.addUserScript(WKUserScript(source: ChatPageScripts.height, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        if inSheet {
+            scripts.addUserScript(WKUserScript(source: ChatPageScripts.sheet, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         configuration.userContentController = scripts
         webPage = WebPage(configuration: configuration, navigationDecider: ChatPageNavigation(openURL: openURL))
         let reporter = ChatPageHeightReporter()

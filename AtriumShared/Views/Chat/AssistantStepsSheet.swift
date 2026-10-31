@@ -20,7 +20,7 @@ struct AssistantStepsSheet: View {
             .toolbarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .close) {
                     Button(role: .close) { dismiss() }
                 }
             }

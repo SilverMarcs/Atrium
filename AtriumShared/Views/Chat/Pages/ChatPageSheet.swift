@@ -19,8 +19,6 @@ struct ChatPageSheet: View {
                         .webViewContentBackground(.hidden)
                         .scrollBounceBehavior(.basedOnSize)
                         .chatPageMenu(model)
-                        // Pages leave out side padding to line up with the reply inline.
-                        .padding(.horizontal)
                 } else if model?.phase == .unavailable {
                     ContentUnavailableView("Page Unavailable", systemImage: "exclamationmark.triangle",
                                            description: Text("Reconnect to the host and try again."))
@@ -34,16 +32,15 @@ struct ChatPageSheet: View {
             .toolbarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .close) {
                     Button(role: .close) { dismiss() }
-                        .keyboardShortcut(.cancelAction)
                 }
             }
         }
         .presentationSizing(.page)
         .task {
             guard model == nil else { return }
-            let model = ChatPageModel(openURL: openURL)
+            let model = ChatPageModel(openURL: openURL, inSheet: true)
             self.model = model
             await model.load(page, from: host)
         }
