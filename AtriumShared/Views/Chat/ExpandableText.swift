@@ -7,11 +7,15 @@
 
 import SwiftUI
 
+/// A long prompt shown by its opening characters. The Mac expands it in place;
+/// iPhone and iPad open the whole message in a sheet, so the timeline never
+/// grows by screens of text.
 struct ExpandableText: View {
     let text: String
     let maxCharacters: Int
 
     @State private var isExpanded = false
+    @State private var showingFullText = false
     private let needsExpansion: Bool
 
     init(text: String, maxCharacters: Int = 400) {
@@ -27,12 +31,20 @@ struct ExpandableText: View {
                 .lineSpacing(2)
 
             if needsExpansion {
-                Button {
+                #if os(macOS)
+                Button(isExpanded ? "Show Less" : "Show More") {
                     isExpanded.toggle()
-                } label: {
-                    Text(isExpanded ? "Show Less" : "Show More")
                 }
                 .buttonBorderShape(.capsule)
+                #else
+                Button("Show More") {
+                    showingFullText = true
+                }
+                .buttonBorderShape(.capsule)
+                .sheet(isPresented: $showingFullText) {
+                    FullMessageSheet(text: text)
+                }
+                #endif
             }
         }
     }

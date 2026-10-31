@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 #endif
 
-/// Shared prompt bubble; only expansion, desktop copy, and the mobile flight differ.
+/// Shared prompt bubble; only padding, desktop copy, and the mobile flight differ.
 struct UserMessageView: View {
     let text: String
     var images: [Data] = []
@@ -21,13 +21,7 @@ struct UserMessageView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             if !text.isEmpty {
-                Group {
-                    #if os(macOS)
-                    ExpandableText(text: text)
-                    #else
-                    Text(text)
-                    #endif
-                }
+                ExpandableText(text: text)
                 #if os(macOS)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
