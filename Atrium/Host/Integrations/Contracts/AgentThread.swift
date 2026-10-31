@@ -32,6 +32,9 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var isSubagent: Bool { parentSessionID != nil }
     /// The ID of the session that started this one as a subagent.
     var parentID: String? { parentSessionID.map { "\(provider.rawValue):\($0)" } }
+    /// What a fork of this thread is named: its title, marked as a fork. A fork
+    /// of a fork gets another mark.
+    var forkTitle: String { "⑂ \(title)" }
 
     nonisolated static func newestFirst(_ lhs: AgentThread, _ rhs: AgentThread) -> Bool {
         lhs.updatedAt == rhs.updatedAt ? lhs.id < rhs.id : lhs.updatedAt > rhs.updatedAt

@@ -275,9 +275,15 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
         let result = try await startThread("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
-        guard let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
+        guard let row = result["thread"] as? [String: Any], var fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
             throw IntegrationError(message: "Codex did not return a forked thread.")
+        }
+        // Codex copies only a name the thread was given, leaving an unnamed one's fork untitled until its next prompt.
+        // The fork exists either way, so a name Codex refuses doesn't fail it.
+        if (try? await request("thread/name/set", params: ["threadId": fork.sessionID, "name": thread.forkTitle])) != nil {
+            fork.title = thread.forkTitle
+            fork.hasProviderTitle = true
         }
         return fork
     }

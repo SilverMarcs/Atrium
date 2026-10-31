@@ -38,6 +38,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var unsavedTurns: [String: UnsavedTurn] = [:]
     /// Settings typed into each thread's terminal that its transcript doesn't show yet.
     private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
+    /// The session each fork was made from, until Claude saves the fork. Claude writes
+    /// a fork's file, with the history it copied, only once the fork gets its first prompt.
+    private var forkSources: [String: String] = [:]
 
     init(bridge: AgentBridgeServer, configDirectory: URL? = nil) {
         self.bridge = bridge
@@ -150,11 +153,20 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     /// Claude writes a session's file with its first prompt, so only a session
-    /// that hasn't had one yet may be missing it.
+    /// that hasn't had one yet may be missing it. Until then a fork's history
+    /// is the one it was forked from.
     private func savedTranscript(_ sessionID: String) async throws -> [TranscriptMessage] {
         if let messages = try await history.transcript(sessionID) { return messages }
         guard backgroundSessions[sessionID] != nil else {
             throw IntegrationError(message: "Claude's history for this chat could not be found.")
+        }
+        // Claude can rewind only a saved session, so a fork's copy of its history can't be edited until its first prompt saves it.
+        if let source = forkSources[sessionID] {
+            return (try await history.transcript(source) ?? []).map { message in
+                var message = message
+                message.editTarget = nil
+                return message
+            }
         }
         return []
     }
@@ -368,6 +380,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         backgroundIDs[thread.sessionID] = nil
         backgroundSessions[thread.sessionID] = nil
         settingsOverrides[thread.sessionID] = nil
+        forkSources[thread.sessionID] = nil
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
@@ -392,10 +405,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard UUID(uuidString: thread.sessionID) != nil else {
             throw IntegrationError(message: "Invalid Claude session identifier.")
         }
-        let session = try await startBackgroundSession(directory: thread.directory, resuming: thread.sessionID, forking: true)
+        // Claude saves the name as the fork's title once it's saved, and lists it as the job's name until then.
+        let session = try await startBackgroundSession(directory: thread.directory, resuming: thread.sessionID, forking: true, name: thread.forkTitle)
         guard let fork = session.thread else {
             throw IntegrationError(message: "Claude did not provide a forked session identifier.")
         }
+        forkSources[fork.sessionID] = thread.sessionID
         return fork
     }
 
@@ -448,7 +463,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
     }
 
-    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
+    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settingsFile = try await settingsForBridge()
@@ -475,6 +490,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
         if forking { arguments.append("--fork-session") }
+        if let name { arguments += ["--name", name] }
         let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, timeout: .seconds(120))
         guard let line = String(decoding: output, as: UTF8.self).split(separator: "\n").first(where: { $0.hasPrefix("backgrounded") }),
               let field = line.split(separator: "·").dropFirst().first,
