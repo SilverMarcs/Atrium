@@ -11,6 +11,9 @@ struct TaskChatView: View {
     @State private var pin = TimelinePin()
     @State private var anchorSpace = TimelineAnchorSpace()
     @State private var scrollPolicy = ConversationScrollPolicy()
+    /// Counts the tasks the timeline has shown. Each starts a new lazy stack,
+    /// which otherwise sizes the rows it hasn't measured from the last task's.
+    @State private var timelineID = 0
 
     private static let bottomID = "bottom"
 
@@ -96,13 +99,17 @@ struct TaskChatView: View {
                             TaskChatStatusFooter(status: footerStatus)
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                         }
-
+                        // The end is a row of the lazy stack, so scrolling to it
+                        // lays out the rows above it from the end. Placed after
+                        // the stack, it's put where the stack's estimate of the
+                        // rows above ends, and those rows can stay hidden once
+                        // they're measured and the timeline ends higher.
+                        Color.clear
+                            .frame(height: TimelineAnchorSpace.bottomTargetHeight)
+                            .id(Self.bottomID)
+                            .accessibilityHidden(true)
                     }
-                    // Keep the scroll target available independently of lazy rows.
-                    Color.clear
-                        .frame(height: TimelineAnchorSpace.bottomTargetHeight)
-                        .id(Self.bottomID)
-                        .accessibilityHidden(true)
+                    .id(timelineID)
                 }
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
@@ -174,6 +181,7 @@ struct TaskChatView: View {
                     host.conversations.containsTimelineID($0, in: task.id)
                 } == true
                 if scrollPolicy.observe(from: oldTracker, to: newTracker, preservingTurn: preservesTurn) {
+                    if !continuesConversation { timelineID += 1 }
                     pin = TimelinePin()
                     anchorSpace.reset()
                     scrollToLatest(with: proxy, animated: false)
@@ -221,15 +229,17 @@ struct TaskChatView: View {
             }
             // Content growing below a pinned timeline (a streaming reply, the
             // working indicator) carries it along, retargeting any scroll
-            // already on its way.
+            // already on its way. Content shrinking under it, as the lazy stack
+            // measures rows it had estimated, puts it straight back at the end:
+            // SwiftUI pulls the offset in, but leaves the rows now in view hidden.
             .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { oldHeight, newHeight in
-                guard composer.messageEdit == nil, newHeight > oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
+                guard composer.messageEdit == nil, newHeight != oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
                 // A reply outgrowing the turn below a prompt held at the top
                 // leaves the prompt where it is.
                 guard !sections.hasTurn else { return }
                 // Markdown can finish measuring after initial placement. Keep
                 // those corrections immediate until a same-task update arrives.
-                scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
+                scrollToLatest(with: proxy, animated: newHeight > oldHeight && scrollPolicy.animatesGrowth)
             }
             .overlay {
                 if messages == nil, let error = host.transcriptErrors[task.id] {
