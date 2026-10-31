@@ -50,6 +50,8 @@ nonisolated enum CodexTranscript {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
                 } else if let page = page(in: item) {
                     blocks.append(.page(page, id: id))
+                } else if let image = generatedImage(in: item) {
+                    blocks.append(.text(image, id: id))
                 } else if toolTypes.contains(item["type"] as? String ?? "") {
                     blocks.appendToolCall(id: id)
                 }
@@ -63,7 +65,14 @@ nonisolated enum CodexTranscript {
     private static func page(in item: [String: Any]) -> TranscriptPage? {
         guard item["type"] as? String == "mcpToolCall", item["server"] as? String == AtriumToolServer.name,
               item["tool"] as? String == PageTools.renderHTML, item["status"] as? String == "completed" else { return nil }
-        return ChatPageStore.page(arguments: item["arguments"])
+        return ChatPages.page(arguments: item["arguments"])
+    }
+
+    /// A finished generated image, as Markdown pointing to the file Codex saved it to.
+    private static func generatedImage(in item: [String: Any]) -> String? {
+        guard item["type"] as? String == "imageGeneration", item["status"] as? String == "completed",
+              let path = item["savedPath"] as? String, !path.isEmpty else { return nil }
+        return MediaSource.markdownImage(path: path)
     }
 
     private static let toolTypes: Set = ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch",

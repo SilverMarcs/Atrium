@@ -8,7 +8,9 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var provider: AgentProvider
     public var status: AgentThreadStatus
     public var projectName: String
-    /// Home-relative path of the checkout the task works in.
+    /// The checkout the task works in, on the host.
+    public var path: String
+    /// Home-relative path of the checkout, for display.
     public var directory: String
     /// The Atrium project the task belongs to, when one exists on the Mac.
     public var workspaceID: UUID?
@@ -36,6 +38,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         provider: AgentProvider,
         status: AgentThreadStatus,
         projectName: String,
+        path: String,
         directory: String,
         workspaceID: UUID? = nil,
         updatedAt: Date,
@@ -56,6 +59,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.provider = provider
         self.status = status
         self.projectName = projectName
+        self.path = path
         self.directory = directory
         self.workspaceID = workspaceID
         self.updatedAt = updatedAt

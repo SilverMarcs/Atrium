@@ -67,6 +67,7 @@ extension HostClient {
             provider: draft.provider,
             status: .idle,
             projectName: workspace?.name ?? "",
+            path: workspace?.path ?? "",
             directory: workspace?.directory ?? "",
             workspaceID: draft.workspaceID,
             updatedAt: draft.createdAt,

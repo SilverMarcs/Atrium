@@ -1,4 +1,3 @@
-import AtriumClient
 import AtriumProtocol
 import SwiftUI
 import WebKit
@@ -8,7 +7,7 @@ import WebKit
 /// only while on screen; a page taller than the frame allows scrolls inside.
 struct ChatPageFrame: View {
     let page: TranscriptPage
-    @Environment(HostClient.self) private var host: HostClient?
+    @Environment(\.chatMedia) private var media
     @Environment(\.openURL) private var openURL
     @State private var model: ChatPageModel?
     @State private var isVisible = false
@@ -72,9 +71,9 @@ struct ChatPageFrame: View {
         .task(id: isVisible) {
             if isVisible {
                 guard model == nil else { return }
-                let model = ChatPageModel(openURL: openURL)
+                let model = ChatPageModel(media: media, openURL: openURL)
                 self.model = model
-                await model.load(page, from: host)
+                await model.load(page)
             } else if let model {
                 // Web content is heavy; a reply's pages can be many screens up.
                 measuredHeight = model.contentHeight ?? measuredHeight

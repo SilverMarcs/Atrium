@@ -1,3 +1,4 @@
+import AtriumProtocol
 import CoreTransferable
 import Foundation
 import ImageIO
@@ -31,6 +32,19 @@ struct ChatPageExport: Transferable {
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(exportedContentType: .png) { $0.data }
         DataRepresentation(exportedContentType: .html) { $0.data }
+    }
+
+    /// The page as the agent wrote it, with each image it shows from the host
+    /// written into it as a `data:` URL, so the file opens the same anywhere.
+    static func html(_ html: String, media: ChatMedia?) async -> Data {
+        var inlined: [String: String] = [:]
+        for source in Set(MediaSource.htmlImages(in: html)) {
+            guard let image = MediaSource(source), case .host = image,
+                  let data = await image.imageData(from: media, maxPixelSize: ChatPageFiles.maxPixelSize) else { continue }
+            let type = UTType(imageData: data)?.preferredMIMEType ?? "application/octet-stream"
+            inlined[source] = "data:\(type);base64,\(data.base64EncodedString())"
+        }
+        return Data(MediaSource.replacingHTMLImages(in: html) { inlined[$0] }.utf8)
     }
 
     /// A picture of the whole page. Inline, a page draws on the chat's

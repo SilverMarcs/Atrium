@@ -1,7 +1,7 @@
 import Foundation
 
 /// An HTML page an agent showed in its reply, such as a chart or a mockup.
-/// Fetch it with `HostRequest.page(key:)`.
+/// Fetch it with `HostRequest.page(taskID:key:)`.
 public nonisolated struct TranscriptPage: Codable, Sendable, Hashable {
     /// Names the page's content, so the same page sent twice shares it.
     public var key: String

@@ -12,8 +12,12 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case unsubscribe(HostTopic)
     /// Fetches a custom project icon once; icons are referenced by key elsewhere.
     case icon(key: String)
-    /// Fetches a page an agent showed in a transcript, by its `TranscriptPage.key`.
-    case page(key: String)
+    /// Fetches a page an agent showed in a task's transcript, by its `TranscriptPage.key`.
+    case page(taskID: String, key: String)
+    /// Fetches an image an agent showed in a task's transcript, by the path it
+    /// wrote: absolute, `~/`, or relative to the task's directory. Images wider
+    /// or taller than `maxPixelSize` come back scaled down to fit it.
+    case image(taskID: String, path: String, maxPixelSize: Int)
     case refreshTasks
     case task(id: String, action: TaskAction)
     case compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil)

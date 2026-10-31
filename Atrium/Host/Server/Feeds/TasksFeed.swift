@@ -82,6 +82,7 @@ final class TasksFeed: TopicFeed {
             provider: thread.provider,
             status: thread.status,
             projectName: thread.projectName,
+            path: thread.directory,
             directory: abbreviated(thread.directory),
             workspaceID: project.id,
             updatedAt: thread.updatedAt,

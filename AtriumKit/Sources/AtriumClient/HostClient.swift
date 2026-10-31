@@ -99,8 +99,8 @@ public final class HostClient: Identifiable {
     /// How many callers follow each topic. Every client always follows a host's tasks.
     @ObservationIgnored private var topicCounts: [HostTopic: Int] = [.tasks: 1]
     @ObservationIgnored private var icons: [String: Data] = [:]
-    /// The pages fetched most recently, oldest first, so scrolling back past one doesn't fetch it again.
-    @ObservationIgnored private var pages: [(key: String, html: String)] = []
+    /// Pages and images agents showed, kept so scrolling back past one doesn't fetch it again.
+    @ObservationIgnored private let media = HostMediaCache()
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var failedAttempts = 0
     @ObservationIgnored private let localName: String
@@ -550,14 +550,51 @@ public final class HostClient: Identifiable {
         return data
     }
 
-    /// A page an agent showed in a transcript, or nil if the host can't provide it.
-    public func page(forKey key: String) async -> String? {
-        if let page = pages.first(where: { $0.key == key }) { return page.html }
-        guard case .page(let html) = try? await request(.page(key: key)) else { return nil }
-        pages.removeAll { $0.key == key }
-        pages.append((key, html))
-        if pages.count > 8 { pages.removeFirst() }
-        return html
+    /// A page an agent showed in a task's transcript, or nil if the host can't provide it.
+    public func page(taskID: String, key: String) async -> String? {
+        let data = await media.value(for: "page/\(taskID)/\(key)") { [weak self] in
+            guard case .page(let html) = await self?.fetchMedia(.page(taskID: taskID, key: key)) else { return nil }
+            return Data(html.utf8)
+        }
+        return data.map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// An image an agent showed in a task's transcript, by the path it wrote,
+    /// scaled to fit `maxPixelSize`, or nil if the host can't provide it.
+    public func image(taskID: String, path: String, maxPixelSize: Int) async -> Data? {
+        await media.value(for: "image/\(taskID)/\(maxPixelSize)/\(path)") { [weak self] in
+            guard case .image(let data) = await self?.fetchMedia(.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize)) else { return nil }
+            return data
+        }
+    }
+
+    /// A chat asks for its media as soon as it shows, which can be while its
+    /// host is still connecting or while a direct connection takes over from
+    /// the relay, so a request that couldn't reach the host waits to try once more.
+    private func fetchMedia(_ request: HostRequest) async -> HostReply? {
+        do {
+            return try await self.request(request)
+        } catch HostClientError.notConnected, HostClientError.disconnected {
+            await waitUntilConnected(for: .seconds(20))
+            return try? await self.request(request)
+        } catch {
+            return nil
+        }
+    }
+
+    private func waitUntilConnected(for timeout: Duration) async {
+        guard !isConnected else { return }
+        let changes = changes()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await change in changes {
+                    if case .state(.connected) = change { return }
+                }
+            }
+            group.addTask { try? await Task.sleep(for: timeout) }
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     // MARK: - Events

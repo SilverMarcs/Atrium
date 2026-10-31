@@ -1,4 +1,3 @@
-import AtriumClient
 import AtriumProtocol
 import SwiftUI
 import WebKit
@@ -6,7 +5,7 @@ import WebKit
 /// A page an agent showed, on its own and scrollable.
 struct ChatPageSheet: View {
     let page: TranscriptPage
-    @Environment(HostClient.self) private var host: HostClient?
+    @Environment(\.chatMedia) private var media
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @State private var model: ChatPageModel?
@@ -40,9 +39,9 @@ struct ChatPageSheet: View {
         .presentationSizing(.page)
         .task {
             guard model == nil else { return }
-            let model = ChatPageModel(openURL: openURL, inSheet: true)
+            let model = ChatPageModel(media: media, openURL: openURL, inSheet: true)
             self.model = model
-            await model.load(page, from: host)
+            await model.load(page)
         }
     }
 }

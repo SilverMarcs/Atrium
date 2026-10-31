@@ -57,7 +57,7 @@ struct ProtocolTests {
     @Test func tasksDeltasApplyToSnapshots() {
         func task(_ id: String, _ title: String) -> WireTask {
             WireTask(
-                id: id, title: title, provider: .codex, status: .idle, projectName: "", directory: "",
+                id: id, title: title, provider: .codex, status: .idle, projectName: "", path: "", directory: "",
                 updatedAt: .now, hasUnreadResult: false, isSettled: false, supportsDeletion: true, actions: []
             )
         }

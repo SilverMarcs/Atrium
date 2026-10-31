@@ -32,8 +32,9 @@ final class ClaudeLiveTranscript {
             messages.append(TranscriptMessage(id: id, role: .assistant, blocks: []))
             trim()
         }
-        if event["tool_name"] as? String == PageTools.claudeRenderHTML, let page = ChatPageStore.page(arguments: event["tool_input"]) {
-            messages[messages.count - 1].blocks.append(.page(page, id: id))
+        if let block = ClaudeTranscript.block(forTool: event["tool_name"] as? String, input: event["tool_input"],
+                                              directory: event["cwd"] as? String, id: id) {
+            messages[messages.count - 1].blocks.append(block)
         } else {
             messages[messages.count - 1].blocks.appendToolCall(id: id)
         }

@@ -9,17 +9,23 @@ final class PageTools: ToolKit {
     nonisolated static let claudeRenderHTML = "mcp__\(AtriumToolServer.name)__\(renderHTML)"
 
     let group = ToolGroup.pages
+    private let integrations: AgentIntegrationStore
+
+    init(integrations: AgentIntegrationStore) {
+        self.integrations = integrations
+    }
 
     func instructions(for caller: ToolCaller) -> String {
         """
         Atrium shows this chat to the user in its own app, on Mac, iPad and iPhone.
-        Most answers need no page. Use `render_html` only when a visual makes the answer clearer than text would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, mockup or report). A plain table or list belongs in Markdown in your reply, not a page. Never start a server or open a browser to show one. Show visuals here rather than as a claude.ai Artifact or any other hosted page; make one of those only when the user explicitly asks for it. A text description or a screenshot on disk does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
+        To show an image, such as a screenshot, plot or generated picture, put it in your reply as Markdown: `![short caption](/absolute/path.png)`. It loads from this Mac on every device whenever the chat is viewed, so give each image its own file name and leave it in place: overwriting or deleting the file changes or breaks earlier messages.
+        Most answers need no page. Use `render_html` only when a visual makes the answer clearer than text or an image would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, mockup or report). A plain table or list belongs in Markdown in your reply, not a page. Never start a server or open a browser to show one. Show visuals here rather than as a claude.ai Artifact or any other hosted page; make one of those only when the user explicitly asks for it. A text description or a bare file path does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
         """
     }
 
     private static let pageGuide = """
         Keep it light: one clear point, about a screen tall at most (under 600px). Help the user understand without overwhelming them; when there is more to show, put it behind tabs, a picker or toggles rather than making the page longer.
-        One complete, self-contained HTML document; inline any <style> or <script> you still need. Remote URLs load as-is; local files do not, so inline any image as a data: URL.
+        One complete HTML document; inline any <style> or <script> you still need. Reference local images by absolute path, as in <img src="/path/to/chart.png">; remote URLs load as-is.
         Layout: the page sits on the chat background at reply width (about 700px on Mac, narrower on iPad; iPhone opens it in a sheet). Keep the page, charts and tables unframed: no background, outer card, border, banner title or side padding. Give charts fixed pixel heights. Let content set the page's height: never use vh units or height:100% on html or body. Keep the top-right 120×44px clear for Atrium's buttons.
         Classes: Atrium styles the page to match the app. Use these instead of writing your own chrome, and never restyle them: .card (the only boxed surface; never nest it), .grid (equal columns that stack when narrow), .row (a wrapping inline group), .stat-label and .stat-value in a .card, .btn and .btn-primary, .muted, .small, .num (right-aligned numbers). Plain tables are already styled. Tabs: a .tabs element with role=tablist holding role=tab buttons whose aria-controls name role=tabpanel elements; mark one aria-selected=true and hide the other panels, and Atrium switches them. Add data-tooltip to any element or SVG mark for a hover or tap tooltip.
         Style: font weights 400 and 500 only. No custom font sizes; use .small for secondary text and 12px for SVG labels. Add no summary cards, filters or titles the user didn't need, and at most one short heading. Use series colors only on chart marks; keep values, labels and axes in --foreground or --muted-foreground. Keep gridlines thin and neutral, with no outlines on bars. Label values directly; add a legend only for two or more series.
@@ -36,11 +42,11 @@ final class PageTools: ToolKit {
         inputSchema: [
             "type": "object",
             "properties": [
-                "html": ["type": "string", "description": "A complete, self-contained HTML document."],
+                "html": ["type": "string", "description": "A complete HTML document."],
                 "title": ["type": "string", "description": "A short name for the page, shown where it is opened."],
                 "height": [
                     "type": "integer",
-                    "description": "The page's expected height in CSS pixels at 700px wide, \(ChatPageStore.minimumHeight) to \(ChatPageStore.maximumHeight). Shown until the page measures itself."
+                    "description": "The page's expected height in CSS pixels at 700px wide, \(ChatPages.minimumHeight) to \(ChatPages.maximumHeight). Shown until the page measures itself."
                 ]
             ],
             "required": ["html", "title"],
@@ -51,10 +57,33 @@ final class PageTools: ToolKit {
     )]
 
     func call(_ name: String, arguments: [String: Value], from caller: ToolCaller) async throws -> CallTool.Result {
-        if let problem = ChatPageStore.problem(html: arguments["html"]?.stringValue, title: arguments["title"]?.stringValue) {
+        let html = arguments["html"]?.stringValue
+        if let problem = ChatPages.problem(html: html, title: arguments["title"]?.stringValue) {
             throw ToolError(problem)
+        }
+        // A missing image would only show as broken to the user, so the agent fixes it first.
+        if let html, let thread = caller.taskID.flatMap({ id in integrations.threads.first { $0.id == id } }) {
+            let problems = await Self.imageProblems(TranscriptMedia.imagePaths(inPage: html, directory: thread.directory))
+            if !problems.isEmpty {
+                throw ToolError("The page's images can't be shown: \(problems.joined(separator: "; ")). Reference image files on this Mac by absolute path, then call \(Self.renderHTML) again.")
+            }
         }
         // Atrium shows the page from the agent's own history, where this call's input already is.
         return .text("Shown to the user above your reply. Don't mention or describe the page; reply with only what it doesn't already say.")
+    }
+
+    /// What's wrong with each image the page loads from this Mac.
+    @concurrent
+    private static func imageProblems(_ paths: [String]) async -> [String] {
+        var seen: Set<String> = []
+        var problems: [String] = []
+        for path in paths where seen.insert(path).inserted {
+            if !FileManager.default.fileExists(atPath: path) {
+                problems.append("\(path) doesn't exist")
+            } else if await !TranscriptImage.isImage(at: URL(filePath: path)) {
+                problems.append("\(path) isn't an image")
+            }
+        }
+        return problems
     }
 }

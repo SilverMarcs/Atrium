@@ -31,6 +31,8 @@ final class AgentIntegrationStore {
     @ObservationIgnored var onThreadRemoved: ((String) -> Void)?
     /// The feeds reloading tasks' conversations while someone follows them.
     @ObservationIgnored var transcriptFeeds: [String: TranscriptFeed] = [:]
+    /// The pages and images each task's transcript showed, as last read.
+    @ObservationIgnored let media = TranscriptMedia()
     @ObservationIgnored private var viewedThreadID: String?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -198,6 +200,7 @@ final class AgentIntegrationStore {
         interactions.removeAll { $0.taskID == id }
         guard deletedThreadIDs.insert(id).inserted else { return }
         onThreadRemoved?(id)
+        media.forget(id)
         threads.removeAll { $0.id == id }
         drafts[id] = nil
         activity[id] = nil
@@ -677,8 +680,9 @@ final class AgentIntegrationStore {
     }
 
     /// Prompts Atrium relayed from another agent show as relayed, holding only what was relayed.
+    /// Reading a transcript records the media it shows, for clients to fetch.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
-        try await enabledAdapter(for: thread.provider).transcript(for: thread).map { source in
+        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { source in
             guard source.role == .user, let first = source.blocks.first, let text = first.text,
                   let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text)
             else { return source }
@@ -687,6 +691,8 @@ final class AgentIntegrationStore {
             message.relay = relayed.relay
             return message
         }
+        media.record(messages, of: thread)
+        return messages
     }
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {

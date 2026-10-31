@@ -36,6 +36,8 @@ nonisolated enum ClaudeTranscript {
     static func messages(fromLines lines: some Sequence<Data>, sidechain: Bool = false) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
         var assistant: TranscriptMessage?
+        /// Pages shown by `render_html` calls, by call ID, until their results say whether they showed.
+        var pageCalls: [String: String] = [:]
         func flushAssistant() {
             if let assistant, !assistant.blocks.isEmpty { messages.append(assistant) }
             assistant = nil
@@ -45,6 +47,16 @@ nonisolated enum ClaudeTranscript {
             let message = record["message"] as? [String: Any]
             switch record["type"] as? String {
             case "user":
+                // A `render_html` call Atrium turned down showed nothing, so it counts as a tool call.
+                for result in message?["content"] as? [[String: Any]] ?? [] where result["is_error"] as? Bool == true {
+                    guard result["type"] as? String == "tool_result", let call = result["tool_use_id"] as? String,
+                          let blockID = pageCalls.removeValue(forKey: call) else { continue }
+                    if let index = assistant?.blocks.firstIndex(where: { $0.id == blockID }) {
+                        assistant?.blocks.countAsToolCall(at: index)
+                    } else if let message = messages.indices.last, let index = messages[message].blocks.firstIndex(where: { $0.id == blockID }) {
+                        messages[message].blocks.countAsToolCall(at: index)
+                    }
+                }
                 let images = imageData(in: record).compactMap { TranscriptImage.thumbnail($0) }
                 let text = promptText(message?["content"]) ?? ""
                 guard !text.isEmpty || !images.isEmpty else { continue }
@@ -74,7 +86,9 @@ nonisolated enum ClaudeTranscript {
             case "assistant":
                 var blocks = assistant?.blocks ?? []
                 for (index, content) in (message?["content"] as? [[String: Any]] ?? []).enumerated() {
-                    append(content, id: "\(uuid).\(index)", to: &blocks)
+                    let id = "\(uuid).\(index)"
+                    append(content, id: id, directory: record["cwd"] as? String, to: &blocks)
+                    if case .page(_, let blockID)? = blocks.last, blockID == id, let call = content["id"] as? String { pageCalls[call] = id }
                 }
                 guard !blocks.isEmpty else { continue }
                 if assistant == nil { assistant = TranscriptMessage(id: uuid, role: .assistant, blocks: []) }
@@ -153,19 +167,61 @@ nonisolated enum ClaudeTranscript {
         return promptText(attachment["prompt"])
     }
 
-    private static func append(_ content: [String: Any], id: String, to blocks: inout [TranscriptBlock]) {
+    /// The block a tool call shows as: a page from `render_html`, or the images
+    /// `SendUserFile` sent, written as Markdown. Nil for a call that's only counted.
+    static func block(forTool name: String?, input: Any?, directory: String?, id: String) -> TranscriptBlock? {
+        switch name {
+        case PageTools.claudeRenderHTML:
+            return ChatPages.page(arguments: input).map { .page($0, id: id) }
+        case "SendUserFile":
+            guard let input = input as? [String: Any] else { return nil }
+            let images = (input["files"] as? [String] ?? []).filter {
+                TranscriptImage.fileExtensions.contains(URL(filePath: $0).pathExtension.lowercased())
+            }
+            guard !images.isEmpty else { return nil }
+            let caption = (input["caption"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let markdown = images.map { file in
+                let path = directory.map { TranscriptMedia.resolve(file, in: $0) } ?? file
+                return MediaSource.markdownImage(path: path, alt: URL(filePath: file).lastPathComponent)
+            }
+            return .text(((caption.isEmpty ? [] : [caption]) + markdown).joined(separator: "\n\n"), id: id)
+        default:
+            return nil
+        }
+    }
+
+    private static func append(_ content: [String: Any], id: String, directory: String?, to blocks: inout [TranscriptBlock]) {
         switch content["type"] as? String {
         case "text":
             guard let text = content["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             blocks.append(.text(text, id: id))
         case "tool_use":
-            if content["name"] as? String == PageTools.claudeRenderHTML, let page = ChatPageStore.page(arguments: content["input"]) {
-                blocks.append(.page(page, id: id))
+            if let block = block(forTool: content["name"] as? String, input: content["input"], directory: directory, id: id) {
+                blocks.append(block)
             } else {
                 blocks.appendToolCall(id: id)
             }
         default:
             break
         }
+    }
+}
+
+private nonisolated extension [TranscriptBlock] {
+    /// Counts the block at `index` as a tool call instead, in one run with the tool calls around it.
+    mutating func countAsToolCall(at index: Int) {
+        var at = index
+        var run = (count: 1, id: self[at].id)
+        remove(at: at)
+        if at > startIndex, case .tools(let count, let id) = self[at - 1] {
+            run = (count + 1, id)
+            at -= 1
+            remove(at: at)
+        }
+        if at < endIndex, case .tools(let count, _) = self[at] {
+            run.count += count
+            remove(at: at)
+        }
+        insert(.tools(count: run.count, id: run.id), at: at)
     }
 }

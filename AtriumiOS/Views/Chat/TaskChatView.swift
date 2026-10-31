@@ -122,6 +122,8 @@ struct TaskChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
                 anchorSpace.keyboardDidHide()
             }
+            // Pages and images agents show in replies load from the task's host.
+            .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
             .environment(\.earlierPageIDs, turns.earlierPageIDs)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)

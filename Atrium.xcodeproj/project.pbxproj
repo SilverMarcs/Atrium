@@ -13,6 +13,8 @@
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 		0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
+		0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000504 /* SwiftMediaViewer */; };
+		0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000504 /* SwiftMediaViewer */; };
 		0A7C00000000000000000220 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000210 /* NotificationService.swift */; };
 		0A7C00000000000000000221 /* NotificationDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000211 /* NotificationDelivery.swift */; };
 		0A7C00000000000000000222 /* RelayIconDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000212 /* RelayIconDownloader.swift */; };
@@ -100,6 +102,7 @@
 				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
 				0A7C00000000000000000402 /* MCP in Frameworks */,
                 AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */,
+				0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */,
 				08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
 				0A7C00000000000000000312 /* AtriumClient in Frameworks */,
@@ -112,6 +115,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
+				0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */,
 				0A7C00000000000000000314 /* AtriumClient in Frameworks */,
 				0A7C00000000000000000315 /* AtriumProtocol in Frameworks */,
 			);
@@ -184,6 +188,7 @@
 				08BEFC272F74722D009C370D /* SwiftTerm */,
 				0A7C00000000000000000403 /* MCP */,
                 0A7C00000000000000000103 /* SwiftMarkdownView */,
+				0A7C00000000000000000504 /* SwiftMediaViewer */,
 				08BEFC292F74722D009C370E /* Sparkle */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 				0A7C00000000000000000302 /* AtriumClient */,
@@ -214,6 +219,7 @@
 			name = AtriumiOS;
 			packageProductDependencies = (
 				0A7C00000000000000000103 /* SwiftMarkdownView */,
+				0A7C00000000000000000504 /* SwiftMediaViewer */,
 				0A7C00000000000000000304 /* AtriumClient */,
 				0A7C00000000000000000305 /* AtriumProtocol */,
 			);
@@ -280,6 +286,7 @@
 				08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
+				0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */,
 				0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */,
 				0A7C00000000000000000401 /* XCRemoteSwiftPackageReference "swift-sdk" */,
 			);
@@ -805,6 +812,14 @@
 				minimumVersion = 1.2.2;
 			};
 		};
+		0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SilverMarcs/SwiftMediaViewer";
+			requirement = {
+				kind = revision;
+				revision = 58c1345b0cb62498debe5857cae64b8e44d0ed5e;
+			};
+		};
 		0A7C00000000000000000401 /* XCRemoteSwiftPackageReference "swift-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/modelcontextprotocol/swift-sdk";
@@ -835,6 +850,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */;
 			productName = SwiftMarkdownView;
+		};
+		0A7C00000000000000000504 /* SwiftMediaViewer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */;
+			productName = SwiftMediaViewer;
 		};
 		0A7C00000000000000000302 /* AtriumClient */ = {
 			isa = XCSwiftPackageProductDependency;

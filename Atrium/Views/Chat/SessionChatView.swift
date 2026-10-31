@@ -68,8 +68,8 @@ struct SessionChatView: View {
           .frame(maxWidth: .infinity)
         }
       }
-      // Pages agents show in replies load from the task's host.
-      .environment(host)
+      // Pages and images agents show in replies load from the task's host.
+      .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
       .scrollEdgeEffectHidden(true, for: .bottom)
       .scrollEdgeEffectHidden(false, for: .top)

@@ -12,6 +12,8 @@ public nonisolated enum HostReply: Codable, Sendable {
     case command(id: UUID)
     case icon(data: Data)
     case page(html: String)
+    /// Encoded image data, in the file's own format when it's one clients show.
+    case image(data: Data)
     case git(GitReply)
     case files(FileReply)
     /// A reply this client doesn't know, from a newer host.

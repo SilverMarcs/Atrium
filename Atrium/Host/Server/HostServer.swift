@@ -76,6 +76,7 @@ final class HostServer {
     @ObservationIgnored private let workspaces: WorkspaceStore
     @ObservationIgnored private let sessions: TaskSessionController
     @ObservationIgnored private let orchestrator: Orchestrator
+    @ObservationIgnored private let media: MediaService
     /// ChatGPT's access to the orchestration tools through OpenAI's tunnel client.
     @ObservationIgnored let chatGPTAccess: ChatGPTAccess
     @ObservationIgnored private let tasksFeed: TasksFeed
@@ -102,9 +103,10 @@ final class HostServer {
         integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(bridge: bridge), ClaudeAgentAdapter(bridge: bridge)])
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, sessions: sessions, workspaces: workspaces, directory: bridge.storage)
+        media = MediaService(integrations: integrations)
         bridge.toolServer = AtriumToolServer(credentials: bridge.credentials, kits: [
             OrchestrationTools(orchestrator: orchestrator, integrations: integrations, sessions: sessions, workspaces: workspaces),
-            PageTools(),
+            PageTools(integrations: integrations),
         ])
         chatGPTAccess = ChatGPTAccess(bridge: bridge)
         tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator)
@@ -269,9 +271,10 @@ final class HostServer {
                 return .failed(message: "That icon is no longer available.")
             }
             return .icon(data: data)
-        case .page(let key):
-            guard let html = ChatPageStore.html(forKey: key) else { return .failed(message: "That page is no longer available.") }
-            return .page(html: html)
+        case .page(let taskID, let key):
+            return await media.page(key, inTask: taskID)
+        case .image(let taskID, let path, let maxPixelSize):
+            return await media.image(path, maxPixelSize: maxPixelSize, inTask: taskID)
         case .refreshTasks:
             await integrations.refresh()
             return .done

@@ -2,6 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import Foundation
 import Observation
+import SwiftMediaViewer
 #if os(iOS)
 import UIKit
 #else
@@ -51,6 +52,14 @@ final class HostDirectory {
         let filter = UserDefaults.standard.string(forKey: Self.filterKey)
         self.filter = connections.hosts.contains { $0.id == filter } ? filter : nil
         connections.delegate = self
+        // Image views that load by URL reach a host's images through its connection.
+        SMVImageSources.register(scheme: HostImageURL.scheme) { [weak self] url, maxPixelSize in
+            guard let image = HostImageURL(url), let host = await self?.host(image.hostID),
+                  let data = await host.image(taskID: image.taskID, path: image.path, maxPixelSize: maxPixelSize) else {
+                throw URLError(.fileDoesNotExist)
+            }
+            return data
+        }
     }
 
     /// What paired hosts list this device as.
