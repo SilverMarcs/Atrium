@@ -1,8 +1,4 @@
-#if canImport(CryptoKit)
 import CryptoKit
-#else
-import Crypto
-#endif
 import Foundation
 
 /// The Noise NK handshake (`Noise_NK_25519_ChaChaPoly_SHA256`): the phone already

@@ -1,9 +1,5 @@
 import AtriumProtocol
-#if canImport(CryptoKit)
 import CryptoKit
-#else
-import Crypto
-#endif
 import Foundation
 
 /// A paired host reached over another channel, through the relay or on the

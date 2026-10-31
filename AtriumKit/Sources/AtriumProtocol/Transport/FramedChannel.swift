@@ -1,4 +1,3 @@
-#if canImport(Network)
 import Foundation
 import Network
 
@@ -117,4 +116,3 @@ public final class FramedChannel: HostChannel {
         onClose?(reason)
     }
 }
-#endif

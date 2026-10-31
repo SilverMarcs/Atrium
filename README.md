@@ -29,11 +29,6 @@ Every Mac running Atrium is a host. The host alone touches projects, Git, files 
 
 Turn on remote access in Settings → Hosts, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Hosts on another Mac.
 
-## Command line
-
-`atrium` drives a host's sessions from another computer, Linux included, for people and agents alike: list projects and sessions, read and follow conversations, start sessions, send prompts, interrupt, and answer questions and approvals, all as JSON. See [AtriumCLI/README.md](AtriumCLI/README.md).
-
-
 ## Requirements
 
 - macOS 26.0+
