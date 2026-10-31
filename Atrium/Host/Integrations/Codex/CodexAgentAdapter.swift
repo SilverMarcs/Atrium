@@ -527,8 +527,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         var turn: [String: Any] = [
             "threadId": id, "turnTrigger": "thread_title",
-            "input": [["type": "text", "text": "Write a short chat title (maximum 60 characters) describing this request. Use its language. Return JSON only.\n\nRequest:\n" + String(prompt.prefix(1000)), "text_elements": []]],
-            "outputSchema": ["type": "object", "properties": ["title": ["type": "string", "minLength": 1, "maxLength": 60]],
+            "input": [["type": "text", "text": "Write a three-word chat title describing this request. Use its language. Return JSON only.\n\nRequest:\n" + String(prompt.prefix(1000)), "text_elements": []]],
+            "outputSchema": ["type": "object", "properties": ["title": ["type": "string", "minLength": 1]],
                              "required": ["title"], "additionalProperties": false]
         ]
         if params["model"] as? String == titleModel, titleModel != nil { turn["effort"] = "low" }
