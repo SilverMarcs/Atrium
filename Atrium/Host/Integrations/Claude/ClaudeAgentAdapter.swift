@@ -29,6 +29,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var historyWatcher: FileSystemWatcher?
     private var outgoing: [String: [ClaudeOutgoingPrompt]] = [:]
     private var liveStatuses: [String: AgentThreadStatus] = [:]
+    /// Sessions between a prompt and the end of its turn, by session ID.
+    private var runningTurns: Set<String> = []
+    /// What each session waits for in a dialog only its terminal shows, by session ID.
+    private var terminalPrompts: [String: String] = [:]
     private struct UnsavedTurn: Equatable {
         /// The latest Stop record saved when the turn ended, from an earlier stop.
         let previousStop: String?
@@ -332,7 +336,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { return }
         try await daemon.interrupt(jobID: id)
-        resolveDecisions(sessionID: thread.sessionID)
+        endTurn(sessionID: thread.sessionID)
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .stopped)))
     }
 
@@ -479,7 +483,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     private func stopJob(of sessionID: String) async throws {
         closeSubscription(sessionID)
-        resolveDecisions(sessionID: sessionID)
+        endTurn(sessionID: sessionID)
         live[sessionID] = nil
         unsavedTurns[sessionID] = nil
         outgoing[sessionID] = nil
@@ -508,6 +512,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             unsavedTurns.removeAll()
             outgoing.removeAll()
             liveStatuses.removeAll()
+            runningTurns.removeAll()
+            terminalPrompts.removeAll()
             backgroundListTask?.cancel()
             statusRevision += 1
             for sideChat in sideChats.values { sideChat.cancel() }
@@ -705,6 +711,31 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             liveStatuses[sessionID] = status
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: status)))
         }
+        if type == "settled" { runningTurns.remove(sessionID) }
+        if type == "settled" || state["tempo"] != nil {
+            // Claude reports a dialog no hook carries, such as computer use asking for macOS
+            // permissions, only as being blocked on what it needs. Once a turn ends it's
+            // blocked on a reply instead, which the chat sends.
+            let needs = (state["needs"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let waitsInTerminal = state["tempo"] as? String == "blocked" && !needs.isEmpty && runningTurns.contains(sessionID)
+                && !decisions.values.contains { $0.sessionID == sessionID }
+            setTerminalPrompt(waitsInTerminal ? needs : nil, sessionID: sessionID)
+        }
+    }
+
+    /// Shows what the session waits for in its terminal as a request Atrium can't answer.
+    private func setTerminalPrompt(_ prompt: String?, sessionID: String) {
+        guard terminalPrompts[sessionID] != prompt else { return }
+        terminalPrompts[sessionID] = prompt
+        let id = "claude:terminal:" + sessionID
+        if let prompt {
+            onEvent?(.interactionRequested(AgentInteraction(
+                id: id, taskID: "claude:" + sessionID, title: "Continue in Terminal",
+                detail: prompt.prefix(1).uppercased() + prompt.dropFirst(), supportsResponse: false
+            )))
+        } else {
+            onEvent?(.interactionResolved(id: id))
+        }
     }
 
     private func closeSubscription(_ sessionID: String) {
@@ -726,6 +757,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         switch name {
         case "UserPromptSubmit":
             liveStatuses[sessionID] = .processing
+            runningTurns.insert(sessionID)
+            setTerminalPrompt(nil, sessionID: sessionID)
             let text = event["prompt"] as? String ?? ""
             var pending: ClaudeOutgoingPrompt?
             if let index = outgoing[sessionID]?.firstIndex(where: { $0.wireText == text }) {
@@ -750,13 +783,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             transcript.finish(event["last_assistant_message"] as? String ?? "")
             // This turn's Stop record is saved only after this hook returns, so the latest one saved now is older.
             unsavedTurns[sessionID] = UnsavedTurn(previousStop: try? await history.transcriptWithStop(sessionID)?.stop)
-            resolveDecisions(sessionID: sessionID)
+            endTurn(sessionID: sessionID)
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .done)))
             onEvent?(.threadInvalidated(sessionID: sessionID))
         case "StopFailure":
             liveStatuses[sessionID] = .failed
             transcript.finish(event["last_assistant_message"] as? String ?? event["error_details"] as? String ?? "Claude could not complete this response.")
-            resolveDecisions(sessionID: sessionID)
+            endTurn(sessionID: sessionID)
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .failed)))
         default: break
         }
@@ -822,6 +855,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         liveStatuses[pending.sessionID] = .processing
         onEvent?(.interactionResolved(id: interactionID))
         onEvent?(.threadUpdated(sessionID: pending.sessionID, update: AgentThreadUpdate(status: .processing)))
+    }
+
+    /// Nothing the turn waited for is still asked once it ends or stops.
+    private func endTurn(sessionID: String) {
+        runningTurns.remove(sessionID)
+        setTerminalPrompt(nil, sessionID: sessionID)
+        resolveDecisions(sessionID: sessionID)
     }
 
     private func resolveDecisions(sessionID: String) {

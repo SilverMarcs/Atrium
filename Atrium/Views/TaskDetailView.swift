@@ -50,7 +50,7 @@ struct TaskDetailView: View {
                 }
             }
             if !showsTerminal {
-                SessionChatView(item: item, project: project)
+                SessionChatView(item: item, project: project, showTerminal: hasTerminal ? { presentation = "terminal" } : nil)
                     .id(item.id)
             }
         }

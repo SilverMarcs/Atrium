@@ -7,6 +7,8 @@ import SwiftUI
 struct AgentInteractionPresentation: ViewModifier {
     let requests: [AgentInteraction]
     let respond: (AgentInteraction, AgentDecision) async throws -> Void
+    /// Shows the task's terminal, where this device has one.
+    var showTerminal: (() -> Void)?
     var canPresent = true
     var prepareToPresent: () -> Void = {}
     @State private var presented: AgentInteraction?
@@ -42,6 +44,10 @@ struct AgentInteractionPresentation: ViewModifier {
                     Button("Allow", role: .confirm) { submit(AgentDecision(allowed: true), to: request) }
                     Button("Decline", role: .destructive) { submit(AgentDecision(allowed: false), to: request) }
                     // Leaves it pending; Review Request in the toolbar brings it back.
+                    Button("Not Now", role: .cancel) {}
+                } else if let showTerminal {
+                    // Only the terminal can answer it.
+                    Button("Show Terminal", action: showTerminal)
                     Button("Not Now", role: .cancel) {}
                 } else {
                     Button("OK", role: .cancel) {}

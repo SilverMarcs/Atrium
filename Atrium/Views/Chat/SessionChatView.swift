@@ -6,6 +6,8 @@ import SwiftUI
 struct SessionChatView: View {
   let item: HostTask
   let project: Project?
+  /// Shows the task's terminal, when it has one.
+  var showTerminal: (() -> Void)?
   @Environment(AppModel.self) private var app
   @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
   @State private var isPinned = true
@@ -175,7 +177,8 @@ struct SessionChatView: View {
       requests: task.interactions + item.subagentRequests,
       respond: { request, decision in
         _ = try await host.request(.task(id: request.taskID, action: .respond(interactionID: request.id, decision: decision)))
-      }
+      },
+      showTerminal: showTerminal
     ))
     .font(.system(size: chatFontSize))
     .composerDictationLifecycle(composer)
