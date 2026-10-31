@@ -4,11 +4,17 @@ import Observation
 /// ChatGPT's way in to the orchestration tools: OpenAI's tunnel client runs on
 /// this Mac, takes ChatGPT's requests over its own outbound connection, and
 /// forwards them to the bridge on the loopback interface with the header kept
-/// in `headerFile`. Nothing listens beyond this Mac, so the token always
-/// exists; it does nothing until someone runs a tunnel with it.
+/// in `headerFile`. Nothing listens beyond this Mac, so once on, the token
+/// always exists; it does nothing until someone runs a tunnel with it.
+///
+/// It isn't offered to everyone yet: it stays off, with no token, until
+/// unlocked in Settings → Integrations.
 @MainActor
 @Observable
 final class ChatGPTAccess {
+    static let enabledKey = "integrations.chatGPT.enabled"
+
+    private(set) var isEnabled: Bool
     /// Where the tunnel client sends ChatGPT's requests, once the bridge is listening.
     private(set) var serverURL: URL?
     private(set) var error: String?
@@ -19,6 +25,23 @@ final class ChatGPTAccess {
 
     init(bridge: AgentBridgeServer) {
         self.bridge = bridge
+        isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        if isEnabled {
+            start()
+        } else if bridge.credentials.hasRemoteToken {
+            bridge.credentials.revokeRemoteToken()
+        }
+    }
+
+    /// Turns ChatGPT's access on for good, issuing its token.
+    func enable() {
+        guard !isEnabled else { return }
+        isEnabled = true
+        UserDefaults.standard.set(true, forKey: Self.enabledKey)
+        start()
+    }
+
+    private func start() {
         if !bridge.credentials.hasRemoteToken || !FileManager.default.fileExists(atPath: headerFile.path(percentEncoded: false)) {
             resetToken()
         } else {

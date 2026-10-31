@@ -24,9 +24,21 @@ struct IntegrationsSettingsView: View {
                 Text("Sessions get the tools that are on when they start or resume. Turning a tool off also stops sessions already running from using it.")
             }
 
-            ChatGPTSection(access: app.chatGPTAccess, isOrchestratorEnabled: isOrchestratorEnabled)
+            if app.chatGPTAccess.isEnabled {
+                ChatGPTSection(access: app.chatGPTAccess, isOrchestratorEnabled: isOrchestratorEnabled)
+            }
         }
         .formStyle(.grouped)
+        // ChatGPT access isn't offered yet: seven clicks along the bottom of the page turn it on.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !app.chatGPTAccess.isEnabled {
+                Color.clear
+                    .frame(height: 44)
+                    .contentShape(.rect)
+                    .onTapGesture(count: 7) { app.chatGPTAccess.enable() }
+                    .accessibilityHidden(true)
+            }
+        }
     }
 }
 

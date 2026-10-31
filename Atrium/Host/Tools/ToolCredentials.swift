@@ -133,6 +133,13 @@ final class ToolCredentials {
         try Self.writePrivately(Data("Bearer \(record.token)".utf8), to: remoteHeaderFile)
     }
 
+    /// Shuts ChatGPT out: its token stops working and the header file goes.
+    func revokeRemoteToken() {
+        for record in records.values where record.isRemote { remove(record.id) }
+        try? save()
+        try? FileManager.default.removeItem(at: remoteHeaderFile)
+    }
+
     // MARK: - Storage
 
     private func insert(_ record: Record) {
