@@ -13,7 +13,9 @@ struct CommandsScreen: View {
     var body: some View {
         List(commands ?? []) { command in
             CommandRow(command: command) {
-                host.send(.command(workspaceID: workspaceID, commandID: command.id, action: command.isRunning ? .stop : .run))
+                // Runs in the checkout the project's other pages show.
+                let run = CommandAction.run(directory: host.scope(for: workspaceID).root.filePath)
+                host.send(.command(workspaceID: workspaceID, commandID: command.id, action: command.isRunning ? .stop : run))
             }
         }
         .contentMargins(.top, 10)

@@ -18,14 +18,7 @@ final class AppModel {
     /// this Mac's host, like its terminals.
     let chatGPTAccess: ChatGPTAccess
     /// The task the window shows, on whichever host it lives.
-    var selection: TaskRef? {
-        didSet {
-            guard let selection, selection != oldValue, let task = hosts.task(selection),
-                  let workspaceID = task.task.workspaceID else { return }
-            // A task that moved into a worktree shows that worktree while staying in its project.
-            project(WorkspaceRef(hostID: selection.hostID, workspaceID: workspaceID))?.showCheckout(task.task.checkout)
-        }
-    }
+    var selection: TaskRef?
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true

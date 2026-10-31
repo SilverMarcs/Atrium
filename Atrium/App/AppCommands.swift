@@ -139,7 +139,7 @@ struct AppCommands: Commands {
                     if command.isRunning {
                         app.pendingRunReplacement = (project, command)
                     } else {
-                        project.send(.run, to: command)
+                        project.run(command)
                     }
                 } label: {
                     Label("Run", systemImage: "play.fill")

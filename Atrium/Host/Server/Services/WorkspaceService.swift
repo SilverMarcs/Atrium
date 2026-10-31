@@ -60,7 +60,11 @@ struct WorkspaceService {
     func perform(_ action: CommandAction, on command: Terminal, in workspace: Workspace) -> HostReply {
         defer { workspaces.scheduleSave() }
         switch action {
-        case .run:
+        case .run(let directory):
+            guard WorkspaceAccess(directory: workspace.directory).allows(directory) else {
+                return .failed(message: "That folder isn’t part of this project.")
+            }
+            command.runDirectory = directory
             if command.isRunning { command.restart() } else { workspace.runCommand(command) }
         case .stop:
             command.stop()

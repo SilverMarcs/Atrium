@@ -35,7 +35,7 @@ struct CommandEntryRow: View {
             Spacer()
             if command.isRunning || command.canRun {
                 Button(command.isRunning ? "Stop" : "Run", systemImage: command.isRunning ? "stop.fill" : "play.fill") {
-                    project.send(command.isRunning ? .stop : .run, to: command)
+                    project.toggle(command)
                 }
                 .labelStyle(.iconOnly)
                 .contentTransition(.symbolEffect(.replace))
@@ -47,7 +47,7 @@ struct CommandEntryRow: View {
             if command.isRunning {
                 Button("Stop", systemImage: "stop.fill") { project.send(.stop, to: command) }
             } else if command.canRun {
-                Button("Run", systemImage: "play.fill") { project.send(.run, to: command) }
+                Button("Run", systemImage: "play.fill") { project.run(command) }
             }
             if let terminal {
                 Button("Clear", systemImage: "clear") { terminal.clearTerminal() }

@@ -54,16 +54,13 @@ struct GitInspectorView: View {
                         .transition(.move(edge: .bottom))
                 }
                 if state.model.snapshots.count > 1 {
-                    repoPicker
+                    InspectorRepositoryPicker(project: state.project)
                 }
             }
             .padding()
             .animation(.easeInOut(duration: 0.2), value: activeBanner)
         }
         .task(id: snapshot?.branchName) {
-            if state.selectedRepoURL == nil {
-                state.selectedRepoURL = state.model.snapshots.first?.mainRepositoryURL
-            }
             guard let snapshot, snapshot.branchName != nil else { return }
             await state.model.fetchIfStale(snapshot: snapshot)
         }
@@ -164,59 +161,6 @@ struct GitInspectorView: View {
         } message: {
             Text("Create a new branch from \"\(snapshot?.branchName ?? "HEAD")\"")
         }
-    }
-
-    // MARK: - Repo Picker
-
-    private var repoPicker: some View {
-        Picker(selection: $state.selectedRepoURL) {
-            let snapshots = state.model.snapshots
-            let mainRepos = snapshots.filter { snapshot in
-                !snapshots.contains { other in
-                    other.mainRepositoryURL != snapshot.mainRepositoryURL &&
-                    other.mainRepositoryURL.contains(snapshot.mainRepositoryURL)
-                }
-            }
-            let submodules = snapshots.filter { snapshot in
-                snapshots.contains { other in
-                    other.mainRepositoryURL != snapshot.mainRepositoryURL &&
-                    other.mainRepositoryURL.contains(snapshot.mainRepositoryURL)
-                }
-            }
-
-            ForEach(mainRepos, id: \.mainRepositoryURL) { snapshot in
-                repoLabel(for: snapshot)
-                    .tag(Optional(snapshot.mainRepositoryURL))
-            }
-
-            if !submodules.isEmpty {
-                Section("Submodules") {
-                    ForEach(submodules, id: \.mainRepositoryURL) { snapshot in
-                        repoLabel(for: snapshot)
-                            .tag(Optional(snapshot.mainRepositoryURL))
-                    }
-                }
-            }
-        } label: {
-            EmptyView()
-        }
-        .pickerStyle(.menu)
-        .controlSize(.large)
-        .buttonSizing(.flexible)
-    }
-
-    private func repoLabel(for snapshot: GitRepositoryStatus) -> some View {
-        let repoName = snapshot.mainRepositoryURL.lastPathComponent
-        return Label {
-            if snapshot.isLinkedWorktree {
-                Text("\(repoName) (\(snapshot.branchName ?? "detached"))")
-            } else {
-                Text(repoName)
-            }
-        } icon: {
-            Image(systemName: snapshot.isLinkedWorktree ? "arrow.triangle.branch" : "arrow.right.arrow.left")
-        }
-        .lineLimit(1)
     }
 
     // MARK: - Banner

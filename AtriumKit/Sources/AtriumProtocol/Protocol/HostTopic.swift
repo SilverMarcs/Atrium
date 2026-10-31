@@ -91,12 +91,13 @@ public nonisolated struct GitScope: Codable, Sendable, Hashable {
         self.worktrees = worktrees
     }
 
-    /// The folder the project's files and search reflect: the worktree chosen
-    /// for the repository that contains the project folder, if any.
+    /// The project folder seen through the worktree chosen for the repository
+    /// that contains it, if any: the same folder inside that worktree.
     public func root(of workspacePath: String) -> URL {
         let folder = URL(filePath: workspacePath, directoryHint: .isDirectory)
         for (repository, worktree) in worktrees where repository.contains(folder) {
-            return worktree
+            let inside = folder.standardizedFileURL.pathComponents.dropFirst(repository.standardizedFileURL.pathComponents.count)
+            return inside.reduce(worktree) { $0.appending(path: $1, directoryHint: .isDirectory) }
         }
         return folder
     }

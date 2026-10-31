@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
@@ -35,8 +36,8 @@ struct BranchMenuItems: View {
             Divider()
             Menu("Repository", systemImage: "folder") {
                 RepositoryPicker(repositories: repositories, selection: Binding(
-                    get: { status.mainRepositoryURL },
-                    set: { source.selectedRepository = $0 }
+                    get: { Optional(status.mainRepositoryURL) },
+                    set: { source.scope.selectedRepository = $0 }
                 ))
             }
         }

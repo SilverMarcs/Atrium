@@ -2,7 +2,8 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Finds lines in a project's files on its host, up to its caps.
+/// Finds lines in a project's files on its host, up to its caps, below what
+/// the project's scope shows.
 struct SearchScreen: View {
     let host: HostClient
     let workspaceID: UUID
@@ -13,6 +14,7 @@ struct SearchScreen: View {
     @State private var error: String?
 
     private var workspace: WorkspaceRef { WorkspaceRef(hostID: host.id, workspaceID: workspaceID) }
+    private var scope: ProjectScope { host.scope(for: workspaceID) }
 
     var body: some View {
         List {
@@ -51,7 +53,7 @@ struct SearchScreen: View {
             } else if results?.isEmpty == true {
                 ContentUnavailableView.search(text: query)
             } else if results == nil {
-                ContentUnavailableView("Search in Files", systemImage: "magnifyingglass", description: Text("Find text in \(host.workspace(workspaceID)?.name ?? "this project")’s files."))
+                ContentUnavailableView("Search in Files", systemImage: "magnifyingglass", description: Text("Find text in \(folderName)’s files."))
             }
         }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Text to find")
@@ -60,10 +62,19 @@ struct SearchScreen: View {
         }
         .navigationTitle("Search")
         .toolbarTitleDisplayMode(.inline)
+        // Searching again below the folder now shown, so no result points into another checkout.
+        .onChange(of: scope.filesRoot) {
+            if results != nil { Task { await search() } }
+        }
+    }
+
+    private var folderName: String {
+        scope.selectedNestedRepository?.lastPathComponent ?? host.workspace(workspaceID)?.name ?? "this project"
     }
 
     private func search() async {
-        guard !query.isEmpty, let root = host.workspace(workspaceID)?.path else { return }
+        guard !query.isEmpty else { return }
+        let root = scope.filesRoot.filePath
         isSearching = true
         error = nil
         defer { isSearching = false }

@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
@@ -9,7 +10,7 @@ struct FileTreeView: View {
     @State private var revealScrollTask: Task<Void, Never>?
 
     private var model: FileTreeModel { project.fileTree }
-    private var rootPath: String { project.root.filePath }
+    private var rootPath: String { project.filesRoot.filePath }
 
     var body: some View {
         @Bindable var model = model
@@ -42,7 +43,7 @@ struct FileTreeView: View {
                 }
                 Toggle("Show Hidden Files", isOn: $showHiddenFiles)
             }
-            .safeAreaBar(edge: .bottom) {
+            .safeAreaBar(edge: .top) {
                 SearchBar(
                     text: $model.searchText,
                     placeholder: "Search for Files",
@@ -57,7 +58,15 @@ struct FileTreeView: View {
                     .buttonStyle(.plain)
                     .help("Show only changed files")
                 }
-                .padding(11)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .padding(.top, 6)
+            }
+            .safeAreaBar(edge: .bottom) {
+                if !project.scope.nestedRepositories.isEmpty {
+                    InspectorRepositoryPicker(project: project, includesProjectFolder: true)
+                        .padding()
+                }
             }
             .onChange(of: model.shownFolders, initial: true) { _, folders in
                 model.follow(folders)
@@ -68,6 +77,9 @@ struct FileTreeView: View {
             }
             .onChange(of: model.pendingRevealID, initial: true) { _, id in
                 if let id { scrollToFile(id, using: proxy) }
+            }
+            .onChange(of: rootPath) {
+                if !model.submittedSearchText.isEmpty { model.find() }
             }
             .onChange(of: model.searchText) {
                 if model.searchText.isEmpty && !model.submittedSearchText.isEmpty { model.clearSearch() }

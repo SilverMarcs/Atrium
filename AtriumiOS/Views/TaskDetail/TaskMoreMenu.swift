@@ -17,10 +17,12 @@ struct TaskMoreMenu: View {
                     ScratchPadButton(isPresented: $showingScratchPad)
                 }
                 Section {
-                    ProjectLinks(
-                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-                        root: item.host.workspace(workspaceID)?.path ?? ""
-                    )
+                    ProjectLinks(workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID))
+                } header: {
+                    // The branch or worktree the project's pages show.
+                    if let title = item.host.scope(for: workspaceID).title {
+                        Text(title)
+                    }
                 }
             }
             if !models.isEmpty {

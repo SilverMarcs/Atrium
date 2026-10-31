@@ -99,6 +99,8 @@ public final class HostClient: Identifiable {
     /// How many callers follow each topic. Every client always follows a host's tasks.
     @ObservationIgnored private var topicCounts: [HostTopic: Int] = [.tasks: 1]
     @ObservationIgnored private var icons: [String: Data] = [:]
+    /// The checkouts this device shows, by project. See `scope(for:)`.
+    @ObservationIgnored var scopes: [UUID: ProjectScope] = [:]
     /// Pages and images agents showed, kept so scrolling back past one doesn't fetch it again.
     @ObservationIgnored private let media = HostMediaCache()
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?

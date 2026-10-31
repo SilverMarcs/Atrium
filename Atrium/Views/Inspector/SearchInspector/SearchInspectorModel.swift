@@ -30,7 +30,7 @@ final class SearchInspectorModel {
             return
         }
         let query = query
-        let root = project.root.filePath
+        let root = project.filesRoot.filePath
         isSearching = true
         searchTask = Task {
             do {

@@ -87,7 +87,7 @@ struct FileEditorPanel: View {
                         gutterDiff: gutterDiff,
                         highlightRequest: panel.highlightRequest,
                         scrollToLine: panel.pendingScrollLine,
-                        hunkTarget: HunkTarget(project: project, repository: project.root),
+                        hunkTarget: HunkTarget(project: project, repository: project.checkout(containing: fileURL)),
                         onReloadFromDisk: {
                             await loader.reloadInPlace(fileURL, in: project)
                             await loadGutter()
@@ -191,7 +191,7 @@ struct FileEditorPanel: View {
 
     private func loadGutter() async {
         guard case .text = loader.phase,
-              case .gutter(let staged, let unstaged) = try? await project.git(.gutterDiff(file: fileURL), in: project.root) else {
+              case .gutter(let staged, let unstaged) = try? await project.git(.gutterDiff(file: fileURL), in: project.checkout(containing: fileURL)) else {
             gutterDiff = .empty
             return
         }

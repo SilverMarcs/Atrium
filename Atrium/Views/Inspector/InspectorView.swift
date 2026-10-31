@@ -72,15 +72,11 @@ struct InspectorView: View {
                 .contentTransition(.symbolEffect(.replace))
         } primaryAction: {
             if let defaultCommand {
-                trigger(defaultCommand)
+                project.toggle(defaultCommand)
             }
         }
         .menuIndicator(runnable.count > 1 ? .visible : .hidden)
         .disabled(defaultCommand == nil)
-    }
-
-    private func trigger(_ command: WireCommand) {
-        project.send(command.isRunning ? .stop : .run, to: command)
     }
 
     private func iconName(for tab: InspectorTab) -> String {

@@ -42,7 +42,7 @@ final class FileTreeModel {
 
     /// The root and every expanded folder below it, which the host keeps current.
     var shownFolders: Set<String> {
-        let root = project.root.filePath
+        let root = project.filesRoot.filePath
         return Set(expandedIDs.filter { $0.hasPrefix(root + "/") }).union([root])
     }
 
@@ -66,7 +66,7 @@ final class FileTreeModel {
     /// The tree a filter shows, or nil while browsing folders.
     var filteredNodes: [FileNode]? {
         guard hasActiveFilter else { return nil }
-        let root = project.root.filePath
+        let root = project.filesRoot.filePath
         var paths: Set<String>?
         if let foundPaths, !submittedSearchText.isEmpty {
             paths = Set(foundPaths.map { (root as NSString).appendingPathComponent($0) })
@@ -109,6 +109,11 @@ final class FileTreeModel {
 
     func submitSearch() {
         submittedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        find()
+    }
+
+    /// Finds the submitted name again, below the folder now shown.
+    func find() {
         findTask?.cancel()
         guard !submittedSearchText.isEmpty else {
             foundPaths = nil
@@ -116,7 +121,7 @@ final class FileTreeModel {
         }
         isSearching = true
         let query = submittedSearchText
-        let root = project.root.filePath
+        let root = project.filesRoot.filePath
         findTask = Task {
             defer { if !Task.isCancelled { isSearching = false } }
             guard case .found(let paths, let isTruncated) = try? await project.files(.find(root: root, query: query)),
@@ -137,7 +142,7 @@ final class FileTreeModel {
 
     /// Expands the folders leading to a file and selects it once its row loads.
     func reveal(_ url: URL) {
-        let root = project.root.filePath
+        let root = project.filesRoot.filePath
         var parent = (url.filePath as NSString).deletingLastPathComponent
         while parent.hasPrefix(root), parent != root {
             expandedIDs.insert(parent)

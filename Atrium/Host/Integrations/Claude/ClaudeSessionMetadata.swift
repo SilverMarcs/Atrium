@@ -32,7 +32,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             hasProviderTitle: name != nil,
             isRenamed: customName != nil,
             agentName: string("agentName", in: tail, last: true) ?? string("agentName", in: head, last: true),
-            directory: string("relocatedCwd", in: tail, last: true) ?? originalDirectory
+            directory: worktreeDirectory(in: tail) ?? originalDirectory
                 ?? string("cwd", in: tail, last: true) ?? "",
             projectDirectory: originalDirectory,
             continuedIn: continuation(in: tail),
@@ -67,9 +67,24 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         return nil
     }
 
+    /// Where the session works after moving into or out of a worktree, whichever
+    /// it did last: Claude records the folder it moved into, and the one leaving
+    /// a worktree restored. Recording a return is not guaranteed, so a later
+    /// exit still wins over an earlier move.
+    private static func worktreeDirectory(in tail: String) -> String? {
+        [field("relocatedCwd", in: tail, last: true), field("restoredCwd", in: tail, last: true)]
+            .compactMap(\.self)
+            .max { $0.location < $1.location }?
+            .value
+    }
+
+    private static func string(_ key: String, in text: String, last: Bool = false) -> String? {
+        field(key, in: text, last: last)?.value
+    }
+
     /// Reads a JSON string field even when a large record crosses the edge of a read window.
     /// Decode the string literal itself so quotes, backslashes and Unicode escapes remain intact.
-    private static func string(_ key: String, in text: String, last: Bool = false) -> String? {
+    private static func field(_ key: String, in text: String, last: Bool) -> (value: String, location: String.Index)? {
         var remaining = text.startIndex..<text.endIndex
         while let match = text.range(of: "\"\(key)\"", options: last ? .backwards : [], range: remaining) {
             if last { remaining = remaining.lowerBound..<match.lowerBound }
@@ -86,7 +101,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
                 if character == "\"" {
                     let data = Data(suffix[...index].utf8)
                     if let value = try? JSONDecoder().decode(String.self, from: data),
-                       let value = nonempty(value) { return value }
+                       let value = nonempty(value) { return (value, match.lowerBound) }
                     break
                 }
             }

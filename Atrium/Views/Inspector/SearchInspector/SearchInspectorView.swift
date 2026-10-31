@@ -68,6 +68,8 @@ struct SearchInspectorView: View {
             .padding(.vertical, 3)
             .padding(.top, 6)
         }
+        // Searching again below the folder now shown, so no result points into another checkout.
+        .onChange(of: project.filesRoot) { state.search() }
         .onChange(of: state.results) {
             state.expandedIDs = Set(state.results.map(\.id))
         }

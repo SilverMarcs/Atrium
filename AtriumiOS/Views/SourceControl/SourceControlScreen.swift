@@ -61,8 +61,8 @@ struct SourceControlScreen: View {
             } message: { discard in
                 Text(discard.message)
             }
-            .task(id: source.scope) {
-                await source.host.follow(.git(source.scope))
+            .task(id: source.scope.gitScope) {
+                await source.host.follow(.git(source.scope.gitScope))
             }
     }
 

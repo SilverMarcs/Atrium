@@ -27,7 +27,7 @@ struct CommandTerminalOutputView: View {
 
                     if command.isRunning || command.canRun {
                         Button(command.isRunning ? "Stop" : "Run", systemImage: command.isRunning ? "stop.fill" : "play.fill") {
-                            project.send(command.isRunning ? .stop : .run, to: command)
+                            project.toggle(command)
                         }
                         .labelStyle(.iconOnly)
                         .font(.caption2)

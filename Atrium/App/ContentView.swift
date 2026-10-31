@@ -37,10 +37,7 @@ struct ContentView: View {
         }
         // The selected project's Git status and commands back the inspector,
         // the editor's change markers and the Run command alike.
-        .task(id: app.selectedProject?.gitScope) {
-            guard let project = app.selectedProject else { return }
-            await project.host.follow(.git(project.gitScope))
-        }
+        .followsProjectScope(of: app.selectedTask)
         .task(id: app.selectedProject?.id) {
             guard let project = app.selectedProject else { return }
             await project.host.follow(.commands(workspaceID: project.workspaceID))
@@ -83,7 +80,7 @@ struct ContentView: View {
             isPresented: Binding(get: { app.pendingRunReplacement != nil }, set: { if !$0 { app.pendingRunReplacement = nil } }),
             presenting: app.pendingRunReplacement
         ) { pending in
-            Button("Replace", role: .confirm) { pending.project.send(.run, to: pending.command) }
+            Button("Replace", role: .confirm) { pending.project.run(pending.command) }
             Button("Cancel", role: .cancel) {}
         } message: { pending in
             Text("“\(pending.command.title)” is currently running. Replacing will stop it and start a new instance.")

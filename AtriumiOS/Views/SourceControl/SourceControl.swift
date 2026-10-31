@@ -4,43 +4,39 @@ import Foundation
 import Observation
 
 /// Source control for one project on its host: the repository shown, and
-/// operations run in it. Status arrives from the host as it changes.
+/// operations run in it. Status arrives from the host as it changes; which
+/// repository and checkout it shows is the project's scope, shared with its
+/// other pages.
 @MainActor
 @Observable
 final class SourceControl {
     let host: HostClient
     let workspaceID: UUID
-    /// The main checkout of the repository shown, when the project has several.
-    var selectedRepository: URL?
-    private var worktrees: [URL: URL] = [:]
+    let scope: ProjectScope
 
     init(host: HostClient, workspaceID: UUID) {
         self.host = host
         self.workspaceID = workspaceID
+        scope = host.scope(for: workspaceID)
     }
 
-    var scope: GitScope { GitScope(workspaceID: workspaceID, worktrees: worktrees) }
     var workspace: WorkspaceRef { WorkspaceRef(hostID: host.id, workspaceID: workspaceID) }
     /// Nil until the host has sent the project's status.
-    var repositories: [GitRepositoryStatus]? { host.gitStatuses[scope] }
-    var status: GitRepositoryStatus? {
-        repositories?.first { $0.mainRepositoryURL == selectedRepository } ?? repositories?.first
-    }
+    var repositories: [GitRepositoryStatus]? { scope.repositories }
+    var status: GitRepositoryStatus? { scope.status }
 
     /// An occupied branch is viewed in its existing checkout, never checked out twice.
     func selectBranch(_ branch: String, in snapshot: GitRepositoryStatus) {
         guard !branch.isEmpty, branch != snapshot.branchName else { return }
         let repository = snapshot.mainRepositoryURL
         if let worktree = snapshot.worktrees.first(where: { $0.branch == branch && !$0.isBare }) {
-            worktrees[repository] = worktree.isMain ? nil : worktree.path.standardizedFileURL
-            selectedRepository = repository
+            scope.showWorktree(worktree.isMain ? nil : worktree.path, of: repository)
             return
         }
         Task {
             do {
                 _ = try await host.git(.switchBranch(branch), in: repository, workspace: workspaceID)
-                worktrees[repository] = nil
-                selectedRepository = repository
+                scope.showWorktree(nil, of: repository)
             } catch {
                 host.actionError = error.localizedDescription
             }

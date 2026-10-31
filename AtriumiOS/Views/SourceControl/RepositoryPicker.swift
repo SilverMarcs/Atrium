@@ -1,17 +1,23 @@
 import AtriumProtocol
 import SwiftUI
 
-/// Repositories in the project, grouped under the branch each has checked out.
+/// Repositories in the project, grouped under the branch each has checked
+/// out, and the whole project folder first when it's a choice too.
 struct RepositoryPicker: View {
     let repositories: [GitRepositoryStatus]
-    @Binding var selection: URL
+    /// Names the project folder as a choice, for Files.
+    var projectName: String?
+    @Binding var selection: URL?
 
     var body: some View {
         Picker("Repository", selection: $selection) {
+            if let projectName {
+                Label(projectName, systemImage: "folder").tag(URL?.none)
+            }
             ForEach(groups, id: \.branch) { group in
                 Section(group.branch) {
                     ForEach(group.repositories, id: \.mainRepositoryURL) { repository in
-                        Text(repository.name).tag(repository.mainRepositoryURL)
+                        Text(repository.name).tag(Optional(repository.mainRepositoryURL))
                     }
                 }
             }

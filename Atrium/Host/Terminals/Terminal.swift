@@ -16,6 +16,9 @@ final class Terminal: Identifiable, Hashable, Codable {
     /// When set, this terminal represents a saved "command" the user can run on demand.
     /// Sending the script appends a newline so the shell executes it.
     var runScript: String?
+    /// Where the client that last ran this command shows the project: its
+    /// folder, or the same folder in a linked worktree. Not encoded.
+    var runDirectory: String?
 
     /// Passed as process arguments, never typed into an interactive shell's input buffer.
     var pendingLaunch: AgentLaunch?
@@ -233,7 +236,7 @@ final class Terminal: Identifiable, Hashable, Codable {
         guard let script = runScript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !script.isEmpty,
               let tv = localProcessTerminalView else { return }
-        if let dir = workspace?.directory, !dir.isEmpty {
+        if let dir = runDirectory ?? workspace?.directory, !dir.isEmpty {
             let escaped = dir
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")

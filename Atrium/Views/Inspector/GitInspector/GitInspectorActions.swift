@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import Foundation
 import Observation
@@ -19,7 +20,6 @@ struct PendingBranchSwitch {
 final class GitInspectorState {
     unowned let project: Project
     let model: GitInspectorModel
-    var selectedRepoURL: URL?
     var selectedFileID: String?
     var commitMessage = ""
     var discardTarget: GitInspectorDiscardTarget?
@@ -48,9 +48,7 @@ final class GitInspectorState {
         model = GitInspectorModel(project: project)
     }
 
-    var currentSnapshot: GitRepositoryStatus? {
-        model.snapshots.first { $0.mainRepositoryURL == selectedRepoURL } ?? model.snapshots.first
-    }
+    var currentSnapshot: GitRepositoryStatus? { project.scope.status }
 
     /// Handles state-only actions. View-specific actions (`.commit`, `.showInFileTree`)
     /// are no-ops here and must be dispatched by the calling view.
@@ -88,7 +86,7 @@ final class GitInspectorState {
                 pendingBranchSwitch = PendingBranchSwitch(branch: branch, repositoryRootURL: rootURL)
             } else {
                 await model.switchBranch(to: branch, at: rootURL)
-                project.worktrees[rootURL] = nil
+                project.scope.showWorktree(nil, of: rootURL)
             }
         }
     }
@@ -97,23 +95,20 @@ final class GitInspectorState {
         guard let pending = pendingBranchSwitch else { return }
         Task {
             await model.stashAndSwitch(to: pending.branch, at: pending.repositoryRootURL)
-            project.worktrees[pending.repositoryRootURL] = nil
+            project.scope.showWorktree(nil, of: pending.repositoryRootURL)
         }
     }
 
     /// Points a repository at one of its worktrees (or back at the main one).
     /// Changing the project's checkouts follows a new Git scope, so no refresh.
     func activateWorktree(_ worktree: GitWorktreeInfo, in snapshot: GitRepositoryStatus) {
-        let rootURL = snapshot.mainRepositoryURL
-        project.worktrees[rootURL] = worktree.isMain ? nil : worktree.path.standardizedFileURL
-        selectedRepoURL = rootURL
+        project.scope.showWorktree(worktree.isMain ? nil : worktree.path, of: snapshot.mainRepositoryURL)
     }
 
     /// Reconciles inspector navigation after the branch manager changes a checkout.
     func finishBranchOperation(mainRepositoryURL: URL, didConvert: Bool) {
         guard didConvert else { return }
-        project.worktrees[mainRepositoryURL] = nil
-        selectedRepoURL = mainRepositoryURL
+        project.scope.showWorktree(nil, of: mainRepositoryURL)
     }
 
     func confirmStashAll() {

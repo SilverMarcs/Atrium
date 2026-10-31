@@ -81,7 +81,9 @@ public nonisolated enum WorkspaceAction: Codable, Sendable {
 }
 
 public nonisolated enum CommandAction: Codable, Sendable {
-    case run
+    /// Runs the command in `directory`: the project folder, or the same folder
+    /// in a linked worktree of its repository that the client shows.
+    case run(directory: String)
     case stop
     case update(title: String, script: String?)
     case setDefault

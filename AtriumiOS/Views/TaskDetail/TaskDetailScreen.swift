@@ -178,6 +178,7 @@ struct TaskDetailScreen: View {
             guard !TaskDraft.isDraftID(resolvedRef.taskID) else { return }
             await host?.follow(.transcript(taskID: resolvedRef.taskID))
         }
+        .followsProjectScope(of: item)
         .task(id: task) {
             // Viewing a finished task reads it, as selecting it does on the host.
             if let task, task.hasUnreadResult {

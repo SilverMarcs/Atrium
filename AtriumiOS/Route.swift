@@ -7,7 +7,8 @@ enum Route: Hashable {
     case sourceControl(WorkspaceRef)
     case fileDiff(WorkspaceRef, file: GitChangedFile, repository: URL, isStaged: Bool)
     case commands(WorkspaceRef)
-    case files(WorkspaceRef, folder: String)
+    /// A folder, or for nil what the project's scope shows.
+    case files(WorkspaceRef, folder: String? = nil)
     case file(WorkspaceRef, path: String, line: Int? = nil)
     case search(WorkspaceRef)
     case task(TaskRef)
@@ -22,7 +23,7 @@ extension Route {
               let host = hosts.host(ref.hostID), let workspace = host.task(ref.taskID)?.workspace(on: host) else { return nil }
         let project = WorkspaceRef(hostID: host.id, workspaceID: workspace.id)
         switch name {
-        case "files": return .files(project, folder: workspace.path)
+        case "files": return .files(project)
         case "search": return .search(project)
         case "sourceControl": return .sourceControl(project)
         case "commands": return .commands(project)
