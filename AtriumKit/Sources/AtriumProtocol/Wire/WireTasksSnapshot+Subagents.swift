@@ -3,10 +3,15 @@ import Foundation
 public nonisolated extension WireTasksSnapshot {
     /// The subagents a task's agent ran, newest first.
     func children(of id: String) -> [WireTask] {
-        tasks.filter { $0.origin?.parentID == id }.sorted(by: WireTask.newestFirst)
+        tasks.filter { $0.origin?.parentID == id && !$0.isSideChat }.sorted(by: WireTask.newestFirst)
     }
 
-    /// The session a subagent works for, when that session is listed.
+    /// The side chat about a task's conversation, while it lasts.
+    func sideChat(of id: String) -> WireTask? {
+        tasks.first { $0.origin == .sideChat(id) }
+    }
+
+    /// The session a subagent works for or a side chat asks about, when that session is listed.
     func parent(of task: WireTask) -> WireTask? {
         guard let id = task.origin?.parentID else { return nil }
         return tasks.first { $0.id == id }

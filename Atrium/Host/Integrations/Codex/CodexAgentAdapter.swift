@@ -5,7 +5,9 @@ import OSLog
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage]
+    let capabilities: AgentCapabilities = [
+        .forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage, .sideChat, .sideChatImages
+    ]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private var connected = false
@@ -26,6 +28,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// thread ID, with what last happened to each. Codex records them only in
     /// the spawning thread's turns, so they're known once Atrium has read it.
     private var subagents: [String: [String: String]] = [:]
+    /// Side chats by thread ID, with the thread each asks about. Codex keeps
+    /// them only in memory, for as long as this connection lasts.
+    private var sideChats: [String: String] = [:]
     /// The configured model and reasoning effort, which threads that never
     /// overrode them leave unset.
     private var defaultModel: String?
@@ -98,7 +103,75 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 if let subagent = try? await readThread(id) { threads.append(subagent) }
             }
         }
+        for id in sideChats.keys.sorted() {
+            if let sideChat = try? await readThread(id) { threads.append(sideChat) } else { dropSideChats([id]) }
+        }
         return threads
+    }
+
+    // MARK: - Side chats
+
+    /// Starts a side chat the way Codex's `/side` does: an ephemeral fork of
+    /// the conversation so far, even mid-turn, told by developer instructions
+    /// and a boundary in its history that the inherited conversation is only
+    /// for reference. Its transcript starts at the boundary.
+    func startSideChat(of thread: AgentThread) async throws -> AgentThread {
+        try await connect()
+        try await trustWorkspace(directory: thread.directory)
+        let pending = pendingSettings[thread.sessionID] ?? [:]
+        var params: [String: Any] = [
+            "threadId": thread.sessionID, "ephemeral": true, "excludeTurns": true,
+            "developerInstructions": developerInstructions + "\n\n" + CodexSideChat.developerInstructions
+        ]
+        if let model = pending["model"] ?? thread.model { params["model"] = model }
+        if let effort = pending["effort"] ?? thread.reasoningEffort { params["config"] = ["model_reasoning_effort": effort] }
+        if let tier = serviceTiers[thread.sessionID] { params["serviceTier"] = tier }
+        let data = try await request("thread/fork", params: params)
+        let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let row = result?["thread"] as? [String: Any], let fork = withDefaults(Self.thread(row)) else {
+            throw IntegrationError(message: "Codex did not start a side chat.")
+        }
+        sideChats[fork.sessionID] = thread.sessionID
+        conversations[fork.sessionID] = CodexLiveConversation(turns: [])
+        do {
+            _ = try await request("thread/inject_items", params: ["threadId": fork.sessionID, "items": [CodexSideChat.boundary]])
+        } catch {
+            await endSideChat(sideChat(fork, of: thread.sessionID))
+            throw error
+        }
+        return sideChat(fork, of: thread.sessionID)
+    }
+
+    /// Closes a side chat as Codex's `/side` does: its turn stops and it's let go.
+    func endSideChat(_ thread: AgentThread) async {
+        guard sideChats.removeValue(forKey: thread.sessionID) != nil else { return }
+        let turnID = activeTurnIDs[thread.sessionID] ?? conversations[thread.sessionID]?.activeTurnID
+        conversations[thread.sessionID] = nil
+        activeTurnIDs[thread.sessionID] = nil
+        resolveDecisions(sessionID: thread.sessionID)
+        guard connected else { return }
+        if let turnID {
+            _ = try? await request("turn/interrupt", params: ["threadId": thread.sessionID, "turnId": turnID], disconnectOnTimeout: false)
+        }
+        _ = try? await request("thread/unsubscribe", params: ["threadId": thread.sessionID], disconnectOnTimeout: false)
+    }
+
+    private func sideChat(_ thread: AgentThread, of parentID: String) -> AgentThread {
+        var sideChat = thread
+        sideChat.title = "Side Chat"
+        sideChat.hasProviderTitle = true
+        sideChat.isMainTask = false
+        sideChat.sideChatParentSessionID = parentID
+        return sideChat
+    }
+
+    /// Ends side chats Codex no longer has, as when its connection drops.
+    private func dropSideChats(_ ids: [String]) {
+        for id in ids where sideChats.removeValue(forKey: id) != nil {
+            conversations[id] = nil
+            activeTurnIDs[id] = nil
+            onEvent?(.threadDeleted(sessionID: id))
+        }
     }
 
     // MARK: - Subagents
@@ -187,6 +260,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
+        if let parentID = sideChats[id] { return sideChat(thread, of: parentID) }
         return withSubagentState(thread)
     }
 
@@ -291,6 +365,11 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func openConversation(_ thread: AgentThread) async throws {
         // Codex resumes a subagent only through its session; it's read instead.
         guard !thread.isSubagent else { return }
+        // A side chat is open from its start, and can't be resumed once Codex lets it go.
+        guard !thread.isSideChat else {
+            guard conversations[thread.sessionID] != nil else { throw IntegrationError(message: "This side chat has ended. Start a new one.") }
+            return
+        }
         desiredConversations[thread.sessionID] = thread
         try await connect()
         if conversations[thread.sessionID] != nil { return }
@@ -632,6 +711,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             guard let id = params["threadId"] as? String else { return }
+            if method == "thread/closed", sideChats[id] != nil {
+                dropSideChats([id])
+                return
+            }
             if let response = titleResponses[id] {
                 response.receive(method, params: params)
                 return
@@ -708,6 +791,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         for task in titleTasks.values { task.cancel() }
         for response in titleResponses.values { response.cancel() }
         titleResponses.removeAll()
+        dropSideChats(Array(sideChats.keys))
         conversations.removeAll()
         for task in openingConversations.values { task.cancel() }
         openingConversations.removeAll()

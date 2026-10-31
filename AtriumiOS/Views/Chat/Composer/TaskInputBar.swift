@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// The inline composer used on iPad, in place of the iPhone's bottom-bar
@@ -26,17 +27,19 @@ struct TaskInputBar: View {
                 }
 
                 HStack(alignment: .bottom) {
-                    ComposerAttachmentMenu {
-                        Label("Attach", systemImage: "plus.circle.fill")
-                            .labelStyle(.iconOnly)
-                            .foregroundStyle(.secondary, .clear)
-                            .font(.largeTitle)
-                            .glassEffect()
+                    if item?.task.actions.contains(.attachImages) != false {
+                        ComposerAttachmentMenu {
+                            Label("Attach", systemImage: "plus.circle.fill")
+                                .labelStyle(.iconOnly)
+                                .foregroundStyle(.secondary, .clear)
+                                .font(.largeTitle)
+                                .glassEffect()
+                        }
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                        .scaleEffect(0.97)
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .fixedSize()
-                    .scaleEffect(0.97)
 
                     if composer.messageEdit != nil {
                         ConversationEditCancelButton(action: composer.cancelEdit)

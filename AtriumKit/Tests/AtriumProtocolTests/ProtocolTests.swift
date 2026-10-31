@@ -105,4 +105,21 @@ struct ProtocolTests {
         applied.apply(WireTasksDelta(from: old, to: new))
         #expect(applied.tasks.map(\.title) == ["Second", "Three"])
     }
+
+    @Test func sideChatsStayApartFromDelegatedWork() throws {
+        func task(_ id: String, origin: WireTaskOrigin?) -> WireTask {
+            WireTask(
+                id: id, title: id, provider: .codex, status: .processing, projectName: "", path: "", directory: "",
+                updatedAt: .now, hasUnreadResult: false, isSettled: false, supportsDeletion: false, actions: [], origin: origin
+            )
+        }
+        let side = task("side", origin: .sideChat("main"))
+        let snapshot = WireTasksSnapshot(
+            tasks: [task("main", origin: nil), task("sub", origin: .subagent("main")), side], workspaces: [], providers: []
+        )
+        #expect(snapshot.children(of: "main").map(\.id) == ["sub"])
+        #expect(snapshot.sideChat(of: "main")?.id == "side")
+        #expect(snapshot.parent(of: side)?.id == "main")
+        #expect(try HostCodec.decode(WireTask.self, from: HostCodec.encode(side)).isSideChat)
+    }
 }

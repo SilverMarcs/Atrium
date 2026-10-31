@@ -43,8 +43,10 @@ struct SessionChatComposer: View {
         }
 
         HStack(alignment: .bottom) {
-          SessionChatInputMenu(images: $composer.images)
-            .offset(y: -1)
+          if actions.contains(.attachImages) {
+            SessionChatInputMenu(images: $composer.images)
+              .offset(y: -1)
+          }
 
           if edit != nil {
             ConversationEditCancelButton(action: composer.cancelEdit)

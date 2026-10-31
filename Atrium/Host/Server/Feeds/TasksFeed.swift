@@ -96,7 +96,8 @@ final class TasksFeed: TopicFeed {
             isFastMode: thread.isFastMode,
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: project.checkout,
-            origin: thread.parentID.map(WireTaskOrigin.subagent) ?? (isChatGPTs ? .chatGPT : nil)
+            origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
+                ?? (isChatGPTs ? .chatGPT : nil)
         )
     }
 

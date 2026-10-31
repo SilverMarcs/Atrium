@@ -86,6 +86,18 @@ final class TaskSessionController {
         }
     }
 
+    /// Starts a side chat about a task's conversation, replacing its previous one.
+    func startSideChat(of thread: AgentThread) async -> AgentThread? {
+        do {
+            return try await integrations.startSideChat(of: thread)
+        } catch is CancellationError {
+            return nil
+        } catch {
+            integrations.actionError = error.localizedDescription
+            return nil
+        }
+    }
+
     func settle(_ thread: AgentThread) {
         guard !isOpening, !integrations.settledThreadIDs.contains(thread.id), !integrations.renamingThreadIDs.contains(thread.id),
               !integrations.deletingThreadIDs.contains(thread.id), !integrations.deletedThreadIDs.contains(thread.id) else { return }
@@ -115,15 +127,26 @@ final class TaskSessionController {
         guard !thread.isSubagent else {
             return TaskMenuState(isSettled: false, isSnoozed: false, hasUnreadResult: false, supportsDeletion: false, allowed: [])
         }
+        let capabilities = integrations.capabilities(of: thread.provider)
+        // A side chat only takes questions, until a new one replaces it.
+        guard !thread.isSideChat else {
+            var allowed: TaskActions = []
+            if integrations.enabledProviders.contains(thread.provider) {
+                if thread.status != .waiting { allowed.insert(.prompt) }
+                if capabilities.contains(.sideChatImages) { allowed.insert(.attachImages) }
+                if thread.status == .processing { allowed.insert(.interrupt) }
+            }
+            return TaskMenuState(isSettled: false, isSnoozed: false, hasUnreadResult: false, supportsDeletion: false, allowed: allowed)
+        }
         let isChanging = integrations.deletingThreadIDs.contains(id) || integrations.stoppingThreadIDs.contains(id)
             || integrations.renamingThreadIDs.contains(id) || integrations.rewindingThreadIDs.contains(id)
         var allowed: TaskActions = []
         if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
         if integrations.canSnooze(thread) { allowed.insert(.snooze) }
         if !integrations.deletingThreadIDs.contains(id) { allowed.insert(.unsnooze) }
-        let capabilities = integrations.capabilities(of: thread.provider)
         if integrations.enabledProviders.contains(thread.provider), !capabilities.isDisjoint(with: [.prompt, .terminalPrompt]) {
             if thread.status != .waiting { allowed.insert(.prompt) }
+            allowed.insert(.attachImages)
             if thread.status == .processing { allowed.insert(.interrupt) }
             if thread.status != .waiting, capabilities.contains(.selectModel),
                integrations.models[thread.provider]?.isEmpty == false {
@@ -137,6 +160,7 @@ final class TaskSessionController {
         if integrations.rewindingThreadIDs.contains(id) { allowed.subtract([.prompt, .selectModel]) }
         if !isOpening {
             if integrations.canFork(thread) { allowed.insert(.fork) }
+            if integrations.canStartSideChat(thread) { allowed.insert(.sideChat) }
             if integrations.canRename(thread) { allowed.insert(.rename) }
             if integrations.canMarkRead(thread) { allowed.insert(.markRead) }
             if integrations.canMarkUnread(thread) { allowed.insert(.markUnread) }
@@ -263,9 +287,9 @@ final class TaskSessionController {
         } catch { session.terminalError = error.localizedDescription }
     }
 
-    /// A subagent runs inside its session's agent, with no terminal of its own.
+    /// A subagent runs inside its session's agent and a side chat beside it, with no terminal of their own.
     private func canOpen(_ thread: AgentThread) -> Bool {
-        !thread.isSubagent && integrations.enabledProviders.contains(thread.provider)
+        !thread.isSubagent && !thread.isSideChat && integrations.enabledProviders.contains(thread.provider)
             && !integrations.deletingThreadIDs.contains(thread.id) && !integrations.deletedThreadIDs.contains(thread.id)
     }
 

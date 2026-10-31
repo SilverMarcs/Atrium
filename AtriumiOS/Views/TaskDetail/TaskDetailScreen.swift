@@ -8,6 +8,7 @@ struct TaskDetailScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
     @Environment(\.openSubagent) private var openSubagent
+    @Environment(\.replaceSideChat) private var replaceSideChat
     let ref: TaskRef
     @State private var showingScratchPad = false
     /// Shared by every task the screen shows, so the composer's field
@@ -32,7 +33,7 @@ struct TaskDetailScreen: View {
     /// Drafts choose a model beside the composer; only created chats also
     /// show the picker in the detail toolbar or More menu.
     private var models: [AgentModel] {
-        guard let task, !TaskDraft.isDraftID(task.id), !task.isSubagent else { return [] }
+        guard let task, !TaskDraft.isDraftID(task.id), !task.isSubagent, !task.isSideChat else { return [] }
         return host?.models(for: task.provider) ?? []
     }
 
@@ -77,7 +78,7 @@ struct TaskDetailScreen: View {
             sendAnimator.cancelAll()
             hosts.releaseComposer(for: resolvedRef)
         }
-        .navigationTitle(task?.title ?? "Task")
+        .navigationTitle(title)
         .modifier(ConnectionStatusSubtitle(
             hosts: host.map { [$0] } ?? [],
             subtitle: subtitle,
@@ -86,17 +87,22 @@ struct TaskDetailScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
-                if isPhone, task.workspaceID != nil, let item {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
-                    }
-                }
                 if !isPhone, let item, item.hasSubagents {
                     ToolbarItem(placement: .primaryAction) {
                         SubagentMenu(item: item, open: openSubagent)
                     }
                 }
-                if let item, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasSubagents) {
+                if task.isSideChat, let item {
+                    ToolbarItem(placement: .primaryAction) {
+                        NewSideChatButton(sideChat: item, open: replaceSideChat)
+                    }
+                } else if task.workspaceID != nil, let item {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
+                    }
+                }
+                if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasSubagents)
+                    || item.sideChat != nil || task.actions.contains(.sideChat) {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
                             item: item, models: models, includesSubagents: isPhone,
@@ -108,10 +114,12 @@ struct TaskDetailScreen: View {
             // iPad has no bottom bar; its inline input bar carries these. A
             // subagent answers only to its own agent, so it has no composer.
             if isPhone, task?.isSubagent != true {
-                ToolbarItem(placement: .bottomBar) {
-                    ComposerAttachmentMenu()
+                if task?.actions.contains(.attachImages) != false {
+                    ToolbarItem(placement: .bottomBar) {
+                        ComposerAttachmentMenu()
+                    }
+                    ToolbarSpacer(.fixed, placement: .bottomBar)
                 }
-                ToolbarSpacer(.fixed, placement: .bottomBar)
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     ComposerDictationButton()
@@ -141,7 +149,7 @@ struct TaskDetailScreen: View {
             }
         }
         .composerAttachmentPickers(composer)
-        .composerDropHandler(composer, isEnabled: item != nil)
+        .composerDropHandler(composer, isEnabled: item?.task.actions.contains(.attachImages) == true)
         .composerDictationLifecycle(composer)
         .environment(composer)
         .environment(sendAnimator)
@@ -187,8 +195,15 @@ struct TaskDetailScreen: View {
         }
     }
 
+    /// A side chat is titled by the session it asks about.
+    private var title: String {
+        guard let task else { return "Task" }
+        return task.isSideChat ? item?.parent?.title ?? task.title : task.title
+    }
+
     private var subtitle: String {
         guard let task else { return "" }
+        if task.isSideChat { return task.title }
         return hosts.showsHostNames || hosts.filter != nil && hosts.hosts.count > 1
             ? "\(task.projectName) · \(host?.name ?? "")" : task.projectName
     }

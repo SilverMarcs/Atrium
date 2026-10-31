@@ -53,6 +53,9 @@ public nonisolated enum TaskAction: Codable, Sendable {
     case markUnread
     case rename(title: String)
     case fork
+    /// Starts a side chat about the conversation so far, replacing the task's
+    /// previous one. The reply names it.
+    case startSideChat
     case delete
     /// Switches the model, and its reasoning effort when it has one, for the
     /// agent's next turns. The model is one its provider lists.

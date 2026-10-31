@@ -32,8 +32,13 @@ struct CompanionRootView: View {
                             RouteDestination(route: route)
                         }
                     }
-                    // Subagents open over their session, so Back returns to it.
+                    // Subagents and side chats open over their session, so Back returns to it.
                     .environment(\.openSubagent) { ref in detailPath.append(.task(ref)) }
+                    .environment(\.openSideChat) { ref in detailPath.append(.task(ref)) }
+                    .environment(\.replaceSideChat) { ref in
+                        if !detailPath.isEmpty { detailPath.removeLast() }
+                        detailPath.append(.task(ref))
+                    }
                 }
             } else {
                 NavigationStack {

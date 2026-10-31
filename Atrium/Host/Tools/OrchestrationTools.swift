@@ -208,8 +208,8 @@ final class OrchestrationTools {
     // MARK: - Tools
 
     private func listSessions(_ arguments: Arguments) throws -> CallTool.Result {
-        // Subagents belong to their session's agent, which alone talks to them.
-        var threads = integrations.visibleThreads(matching: "").filter { !$0.isSubagent }
+        // Subagents belong to their session's agent, which alone talks to them, and side chats to the user.
+        var threads = integrations.visibleThreads(matching: "").filter { !$0.isSubagent && !$0.isSideChat }
         if let project = arguments.string("project") {
             let workspace = try self.workspace(project)
             threads = threads.filter { workspaces.workspace(for: $0)?.id == workspace.id }

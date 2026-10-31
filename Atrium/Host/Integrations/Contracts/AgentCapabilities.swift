@@ -14,4 +14,8 @@ struct AgentCapabilities: OptionSet, Sendable {
     /// adapter with `.prompt` or by typing commands with `.terminalPrompt`.
     static let selectModel = Self(rawValue: 1 << 8)
     static let editMessage = Self(rawValue: 1 << 9)
+    /// Side chats can start about a thread's conversation, in the provider's own way.
+    static let sideChat = Self(rawValue: 1 << 10)
+    /// Side chats take images with their prompts.
+    static let sideChatImages = Self(rawValue: 1 << 11)
 }

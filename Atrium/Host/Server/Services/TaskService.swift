@@ -44,6 +44,8 @@ struct TaskService {
                 await integrations.renameThread(thread, to: title)
             case .fork:
                 if let fork = await sessions.fork(thread) { return .task(id: fork.id) }
+            case .startSideChat:
+                if let sideChat = await sessions.startSideChat(of: thread) { return .task(id: sideChat.id) }
             case .delete:
                 await sessions.delete(thread)
             case .selectModel(let model, let reasoningEffort):

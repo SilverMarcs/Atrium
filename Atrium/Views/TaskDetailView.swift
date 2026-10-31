@@ -17,9 +17,9 @@ struct TaskDetailView: View {
     private var session: TaskSession? {
         item.host.isLocal ? app.terminals.session(for: task.id) : nil
     }
-    /// A subagent runs inside its session's agent, with no terminal of its own.
+    /// A subagent runs inside its session's agent and a side chat beside it, with no terminal of their own.
     private var hasTerminal: Bool {
-        !task.isSubagent && (session != nil || (!item.host.isLocal && !TaskDraft.isDraftID(task.id)
+        !task.isSubagent && !task.isSideChat && (session != nil || (!item.host.isLocal && !TaskDraft.isDraftID(task.id)
             && item.host.enabledProviders.contains(task.provider)))
     }
     private var showsTerminal: Bool { hasTerminal && presentation == "terminal" }
@@ -87,12 +87,18 @@ struct TaskDetailView: View {
                 ScratchPadSheet(host: item.host, workspaceID: workspaceID)
             }
         }
-        .navigationTitle(String(task.title.prefix(50)))
+        .navigationTitle(String(title.prefix(50)))
         .navigationSubtitle(subtitle)
         .focusedSceneValue(\.editorPanel, project?.editor)
     }
 
+    /// A side chat is titled by the session it asks about.
+    private var title: String {
+        task.isSideChat ? item.parent?.title ?? task.title : task.title
+    }
+
     private var subtitle: String {
+        if task.isSideChat { return task.title }
         if let parent = item.parent {
             return "Subagent of \(parent.provider.name) · \(parent.title)"
         }

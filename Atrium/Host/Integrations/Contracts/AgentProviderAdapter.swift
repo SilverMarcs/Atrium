@@ -17,6 +17,10 @@ protocol AgentProviderAdapter: AnyObject {
     func listThreads() async throws -> [AgentThread]
     func readThread(_ sessionID: String) async throws -> AgentThread?
     func forkThread(_ thread: AgentThread) async throws -> AgentThread
+    /// Requires `.sideChat`. Starts a side chat about a thread's conversation so far, which the
+    /// adapter lists, prompts and interrupts like a thread until `endSideChat` or the provider ends it.
+    func startSideChat(of thread: AgentThread) async throws -> AgentThread
+    func endSideChat(_ thread: AgentThread) async
     func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch
     func stopThread(_ thread: AgentThread) async throws
@@ -60,6 +64,12 @@ extension AgentProviderAdapter {
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         throw IntegrationError(message: "\(provider.name) does not support forking a thread.")
     }
+
+    func startSideChat(of thread: AgentThread) async throws -> AgentThread {
+        throw IntegrationError(message: "\(provider.name) does not support side chats.")
+    }
+
+    func endSideChat(_ thread: AgentThread) async {}
 
     func markRead(_ thread: AgentThread) async throws -> AgentReadState {
         throw IntegrationError(message: "\(provider.name) does not support marking a thread read.")

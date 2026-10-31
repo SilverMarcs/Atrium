@@ -29,8 +29,11 @@ struct SubagentButtons: View {
 extension HostTask {
     /// Whether this task's agent ran any subagents.
     var hasSubagents: Bool {
-        host.tasks?.tasks.contains { $0.origin?.parentID == task.id } == true
+        host.tasks?.children(of: task.id).isEmpty == false
     }
+
+    /// The side chat about this task's conversation, while it lasts.
+    var sideChat: WireTask? { host.tasks?.sideChat(of: task.id) }
 
     /// Its subagents still working or waiting for an answer.
     var workingSubagents: Int {

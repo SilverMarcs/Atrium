@@ -5,7 +5,7 @@ import OSLog
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel, .editMessage]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel, .editMessage, .sideChat]
     private(set) var defaultSettings: TaskStartSettings?
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
@@ -41,6 +41,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// The session each fork was made from, until Claude saves the fork. Claude writes
     /// a fork's file, with the history it copied, only once the fork gets its first prompt.
     private var forkSources: [String: String] = [:]
+    /// Side chats by their session ID, while they last.
+    private var sideChats: [String: ClaudeSideChat] = [:]
 
     init(bridge: AgentBridgeServer, configDirectory: URL? = nil) {
         self.bridge = bridge
@@ -77,15 +79,50 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         for session in sessions.prefix(Self.sessionsWithSubagents) {
             subagents += await history.subagents(of: session.sessionID).map { subagentThread($0, of: session) }
         }
-        return sessions + subagents
+        return sessions + subagents + sideChats.values.map(\.thread)
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
+        if let sideChat = sideChats[id] { return sideChat.thread }
         if let (parentID, agentID) = Self.subagent(in: id) {
             guard let parent = try await readThread(parentID) else { return nil }
             return await history.subagents(of: parentID).first { $0.agentID == agentID }.map { subagentThread($0, of: parent) }
         }
         return try await (history.readThread(id) ?? backgroundSessions[id]?.thread).map(withStatus)
+    }
+
+    // MARK: - Side chats
+
+    func startSideChat(of thread: AgentThread) async throws -> AgentThread {
+        guard UUID(uuidString: thread.sessionID) != nil else { throw IntegrationError(message: "Invalid Claude session identifier.") }
+        // Claude saves a session with its first prompt, and a side question reads what it saved.
+        guard try await history.readThread(thread.sessionID) != nil else {
+            throw IntegrationError(message: "Send Claude a message first, then start a side chat.")
+        }
+        let sideChat = ClaudeSideChat(about: thread)
+        let id = sideChat.thread.sessionID
+        sideChat.onChange = { [weak self, weak sideChat] in
+            guard let self, let sideChat else { return }
+            self.onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: sideChat.thread.status, updatedAt: sideChat.thread.updatedAt)))
+            self.onEvent?(.transcriptChanged(sessionID: id))
+        }
+        sideChats[id] = sideChat
+        return sideChat.thread
+    }
+
+    func endSideChat(_ thread: AgentThread) async {
+        sideChats.removeValue(forKey: thread.sessionID)?.cancel()
+    }
+
+    /// The session's own system prompt and model, so a side question reuses
+    /// the prompt Claude has cached for it.
+    private func sideQuestionOptions(about sessionID: String, model: String?) -> [String] {
+        let launch = backgroundIDs[sessionID].flatMap { try? daemon.launchOptions(jobID: $0) } ?? []
+        var options = ["--append-system-prompt", AgentInstructions.text]
+        if let model = model ?? launch.firstIndex(of: "--model").flatMap({ launch.indices.contains($0 + 1) ? launch[$0 + 1] : nil }) {
+            options += ["--model", model]
+        }
+        return options
     }
 
     // MARK: - Subagents
@@ -149,6 +186,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        if thread.isSideChat { return try sideChat(thread).messages }
         if let parent = thread.parentSessionID, let agentID = Self.subagent(in: thread.sessionID)?.agentID {
             return try await history.subagentTranscript(parent, agentID: agentID) ?? []
         }
@@ -189,8 +227,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func openConversation(_ thread: AgentThread) async throws {
-        // A subagent is read from its file; it has no conversation of its own to open.
+        // A subagent is read from its file and a side chat lives here, so neither has a conversation to open.
         guard !thread.isSubagent else { return }
+        guard !thread.isSideChat else { _ = try sideChat(thread); return }
         guard UUID(uuidString: thread.sessionID) != nil else { throw IntegrationError(message: "Invalid Claude session identifier.") }
         _ = try await bridge.start()
         let sessions = try await listBackgroundSessions()
@@ -211,6 +250,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
+        if let sessionID = thread.sideChatParentSessionID {
+            guard images.isEmpty else { throw IntegrationError(message: "Claude’s side questions take text only.") }
+            let sideChat = try sideChat(thread)
+            return try sideChat.ask(text, options: sideQuestionOptions(about: sessionID, model: sideChat.thread.model))
+        }
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { throw IntegrationError(message: "Claude is not connected.") }
         guard try await hasHooks(jobID: id) else {
@@ -284,6 +328,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func interrupt(_ thread: AgentThread) async throws {
+        if thread.isSideChat { return try sideChat(thread).cancel() }
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { return }
         try await daemon.interrupt(jobID: id)
@@ -296,6 +341,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// session's own, or for a subagent the job of the session running it.
     /// The next prompt resumes it.
     func endBackgroundWork(_ thread: AgentThread) async throws {
+        guard !thread.isSideChat else { return }
         try await stopJob(of: thread.parentSessionID ?? thread.sessionID)
     }
 
@@ -464,7 +510,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             liveStatuses.removeAll()
             backgroundListTask?.cancel()
             statusRevision += 1
+            for sideChat in sideChats.values { sideChat.cancel() }
+            sideChats.removeAll()
         }
+    }
+
+    private func sideChat(_ thread: AgentThread) throws -> ClaudeSideChat {
+        guard let sideChat = sideChats[thread.sessionID] else { throw IntegrationError(message: "This side chat has ended. Start a new one.") }
+        return sideChat
     }
 
     private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {

@@ -27,4 +27,8 @@ public nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
 
     /// Conversation history can be rewound while the agent is idle.
     public static let editMessage = Self(rawValue: 1 << 12)
+    /// A side chat can start about the conversation so far.
+    public static let sideChat = Self(rawValue: 1 << 13)
+    /// Prompts can include images.
+    public static let attachImages = Self(rawValue: 1 << 14)
 }

@@ -12,7 +12,7 @@ struct TaskDetailToolbar: ToolbarContent {
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if !showsTerminal, !TaskDraft.isDraftID(item.task.id), !item.task.isSubagent {
+        if !showsTerminal, !TaskDraft.isDraftID(item.task.id), !item.task.isSubagent, !item.task.isSideChat {
             ToolbarItem {
                 let models = item.host.models(for: item.task.provider)
                 TaskModelMenu(
@@ -36,10 +36,21 @@ struct TaskDetailToolbar: ToolbarContent {
                 ScratchPadButton(isPresented: $showingScratchPad)
             }
         }
-        if item.hasSubagents {
+        if item.hasSubagents || item.task.isSideChat || item.task.actions.contains(.sideChat) || item.sideChat != nil {
             ToolbarSpacer(.fixed)
+        }
+        if item.hasSubagents {
             ToolbarItem {
                 SubagentMenu(item: item) { app.selection = $0 }
+            }
+        }
+        if item.task.isSideChat {
+            ToolbarItem {
+                NewSideChatButton(sideChat: item) { app.selection = $0 }
+            }
+        } else if item.task.actions.contains(.sideChat) || item.sideChat != nil {
+            ToolbarItem {
+                SideChatButton(item: item) { app.selection = $0 }
             }
         }
     }

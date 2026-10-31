@@ -25,6 +25,9 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     /// it. Atrium shows it under that session, to read but not to prompt:
     /// neither provider takes input for a subagent from anyone but its agent.
     var parentSessionID: String?
+    /// For a side chat, the session whose conversation it asks about. Atrium
+    /// shows it under that session until a new one replaces it.
+    var sideChatParentSessionID: String?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }
@@ -32,6 +35,9 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var isSubagent: Bool { parentSessionID != nil }
     /// The ID of the session that started this one as a subagent.
     var parentID: String? { parentSessionID.map { "\(provider.rawValue):\($0)" } }
+    var isSideChat: Bool { sideChatParentSessionID != nil }
+    /// The ID of the session a side chat asks about.
+    var sideChatParentID: String? { sideChatParentSessionID.map { "\(provider.rawValue):\($0)" } }
     /// What a fork of this thread is named: its title, marked as a fork. A fork
     /// of a fork gets another mark.
     var forkTitle: String { "⑂ \(title)" }

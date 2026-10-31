@@ -2,13 +2,15 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's scratch pad, project links and model in one menu, and its subagents when it includes them.
+/// A task's scratch pad, project links and model in one menu, its side chat,
+/// and its subagents when it includes them.
 struct TaskMoreMenu: View {
     let item: HostTask
     let models: [AgentModel]
     let includesSubagents: Bool
     @Binding var showingScratchPad: Bool
     @Environment(\.openSubagent) private var openSubagent
+    @Environment(\.openSideChat) private var openSideChat
 
     var body: some View {
         Menu {
@@ -32,6 +34,11 @@ struct TaskMoreMenu: View {
                     ) { action in
                         item.host.send(.task(id: item.task.id, action: action))
                     }
+                }
+            }
+            if item.sideChat != nil || item.task.actions.contains(.sideChat) {
+                Section {
+                    SideChatButton(item: item, open: openSideChat)
                 }
             }
             if includesSubagents, item.hasSubagents {

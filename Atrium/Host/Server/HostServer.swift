@@ -481,10 +481,10 @@ final class HostServer {
 
     /// What a phone is alerted about, by the same rule as the Mac: subagents
     /// alert as the session they're listed under, and they and ChatGPT's
-    /// sessions only when they need an answer.
+    /// sessions only when they need an answer. Side chats never alert.
     private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
         guard task.origin != nil else { return task }
-        guard task.status == .waiting else { return nil }
+        guard task.status == .waiting, !task.isSideChat else { return nil }
         guard var ancestor = snapshot.listedAncestor(of: task) else { return task }
         ancestor.status = .waiting
         return ancestor

@@ -55,19 +55,20 @@ final class AgentIntegrationStore {
 
     var enabledProviders: [AgentProvider] { providers.filter { enabled.contains($0) } }
     var isEnabled: Bool { !enabled.isEmpty }
-    /// The latest sessions, and the subagents of those shown, which don't count toward the limit.
+    /// The latest sessions, and the subagents and side chats of those shown, which don't count toward the limit.
     func visibleThreads(matching searchText: String) -> [AgentThread] {
         let sessions = enabledProviders.flatMap { provider in
             let matching = threads.filter {
-                $0.provider == provider && !$0.isSubagent && TaskSearch.matches(searchText, in: $0.title, $0.projectName, $0.directory)
+                $0.provider == provider && !$0.isSubagent && !$0.isSideChat
+                    && TaskSearch.matches(searchText, in: $0.title, $0.projectName, $0.directory)
             }
                 .sorted(by: AgentThread.newestFirst)
             // Snoozed threads stay reachable however far newer activity pushes them down.
             return Array(matching.filter { snoozedUntil[$0.id] == nil }.prefix(25)) + matching.filter { snoozedUntil[$0.id] != nil }
         }
         let shown = Set(sessions.map(\.id))
-        let subagents = threads.filter { $0.parentID.map(shown.contains) == true }
-        return (sessions + subagents).sorted(by: AgentThread.newestFirst)
+        let children = threads.filter { ($0.parentID ?? $0.sideChatParentID).map(shown.contains) == true }
+        return (sessions + children).sorted(by: AgentThread.newestFirst)
     }
 
     init(adapters: [any AgentProviderAdapter], defaults: UserDefaults = .standard) {
@@ -199,6 +200,9 @@ final class AgentIntegrationStore {
     private func removeDeletedThread(_ id: String) {
         interactions.removeAll { $0.taskID == id }
         guard deletedThreadIDs.insert(id).inserted else { return }
+        for sideChat in threads where sideChat.sideChatParentID == id {
+            Task { await endSideChat(sideChat) }
+        }
         onThreadRemoved?(id)
         media.forget(id)
         threads.removeAll { $0.id == id }
@@ -616,6 +620,35 @@ final class AgentIntegrationStore {
         guard isCurrent(thread.provider, generation: generation) else { throw CancellationError() }
         registerDraft(fork)
         return fork
+    }
+
+    func canStartSideChat(_ thread: AgentThread) -> Bool {
+        enabled.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.sideChat) == true
+            && !thread.isSubagent && !thread.isSideChat
+            && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
+    }
+
+    /// Starts a side chat about a thread's conversation. It replaces the
+    /// thread's previous one, which ends once the new one has started.
+    func startSideChat(of thread: AgentThread) async throws -> AgentThread {
+        guard canStartSideChat(thread) else { throw IntegrationError(message: "A side chat can’t start here right now.") }
+        let adapter = try enabledAdapter(for: thread.provider)
+        let generation = generations[thread.provider, default: 0]
+        let sideChat = try await adapter.startSideChat(of: thread)
+        guard isCurrent(thread.provider, generation: generation) else {
+            await adapter.endSideChat(sideChat)
+            throw CancellationError()
+        }
+        for previous in threads where previous.sideChatParentID == thread.id && previous.id != sideChat.id {
+            await endSideChat(previous)
+        }
+        registerDraft(sideChat)
+        return sideChat
+    }
+
+    private func endSideChat(_ thread: AgentThread) async {
+        await adapters[thread.provider]?.endSideChat(thread)
+        removeDeletedThread(thread.id)
     }
 
     func createThread(provider: AgentProvider, directory: String, settings: TaskStartSettings? = nil) async throws -> AgentThread {

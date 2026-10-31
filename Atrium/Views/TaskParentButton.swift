@@ -2,16 +2,17 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Returns from a subagent to the session that runs it.
+/// Returns from a subagent or side chat to the session it belongs to.
 struct TaskParentButton: View {
     let parent: WireTask
     let hostID: String
     let open: (TaskRef) -> Void
 
     var body: some View {
-        Button("Back to \(parent.title)", systemImage: "chevron.backward") {
+        Button("Back", systemImage: "chevron.backward") {
             open(TaskRef(hostID: hostID, taskID: parent.id))
         }
+        .labelStyle(.iconOnly)
         .help("Back to \(parent.title)")
     }
 }
