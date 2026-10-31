@@ -7,9 +7,9 @@ import Observation
 /// through its main checkout unless a linked worktree was chosen for it, by
 /// the user or by following a task that works there.
 ///
-/// When the project folder holds several repositories, one of them can be
-/// picked for Files and Search to show on its own; Source Control shows the
-/// picked repository, or else the first.
+/// When the project holds several repositories, Source Control picks one and
+/// shows it, or else the first. Files and Search show the picked one on its
+/// own when it's inside the project folder.
 @MainActor
 @Observable
 public final class ProjectScope {
@@ -43,12 +43,12 @@ public final class ProjectScope {
         return shownWorktrees[repository] ?? repository
     }
 
-    /// Repositories inside the project folder, which Files can show on their own.
+    /// Repositories inside the project folder, which Files and Search show on their own once picked.
     public var nestedRepositories: [GitRepositoryStatus] {
         (repositories ?? []).filter { isNested($0.mainRepositoryURL) }
     }
 
-    /// The picked repository when Files shows it on its own.
+    /// The repository picked in Source Control when Files and Search show it on its own.
     public var selectedNestedRepository: URL? {
         selectedRepository.flatMap { isNested($0) ? $0 : nil }
     }

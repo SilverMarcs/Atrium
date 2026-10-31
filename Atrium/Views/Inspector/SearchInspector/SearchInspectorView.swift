@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
@@ -67,6 +68,12 @@ struct SearchInspectorView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
             .padding(.top, 6)
+        }
+        .safeAreaBar(edge: .bottom) {
+            if (project.scope.repositories?.count ?? 0) > 1 {
+                InspectorRepositoryPicker(project: project)
+                    .padding()
+            }
         }
         // Searching again below the folder now shown, so no result points into another checkout.
         .onChange(of: project.filesRoot) { state.search() }

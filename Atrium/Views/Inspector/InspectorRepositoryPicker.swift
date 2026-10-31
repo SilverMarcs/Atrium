@@ -2,17 +2,15 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Picks the repository the inspector shows when the project has several, for
-/// Source Control and, with the project folder as a choice too, for Files and
-/// Search. Either way it's the project's one picked repository.
+/// Picks the project's repository when it has several, at the foot of Source
+/// Control, Files and Search alike. Files and Search show the one picked on
+/// its own when it's inside the project folder.
 struct InspectorRepositoryPicker: View {
     let project: Project
-    /// Whether the whole project folder is a choice, for Files.
-    var includesProjectFolder = false
 
     var body: some View {
         let scope = project.scope
-        let repositories = includesProjectFolder ? scope.nestedRepositories : scope.repositories ?? []
+        let repositories = scope.repositories ?? []
         let submodules = repositories.filter { repository in
             repositories.contains {
                 $0.mainRepositoryURL != repository.mainRepositoryURL && $0.mainRepositoryURL.contains(repository.mainRepositoryURL)
@@ -21,14 +19,9 @@ struct InspectorRepositoryPicker: View {
         let mainRepositories = repositories.filter { !submodules.contains($0) }
 
         Picker(selection: Binding(
-            get: { includesProjectFolder ? scope.selectedNestedRepository : scope.status?.mainRepositoryURL },
+            get: { scope.status?.mainRepositoryURL },
             set: { scope.selectedRepository = $0 }
         )) {
-            if includesProjectFolder {
-                Label(project.workspace?.name ?? "Project", systemImage: "folder")
-                    .tag(URL?.none)
-            }
-
             ForEach(mainRepositories, id: \.mainRepositoryURL) { repository in
                 RepositoryLabel(repository: repository)
                     .tag(Optional(repository.mainRepositoryURL))

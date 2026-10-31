@@ -2,7 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's scratch pad, project links and model in one menu, its side chat,
+/// A task's model, project links and scratch pad in one menu, its side chat,
 /// and its subagents when it includes them.
 struct TaskMoreMenu: View {
     let item: HostTask
@@ -14,10 +14,16 @@ struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
-            if let workspaceID = item.task.workspaceID {
+            if !models.isEmpty {
                 Section {
-                    ScratchPadButton(isPresented: $showingScratchPad)
+                    TaskModelMenu(
+                        provider: item.task.provider, selection: item.task.modelSelection, models: models
+                    ) { action in
+                        item.host.send(.task(id: item.task.id, action: action))
+                    }
                 }
+            }
+            if let workspaceID = item.task.workspaceID {
                 Section {
                     ProjectLinks(workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID))
                 } header: {
@@ -26,14 +32,8 @@ struct TaskMoreMenu: View {
                         Text(title)
                     }
                 }
-            }
-            if !models.isEmpty {
                 Section {
-                    TaskModelMenu(
-                        provider: item.task.provider, selection: item.task.modelSelection, models: models
-                    ) { action in
-                        item.host.send(.task(id: item.task.id, action: action))
-                    }
+                    ScratchPadButton(isPresented: $showingScratchPad)
                 }
             }
             if item.sideChat != nil || item.task.actions.contains(.sideChat) {

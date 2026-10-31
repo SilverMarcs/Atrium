@@ -4,8 +4,8 @@ import SwiftUI
 
 /// One folder of a project on its host, loaded on its own and kept current
 /// while shown. Folders open as screens of their own; files open a preview.
-/// Without a folder it shows what the project's scope does, and its title
-/// menu picks one of the repositories inside the project folder.
+/// Without a folder it shows what the project's scope does: the repository
+/// picked in Source Control when it's inside the project folder.
 struct FilesScreen: View {
     let host: HostClient
     let workspaceID: UUID
@@ -61,21 +61,16 @@ struct FilesScreen: View {
         }
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
-        .toolbarTitleMenu {
-            if folder == nil, !scope.nestedRepositories.isEmpty {
-                RepositoryPicker(
-                    repositories: scope.nestedRepositories,
-                    projectName: host.workspace(workspaceID)?.name ?? "Project",
-                    selection: Binding(get: { scope.selectedNestedRepository }, set: { scope.selectedRepository = $0 })
-                )
-            }
-        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(showsHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files", systemImage: "line.3.horizontal.decrease") {
+                Button {
                     showsHiddenFiles.toggle()
+                } label: {
+                    // Tinted as the task list's filter is while it's on.
+                    Image(systemName: "doc")
+                        .foregroundStyle(showsHiddenFiles ? .accent : .primary)
                 }
-                .foregroundStyle(showsHiddenFiles ? .accent : .primary)
+                .accessibilityLabel("Hidden Files")
                 .accessibilityValue(showsHiddenFiles ? "Shown" : "Hidden")
             }
         }

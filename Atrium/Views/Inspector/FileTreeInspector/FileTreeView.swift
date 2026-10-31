@@ -63,8 +63,8 @@ struct FileTreeView: View {
                 .padding(.top, 6)
             }
             .safeAreaBar(edge: .bottom) {
-                if !project.scope.nestedRepositories.isEmpty {
-                    InspectorRepositoryPicker(project: project, includesProjectFolder: true)
+                if (project.scope.repositories?.count ?? 0) > 1 {
+                    InspectorRepositoryPicker(project: project)
                         .padding()
                 }
             }

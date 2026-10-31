@@ -1,8 +1,9 @@
 import AtriumClient
 import SwiftUI
 
-/// The places a task's project opens: its commands, source control, files
-/// and search, each in the checkout the project's scope shows.
+/// The places a task's project opens: its commands, source control and
+/// files, each in the checkout the project's scope shows. Search stays
+/// hidden for now.
 struct ProjectLinks: View {
     let workspace: WorkspaceRef
 
@@ -15,9 +16,6 @@ struct ProjectLinks: View {
         }
         NavigationLink(value: Route.files(workspace)) {
             Label("Files", systemImage: "folder")
-        }
-        NavigationLink(value: Route.search(workspace)) {
-            Label("Search", systemImage: "magnifyingglass")
         }
     }
 }
