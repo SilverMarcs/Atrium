@@ -66,8 +66,6 @@ struct SearchInspectorView: View {
                 onSubmit: state.search
             )
             .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .padding(.top, 6)
         }
         .safeAreaBar(edge: .bottom) {
             if (project.scope.repositories?.count ?? 0) > 1 {
