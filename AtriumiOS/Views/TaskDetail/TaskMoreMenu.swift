@@ -2,7 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's model, project links and scratch pad in one menu, and its delegated sessions when it includes them.
+/// A task's scratch pad, project links and model in one menu, and its delegated sessions when it includes them.
 struct TaskMoreMenu: View {
     let item: HostTask
     let models: [AgentModel]
@@ -12,6 +12,17 @@ struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
+            if let workspaceID = item.task.workspaceID {
+                Section {
+                    ScratchPadButton(isPresented: $showingScratchPad)
+                }
+                Section {
+                    ProjectLinks(
+                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
+                        root: item.host.workspace(workspaceID)?.path ?? ""
+                    )
+                }
+            }
             if !models.isEmpty {
                 Section {
                     TaskModelMenu(
@@ -19,15 +30,6 @@ struct TaskMoreMenu: View {
                     ) { action in
                         item.host.send(.task(id: item.task.id, action: action))
                     }
-                }
-            }
-            if let workspaceID = item.task.workspaceID {
-                Section {
-                    ProjectLinks(
-                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-                        root: item.host.workspace(workspaceID)?.path ?? ""
-                    )
-                    ScratchPadButton(isPresented: $showingScratchPad)
                 }
             }
             if includesDelegatedTasks, item.hasDelegatedTasks {

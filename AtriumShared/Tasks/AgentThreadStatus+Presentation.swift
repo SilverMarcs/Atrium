@@ -2,15 +2,16 @@ import AtriumProtocol
 import SwiftUI
 
 extension AgentThreadStatus {
+    /// A plain glyph for the status, without a circle or other shape around it.
     var systemImage: String {
         switch self {
-        case .processing: "ellipsis.circle"
-        case .waiting: "exclamationmark.bubble"
-        case .done: "checkmark.circle"
-        case .idle: "circle"
-        case .failed: "xmark.octagon"
-        case .stopped: "stop.circle"
-        case .unknown: "bolt.horizontal.circle"
+        case .processing: "progress.indicator"
+        case .waiting: "exclamationmark"
+        case .done: "checkmark"
+        case .idle: "minus"
+        case .failed: "xmark"
+        case .stopped: "stop.fill"
+        case .unknown: "bolt.horizontal"
         }
     }
 
