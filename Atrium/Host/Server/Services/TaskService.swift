@@ -18,7 +18,7 @@ struct TaskService {
             case .rewind(let messageID):
                 do {
                     let result = try await integrations.rewind(thread, before: messageID)
-                    return .rewound(messages: result.messages, images: result.images)
+                    return .rewound(messages: result.messages.foldingReports(), images: result.images)
                 } catch { return .failed(message: error.localizedDescription) }
             case .respond(let interactionID, let decision):
                 guard let request = integrations.interactions.first(where: { $0.id == interactionID && $0.taskID == id }) else {

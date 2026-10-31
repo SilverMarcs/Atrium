@@ -42,7 +42,7 @@ final class TranscriptMedia {
                 guard !keys.contains(page.key), let html = ChatPages.html(forKey: page.key) else { continue }
                 keys.insert(page.key)
                 paths.formUnion(Self.imagePaths(inPage: html, directory: thread.directory))
-            case .tools:
+            case .tools, .report:
                 continue
             }
         }

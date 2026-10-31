@@ -46,6 +46,10 @@ nonisolated enum CodexTranscript {
                     if !text.isEmpty || !images.isEmpty {
                         messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images, editTarget: editTarget, isSteer: isSteer))
                     }
+                } else if let report = report(in: item) {
+                    // A subagent reporting back is input to the agent, like Atrium's relayed results.
+                    flushAssistant()
+                    messages.append(TranscriptMessage(id: id, role: .user, blocks: [], relay: report))
                 } else if item["type"] as? String == "agentMessage" {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
                 } else if let page = page(in: item) {
@@ -59,6 +63,15 @@ nonisolated enum CodexTranscript {
             flushAssistant()
         }
         return messages
+    }
+
+    /// A subagent's report reaching its session. The host names it as it lists
+    /// the subagent's thread, and by the path Codex gave it until then.
+    private static func report(in item: [String: Any]) -> TranscriptRelay? {
+        guard item["type"] as? String == "subAgentActivity", item["kind"] as? String == "completed" else { return nil }
+        let path = (item["agentPath"] as? String)?.split(separator: "/").last.map(String.init)
+        let name = [AgentProvider.codex.name, path].compactMap(\.self).joined(separator: " · ")
+        return TranscriptRelay(kind: .results, senders: [.init(name: name, sessionID: item["agentThreadId"] as? String)])
     }
 
     /// The page a finished `render_html` call showed.

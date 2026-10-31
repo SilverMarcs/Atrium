@@ -32,11 +32,12 @@ struct AssistantStepsButton: View {
         }
     }
 
-    /// Notes folded before any tool call has run are counted instead.
+    /// Notes and reports folded before any tool call has run are counted instead.
     private var label: String {
         let toolCount = steps.reduce(0) { $0 + $1.toolCount }
         guard toolCount == 0 else { return TranscriptBlock.toolCalls(toolCount) }
-        return steps.count == 1 ? "1 note" : "\(steps.count) notes"
+        let noun = steps.allSatisfy { $0.text != nil } ? "note" : "step"
+        return steps.count == 1 ? "1 \(noun)" : "\(steps.count) \(noun)s"
     }
 
     /// Each kind of step once, in the order it first happened.

@@ -8,10 +8,14 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
     case tools(count: Int, id: String)
     /// A page the agent showed with Atrium's `render_html` tool.
     case page(TranscriptPage, id: String)
+    /// Another agent reporting back or asking a question while the agent
+    /// worked, such as one of its subagents or a session it delegated to. Only
+    /// who it was is kept: what it said is the agent's input, not its reply.
+    case report(TranscriptRelay.Sender, id: String)
 
     public var id: String {
         switch self {
-        case .text(_, let id), .tools(_, let id), .page(_, let id): id
+        case .text(_, let id), .tools(_, let id), .page(_, let id), .report(_, let id): id
         }
     }
 
@@ -30,6 +34,11 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
         if case .page(let page, _) = self { page } else { nil }
     }
 
+    /// The agent a report block names.
+    public var reporter: TranscriptRelay.Sender? {
+        if case .report(let agent, _) = self { agent } else { nil }
+    }
+
     private enum TextCodingKeys: String, CodingKey {
         case _0 = "text"
         case id
@@ -37,6 +46,11 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
 
     private enum PageCodingKeys: String, CodingKey {
         case _0 = "page"
+        case id
+    }
+
+    private enum ReportCodingKeys: String, CodingKey {
+        case _0 = "agent"
         case id
     }
 }

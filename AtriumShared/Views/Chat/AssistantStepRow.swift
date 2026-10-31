@@ -6,7 +6,7 @@ struct AssistantStepRow: View {
 
     var body: some View {
         Label {
-            Text(step.text ?? TranscriptBlock.toolCalls(step.toolCount))
+            Text(step.stepTitle)
                 .foregroundStyle(step.text == nil ? .secondary : .primary)
                 #if os(macOS)
                 .textSelection(.enabled)

@@ -202,9 +202,12 @@ final class Orchestrator {
 
     /// The chain a session's current work belongs to, and how deep in it:
     /// that of the relayed prompt it last took, or none when the user's was last.
+    /// Its own subagents reporting back carry no Atrium task, so they don't count.
     private func context(of sessionID: String?) async -> (chainID: UUID, depth: Int)? {
         guard let thread = thread(sessionID),
-              let relay = (try? await integrations.transcript(for: thread))?.last(where: { $0.role == .user })?.relay else { return nil }
+              let relay = (try? await integrations.transcript(for: thread))?.last(where: { message in
+                  message.role == .user && message.relay.map { !($0.taskIDs + $0.questionTaskIDs).isEmpty } ?? true
+              })?.relay else { return nil }
         let tasks = (relay.taskIDs + relay.questionTaskIDs).compactMap { store.tasks[$0] }
         guard let first = tasks.first else { return nil }
         // A delegated task is worked on at its own depth; its result returns to the level above.
@@ -364,8 +367,9 @@ final class Orchestrator {
     /// The text after the turn's last tool calls: the agent's answer rather
     /// than its narration along the way.
     static func finalReply(_ messages: [TranscriptMessage]) -> String? {
-        let blocks = messages.filter { $0.role == .assistant }.flatMap(\.blocks)
-        let lastTools = blocks.lastIndex { $0.toolCount > 0 }
+        // A report from the agent's own subagent ends a step, like a tool call.
+        let blocks = messages.foldingReports().filter { $0.role == .assistant }.flatMap(\.blocks)
+        let lastTools = blocks.lastIndex { $0.toolCount > 0 || $0.reporter != nil }
         let tail = blocks[(lastTools.map { $0 + 1 } ?? 0)...].compactMap(\.text)
         let text = (tail.isEmpty ? blocks.compactMap(\.text).suffix(1) : ArraySlice(tail)).joined(separator: "\n\n")
         return text.isEmpty ? nil : text

@@ -58,10 +58,12 @@ nonisolated enum ClaudeTranscript {
                     }
                 }
                 let images = imageData(in: record).compactMap { TranscriptImage.thumbnail($0) }
-                let text = promptText(message?["content"]) ?? ""
+                let typed = prompt(message?["content"]).map { isCoordinatorMessage(record) ? (text: coordinatorText($0.text), relay: $0.relay) : $0 }
+                let text = typed?.text ?? ""
                 guard !text.isEmpty || !images.isEmpty else { continue }
                 flushAssistant()
-                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: uuid)], images: images.isEmpty ? nil : images, editTarget: uuid))
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: uuid)], images: images.isEmpty ? nil : images,
+                                                  editTarget: uuid, relay: typed?.relay))
             case "attachment":
                 if let attachment = record["attachment"] as? [String: Any], attachment["type"] as? String == "file",
                    let content = attachment["content"] as? [String: Any], content["type"] as? String == "image",
@@ -80,9 +82,9 @@ nonisolated enum ClaudeTranscript {
                     continue
                 }
                 // A prompt sent while the agent works joins its turn as an attachment.
-                guard let text = steeringText(record["attachment"]) else { continue }
+                guard let prompt = steeringPrompt(record["attachment"]) else { continue }
                 flushAssistant()
-                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(text, id: uuid)], editTarget: uuid, isSteer: true))
+                messages.append(TranscriptMessage(id: uuid, role: .user, blocks: [.text(prompt.text, id: uuid)], editTarget: uuid, isSteer: true, relay: prompt.relay))
             case "assistant":
                 var blocks = assistant?.blocks ?? []
                 for (index, content) in (message?["content"] as? [[String: Any]] ?? []).enumerated() {
@@ -98,7 +100,9 @@ nonisolated enum ClaudeTranscript {
             }
         }
         flushAssistant()
-        let prompts = messages.indices.filter { messages[$0].role == .user }
+        let prompts = messages.indices.filter { index in
+            messages[index].role == .user && startsTurn((messages[index].blocks.first?.text ?? "", messages[index].relay))
+        }
         guard prompts.count > turnLimit else { return messages }
         return Array(messages[prompts[prompts.count - turnLimit]...])
     }
@@ -110,10 +114,18 @@ nonisolated enum ClaudeTranscript {
         let isSteering = contains(attachmentMarker, in: line) && contains(queuedCommandMarker, in: line)
         guard isPrompt || isSteering, let record = record(in: line) else { return false }
         switch record["type"] as? String {
-        case "user": return promptText((record["message"] as? [String: Any])?["content"]) != nil || !imageData(in: record).isEmpty
-        case "attachment": return steeringText(record["attachment"]) != nil
+        case "user":
+            guard let prompt = prompt((record["message"] as? [String: Any])?["content"]) else { return !imageData(in: record).isEmpty }
+            return startsTurn(prompt)
+        case "attachment": return steeringPrompt(record["attachment"]).map(startsTurn) ?? false
         default: return false
         }
+    }
+
+    /// Agents reporting back join the turn they arrive in, so they never push
+    /// the user's own turns out of the window.
+    private static func startsTurn(_ prompt: (text: String, relay: TranscriptRelay?)) -> Bool {
+        prompt.relay?.kind != .results && !prompt.text.hasPrefix("<\(RelayedMessage.resultsTag)>")
     }
 
     /// The identifier of the record Claude saves once a turn's Stop hooks finish.
@@ -135,14 +147,21 @@ nonisolated enum ClaudeTranscript {
 
     /// The line's record, unless it was injected or belongs to a sub-agent
     /// when reading its session, or to the session when reading a sub-agent.
+    /// A subagent's later instructions from its session are kept, though Claude
+    /// marks them injected.
     private static func record(in line: Data, sidechain: Bool = false) -> [String: Any]? {
         guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
-              (record["isSidechain"] as? Bool == true) == sidechain, record["isMeta"] as? Bool != true else { return nil }
+              (record["isSidechain"] as? Bool == true) == sidechain,
+              record["isMeta"] as? Bool != true || isCoordinatorMessage(record) else { return nil }
         return record
     }
 
-    /// A typed prompt, or nil for tool results, slash-command output and injected context.
-    private static func promptText(_ content: Any?) -> String? {
+    // MARK: - Claude's frames
+
+    /// What a user turn says: a prompt typed or relayed by Atrium, or subagents
+    /// reporting back, with the relay naming them. Nil for tool results,
+    /// slash-command output, injected context and other sessions' messages.
+    static func prompt(_ content: Any?) -> (text: String, relay: TranscriptRelay?)? {
         let text: String
         if let string = content as? String {
             text = string
@@ -153,24 +172,83 @@ nonisolated enum ClaudeTranscript {
             return nil
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reports = subagentReports(in: trimmed)
+        if !reports.isEmpty {
+            return (reports.map(\.result).joined(separator: "\n\n---\n\n"),
+                    TranscriptRelay(kind: .results, senders: reports.map { .init(name: $0.agent) }))
+        }
         guard !trimmed.isEmpty, !trimmed.hasPrefix("<") || RelayedMessage.isRelayed(trimmed),
-              !trimmed.hasPrefix("[Request interrupted") else { return nil }
-        return trimmed
+              !trimmed.hasPrefix("[Request interrupted"), !isPeerMessage(trimmed) else { return nil }
+        return (trimmed, nil)
     }
 
-    /// A prompt typed mid-turn, or nil for task notifications and messages from other sessions.
-    private static func steeringText(_ attachment: Any?) -> String? {
-        guard let attachment = attachment as? [String: Any],
-              attachment["type"] as? String == "queued_command",
-              attachment["commandMode"] as? String == "prompt",
-              ((attachment["origin"] as? [String: Any])?["kind"] as? String ?? "human") == "human" else { return nil }
-        return promptText(attachment["prompt"])
+    /// A prompt that joined a turn mid-way: one typed or relayed, a subagent
+    /// reporting back, or a subagent's instruction from its session. Nil for other
+    /// task notifications and messages from other sessions.
+    private static func steeringPrompt(_ attachment: Any?) -> (text: String, relay: TranscriptRelay?)? {
+        guard let attachment = attachment as? [String: Any], attachment["type"] as? String == "queued_command" else { return nil }
+        switch ((attachment["origin"] as? [String: Any])?["kind"] as? String ?? "human", attachment["commandMode"] as? String) {
+        case ("human", "prompt"), (_, "task-notification"), ("coordinator", _): return prompt(attachment["prompt"])
+        default: return nil
+        }
     }
 
-    /// The block a tool call shows as: a page from `render_html`, or the images
-    /// `SendUserFile` sent, written as Markdown. Nil for a call that's only counted.
+    /// The subagents a task notification says finished, with their reports.
+    /// Claude notifies the same way when a background command, a monitor or a
+    /// subagent that hasn't reported yet stops; none of those report back.
+    private static func subagentReports(in text: String) -> [(agent: String, result: String)] {
+        guard text.hasPrefix("<task-notification>") else { return [] }
+        return text.split(separator: "</task-notification>").compactMap { notification in
+            guard let summary = element("summary", in: notification), summary.hasPrefix("Agent \"") else { return nil }
+            let quoted = summary.dropFirst("Agent \"".count)
+            guard let end = quoted.lastIndex(of: "\""),
+                  [" finished", " completed", " failed"].contains(String(quoted[quoted.index(after: end)...])) else { return nil }
+            return ("\(AgentProvider.claude.name) · \(xmlUnescaped(String(quoted[..<end])))", element("result", in: notification) ?? "")
+        }
+    }
+
+    /// A message from another of the user's Claude sessions, such as a subagent
+    /// handing back its report: its task notification stands for it.
+    private static func isPeerMessage(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false)
+        guard let first = lines.first else { return false }
+        return first.hasPrefix("<agent-message ")
+            || first == "Another Claude session sent a message:" && lines.count > 1 && lines[1].hasPrefix("<agent-message ")
+    }
+
+    private static func isCoordinatorMessage(_ record: [String: Any]) -> Bool {
+        (record["origin"] as? [String: Any])?["kind"] as? String == "coordinator"
+    }
+
+    /// An instruction a subagent took between turns, without the line Claude
+    /// introduces it with and the reminder it closes with.
+    private static func coordinatorText(_ text: String) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.first?.hasPrefix("The coordinator sent a message") == true { lines.removeFirst() }
+        if lines.last == "Address this before completing your current task." { lines.removeLast() }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func element(_ name: String, in text: Substring) -> String? {
+        guard let start = text.range(of: "<\(name)>"), let end = text.range(of: "</\(name)>", range: start.upperBound..<text.endIndex) else { return nil }
+        return text[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func xmlUnescaped(_ text: String) -> String {
+        text.replacing("&quot;", with: "\"").replacing("&lt;", with: "<").replacing("&gt;", with: ">").replacing("&amp;", with: "&")
+    }
+
+    // MARK: - Tool calls
+
+    /// The block a tool call shows as: a page from `render_html`, the images
+    /// `SendUserFile` sent, written as Markdown, or the report a subagent hands
+    /// back, which closes its reply. Nil for a call that's only counted.
     static func block(forTool name: String?, input: Any?, directory: String?, id: String) -> TranscriptBlock? {
         switch name {
+        case "SubagentHandback":
+            guard let report = (input as? [String: Any])?["message"] as? String,
+                  !report.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return .text(report, id: id)
         case PageTools.claudeRenderHTML:
             return ChatPages.page(arguments: input).map { .page($0, id: id) }
         case "SendUserFile":

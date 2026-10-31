@@ -52,9 +52,8 @@ final class TranscriptFeed: TopicFeed {
         guard let thread = integrations.threads.first(where: { $0.id == taskID }) else { return }
         let event: HostEvent
         do {
-            // Results relayed back to a session stay out of its chat: its own reply tells of them.
-            let messages = try await integrations.transcript(for: thread).filter { $0.relay?.kind != .results }
-            event = .transcript(taskID: taskID, messages: messages)
+            // Other agents' reports fold into the reply, which tells of them.
+            event = .transcript(taskID: taskID, messages: try await integrations.transcript(for: thread).foldingReports())
         } catch {
             event = .transcriptUnavailable(taskID: taskID, message: error.localizedDescription)
         }

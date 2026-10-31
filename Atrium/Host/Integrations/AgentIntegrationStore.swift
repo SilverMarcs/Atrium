@@ -679,20 +679,28 @@ final class AgentIntegrationStore {
         interactions.removeAll { $0.id == request.id }
     }
 
-    /// Prompts Atrium relayed from another agent show as relayed, holding only what was relayed.
+    /// Prompts another agent wrote show as relayed, holding only what was relayed.
     /// Reading a transcript records the media it shows, for clients to fetch.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
-        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { source in
-            guard source.role == .user, let first = source.blocks.first, let text = first.text,
-                  let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text)
-            else { return source }
-            var message = source
-            message.blocks = [.text(relayed.body, id: first.id)]
-            message.relay = relayed.relay
-            return message
-        }
+        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
         media.record(messages, of: thread)
         return messages
+    }
+
+    private func relayed(_ source: TranscriptMessage, in thread: AgentThread) -> TranscriptMessage {
+        var message = source
+        if source.role == .user, let first = source.blocks.first, let text = first.text,
+           let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
+            message.blocks = [.text(relayed.body, id: first.id)]
+            message.relay = relayed.relay
+        }
+        // A subagent is named as its thread is listed, once it has been.
+        for index in message.relay?.senders.indices ?? 0..<0 {
+            guard let id = message.relay?.senders[index].sessionID,
+                  let agent = threads.first(where: { $0.provider == thread.provider && $0.sessionID == id }) else { continue }
+            message.relay?.senders[index].name = "\(agent.provider.name) · \(agent.title)"
+        }
+        return message
     }
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
@@ -708,7 +716,8 @@ final class AgentIntegrationStore {
             throw IntegrationError(message: "Wait for the agent to finish or stop it before editing a message.")
         }
         defer { rewindingThreadIDs.remove(thread.id) }
-        return try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
+        let rewound = try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
+        return (rewound.messages.map { relayed($0, in: thread) }, rewound.images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

@@ -687,7 +687,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             if let index = outgoing[sessionID]?.firstIndex(where: { $0.wireText == text }) {
                 pending = outgoing[sessionID]?.remove(at: index)
             }
-            transcript.prompt(pending?.displayText ?? text, id: event["prompt_id"] as? String ?? UUID().uuidString, images: pending?.images ?? [])
+            // Claude submits injected context and other sessions' messages as prompts too; like its saved history, the chat leaves them out.
+            if let shown = pending.map({ (text: $0.displayText, relay: TranscriptRelay?.none) }) ?? ClaudeTranscript.prompt(text) {
+                transcript.prompt(shown.text, id: event["prompt_id"] as? String ?? UUID().uuidString, images: pending?.images ?? [], relay: shown.relay)
+            }
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now, startsNewTurn: true)))
         case "MessageDisplay": transcript.display(event)
         case "PreToolUse":

@@ -451,7 +451,7 @@ final class OrchestrationTools: ToolKit {
         let tools = message.blocks.reduce(0) { $0 + $1.toolCount }
         return MessageInfo(
             id: message.id, role: message.role.rawValue, text: text,
-            toolCalls: tools > 0 ? tools : nil, relayedFrom: message.relay?.sender
+            toolCalls: tools > 0 ? tools : nil, relayedFrom: message.relay.map { $0.senders.map(\.name).joined(separator: ", ") }
         )
     }
 

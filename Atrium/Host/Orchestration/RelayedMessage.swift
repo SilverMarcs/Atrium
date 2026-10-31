@@ -64,7 +64,7 @@ nonisolated enum RelayedMessage {
             var body = Array(lines.dropFirst())
             if body.last == "</\(taskTag)>" { body.removeLast() }
             if let blank = body.firstIndex(of: "") { body.removeFirst(blank + 1) }
-            return (TranscriptRelay(kind: .task, sender: from, taskIDs: [id]), unescapedBody(body))
+            return (TranscriptRelay(kind: .task, senders: [.init(name: from)], taskIDs: [id]), unescapedBody(body))
         }
         guard first == "<\(resultsTag)>" else { return nil }
         var results: [(id: String, agent: String, status: String, isQuestion: Bool, lines: [String])] = []
@@ -78,14 +78,18 @@ nonisolated enum RelayedMessage {
             }
         }
         guard !results.isEmpty else { return nil }
-        let agents = Set(results.map(\.agent))
+        var senders: [TranscriptRelay.Sender] = []
+        for result in results {
+            let sender = TranscriptRelay.Sender(name: result.agent, asksQuestion: result.isQuestion)
+            if !senders.contains(sender) { senders.append(sender) }
+        }
         let body = results.map { result in
             let status = result.status == DelegatedTask.State.completed.rawValue ? "" : " (\(result.status.replacing("_", with: " ")))"
             let heading = results.count > 1 || !status.isEmpty ? "**\(result.agent)**\(status)\n\n" : ""
             return heading + unescapedBody(result.lines)
         }.joined(separator: "\n\n---\n\n")
         // Only results count as delivered; a question leaves its task running.
-        return (TranscriptRelay(kind: .results, sender: agents.count == 1 ? agents.first ?? "" : "\(agents.count) agents",
+        return (TranscriptRelay(kind: .results, senders: senders,
                                 taskIDs: results.filter { !$0.isQuestion }.map(\.id),
                                 questionTaskIDs: results.filter(\.isQuestion).map(\.id)), body)
     }

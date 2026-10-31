@@ -3,7 +3,7 @@ import Foundation
 
 /// Splits a reply into the text the timeline shows and the steps folded behind
 /// it. A finished reply shows its closing text, written after the last tool
-/// call or page. A running one shows its latest notes, so the work so far
+/// call, report or page. A running one shows its latest notes, so the work so far
 /// stays short. Pages the agent showed never fold: they stay above the text,
 /// where the agent was told they appear.
 struct AssistantReply {
@@ -17,8 +17,10 @@ struct AssistantReply {
     /// Every page the agent showed, in order.
     let pages: [TranscriptBlock]
 
-    var hasIntermediaryText: Bool {
-        steps.contains { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+    /// Whether the steps hold more than counted tool calls: folded notes, or
+    /// agents that reported back.
+    var hasStepsToRead: Bool {
+        steps.contains { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false || $0.reporter != nil }
     }
 
     var toolCount: Int {
