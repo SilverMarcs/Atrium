@@ -55,9 +55,11 @@ final class AtriumToolServer {
     /// Every tool name, for agents whose own permission rules list them.
     var allToolNames: [String] { kits.flatMap { $0.tools.map(\.name) } }
 
-    /// The groups a caller may use right now.
+    /// The groups a caller may use right now. Settings turn groups on and off
+    /// for sessions; ChatGPT always has the orchestration tools, as turning its
+    /// access on is what it's for.
     func groups(for caller: ToolCaller) -> Set<ToolGroup> {
-        ToolGroup.enabled(in: defaults).intersection(caller.permittedGroups)
+        caller == .remote ? caller.permittedGroups : ToolGroup.enabled(in: defaults).intersection(caller.permittedGroups)
     }
 
     func respond(to request: BridgeRequest) async -> BridgeResponse {
