@@ -32,7 +32,7 @@ final class ClaudeLiveTranscript {
             messages.append(TranscriptMessage(id: id, role: .assistant, blocks: []))
             trim()
         }
-        if event["tool_name"] as? String == AtriumToolServer.claudeRenderHTML, let page = ChatPageStore.page(arguments: event["tool_input"]) {
+        if event["tool_name"] as? String == PageTools.claudeRenderHTML, let page = ChatPageStore.page(arguments: event["tool_input"]) {
             messages[messages.count - 1].blocks.append(.page(page, id: id))
         } else {
             messages[messages.count - 1].blocks.appendToolCall(id: id)

@@ -13,6 +13,7 @@ struct TasksScreen: View {
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
     @State private var isSettledExpanded = false
+    @State private var isChatGPTExpanded = false
     @State private var showingProjects = false
     @State private var taskToRename: HostTask?
     @State private var taskToDelete: HostTask?
@@ -20,9 +21,11 @@ struct TasksScreen: View {
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
-        let tasks = hosts.tasks.filter { item in
+        let matches = { (item: HostTask) in
             TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.workspace?.name, item.host.name)
         }
+        let tasks = hosts.listedTasks.filter(matches)
+        let chatGPTTasks = hosts.chatGPTTasks.filter(matches)
         let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.snoozedUntil != nil })
         let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
 
@@ -40,10 +43,13 @@ struct TasksScreen: View {
             if filter == .all || filter == .settled {
                 collapsibleSection("Settled", tasks: sections.settled, isExpanded: $isSettledExpanded, isSearching: isSearching)
             }
+            if filter == .all {
+                collapsibleSection("ChatGPT", tasks: chatGPTTasks, isExpanded: $isChatGPTExpanded, isSearching: isSearching)
+            }
         }
         .contentMargins(.top, isPhone ? 10 : 0)
         .listStyle(.sidebar)
-        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id)])
+        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id), chatGPTTasks.map(\.id)])
         .animation(.default, value: filter)
         .refreshable {
             await withDiscardingTaskGroup { group in
@@ -92,7 +98,8 @@ struct TasksScreen: View {
             }
         }
         .overlay {
-            TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching, isEmpty: visibleTasksAreEmpty(sections))
+            TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching,
+                             isEmpty: visibleTasksAreEmpty(sections) && (filter != .all || chatGPTTasks.isEmpty))
         }
         .sheet(isPresented: $showingProjects) {
             ProjectsSheet(hosts: hosts)

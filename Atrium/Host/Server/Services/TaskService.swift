@@ -82,18 +82,6 @@ struct TaskService {
         }
     }
 
-    func interrupt(task id: String) async -> HostReply {
-        guard let thread = integrations.threads.first(where: { $0.id == id }) else {
-            return .failed(message: "This task no longer exists.")
-        }
-        do {
-            try await sessions.interrupt(thread)
-            return .done
-        } catch {
-            return .failed(message: error.localizedDescription)
-        }
-    }
-
     func compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil) async -> HostReply {
         guard integrations.enabledProviders.contains(provider) else {
             return .failed(message: "That agent isn’t enabled on this host.")

@@ -31,8 +31,9 @@ nonisolated enum ClaudeTranscript {
     private static let queuedCommandMarker = Data(#""type":"queued_command""#.utf8)
     private static let stopMarker = Data(#""subtype":"stop_hook_summary""#.utf8)
 
-    /// The last `turnLimit` turns of the lines, oldest first.
-    static func messages(fromLines lines: some Sequence<Data>) -> [TranscriptMessage] {
+    /// The last `turnLimit` turns of the lines, oldest first. A subagent's
+    /// transcript is all sidechain records, which a session's leaves out.
+    static func messages(fromLines lines: some Sequence<Data>, sidechain: Bool = false) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
         var assistant: TranscriptMessage?
         func flushAssistant() {
@@ -40,7 +41,7 @@ nonisolated enum ClaudeTranscript {
             assistant = nil
         }
         for line in lines {
-            guard let record = record(in: line), let uuid = record["uuid"] as? String else { continue }
+            guard let record = record(in: line, sidechain: sidechain), let uuid = record["uuid"] as? String else { continue }
             let message = record["message"] as? [String: Any]
             switch record["type"] as? String {
             case "user":
@@ -118,10 +119,11 @@ nonisolated enum ClaudeTranscript {
         }
     }
 
-    /// The line's record, unless it belongs to a sub-agent or was injected.
-    private static func record(in line: Data) -> [String: Any]? {
+    /// The line's record, unless it was injected or belongs to a sub-agent
+    /// when reading its session, or to the session when reading a sub-agent.
+    private static func record(in line: Data, sidechain: Bool = false) -> [String: Any]? {
         guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
-              record["isSidechain"] as? Bool != true, record["isMeta"] as? Bool != true else { return nil }
+              (record["isSidechain"] as? Bool == true) == sidechain, record["isMeta"] as? Bool != true else { return nil }
         return record
     }
 
@@ -137,7 +139,8 @@ nonisolated enum ClaudeTranscript {
             return nil
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("<"), !trimmed.hasPrefix("[Request interrupted") else { return nil }
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("<") || RelayedMessage.isRelayed(trimmed),
+              !trimmed.hasPrefix("[Request interrupted") else { return nil }
         return trimmed
     }
 
@@ -156,7 +159,7 @@ nonisolated enum ClaudeTranscript {
             guard let text = content["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             blocks.append(.text(text, id: id))
         case "tool_use":
-            if content["name"] as? String == AtriumToolServer.claudeRenderHTML, let page = ChatPageStore.page(arguments: content["input"]) {
+            if content["name"] as? String == PageTools.claudeRenderHTML, let page = ChatPageStore.page(arguments: content["input"]) {
                 blocks.append(.page(page, id: id))
             } else {
                 blocks.appendToolCall(id: id)

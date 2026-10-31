@@ -11,6 +11,7 @@ struct TaskListView: View {
     @State private var taskToRename: HostTask?
     @State private var isSettledExpanded = false
     @State private var isSnoozedExpanded = false
+    @State private var isChatGPTExpanded = false
 
     private var hosts: HostDirectory { app.hosts }
 
@@ -19,9 +20,11 @@ struct TaskListView: View {
     }
 
     private var tasks: [HostTask] {
-        hosts.tasks.filter { item in
-            TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.host.name)
-        }
+        hosts.listedTasks.filter(matchesSearch)
+    }
+
+    private func matchesSearch(_ item: HostTask) -> Bool {
+        TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.host.name)
     }
 
     /// Hosts listed whose agents couldn't load their tasks.
@@ -36,8 +39,10 @@ struct TaskListView: View {
     var body: some View {
         let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.isSnoozed })
 
-        @Bindable var app = app
-        List(selection: $app.selection) {
+        let chatGPTTasks = hosts.chatGPTTasks.filter(matchesSearch)
+
+        // A delegated session on screen isn't listed, so no row is selected and choosing its session's row goes back.
+        List(selection: Bindable(app).selection) {
             rows(sections.active)
             if !sections.snoozed.isEmpty {
                 Section("Snoozed", isExpanded: Binding(get: { isSearching || isSnoozedExpanded }, set: { isSnoozedExpanded = $0 }).animation()) {
@@ -49,11 +54,16 @@ struct TaskListView: View {
                     rows(sections.settled)
                 }
             }
+            if !chatGPTTasks.isEmpty {
+                Section("ChatGPT", isExpanded: Binding(get: { isSearching || isChatGPTExpanded }, set: { isChatGPTExpanded = $0 }).animation()) {
+                    rows(chatGPTTasks)
+                }
+            }
         }
         .listStyle(.sidebar)
-        .animation(.default, value: sections.ids)
+        .animation(.default, value: sections.ids + chatGPTTasks.map(\.id))
         .environment(\.sidebarRowSize, .medium)
-        .overlay { placeholder(isEmpty: tasks.isEmpty) }
+        .overlay { placeholder(isEmpty: tasks.isEmpty && chatGPTTasks.isEmpty) }
         .toolbar {
             if hosts.hosts.count > 1 {
                 ToolbarItem {

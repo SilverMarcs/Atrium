@@ -97,6 +97,17 @@ final class HostDirectory {
         .sorted { WireTask.newestFirst($0.task, $1.task) }
     }
 
+    /// The tasks lists show on their own. A session another one delegated work
+    /// to is shown in that session instead, and ChatGPT's sessions apart.
+    var listedTasks: [HostTask] {
+        tasks.filter { $0.task.origin != .chatGPT && $0.parent == nil }
+    }
+
+    /// Sessions ChatGPT started, which lists keep out of the way.
+    var chatGPTTasks: [HostTask] {
+        tasks.filter { $0.task.origin == .chatGPT }
+    }
+
     /// Whether every visible host has sent its tasks at least once.
     var hasLoadedTasks: Bool {
         visibleHosts.allSatisfy { $0.tasks != nil || !$0.isConnected }

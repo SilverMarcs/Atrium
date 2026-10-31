@@ -32,6 +32,8 @@ struct CompanionRootView: View {
                             RouteDestination(route: route)
                         }
                     }
+                    // Delegated sessions open over the session that asked, so Back returns to it.
+                    .environment(\.openDelegatedTask) { ref in detailPath.append(.task(ref)) }
                 }
             } else {
                 NavigationStack {
@@ -108,6 +110,8 @@ private struct RouteDestination: View {
             if let host = hosts.host(ref.hostID) { FilePreviewScreen(host: host, workspaceID: ref.workspaceID, path: path, line: line) }
         case .search(let ref):
             if let host = hosts.host(ref.hostID) { SearchScreen(host: host, workspaceID: ref.workspaceID) }
+        case .task(let ref):
+            TaskDetailScreen(ref: ref)
         }
     }
 }

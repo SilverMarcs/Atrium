@@ -7,6 +7,7 @@ struct TaskDetailScreen: View {
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
+    @Environment(\.openDelegatedTask) private var openDelegatedTask
     let ref: TaskRef
     @State private var showingScratchPad = false
     /// Shared by every task the screen shows, so the composer's field
@@ -32,7 +33,7 @@ struct TaskDetailScreen: View {
     /// Drafts choose a model beside the composer; only created chats also
     /// show the picker in the detail toolbar or More menu.
     private var models: [AgentModel] {
-        guard let task, !TaskDraft.isDraftID(task.id) else { return [] }
+        guard let task, !TaskDraft.isDraftID(task.id), !task.isSubagent else { return [] }
         return host?.models(for: task.provider) ?? []
     }
 
@@ -94,7 +95,7 @@ struct TaskDetailScreen: View {
                     }
                 }
                 if isPhone {
-                    if task.workspaceID != nil || !models.isEmpty {
+                    if task.workspaceID != nil || !models.isEmpty || item?.hasDelegatedTasks == true {
                         ToolbarItem(placement: .primaryAction) {
                             Menu {
                                 if !models.isEmpty {
@@ -110,14 +111,29 @@ struct TaskDetailScreen: View {
                                         Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                                     }
                                 }
+                                if let item, item.hasDelegatedTasks {
+                                    Section("Subagents") {
+                                        DelegatedTaskButtons(item: item, open: openDelegatedTask)
+                                    }
+                                }
                             } label: {
                                 Label("More", systemImage: "ellipsis")
                             }
+                            // Delegated sessions and subagents open from this menu, so it counts the ones still working.
+                            .badge(item?.workingDelegatedTasks ?? 0)
                         }
                     }
                 } else {
                     // iPad has room for the model picker, workspace links and
                     // scratch pad in place of the More menu.
+                    if let item, item.hasDelegatedTasks {
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu("Subagents", systemImage: "rectangle.stack") {
+                                DelegatedTaskButtons(item: item, open: openDelegatedTask)
+                            }
+                            .badge(item.workingDelegatedTasks)
+                        }
+                    }
                     if !models.isEmpty {
                         ToolbarItem(placement: .primaryAction) {
                             TaskModelMenu(
@@ -143,8 +159,9 @@ struct TaskDetailScreen: View {
                     }
                 }
             }
-            // iPad has no bottom bar; its inline input bar carries these.
-            if isPhone {
+            // iPad has no bottom bar; its inline input bar carries these. A
+            // subagent answers only to its own agent, so it has no composer.
+            if isPhone, task?.isSubagent != true {
                 ToolbarItem(placement: .bottomBar) {
                     ComposerAttachmentMenu()
                 }
@@ -188,7 +205,8 @@ struct TaskDetailScreen: View {
             }
         }
         .modifier(AgentInteractionPresentation(
-            requests: hostTask?.interactions ?? [],
+            // Requests from the work below this task come up here too, as those sessions aren't listed.
+            requests: (hostTask?.interactions ?? []) + (item?.delegatedRequests ?? []),
             respond: { interaction, decision in
                 _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },

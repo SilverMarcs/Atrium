@@ -75,6 +75,9 @@ final class HostServer {
     @ObservationIgnored private let integrations: AgentIntegrationStore
     @ObservationIgnored private let workspaces: WorkspaceStore
     @ObservationIgnored private let sessions: TaskSessionController
+    @ObservationIgnored private let orchestrator: Orchestrator
+    /// ChatGPT's access to the orchestration tools through OpenAI's tunnel client.
+    @ObservationIgnored let chatGPTAccess: ChatGPTAccess
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
@@ -93,15 +96,34 @@ final class HostServer {
     }()
 
     init() {
+        ToolGroup.registerDefaults()
         workspaces = WorkspaceStore()
         let bridge = AgentBridgeServer()
         integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(bridge: bridge), ClaudeAgentAdapter(bridge: bridge)])
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
-        tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces)
+        orchestrator = Orchestrator(integrations: integrations, sessions: sessions, workspaces: workspaces, directory: bridge.storage)
+        bridge.toolServer = AtriumToolServer(credentials: bridge.credentials, kits: [
+            OrchestrationTools(orchestrator: orchestrator, integrations: integrations, sessions: sessions, workspaces: workspaces),
+            PageTools(),
+        ])
+        chatGPTAccess = ChatGPTAccess(bridge: bridge)
+        tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator)
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publishTasks(event) }
-        Task { await integrations.refresh() }
+        integrations.onStatusChange = { [orchestrator] thread in orchestrator.observe(thread) }
+        let alert = integrations.onAttention
+        integrations.onAttention = { [orchestrator] thread in
+            if let target = orchestrator.attentionTarget(for: thread) { alert?(target) }
+        }
+        integrations.onThreadRemoved = { [orchestrator, bridge] id in
+            orchestrator.sessionRemoved(id)
+            bridge.credentials.revokeSession(id)
+        }
+        Task {
+            await integrations.refresh()
+            await orchestrator.reconcileDeliveries()
+        }
         if isRemoteAccessEnabled { startRemoteAccess() }
     }
 
@@ -267,7 +289,16 @@ final class HostServer {
             feeds[.transcript(taskID: taskID)]?.refresh()
             return reply
         case .interrupt(let taskID):
-            return await tasks.interrupt(task: taskID)
+            guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
+                return .failed(message: "This task no longer exists.")
+            }
+            do {
+                // The work the session delegated stops with it.
+                try await orchestrator.stop(thread, by: nil)
+                return .done
+            } catch {
+                return .failed(message: error.localizedDescription)
+            }
         case .terminal(let taskID, let action):
             guard connection.topics.contains(.terminal(taskID: taskID)) else {
                 return .failed(message: "Open this task’s terminal first.")
@@ -379,7 +410,9 @@ final class HostServer {
     private func publishTasks(_ event: HostEvent) {
         if case .tasks(let snapshot) = event {
             if let latestTasks {
-                for task in snapshot.tasksNeedingAttention(since: latestTasks) { alertPhones(about: task) }
+                for task in snapshot.tasksNeedingAttention(since: latestTasks) {
+                    if let target = Self.attentionTarget(for: task, in: snapshot) { alertPhones(about: target) }
+                }
             }
             latestTasks = snapshot
         }
@@ -448,6 +481,17 @@ final class HostServer {
         pruneFeeds()
         updateConnectedDevices()
         status = .stopped
+    }
+
+    /// What a phone is alerted about, by the same rule as the Mac: delegated
+    /// sessions alert as the session they're listed under, and they and
+    /// ChatGPT's sessions only when they need an answer.
+    private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
+        guard task.origin != nil else { return task }
+        guard task.status == .waiting else { return nil }
+        guard var ancestor = snapshot.listedAncestor(of: task) else { return task }
+        ancestor.status = .waiting
+        return ancestor
     }
 
     /// Routes alerts to the active device, or all devices when none is active.

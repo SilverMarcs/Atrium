@@ -25,6 +25,10 @@ final class AgentIntegrationStore {
     private var enabled: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
+    /// Every status a thread reports that differs from the last, in order.
+    @ObservationIgnored var onStatusChange: ((AgentThread) -> Void)?
+    /// A thread was deleted, by Atrium or its provider.
+    @ObservationIgnored var onThreadRemoved: ((String) -> Void)?
     /// The feeds reloading tasks' conversations while someone follows them.
     @ObservationIgnored var transcriptFeeds: [String: TranscriptFeed] = [:]
     @ObservationIgnored private var viewedThreadID: String?
@@ -49,15 +53,19 @@ final class AgentIntegrationStore {
 
     var enabledProviders: [AgentProvider] { providers.filter { enabled.contains($0) } }
     var isEnabled: Bool { !enabled.isEmpty }
+    /// The latest sessions, and the subagents of those shown, which don't count toward the limit.
     func visibleThreads(matching searchText: String) -> [AgentThread] {
-        enabledProviders.flatMap { provider in
+        let sessions = enabledProviders.flatMap { provider in
             let matching = threads.filter {
-                $0.provider == provider && TaskSearch.matches(searchText, in: $0.title, $0.projectName, $0.directory)
+                $0.provider == provider && !$0.isSubagent && TaskSearch.matches(searchText, in: $0.title, $0.projectName, $0.directory)
             }
                 .sorted(by: AgentThread.newestFirst)
             // Snoozed threads stay reachable however far newer activity pushes them down.
             return Array(matching.filter { snoozedUntil[$0.id] == nil }.prefix(25)) + matching.filter { snoozedUntil[$0.id] != nil }
-        }.sorted(by: AgentThread.newestFirst)
+        }
+        let shown = Set(sessions.map(\.id))
+        let subagents = threads.filter { $0.parentID.map(shown.contains) == true }
+        return (sessions + subagents).sorted(by: AgentThread.newestFirst)
     }
 
     init(adapters: [any AgentProviderAdapter], defaults: UserDefaults = .standard) {
@@ -189,6 +197,7 @@ final class AgentIntegrationStore {
     private func removeDeletedThread(_ id: String) {
         interactions.removeAll { $0.taskID == id }
         guard deletedThreadIDs.insert(id).inserted else { return }
+        onThreadRemoved?(id)
         threads.removeAll { $0.id == id }
         drafts[id] = nil
         activity[id] = nil
@@ -225,6 +234,10 @@ final class AgentIntegrationStore {
             threads[index] = thread
             if drafts[thread.id] != nil { drafts[thread.id] = thread }
             revisions[thread.id, default: 0] += 1
+            // A provider may tell a subagent's state only from its session's.
+            if thread.status != previous.status {
+                for subagent in threads where subagent.parentID == thread.id && subagent.status != .done { requestMetadata(subagent.id) }
+            }
             saveActivity()
         case .threadInvalidated(let sessionID):
             guard enabled.contains(provider) else { return }
@@ -483,9 +496,11 @@ final class AgentIntegrationStore {
         var state = activity[thread.id] ?? ThreadActivity(thread: thread)
         let result = state.update(thread, isViewed: viewedThreadID == thread.id)
         activity[thread.id] = state
+        let previous = threads.first(where: { $0.id == thread.id })
+        if previous?.status != result.status { onStatusChange?(result) }
         // Initial history and reconnect snapshots establish a baseline; only
         // an observed transition should ask for the user's attention.
-        if let previous = threads.first(where: { $0.id == thread.id }),
+        if let previous,
            previous.status != .unknown, previous.status != result.status,
            result.status == .done || result.status == .waiting,
            enabled.contains(thread.provider), !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil,
@@ -661,11 +676,21 @@ final class AgentIntegrationStore {
         interactions.removeAll { $0.id == request.id }
     }
 
+    /// Prompts Atrium relayed from another agent show as relayed, holding only what was relayed.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
-        try await enabledAdapter(for: thread.provider).transcript(for: thread)
+        try await enabledAdapter(for: thread.provider).transcript(for: thread).map { source in
+            guard source.role == .user, let first = source.blocks.first, let text = first.text,
+                  let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text)
+            else { return source }
+            var message = source
+            message.blocks = [.text(relayed.body, id: first.id)]
+            message.relay = relayed.relay
+            return message
+        }
     }
 
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
+        guard !thread.isSubagent else { throw IntegrationError(message: "A subagent takes instructions only from its own agent.") }
         guard !rewindingThreadIDs.contains(thread.id) else {
             throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
         }
@@ -682,6 +707,10 @@ final class AgentIntegrationStore {
 
     func interrupt(_ thread: AgentThread) async throws {
         try await enabledAdapter(for: thread.provider).interrupt(thread)
+    }
+
+    func endBackgroundWork(_ thread: AgentThread) async throws {
+        try await enabledAdapter(for: thread.provider).endBackgroundWork(thread)
     }
 
     private func refreshModelsIfNeeded(_ provider: AgentProvider) {

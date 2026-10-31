@@ -10,6 +10,7 @@ enum Route: Hashable {
     case files(WorkspaceRef, folder: String)
     case file(WorkspaceRef, path: String, line: Int? = nil)
     case search(WorkspaceRef)
+    case task(TaskRef)
 }
 
 #if DEBUG

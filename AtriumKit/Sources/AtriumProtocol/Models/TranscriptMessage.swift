@@ -18,6 +18,8 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
     public var editTarget: String? = nil
     /// Sent while the agent was working, so it joined that turn rather than starting one.
     public var isSteer: Bool = false
+    /// Set on a user message Atrium relayed from another agent.
+    public var relay: TranscriptRelay? = nil
 
     public init(
         id: String,
@@ -25,7 +27,8 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
         blocks: [TranscriptBlock],
         images: [Data]? = nil,
         editTarget: String? = nil,
-        isSteer: Bool = false
+        isSteer: Bool = false,
+        relay: TranscriptRelay? = nil
     ) {
         self.id = id
         self.role = role
@@ -33,5 +36,6 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
         self.images = images
         self.editTarget = editTarget
         self.isSteer = isSteer
+        self.relay = relay
     }
 }

@@ -27,6 +27,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var interactions: [AgentInteraction] = []
     /// The checkout the agent works in, when it's in a Git repository.
     public var checkout: TaskCheckout? = nil
+    /// Set when another session or ChatGPT started this one.
+    public var origin: WireTaskOrigin? = nil
 
     public init(
         id: String,
@@ -46,7 +48,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         reasoningEffort: String? = nil,
         isFastMode: Bool? = nil,
         interactions: [AgentInteraction] = [],
-        checkout: TaskCheckout? = nil
+        checkout: TaskCheckout? = nil,
+        origin: WireTaskOrigin? = nil
     ) {
         self.id = id
         self.title = title
@@ -66,6 +69,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.isFastMode = isFastMode
         self.interactions = interactions
         self.checkout = checkout
+        self.origin = origin
     }
 
     public var isSnoozed: Bool { snoozedUntil != nil && !isSettled }

@@ -22,7 +22,7 @@ struct TaskChatView: View {
         let pendingPrompts = host.conversations.pendingPrompts[task.id] ?? []
         // A prompt just sent shows the agent working with it, before the host
         // reports so, so the indicator arrives with the prompt's row.
-        let footerStatus = host.conversations.footerStatus(for: task.id, status: task.status)
+        let footerStatus = host.conversations.footerStatus(for: task.id, status: item.progressStatus)
         let newestPromptID = pendingPrompts.last?.timelineID ?? messages?.last { $0.role == .user }?.id
         // A prompt sent from this device starts the latest turn, held at the
         // top. A pending prompt held there hands over to the transcript's

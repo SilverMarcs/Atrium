@@ -23,6 +23,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var isEnabled = true
     /// The turn in progress for each subscribed thread.
     private var activeTurnIDs: [String: String] = [:]
+    /// The subagents each thread's agent spawned, by thread and then subagent
+    /// thread ID, with what last happened to each. Codex records them only in
+    /// the spawning thread's turns, so they're known once Atrium has read it.
+    private var subagents: [String: [String: String]] = [:]
     /// The configured model and reasoning effort, which threads that never
     /// overrode them leave unset.
     private var defaultModel: String?
@@ -87,7 +91,39 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func listThreads() async throws -> [AgentThread] {
         try await connect()
-        return try await listThreads(archived: false)
+        let sessions = try await listThreads(archived: false)
+        var threads = sessions
+        for session in sessions {
+            for id in subagents[session.sessionID]?.keys.sorted() ?? [] {
+                if let subagent = try? await readThread(id) { threads.append(subagent) }
+            }
+        }
+        return threads
+    }
+
+    // MARK: - Subagents
+
+    /// Notes the subagents a thread's items show its agent spawning or hearing from.
+    /// - Returns: The subagents whose state changed.
+    @discardableResult
+    private func recordSubagents(in items: [[String: Any]], of threadID: String) -> [String] {
+        var changed: [String] = []
+        for item in items where item["type"] as? String == "subAgentActivity" {
+            guard let id = item["agentThreadId"] as? String, let kind = item["kind"] as? String,
+                  subagents[threadID]?[id] != kind else { continue }
+            subagents[threadID, default: [:]][id] = kind
+            changed.append(id)
+        }
+        return changed
+    }
+
+    /// Codex reports a subagent's thread idle once its work stops, whether it
+    /// finished or was interrupted; its session's record of it tells which.
+    private func withSubagentState(_ thread: AgentThread) -> AgentThread {
+        guard let parentID = thread.parentSessionID, thread.status != .processing, thread.status != .waiting else { return thread }
+        var thread = thread
+        thread.status = subagents[parentID]?[thread.sessionID] == "interrupted" ? .stopped : .done
+        return thread
     }
 
     /// A one-time account snapshot; rate-limit notifications don't update Settings.
@@ -151,7 +187,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
-        return thread
+        return withSubagentState(thread)
     }
 
     func markRead(_ thread: AgentThread) async throws -> AgentReadState {
@@ -177,28 +213,49 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return state
     }
 
-    /// Gives a thread Atrium's tools. Codex loads a thread's config when it
-    /// starts or resumes it, so threads it already has loaded keep theirs.
-    private func toolConfig() async throws -> [String: Any] {
+    /// Gives a thread Atrium's tools, under a credential that identifies it.
+    /// Codex loads a thread's config when it starts or resumes it, so threads
+    /// it already has loaded keep theirs.
+    private func toolConfig(_ grant: ToolCredentials.Grant) async throws -> [String: Any] {
         let endpoint = try await bridge.start()
         return ["mcp_servers.\(AtriumToolServer.name)": [
             "url": endpoint.url("mcp"),
-            "http_headers": ["Authorization": endpoint.authorization],
-            // Atrium's own tools only add to the chat, so they never need approval.
+            "http_headers": ["Authorization": "Bearer " + grant.token],
+            // Atrium's tools are only those Settings turned on, each checked on every call.
             "default_tools_approval_mode": "approve"
         ]]
+    }
+
+    /// Starts a thread with a credential issued for it, bound once Codex names it.
+    private func startThread(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        let grant = try bridge.credentials.issueForLaunch()
+        do {
+            var params = params
+            var config = params["config"] as? [String: Any] ?? [:]
+            config.merge(try await toolConfig(grant)) { $1 }
+            params["config"] = config
+            let data = try await request(method, params: params)
+            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = (result["thread"] as? [String: Any])?["id"] as? String else {
+                throw IntegrationError(message: "Codex did not return a thread.")
+            }
+            bridge.credentials.bind(grant, toSession: provider.rawValue + ":" + id)
+            return result
+        } catch {
+            bridge.credentials.revoke(grant)
+            throw error
+        }
     }
 
     func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
-        var config = try await toolConfig()
+        var config: [String: Any] = [:]
         if let effort = settings?.reasoningEffort { config["model_reasoning_effort"] = effort }
         var params: [String: Any] = ["cwd": directory, "config": config]
         if let model = settings?.model { params["model"] = model }
-        let data = try await request("thread/start", params: params)
-        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
+        let result = try await startThread("thread/start", params: params)
+        guard let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
         if let settings, let model = settings.model {
@@ -217,9 +274,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
-        let data = try await request("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await toolConfig()])
-        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
+        let result = try await startThread("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
+        guard let row = result["thread"] as? [String: Any], let fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
             throw IntegrationError(message: "Codex did not return a forked thread.")
         }
@@ -233,20 +289,30 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        // Codex may not send a subagent's events here, so its turns are read each time.
+        if thread.isSubagent {
+            try await connect()
+            return CodexLiveConversation(turns: try await turns(of: thread.sessionID)).messages
+        }
         try await openConversation(thread)
         return conversations[thread.sessionID]?.messages ?? []
     }
 
     func openConversation(_ thread: AgentThread) async throws {
+        // Codex resumes a subagent only through its session; it's read instead.
+        guard !thread.isSubagent else { return }
         desiredConversations[thread.sessionID] = thread
         try await connect()
         if conversations[thread.sessionID] != nil { return }
         if let opening = openingConversations[thread.sessionID] { return try await opening.value }
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
-            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await self.toolConfig()])
+            let grant = try self.bridge.credentials.grant(forSession: thread.id)
+            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await self.toolConfig(grant)])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
+            let spawned = self.recordSubagents(in: rows.flatMap { $0["items"] as? [[String: Any]] ?? [] }, of: thread.sessionID)
+            if !spawned.isEmpty { self.onEvent?(.listInvalidated) }
             self.refreshAsyncQuestions(sessionID: thread.sessionID)
         }
         openingConversations[thread.sessionID] = task
@@ -284,7 +350,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         conversations[thread.sessionID]?.resolveQuestions(questionIDs)
         refreshAsyncQuestions(sessionID: thread.sessionID)
-        generateTitleIfNeeded(for: thread, prompt: text.isEmpty ? "Discuss an attached image" : text)
+        // A relayed task is titled by what it asks, not by Atrium's framing.
+        let request = RelayedMessage.relay(in: text)?.body ?? text
+        generateTitleIfNeeded(for: thread, prompt: request.isEmpty ? "Discuss an attached image" : request)
     }
 
     /// Adds input to a running turn.
@@ -432,6 +500,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await connect()
         guard let turnID = try await activeTurnID(of: thread.sessionID) else { return }
         _ = try await request("turn/interrupt", params: ["threadId": thread.sessionID, "turnId": turnID])
+    }
+
+    /// Commands Codex moved to the background keep running when their turn is interrupted.
+    func endBackgroundWork(_ thread: AgentThread) async throws {
+        try await connect()
+        _ = try await request("thread/backgroundTerminals/clean", params: ["threadId": thread.sessionID])
     }
 
     /// Restores a subscribed conversation through the current app-server API.
@@ -592,6 +666,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if ["item/started", "item/completed"].contains(method) {
                 onEvent?(.transcriptChanged(sessionID: id))
+                for subagent in recordSubagents(in: [params["item"] as? [String: Any] ?? [:]], of: id) {
+                    onEvent?(.threadInvalidated(sessionID: subagent))
+                    onEvent?(.transcriptChanged(sessionID: subagent))
+                }
                 return
             }
             if method == "turn/started" {
@@ -882,18 +960,27 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private static func thread(_ row: [String: Any]) -> AgentThread? {
         guard let id = row["id"] as? String, let directory = row["cwd"] as? String else { return nil }
         let name = (row["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let preview = row["preview"] as? String ?? ""
+        let rawPreview = row["preview"] as? String ?? ""
+        // A delegated task's preview is its request, not Atrium's framing.
+        let preview = RelayedMessage.relay(in: rawPreview).map(\.body).flatMap { $0.isEmpty ? nil : $0 } ?? rawPreview
         let hasProviderTitle = !name.isEmpty && name != "New Codex thread"
         // Match thread/list's main-task sources. Subagents have an object-valued
         // source, and newer servers also report parentThreadId. A fork is still a main task.
         let isMainTask = row["parentThreadId"] as? String == nil
             && ["cli", "vscode", "appServer"].contains(row["source"] as? String ?? "")
+        // Only subagents an agent spawned to work for it, named as Codex names
+        // them; Codex's own review and compaction agents stay out of sight.
+        let spawn = ((row["source"] as? [String: Any])?["subAgent"] as? [String: Any])?["thread_spawn"] as? [String: Any]
+        let parentID = spawn.flatMap { $0["parent_thread_id"] as? String ?? row["parentThreadId"] as? String }
+        let nickname = (row["agentNickname"] as? String ?? spawn?["agent_nickname"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return AgentThread(
             sessionID: id, provider: .codex,
-            title: hasProviderTitle ? name : (preview.isEmpty ? "New Codex thread" : String(preview.prefix(160))),
+            title: hasProviderTitle ? name : nickname.flatMap { $0.isEmpty ? nil : $0 }
+                ?? (preview.isEmpty ? "New Codex thread" : String(preview.prefix(160))),
             directory: directory, updatedAt: Date(timeIntervalSince1970: row["recencyAt"] as? Double ?? row["updatedAt"] as? Double ?? 0),
-            status: status(row["status"] as? [String: Any]), isMainTask: isMainTask, hasProviderTitle: hasProviderTitle,
-            model: row["model"] as? String, reasoningEffort: row["reasoningEffort"] as? String
+            status: status(row["status"] as? [String: Any]), isMainTask: isMainTask, hasProviderTitle: hasProviderTitle || parentID != nil,
+            model: row["model"] as? String, reasoningEffort: row["reasoningEffort"] as? String,
+            parentSessionID: parentID
         )
     }
 }

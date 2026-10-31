@@ -18,9 +18,10 @@ struct TaskDetailView: View {
     private var session: TaskSession? {
         item.host.isLocal ? app.terminals.session(for: task.id) : nil
     }
+    /// A subagent runs inside its session's agent, with no terminal of its own.
     private var hasTerminal: Bool {
-        session != nil || (!item.host.isLocal && !TaskDraft.isDraftID(task.id)
-            && item.host.enabledProviders.contains(task.provider))
+        !task.isSubagent && (session != nil || (!item.host.isLocal && !TaskDraft.isDraftID(task.id)
+            && item.host.enabledProviders.contains(task.provider)))
     }
     private var showsTerminal: Bool { hasTerminal && presentation == "terminal" }
 
@@ -77,7 +78,7 @@ struct TaskDetailView: View {
         }
         .toolbarBackgroundVisibility(showsTerminal ? .hidden : .automatic, for: .windowToolbar)
         .toolbar {
-            if !showsTerminal, !TaskDraft.isDraftID(task.id) {
+            if !showsTerminal, !TaskDraft.isDraftID(task.id), !task.isSubagent {
                 ToolbarItem {
                     TaskModelMenu(
                         provider: task.provider, selection: task.modelSelection, models: models,
@@ -96,10 +97,33 @@ struct TaskDetailView: View {
                     .labelStyle(.iconOnly)
                 }
             }
+            if project != nil || item.hasDelegatedTasks {
+                ToolbarSpacer(.fixed)
+            }
             if project != nil {
-                ToolbarItem(placement: .navigation) {
+                ToolbarItem {
                     Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
                         .keyboardShortcut(".")
+                }
+            }
+            if let parent = item.parent {
+                // Delegated sessions and subagents aren't listed, so they lead back to their session.
+                ToolbarItem(placement: .navigation) {
+                    Button("Back to \(parent.title)", systemImage: "chevron.backward") {
+                        app.selection = TaskRef(hostID: item.host.id, taskID: parent.id)
+                    }
+                    .help("Back to \(parent.title)")
+                }
+            }
+            if item.hasDelegatedTasks {
+                ToolbarItem {
+                    Menu("Subagents", systemImage: "rectangle.stack") {
+                        DelegatedTaskButtons(item: item) { app.selection = $0 }
+                    }
+                    .menuIndicator(.hidden)
+                    // How many are still working, or waiting for an answer.
+                    .badge(item.workingDelegatedTasks)
+                    .help("Sessions working for this task")
                 }
             }
         }
@@ -114,6 +138,10 @@ struct TaskDetailView: View {
     }
 
     private var subtitle: String {
+        if let parent = item.parent {
+            return "\(task.isSubagent ? "Subagent of" : "Delegated by") \(parent.provider.name) · \(parent.title)"
+        }
+        if task.origin == .chatGPT { return "Started by ChatGPT" }
         let directory = project?.workspace?.directory ?? task.directory
         return item.host.isLocal ? directory : "\(item.host.name) \(directory)"
     }

@@ -7,8 +7,7 @@ struct SessionChatComposer: View {
   @Bindable var composer: TaskComposer
   let provider: AgentProvider
   let isSending: Bool
-  let isProcessing: Bool
-  var actions: TaskActions = [.prompt, .interrupt]
+  let actions: TaskActions
   let send: () -> Void
   let interrupt: () -> Void
   var noteSourceFrame: (CGRect) -> Void = { _ in }
@@ -26,7 +25,7 @@ struct SessionChatComposer: View {
   }
 
   private var showsStop: Bool {
-    isProcessing && actions.contains(.interrupt) && !canSend && !dictation.isActive && !composer.isSubmittingDictation
+    actions.contains(.interrupt) && !canSend && !dictation.isActive && !composer.isSubmittingDictation
   }
 
   /// A recording counts as content: sending transcribes it first.

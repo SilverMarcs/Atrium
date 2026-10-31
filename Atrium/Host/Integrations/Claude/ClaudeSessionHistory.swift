@@ -126,6 +126,65 @@ actor ClaudeSessionHistory {
         try transcriptLines(id).map { ClaudeTranscript.messages(fromLines: $0) }
     }
 
+    // MARK: - Subagents
+
+    /// A subagent a session's agent started, as Claude saves it beside the session.
+    struct Subagent: Sendable {
+        let agentID: String
+        let title: String
+        let updatedAt: Date
+        /// Whether Claude marked it finished; one that never was either runs
+        /// still or was stopped.
+        let isFinished: Bool
+        /// Whether its last turn was stopped before it reported back.
+        let wasInterrupted: Bool
+    }
+
+    /// The subagents a session's agent started, newest first.
+    func subagents(of id: String) -> [Subagent] {
+        guard let folder = subagentFolder(of: id),
+              let urls = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: Self.fileKeys) else { return [] }
+        return urls.compactMap { url -> Subagent? in
+            guard url.pathExtension == "jsonl", let agentID = Self.subagentID(inFileNamed: url.lastPathComponent),
+                  let stamp = stamp(at: url), stamp.size > 0 else { return nil }
+            let meta = (try? Data(contentsOf: folder.appending(path: "agent-\(agentID).meta.json")))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let description = (meta["description"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let type = (meta["agentType"] as? String).map(Self.humanized)
+            let isFinished = meta["finished"] as? Bool == true
+            return Subagent(agentID: agentID, title: description.isEmpty ? type ?? "Subagent" : description,
+                            updatedAt: stamp.modified, isFinished: isFinished,
+                            wasInterrupted: !isFinished && Self.endsInterrupted(url, size: stamp.size))
+        }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Claude ends a stopped turn with an interruption notice as its last prompt.
+    private static func endsInterrupted(_ url: URL, size: Int) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        try? handle.seek(toOffset: UInt64(max(0, size - 4096)))
+        let tail = (try? handle.readToEnd()) ?? Data()
+        guard let last = tail.split(separator: 10).last else { return false }
+        return last.range(of: Data("[Request interrupted".utf8)) != nil
+    }
+
+    /// The last turns of a subagent's transcript.
+    func subagentTranscript(_ id: String, agentID: String) throws -> [TranscriptMessage]? {
+        guard let url = subagentFolder(of: id)?.appending(path: "agent-\(agentID).jsonl"), let stamp = stamp(at: url) else { return nil }
+        return try transcriptLines(of: File(url: url, stamp: stamp), sidechain: true).map { ClaudeTranscript.messages(fromLines: $0, sidechain: true) }
+    }
+
+    /// The agent ID in the name of one of a subagent's files, such as `agent-a03f….jsonl`.
+    static func subagentID(inFileNamed name: String) -> String? {
+        guard name.hasPrefix("agent-"), let id = name.dropFirst("agent-".count).split(separator: ".").first,
+              !id.isEmpty, id.allSatisfy({ $0.isLetter || $0.isNumber }) else { return nil }
+        return String(id)
+    }
+
+    private func subagentFolder(of id: String) -> URL? {
+        locate(id).map { $0.url.deletingPathExtension().appending(path: "subagents", directoryHint: .isDirectory) }
+    }
+
     /// The last turns of a session's transcript, with the latest Stop Claude saved in them.
     func transcriptWithStop(_ id: String) throws -> (messages: [TranscriptMessage], stop: String?)? {
         guard let lines = try transcriptLines(id) else { return nil }
@@ -150,6 +209,11 @@ actor ClaudeSessionHistory {
 
     private func transcriptLines(_ id: String) throws -> [Data]? {
         guard let file = locate(id) else { return nil }
+        return try transcriptLines(of: file, sidechain: false)
+    }
+
+    /// A subagent's file holds only sidechain records, which a session's skips.
+    private func transcriptLines(of file: File, sidechain: Bool) throws -> [Data]? {
         let handle = try FileHandle(forReadingFrom: file.url)
         defer { try? handle.close() }
         var lines: [Data] = []
@@ -166,7 +230,7 @@ actor ClaudeSessionHistory {
         func add(_ line: Data) -> Bool {
             guard !line.isEmpty,
                   let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-                  record["isSidechain"] as? Bool != true else { return false }
+                  (record["isSidechain"] as? Bool == true) == sidechain else { return false }
             if !hasLeaf, record["type"] as? String == "last-prompt", record["leafUuid"] != nil {
                 expectedID = record["leafUuid"] as? String
                 hasLeaf = true

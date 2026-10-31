@@ -111,6 +111,10 @@ final class TaskSessionController {
     /// What a thread's menus allow, which every client receives.
     func menuState(for thread: AgentThread) -> TaskMenuState {
         let id = thread.id
+        // A subagent belongs to its session's agent, which alone talks to it.
+        guard !thread.isSubagent else {
+            return TaskMenuState(isSettled: false, isSnoozed: false, hasUnreadResult: false, supportsDeletion: false, allowed: [])
+        }
         let isChanging = integrations.deletingThreadIDs.contains(id) || integrations.stoppingThreadIDs.contains(id)
             || integrations.renamingThreadIDs.contains(id) || integrations.rewindingThreadIDs.contains(id)
         var allowed: TaskActions = []
@@ -145,6 +149,15 @@ final class TaskSessionController {
             supportsDeletion: integrations.supportsDeletion(thread),
             allowed: allowed
         )
+    }
+
+    /// Returns once no task is being opened, as only one can be at a time.
+    func waitUntilIdle() async {
+        while isOpening {
+            await withCheckedContinuation { continuation in
+                withObservationTracking { _ = isOpening } onChange: { continuation.resume() }
+            }
+        }
     }
 
     /// Native providers own the conversation independently of terminal attachments.
@@ -250,8 +263,9 @@ final class TaskSessionController {
         } catch { session.terminalError = error.localizedDescription }
     }
 
+    /// A subagent runs inside its session's agent, with no terminal of its own.
     private func canOpen(_ thread: AgentThread) -> Bool {
-        integrations.enabledProviders.contains(thread.provider)
+        !thread.isSubagent && integrations.enabledProviders.contains(thread.provider)
             && !integrations.deletingThreadIDs.contains(thread.id) && !integrations.deletedThreadIDs.contains(thread.id)
     }
 

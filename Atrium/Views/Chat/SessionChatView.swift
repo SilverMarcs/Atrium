@@ -26,7 +26,7 @@ struct SessionChatView: View {
     let turns = ConversationTurns(
       messages: conversation.displayMessages(for: task.id), pendingPrompts: prompts, status: task.status)
     let rows = conversation.rows(for: task.id, turns: turns)
-    let footerStatus = conversation.footerStatus(for: task.id, status: task.status)
+    let footerStatus = conversation.footerStatus(for: task.id, status: item.progressStatus)
     ScrollViewReader { proxy in
       ScrollView {
         // Bottom-aligns short chats; the `.alignment` scroll anchor would stretch the toolbar down to the first row.
@@ -121,14 +121,17 @@ struct SessionChatView: View {
             NewChatPicker(hosts: app.hosts, host: host, draft: draft)
               .padding(.top, 8)
           }
-          SessionChatComposer(
-            composer: composer, provider: task.provider,
-            isSending: conversation.isSending(in: task.id), isProcessing: task.status == .processing,
-            actions: task.actions,
-            send: { send(composer) },
-            interrupt: { host.interrupt(task.id) },
-            noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
-          )
+          // A subagent answers only to its own agent.
+          if !task.isSubagent {
+            SessionChatComposer(
+              composer: composer, provider: task.provider,
+              isSending: conversation.isSending(in: task.id),
+              actions: task.actions,
+              send: { send(composer) },
+              interrupt: { host.interrupt(task.id) },
+              noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
+            )
+          }
         }
         .frame(maxWidth: SessionChatLayout.maximumWidth)
         .frame(maxWidth: .infinity)
@@ -168,9 +171,10 @@ struct SessionChatView: View {
       }
     }
     .modifier(AgentInteractionPresentation(
-      requests: task.interactions,
+      // Requests from the work below this task come up here too, as those sessions aren't listed.
+      requests: task.interactions + item.delegatedRequests,
       respond: { request, decision in
-        _ = try await host.request(.task(id: task.id, action: .respond(interactionID: request.id, decision: decision)))
+        _ = try await host.request(.task(id: request.taskID, action: .respond(interactionID: request.id, decision: decision)))
       }
     ))
     .font(.system(size: chatFontSize))

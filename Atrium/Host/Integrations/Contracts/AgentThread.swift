@@ -21,10 +21,17 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var reasoningEffort: String?
     /// Whether the agent runs in fast mode, when the provider has one and reports it.
     var isFastMode: Bool?
+    /// For a subagent the provider runs itself, the session whose agent started
+    /// it. Atrium shows it under that session, to read but not to prompt:
+    /// neither provider takes input for a subagent from anyone but its agent.
+    var parentSessionID: String?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }
     var needsAttention: Bool { status == .processing || status == .waiting || hasUnreadResult }
+    var isSubagent: Bool { parentSessionID != nil }
+    /// The ID of the session that started this one as a subagent.
+    var parentID: String? { parentSessionID.map { "\(provider.rawValue):\($0)" } }
 
     nonisolated static func newestFirst(_ lhs: AgentThread, _ rhs: AgentThread) -> Bool {
         lhs.updatedAt == rhs.updatedAt ? lhs.id < rhs.id : lhs.updatedAt > rhs.updatedAt

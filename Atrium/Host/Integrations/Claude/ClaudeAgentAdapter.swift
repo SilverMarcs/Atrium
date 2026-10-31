@@ -18,8 +18,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var backgroundListTask: Task<[ClaudeBackgroundSession], Error>?
     private let daemon: ClaudeDaemonClient
     private let bridge: AgentBridgeServer
-    /// The launch files written for the bridge endpoint they point at.
-    private var launchFiles: (endpoint: AgentBridgeServer.Endpoint, settings: URL, tools: URL)?
+    /// The settings file written for the bridge endpoint it points at.
+    private var launchSettings: (endpoint: AgentBridgeServer.Endpoint, file: URL)?
     private var live: [String: ClaudeLiveTranscript] = [:]
     private var transcriptLoads: [String: Task<[TranscriptMessage], Error>] = [:]
     private var subscriptions: [String: UnixJSONConnection] = [:]
@@ -68,11 +68,48 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             guard let thread = session.thread, threads[thread.sessionID] == nil else { continue }
             threads[thread.sessionID] = thread
         }
-        return AgentThread.unique(threads.values.map(withStatus))
+        let sessions = AgentThread.unique(threads.values.map(withStatus))
+        var subagents: [AgentThread] = []
+        // Only recent sessions are shown, so only theirs are looked for.
+        for session in sessions.prefix(Self.sessionsWithSubagents) {
+            subagents += await history.subagents(of: session.sessionID).map { subagentThread($0, of: session) }
+        }
+        return sessions + subagents
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
-        try await (history.readThread(id) ?? backgroundSessions[id]?.thread).map(withStatus)
+        if let (parentID, agentID) = Self.subagent(in: id) {
+            guard let parent = try await readThread(parentID) else { return nil }
+            return await history.subagents(of: parentID).first { $0.agentID == agentID }.map { subagentThread($0, of: parent) }
+        }
+        return try await (history.readThread(id) ?? backgroundSessions[id]?.thread).map(withStatus)
+    }
+
+    // MARK: - Subagents
+
+    private static let sessionsWithSubagents = 40
+
+    /// A subagent's session ID: its session's, then its agent ID.
+    private static func subagentSessionID(_ parentID: String, agentID: String) -> String { "\(parentID):\(agentID)" }
+
+    private static func subagent(in sessionID: String) -> (parentID: String, agentID: String)? {
+        let parts = sessionID.split(separator: ":")
+        guard parts.count == 2, UUID(uuidString: String(parts[0])) != nil else { return nil }
+        return (String(parts[0]), String(parts[1]))
+    }
+
+    /// Claude marks a subagent finished when it reports back. Until then it
+    /// runs, unless its turn was interrupted or its session's job stopped:
+    /// subagents run in the background, so their session can be idle meanwhile.
+    private func subagentThread(_ subagent: ClaudeSessionHistory.Subagent, of session: AgentThread) -> AgentThread {
+        let isRunning = backgroundSessions[session.sessionID]?.isRunning == true && !subagent.wasInterrupted
+        return AgentThread(
+            sessionID: Self.subagentSessionID(session.sessionID, agentID: subagent.agentID), provider: .claude,
+            title: subagent.title, directory: session.directory, updatedAt: subagent.updatedAt,
+            status: subagent.isFinished ? .done : isRunning ? .processing : .stopped,
+            isMainTask: false, hasProviderTitle: true, projectDirectory: session.projectDirectory,
+            parentSessionID: session.sessionID
+        )
     }
 
     private func watchHistory() throws {
@@ -84,6 +121,16 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                 guard let self, self.isEnabled else { return }
                 for path in paths {
                     let url = URL(fileURLWithPath: path)
+                    // A subagent's files sit in a folder beside its session's transcript.
+                    if url.deletingLastPathComponent().lastPathComponent == "subagents",
+                       let agentID = ClaudeSessionHistory.subagentID(inFileNamed: url.lastPathComponent) {
+                        let parentID = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+                        guard UUID(uuidString: parentID) != nil else { continue }
+                        let id = Self.subagentSessionID(parentID, agentID: agentID)
+                        self.onEvent?(.threadInvalidated(sessionID: id))
+                        self.onEvent?(.transcriptChanged(sessionID: id))
+                        continue
+                    }
                     let id = url.lastPathComponent == "custom-title.json"
                         ? url.deletingLastPathComponent().lastPathComponent : url.deletingPathExtension().lastPathComponent
                     guard UUID(uuidString: id) != nil else { continue }
@@ -95,6 +142,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        if let parent = thread.parentSessionID, let agentID = Self.subagent(in: thread.sessionID)?.agentID {
+            return try await history.subagentTranscript(parent, agentID: agentID) ?? []
+        }
         if let live = live[thread.sessionID] { return live.messages }
         return try await savedTranscript(thread.sessionID)
     }
@@ -123,6 +173,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func openConversation(_ thread: AgentThread) async throws {
+        // A subagent is read from its file; it has no conversation of its own to open.
+        guard !thread.isSubagent else { return }
         guard UUID(uuidString: thread.sessionID) != nil else { throw IntegrationError(message: "Invalid Claude session identifier.") }
         _ = try await bridge.start()
         let sessions = try await listBackgroundSessions()
@@ -221,6 +273,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try await daemon.interrupt(jobID: id)
         resolveDecisions(sessionID: thread.sessionID)
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .stopped)))
+    }
+
+    /// Background commands and agents outlive an interrupted turn, and an agent
+    /// that finishes starts the next one, so the whole job stops: the
+    /// session's own, or for a subagent the job of the session running it.
+    /// The next prompt resumes it.
+    func endBackgroundWork(_ thread: AgentThread) async throws {
+        try await stopJob(of: thread.parentSessionID ?? thread.sessionID)
     }
 
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
@@ -349,14 +409,18 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     func stopThread(_ thread: AgentThread) async throws {
-        closeSubscription(thread.sessionID)
-        resolveDecisions(sessionID: thread.sessionID)
-        live[thread.sessionID] = nil
-        unsavedTurns[thread.sessionID] = nil
-        outgoing[thread.sessionID] = nil
-        liveStatuses[thread.sessionID] = nil
+        try await stopJob(of: thread.sessionID)
+    }
+
+    private func stopJob(of sessionID: String) async throws {
+        closeSubscription(sessionID)
+        resolveDecisions(sessionID: sessionID)
+        live[sessionID] = nil
+        unsavedTurns[sessionID] = nil
+        outgoing[sessionID] = nil
+        liveStatuses[sessionID] = nil
         let sessions = try await listBackgroundSessions()
-        guard let session = sessions.first(where: { $0.kind == "background" && $0.sessionID == thread.sessionID }),
+        guard let session = sessions.first(where: { $0.kind == "background" && $0.sessionID == sessionID }),
               let id = session.id else { return }
         _ = try await IntegrationProcess.run("claude", arguments: ["stop", id])
         if let pid = session.pid { try await AgentProcessExit.wait(for: pid) }
@@ -387,14 +451,26 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
-        let files = try await launchFilesForBridge()
+        let settingsFile = try await settingsForBridge()
         let existingBackground: Bool
         if let sessionID, !forking {
             existingBackground = try await listBackgroundSessions().contains { $0.kind == "background" && $0.sessionID == sessionID }
         } else { existingBackground = false }
         // Any new options on a saved background job tell Claude to COPY it,
         // even if those options equal its old ones. Preserve the job's options.
-        var arguments = existingBackground ? ["--bg"] : ["--bg", "--mcp-config", files.tools.path, "--settings", files.settings.path]
+        var arguments = ["--bg"]
+        // A new session's tools carry a credential bound to it once Claude names it.
+        var launchGrant: ToolCredentials.Grant?
+        if !existingBackground {
+            let grant: ToolCredentials.Grant
+            if let sessionID, !forking {
+                grant = try bridge.credentials.grant(forSession: provider.rawValue + ":" + sessionID)
+            } else {
+                grant = try bridge.credentials.issueForLaunch()
+                launchGrant = grant
+            }
+            arguments += ["--mcp-config", try await bridge.claudeToolConfig(for: grant).path, "--settings", settingsFile.path]
+        }
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
@@ -408,6 +484,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let id = String(identifier)
         do {
             let session = try await runningSession(jobID: id)
+            if let launchGrant, let started = session.thread?.sessionID {
+                bridge.credentials.bind(launchGrant, toSession: provider.rawValue + ":" + started)
+            }
             guard let thread = session.thread else {
                 throw IntegrationError(message: "Claude did not provide its background conversation identifier.")
             }
@@ -421,6 +500,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             backgroundSessions[thread.sessionID] = session
             return session
         } catch {
+            if let launchGrant { bridge.credentials.revoke(launchGrant) }
             _ = try? await Task {
                 try await IntegrationProcess.run("claude", arguments: ["stop", id], directory: directory)
             }.value
@@ -692,29 +772,27 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Whether a job was launched with Atrium's hooks, which carry its chat and
     /// questions here. Claude keeps a job's launch options to restart it with.
     private func hasHooks(jobID: String) async throws -> Bool {
-        let settings = try await launchFilesForBridge().settings.path
+        let settings = try await settingsForBridge().path
         let options = try daemon.launchOptions(jobID: jobID)
         return zip(options, options.dropFirst()).contains { $0 == "--settings" && $1 == settings }
     }
 
-    /// The settings that send Claude's hooks to Atrium, and the MCP config
-    /// that gives it Atrium's tools, pointing at the bridge's current endpoint.
-    private func launchFilesForBridge() async throws -> (settings: URL, tools: URL) {
+    /// The settings that send Claude's hooks to Atrium, pointing at the
+    /// bridge's current endpoint. Each session's tools come with its own credential.
+    private func settingsForBridge() async throws -> URL {
         let endpoint = try await bridge.start()
-        if let launchFiles, launchFiles.endpoint == endpoint { return (launchFiles.settings, launchFiles.tools) }
+        if let launchSettings, launchSettings.endpoint == endpoint { return launchSettings.file }
         let events = ["UserPromptSubmit", "MessageDisplay", "PreToolUse", "PermissionRequest", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"]
         let hook: [String: Any] = ["type": "http", "url": endpoint.url("claude"), "headers": ["Authorization": endpoint.authorization], "timeout": 600]
         let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
         let settings = try bridge.writePrivateFile([
             "hooks": hooks,
             "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"],
-            "permissions": ["allow": [AtriumToolServer.claudeRenderHTML]]
+            // Atrium's tools are only those Settings turned on, each checked on every call.
+            "permissions": ["allow": ["mcp__\(AtriumToolServer.name)"]]
         ], named: "settings.json")
-        let tools = try bridge.writePrivateFile([
-            "mcpServers": [AtriumToolServer.name: ["type": "http", "url": endpoint.url("mcp"), "headers": ["Authorization": endpoint.authorization]]]
-        ], named: "mcp.json")
-        launchFiles = (endpoint, settings, tools)
-        return (settings, tools)
+        launchSettings = (endpoint, settings)
+        return settings
     }
 
     /// Starting a worker is not starting a conversation turn, and a question or

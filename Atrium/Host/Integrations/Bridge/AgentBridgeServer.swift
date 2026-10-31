@@ -1,8 +1,10 @@
 import Foundation
 import Network
 
-/// Agents call directly into Atrium: Claude's hooks at `/claude`, and every agent's
-/// Atrium tools at `/mcp`. A persistent endpoint lets running agents reconnect after relaunch.
+/// Agents call directly into Atrium on the loopback interface: Claude's hooks at
+/// `/claude`, with the bridge's own token, and Atrium's MCP tools at `/mcp`, with
+/// each caller's own credential. ChatGPT reaches `/mcp` through the tunnel client
+/// running on this Mac. A persistent endpoint lets running agents reconnect after relaunch.
 @MainActor
 final class AgentBridgeServer {
     struct Endpoint: Equatable {
@@ -15,8 +17,11 @@ final class AgentBridgeServer {
     }
 
     var onClaudeHook: ((Data) async throws -> Data)?
+    /// Answers `/mcp`; set once the host has everything its tools reach.
+    var toolServer: AtriumToolServer?
     /// Where agents' launch files that point at the endpoint are kept.
     let storage: URL
+    let credentials: ToolCredentials
     private var listener: NWListener?
     private var connections: [UUID: AgentBridgeConnection] = [:]
     private var startup: Task<Endpoint, Error>?
@@ -31,7 +36,11 @@ final class AgentBridgeServer {
         let folder = "ClaudeBridge"
         #endif
         self.storage = HostStorage.directory.appending(path: folder, directoryHint: .isDirectory)
+        credentials = ToolCredentials(directory: storage)
     }
+
+    /// Where the bridge listens, for setting up clients outside Atrium such as the tunnel client.
+    var currentEndpoint: Endpoint? { listener == nil ? nil : endpoint }
 
     func start() async throws -> Endpoint {
         if let endpoint, listener != nil { return endpoint }
@@ -42,13 +51,23 @@ final class AgentBridgeServer {
         return try await task.value
     }
 
-    private func route(_ path: String, body: Data) async throws -> Data? {
-        switch path {
+    private func route(_ request: BridgeRequest, token: String) async -> BridgeResponse {
+        switch request.path {
         case "/claude":
-            guard let onClaudeHook else { return Data("{}".utf8) }
-            return try await onClaudeHook(body)
+            guard request.method == "POST" else { return BridgeResponse(status: 405) }
+            guard request.headers["authorization"] == "Bearer " + token else { return BridgeResponse(status: 403) }
+            guard let onClaudeHook else { return BridgeResponse(status: 200, body: Data("{}".utf8)) }
+            do {
+                return BridgeResponse(status: 200, body: try await onClaudeHook(request.body))
+            } catch {
+                // A hook that cannot reach its native UI must leave Claude's terminal fallback usable.
+                return BridgeResponse(status: 200, body: Data("{}".utf8))
+            }
+        case "/mcp":
+            guard let toolServer else { return BridgeResponse(status: 503) }
+            return await toolServer.respond(to: request)
         default:
-            return AtriumToolServer.respond(to: body)
+            return BridgeResponse(status: 404)
         }
     }
 
@@ -67,9 +86,9 @@ final class AgentBridgeServer {
             Task { @MainActor [weak self] in
                 guard let self, self.listener === listener else { connection.cancel(); return }
                 let id = UUID()
-                let client = AgentBridgeConnection(connection: connection, token: token) { [weak self] path, body in
-                    guard let self else { return Data("{}".utf8) }
-                    return try await self.route(path, body: body)
+                let client = AgentBridgeConnection(connection: connection) { [weak self] request in
+                    guard let self else { return BridgeResponse(status: 503) }
+                    return await self.route(request, token: token)
                 } finished: { [weak self] in self?.connections[id] = nil }
                 self.connections[id] = client
                 client.start()
@@ -101,12 +120,26 @@ final class AgentBridgeServer {
                 listener.start(queue: .global(qos: .utility))
             }
         } onCancel: { listener.cancel() }
+        // Jobs launched before sessions had their own credentials share this
+        // file; it gives them no tools rather than ones that turn them away.
+        if FileManager.default.fileExists(atPath: storage.appending(path: "mcp.json").path(percentEncoded: false)) {
+            _ = try? writePrivateFile(["mcpServers": [String: Any]()], named: "mcp.json")
+        }
         let data = try JSONSerialization.data(withJSONObject: ["port": actualPort, "token": token])
         try data.write(to: endpointFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: endpointFile.path)
         let endpoint = Endpoint(port: actualPort, token: token)
         self.endpoint = endpoint
         return endpoint
+    }
+
+    /// The MCP config that gives a Claude session Atrium's tools under its own
+    /// credential. Claude reads it again whenever it restarts the session's job.
+    func claudeToolConfig(for grant: ToolCredentials.Grant) async throws -> URL {
+        let endpoint = try await start()
+        return try writePrivateFile([
+            "mcpServers": [AtriumToolServer.name: ["type": "http", "url": endpoint.url("mcp"), "headers": ["Authorization": "Bearer " + grant.token]]]
+        ], named: "mcp-\(grant.id.uuidString).json")
     }
 
     /// Writes a launch file only Atrium's user can read, since it holds the endpoint's token.

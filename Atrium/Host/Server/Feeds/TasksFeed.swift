@@ -13,6 +13,7 @@ final class TasksFeed: TopicFeed {
     private let integrations: AgentIntegrationStore
     private let sessions: TaskSessionController
     private let workspaces: WorkspaceStore
+    private let orchestrator: Orchestrator
     /// Resolving a task's project and checkout reads Git metadata from disk, so
     /// results are cached until the set of projects changes.
     private var projects: [String: (id: UUID?, checkout: TaskCheckout?)] = [:]
@@ -20,10 +21,11 @@ final class TasksFeed: TopicFeed {
     private var observation: Task<Void, Never>?
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-    init(integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore) {
+    init(integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore, orchestrator: Orchestrator) {
         self.integrations = integrations
         self.sessions = sessions
         self.workspaces = workspaces
+        self.orchestrator = orchestrator
     }
 
     func start(publish: @escaping (HostEvent) -> Void) {
@@ -48,8 +50,12 @@ final class TasksFeed: TopicFeed {
     /// The latest state, reading through any change not yet published.
     func snapshot() -> WireTasksSnapshot {
         invalidateProjectsIfNeeded()
+        let origins = orchestrator.origins()
+        let delegating = orchestrator.sessionsWithWorkingDelegations()
         return WireTasksSnapshot(
-            tasks: integrations.visibleThreads(matching: "").map(wireTask),
+            tasks: integrations.visibleThreads(matching: "").map {
+                wireTask($0, origin: origins[$0.id], isDelegating: delegating.contains($0.id))
+            },
             workspaces: workspaces.workspaces.map(wireWorkspace),
             providers: integrations.providers.map { provider in
                 WireProvider(
@@ -65,8 +71,10 @@ final class TasksFeed: TopicFeed {
         )
     }
 
-    private func wireTask(_ thread: AgentThread) -> WireTask {
-        let menu = sessions.menuState(for: thread)
+    private func wireTask(_ thread: AgentThread, origin: DelegatedTask.Requester?, isDelegating: Bool) -> WireTask {
+        var menu = sessions.menuState(for: thread)
+        // Stopping a session stops the work it delegated, so it can be stopped while only that works.
+        if isDelegating { menu.allowed.insert(.interrupt) }
         let project = project(for: thread)
         return WireTask(
             id: thread.id,
@@ -86,7 +94,13 @@ final class TasksFeed: TopicFeed {
             reasoningEffort: thread.reasoningEffort,
             isFastMode: thread.isFastMode,
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
-            checkout: project.checkout
+            checkout: project.checkout,
+            origin: thread.parentID.map(WireTaskOrigin.subagent) ?? origin.map {
+                switch $0 {
+                case .session(let id): .session(id)
+                case .remote: .chatGPT
+                }
+            }
         )
     }
 

@@ -29,6 +29,30 @@ Every Mac running Atrium is a host. The host alone touches projects, Git, files 
 
 Turn on remote access in Settings → Remote, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Remote on another Mac.
 
+## Agent tools and the Orchestrator
+
+Atrium gives every Claude and Codex session it runs an MCP server of its own tools, turned on in Settings → Integrations:
+
+- **Orchestrator**: sessions find projects, agents and other sessions, read their conversations, and delegate work to a new or idle session. Delegating returns a task ID at once; the delegating agent ends its turn, and Atrium sends it the result as a new message, marked as another agent's output, when the other session finishes. Results that arrive while it's busy wait for its turn to end and go together. Each chain of delegated work has a budget, so agents can't keep waking each other.
+- **HTML in chat**: agents show charts, diagrams and mockups in the conversation.
+
+Each session reaches the tools with its own credential, so Atrium knows who is calling. Sessions get the tools that are on when they start or resume; turning one off also stops sessions already running from using it. Approvals stay with you in Atrium.
+
+### ChatGPT
+
+ChatGPT can use the Orchestrator's tools (never HTML in chat) through OpenAI's [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). Nothing is exposed to the internet: OpenAI's `tunnel-client` runs on this Mac and connects out to OpenAI. Create a tunnel and a restricted runtime key (Tunnels Read + Use) in OpenAI Platform, then run `tunnel-client` with a profile pointing at the MCP server URL in Settings → Integrations and sending the header from the file shown there:
+
+```yaml
+mcp:
+  server_urls:
+    - channel: main
+      url: http://127.0.0.1:<port>/mcp
+  extra_headers:
+    Authorization: "file:/Users/<you>/Library/Application Support/Atrium/ClaudeBridge/chatgpt-authorization"
+```
+
+Add the tunnel in ChatGPT as a custom MCP server with no authentication; Atrium checks its own token. ChatGPT can't be woken when delegated work finishes, so it checks with `task_status`, and the sessions it starts sit in the collapsed ChatGPT section of the task list.
+
 ## Requirements
 
 - macOS 26.0+

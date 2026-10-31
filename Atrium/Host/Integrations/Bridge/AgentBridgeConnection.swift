@@ -1,26 +1,40 @@
 import Foundation
 import Network
 
-/// A single, authenticated HTTP call from an agent. Cancellation also cancels a pending native decision.
+/// One HTTP request to the bridge, with header names lowercased.
+nonisolated struct BridgeRequest: Sendable {
+    let method: String
+    let path: String
+    let headers: [String: String]
+    let body: Data
+}
+
+nonisolated struct BridgeResponse: Sendable {
+    var status: Int
+    var headers: [String: String] = [:]
+    var body = Data()
+}
+
+/// A single HTTP call from an agent, answered by whoever owns its path, which
+/// also decides who may make it. Cancellation also cancels a pending native decision.
 @MainActor
 final class AgentBridgeConnection {
     private let connection: NWConnection
-    private let authorization: String
-    /// Answers a request body sent to a path; nil accepts it without a reply.
-    private let handler: (_ path: String, _ body: Data) async throws -> Data?
+    private let handler: (BridgeRequest) async -> BridgeResponse
     private let finished: () -> Void
     private var buffer = Data()
     private var bodyOffset: Int?
     private var bodyLength = 0
+    private var method = ""
     private var path = ""
+    private var headers: [String: String] = [:]
     private var handling: Task<Void, Never>?
     private var headerTimeout: Task<Void, Never>?
     private var closed = false
     private let maximumSize = 16 * 1024 * 1024
 
-    init(connection: NWConnection, token: String, handler: @escaping (_ path: String, _ body: Data) async throws -> Data?, finished: @escaping () -> Void) {
+    init(connection: NWConnection, handler: @escaping (BridgeRequest) async -> BridgeResponse, finished: @escaping () -> Void) {
         self.connection = connection
-        authorization = "Bearer " + token
         self.handler = handler
         self.finished = finished
     }
@@ -64,29 +78,26 @@ final class AgentBridgeConnection {
     }
 
     private func consume() {
-        guard buffer.count <= maximumSize else { reply(status: 413, body: Data()); return }
+        guard buffer.count <= maximumSize else { reply(BridgeResponse(status: 413)); return }
         if bodyOffset == nil {
             guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
-                if buffer.count > 16_384 { reply(status: 400, body: Data()) }
+                if buffer.count > 16_384 { reply(BridgeResponse(status: 400)) }
                 return
             }
             let lines = String(decoding: buffer[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
             let requestLine = lines.first?.split(separator: " ") ?? []
-            guard requestLine.count == 3, requestLine[2] == "HTTP/1.1",
-                  ["/claude", "/mcp"].contains(requestLine[1]) else { reply(status: 404, body: Data()); return }
-            // Atrium's tools reply to each request; there is no event stream to open.
-            guard requestLine[0] == "POST" else { reply(status: 405, body: Data()); return }
+            guard requestLine.count == 3, requestLine[2] == "HTTP/1.1" else { reply(BridgeResponse(status: 400)); return }
+            method = String(requestLine[0])
             path = String(requestLine[1])
-            var headers: [String: String] = [:]
             for line in lines.dropFirst() {
-                guard let colon = line.firstIndex(of: ":") else { reply(status: 400, body: Data()); return }
+                guard let colon = line.firstIndex(of: ":") else { reply(BridgeResponse(status: 400)); return }
                 let name = line[..<colon].lowercased()
-                guard headers[name] == nil else { reply(status: 400, body: Data()); return }
+                guard headers[name] == nil else { reply(BridgeResponse(status: 400)); return }
                 headers[name] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             }
-            guard headers["authorization"] == authorization else { reply(status: 403, body: Data()); return }
-            guard headers["transfer-encoding"] == nil, let length = headers["content-length"].flatMap(Int.init),
-                  length >= 0, length <= maximumSize else { reply(status: 400, body: Data()); return }
+            let length = headers["content-length"].flatMap(Int.init) ?? (method == "POST" ? nil : 0)
+            guard headers["transfer-encoding"] == nil, let length,
+                  length >= 0, length <= maximumSize else { reply(BridgeResponse(status: 400)); return }
             bodyOffset = end.upperBound
             bodyLength = length
         }
@@ -94,29 +105,33 @@ final class AgentBridgeConnection {
         headerTimeout?.cancel()
         let body = Data(buffer[offset..<(offset + bodyLength)])
         buffer.removeAll()
+        let request = BridgeRequest(method: method, path: path, headers: headers, body: body)
         handling = Task { [weak self] in
             guard let self else { return }
-            do {
-                let result = try await self.handler(self.path, body)
-                guard !Task.isCancelled else { return }
-                if let result { self.reply(status: 200, body: result) } else { self.reply(status: 202, body: Data()) }
-            } catch {
-                guard !Task.isCancelled else { return }
-                // A hook that cannot reach its native UI must leave Claude's terminal fallback usable.
-                self.reply(status: 200, body: Data("{}".utf8))
-            }
+            let response = await self.handler(request)
+            guard !Task.isCancelled else { return }
+            self.reply(response)
         }
     }
 
-    private func reply(status: Int, body: Data) {
+    private func reply(_ reply: BridgeResponse) {
         guard !closed else { return }
-        let reason = switch status {
+        let reason = switch reply.status {
         case 200: "OK"
         case 202: "Accepted"
         default: "Error"
         }
-        var response = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
-        response.append(body)
+        var head = "HTTP/1.1 \(reply.status) \(reason)\r\n"
+        var headers = reply.headers
+        headers["Content-Type"] = headers["Content-Type"] ?? "application/json"
+        headers["Content-Length"] = String(reply.body.count)
+        headers["Connection"] = "close"
+        for (name, value) in headers.sorted(by: { $0.key < $1.key }) {
+            // Header values come from Atrium itself, but never let one end the header block.
+            head += "\(name): \(value.filter { $0 != "\r" && $0 != "\n" })\r\n"
+        }
+        var response = Data((head + "\r\n").utf8)
+        response.append(reply.body)
         connection.send(content: response, completion: .contentProcessed { [weak self] _ in
             Task { @MainActor [weak self] in self?.close() }
         })

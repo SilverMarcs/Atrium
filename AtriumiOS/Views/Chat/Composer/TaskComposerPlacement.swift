@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// Places the task's composer for the device: the bottom-bar search field on
@@ -12,7 +13,10 @@ struct TaskComposerPlacement: ViewModifier {
     let submit: (CGRect?) -> Bool
 
     func body(content: Content) -> some View {
-        if UIDevice.current.userInterfaceIdiom == .phone {
+        // A subagent answers only to its own agent.
+        if item?.task.isSubagent == true {
+            content
+        } else if UIDevice.current.userInterfaceIdiom == .phone {
             content
                 .searchFieldComposer(composer, prompt: prompt, submit: submit)
         } else {

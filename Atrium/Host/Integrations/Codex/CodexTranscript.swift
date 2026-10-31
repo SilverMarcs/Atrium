@@ -62,7 +62,7 @@ nonisolated enum CodexTranscript {
     /// The page a finished `render_html` call showed.
     private static func page(in item: [String: Any]) -> TranscriptPage? {
         guard item["type"] as? String == "mcpToolCall", item["server"] as? String == AtriumToolServer.name,
-              item["tool"] as? String == AtriumToolServer.renderHTML, item["status"] as? String == "completed" else { return nil }
+              item["tool"] as? String == PageTools.renderHTML, item["status"] as? String == "completed" else { return nil }
         return ChatPageStore.page(arguments: item["arguments"])
     }
 

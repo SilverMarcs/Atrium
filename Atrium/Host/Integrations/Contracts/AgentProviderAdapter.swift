@@ -32,6 +32,9 @@ protocol AgentProviderAdapter: AnyObject {
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data])
     /// Requires `.prompt`.
     func interrupt(_ thread: AgentThread) async throws
+    /// Ends what a thread keeps running after its turn is interrupted, such as
+    /// background commands and agents.
+    func endBackgroundWork(_ thread: AgentThread) async throws
     /// Requires `.selectModel`. The models threads can switch to, as the provider's own picker lists them.
     func models() async throws -> [AgentModel]
     /// Requires `.selectModel` and `.prompt`. Applies the change from the thread's next turn.
@@ -89,6 +92,8 @@ extension AgentProviderAdapter {
     func interrupt(_ thread: AgentThread) async throws {
         throw IntegrationError(message: "\(provider.name) cannot be stopped from Atrium.")
     }
+
+    func endBackgroundWork(_ thread: AgentThread) async throws {}
 
     func models() async throws -> [AgentModel] { [] }
 
