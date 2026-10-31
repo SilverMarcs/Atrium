@@ -15,6 +15,8 @@ struct ChatPageSheet: View {
             Group {
                 if let model, model.phase != .unavailable {
                     WebView(model.webPage)
+                        // Pages leave out side margins inline; here they scroll with the page.
+                        .safeAreaPadding(.horizontal)
                         .webViewContentBackground(.hidden)
                         .scrollBounceBehavior(.basedOnSize)
                         .chatPageMenu(model)

@@ -22,8 +22,8 @@ final class ChatPageModel {
     private let files: ChatPageFiles?
     private var html: String?
 
-    /// A page in a sheet has room for side margins, and scrolls sideways on a
-    /// screen narrower than the reply it was written for.
+    /// A page in a sheet scrolls sideways on a screen narrower than the reply
+    /// it was written for.
     init(media: ChatMedia?, openURL: OpenURLAction, inSheet: Bool = false) {
         files = media.map(ChatPageFiles.init)
         var configuration = WebPage.Configuration()

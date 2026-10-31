@@ -78,12 +78,11 @@ enum ChatPageScripts {
         document.documentElement.append(v,s);\(behaviors)})();
         """
 
-    /// A sheet gives the page the side margins it leaves out inline, inside
-    /// the page so they scroll with it, and keeps it from squeezing below about
-    /// the narrowest reply width it was written for; on iPhone it overflows
-    /// instead, and scrolls both ways. Runs after `theme`, so it wins over it.
+    /// A sheet keeps the page from squeezing below about the narrowest reply
+    /// width it was written for; on iPhone it overflows instead, and scrolls
+    /// both ways. Runs after `theme`, so it wins over it.
     static let sheet = """
-        (function(){var s=document.createElement("style");s.textContent="html{min-width:600px;padding-inline:16px}";\
+        (function(){var s=document.createElement("style");s.textContent="html{min-width:600px}";\
         document.documentElement.append(s);})();
         """
 
