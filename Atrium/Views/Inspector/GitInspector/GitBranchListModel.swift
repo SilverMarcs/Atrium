@@ -12,6 +12,8 @@ final class GitBranchListModel {
     private(set) var loadError: String?
     private(set) var actionError: String?
     private(set) var pendingAction: GitBranchAction?
+    /// The failed delete that the error alert offers to retry with force.
+    private(set) var forceableAction: GitBranchAction?
     private var isPerforming = false
     private var loadRevision = 0
     private var repositoryRootURL: URL
@@ -25,7 +27,12 @@ final class GitBranchListModel {
     }
     var isShowingActionError: Bool {
         get { actionError != nil }
-        set { if !newValue { actionError = nil } }
+        set {
+            if !newValue {
+                actionError = nil
+                forceableAction = nil
+            }
+        }
     }
 
     init(snapshot: GitRepositoryStatus, inspector: GitInspectorState) {
@@ -74,16 +81,27 @@ final class GitBranchListModel {
     }
 
     func confirm(_ action: GitBranchAction) async {
+        await run(action, force: false)
+    }
+
+    /// Retries a delete that Git refused, discarding what made it refuse.
+    func forceDelete(_ action: GitBranchAction) async {
+        await run(action, force: true)
+    }
+
+    private func run(_ action: GitBranchAction, force: Bool) async {
         guard !isBusy, unavailableReason(for: action) == nil else { return }
         pendingAction = nil
+        forceableAction = nil
         let isConversion = if case .convertWorktree = action { true } else { false }
-        await perform(returningToMain: isConversion) {
+        let retry = force ? nil : forceRetry(for: action)
+        await perform(returningToMain: isConversion, forceRetry: retry) {
             switch action {
             case .deleteBranch(let branch):
-                _ = try await self.git(.deleteBranch(name: branch.name, force: !branch.isMergedIntoCurrentBranch))
+                _ = try await self.git(.deleteBranch(name: branch.name, force: force || !branch.isMergedIntoCurrentBranch))
                 return "Deleted branch \(branch.name)"
             case .deleteWorktree(let worktree):
-                _ = try await self.git(.deleteWorktree(worktree.path))
+                _ = try await self.git(.deleteWorktree(worktree.path, force: force))
                 return "Deleted worktree \(worktree.displayName)"
             case .convertWorktree(let worktree):
                 _ = try await self.git(.convertWorktree(worktree.path))
@@ -118,7 +136,18 @@ final class GitBranchListModel {
                                       message: "Committed changes only", repositoryRootURL: repositoryRootURL)
     }
 
-    private func perform(returningToMain: Bool = false, _ operation: () async throws -> String) async {
+    /// The delete to offer again with force if this attempt fails, when
+    /// forcing would change what Git does.
+    private func forceRetry(for action: GitBranchAction) -> GitBranchAction? {
+        switch action {
+        case .deleteBranch(let branch): branch.isMergedIntoCurrentBranch ? action : nil
+        case .deleteWorktree: action
+        case .convertWorktree: nil
+        }
+    }
+
+    private func perform(returningToMain: Bool = false, forceRetry: GitBranchAction? = nil,
+                         _ operation: () async throws -> String) async {
         isPerforming = true
         actionError = nil
         inspector.model.successMessage = nil
@@ -130,6 +159,7 @@ final class GitBranchListModel {
                 didConvert = returningToMain
             } catch {
                 self.actionError = error.localizedDescription
+                self.forceableAction = forceRetry
             }
             await self.load()
             self.inspector.finishBranchOperation(mainRepositoryURL: self.mainRepositoryURL, didConvert: didConvert)

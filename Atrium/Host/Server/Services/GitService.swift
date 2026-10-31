@@ -88,8 +88,8 @@ enum GitService {
             try await git.mergeBranch(source, into: target, at: root)
         case .deleteBranch(let name, let force):
             try await git.deleteBranch(name, force: force, at: root)
-        case .deleteWorktree(let worktree):
-            try await git.deleteWorktree(at: worktree, in: root)
+        case .deleteWorktree(let worktree, let force):
+            try await git.deleteWorktree(at: worktree, in: root, force: force)
         case .convertWorktree(let worktree):
             try await git.convertWorktreeToBranch(at: worktree, in: root)
         case .syncBranch(let local, let upstream):
@@ -124,7 +124,7 @@ private extension GitOperation {
     /// must be part of the project too.
     var urls: [URL] {
         switch self {
-        case .deleteWorktree(let url), .convertWorktree(let url), .gutterDiff(let url): [url]
+        case .deleteWorktree(let url, _), .convertWorktree(let url), .gutterDiff(let url): [url]
         case .diff(let reference), .imageDiff(let reference): [reference.repositoryRootURL]
         default: []
         }

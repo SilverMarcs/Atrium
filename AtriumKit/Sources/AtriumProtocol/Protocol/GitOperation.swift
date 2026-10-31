@@ -36,7 +36,8 @@ public nonisolated enum GitOperation: Codable, Sendable {
     case branches
     case mergeBranch(source: GitBranchInfo, target: GitBranchInfo)
     case deleteBranch(name: String, force: Bool)
-    case deleteWorktree(URL)
+    /// Deletes a linked worktree and its branch; `force` also discards its modified and untracked files.
+    case deleteWorktree(URL, force: Bool)
     case convertWorktree(URL)
     case syncBranch(local: String, upstream: String)
     case hasUncommittedChanges

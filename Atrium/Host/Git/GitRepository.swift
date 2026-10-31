@@ -476,12 +476,13 @@ actor GitRepository {
 
     // MARK: - Worktrees
 
-    private func removeWorktree(_ worktree: GitWorktreeInfo, at repositoryRootURL: URL) async throws {
-        // Git rechecks locked and dirty state when removing; never force removal.
-        try await self.executor.execute(GitRemoveWorktreeCommand(worktreeURL: worktree.path), at: repositoryRootURL)
+    private func removeWorktree(_ worktree: GitWorktreeInfo, force: Bool = false, at repositoryRootURL: URL) async throws {
+        // Git rechecks locked and dirty state when removing; only an explicit
+        // force from the user discards a dirty worktree's files.
+        try await self.executor.execute(GitRemoveWorktreeCommand(worktreeURL: worktree.path, force: force), at: repositoryRootURL)
     }
 
-    func deleteWorktree(at worktreeURL: URL, in repositoryRootURL: URL) async throws {
+    func deleteWorktree(at worktreeURL: URL, in repositoryRootURL: URL, force: Bool = false) async throws {
         let worktrees = try await self.worktrees(at: repositoryRootURL)
         let worktree = try removableWorktree(at: worktreeURL, from: worktrees)
         if let branch = worktree.branch {
@@ -489,7 +490,7 @@ actor GitRepository {
                 throw GitError.commandFailed(command: "git worktree remove", message: "This branch is also checked out in another worktree.")
             }
         }
-        try await removeWorktree(worktree, at: repositoryRootURL)
+        try await removeWorktree(worktree, force: force, at: repositoryRootURL)
         if let branch = worktree.branch {
             do {
                 try await deleteBranch(branch, force: true, at: repositoryRootURL)

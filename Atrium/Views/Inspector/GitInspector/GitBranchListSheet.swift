@@ -117,6 +117,11 @@ struct GitBranchListSheet: View {
             Text(action.message)
         }
         .alert("Git Operation Failed", isPresented: $model.isShowingActionError) {
+            if let action = model.forceableAction {
+                Button("Force Delete", role: .destructive) {
+                    Task { await model.forceDelete(action) }
+                }
+            }
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.actionError ?? "")
