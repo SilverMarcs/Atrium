@@ -120,6 +120,13 @@ final class Orchestrator {
         activeTasks(in: sessionID).contains { $0.requester == .init(caller) }
     }
 
+    /// Whether a session is working, has a delegated task under way, or waits
+    /// on work it delegated or on its own subagents. One waiting on work is
+    /// busy too, which keeps sessions from waiting on each other.
+    func isBusy(_ thread: AgentThread) -> Bool {
+        thread.status.isWorking || !activeTasks(in: thread.id).isEmpty || isAwaitingWork(thread.id) || hasWorkingSubagents(thread.id)
+    }
+
     // MARK: - Delegating
 
     struct Request {
@@ -156,8 +163,7 @@ final class Orchestrator {
             }
             guard sessionID != caller.taskID else { throw ToolError("A session can't delegate to itself.") }
             guard !thread.isSubagent else { throw ToolError("Session \(sessionID) is a subagent, which takes instructions only from its own agent.") }
-            // One waiting on work it delegated is busy too, which also keeps sessions from waiting on each other.
-            guard !thread.status.isWorking, activeTasks(in: sessionID).isEmpty, !isAwaitingWork(sessionID) else {
+            guard !isBusy(thread) else {
                 throw ToolError("Session \(sessionID) is busy. Wait until it's done, or delegate to a new session.")
             }
             guard integrations.enabledProviders.contains(thread.provider) else {
@@ -305,7 +311,13 @@ final class Orchestrator {
     /// it, or a subagent of its own.
     private func isDone(_ thread: AgentThread) -> Bool {
         guard Self.outcome(of: thread.status) != nil, !prompted.contains(thread.id), !isAwaitingWork(thread.id) else { return false }
-        return !integrations.threads.contains { $0.parentID == thread.id && $0.status.isWorking }
+        return !hasWorkingSubagents(thread.id)
+    }
+
+    /// Whether a session's own subagents are still working, which a session
+    /// can be while it reads as done.
+    private func hasWorkingSubagents(_ id: String) -> Bool {
+        integrations.threads.contains { $0.parentID == id && $0.status.isWorking }
     }
 
     /// Whether work a session delegated is unfinished, or its result is still to reach it.
