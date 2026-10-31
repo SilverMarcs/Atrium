@@ -158,8 +158,8 @@ nonisolated enum ClaudeTranscript {
 
     // MARK: - Claude's frames
 
-    /// What a user turn says: a prompt typed or relayed by Atrium, or subagents
-    /// reporting back, with the relay naming them. Nil for tool results,
+    /// What a user turn says: a prompt typed, pasted or relayed by Atrium, or
+    /// subagents reporting back, with the relay naming them. Nil for tool results,
     /// slash-command output, injected context and other sessions' messages.
     static func prompt(_ content: Any?) -> (text: String, relay: TranscriptRelay?)? {
         let text: String
@@ -171,15 +171,35 @@ nonisolated enum ClaudeTranscript {
         } else {
             return nil
         }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = unwrappingPastes(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let reports = subagentReports(in: trimmed)
         if !reports.isEmpty {
             return (reports.map(\.result).joined(separator: "\n\n---\n\n"),
                     TranscriptRelay(kind: .results, senders: reports.map { .init(name: $0.agent) }))
         }
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("<") || RelayedMessage.isRelayed(trimmed),
-              !trimmed.hasPrefix("[Request interrupted"), !isPeerMessage(trimmed) else { return nil }
+        guard !trimmed.isEmpty, !isWrapped(trimmed), !trimmed.hasPrefix("[Request interrupted"), !isPeerMessage(trimmed) else { return nil }
         return (trimmed, nil)
+    }
+
+    /// The tags Claude wraps its own context, notifications and command output
+    /// in. Anything else starting with `<` is what the user typed or pasted.
+    private static let wrapperTags: Set = [
+        "command-name", "command-message", "command-args", "local-command-stdout", "local-command-stderr",
+        "local-command-caveat", "bash-input", "bash-stdout", "bash-stderr", "task-notification", "agent-message",
+        "system-reminder", "artifact-content-authored-by-others"
+    ]
+
+    private static func isWrapped(_ text: String) -> Bool {
+        text.hasPrefix("<") && wrapperTags.contains(String(text.dropFirst().prefix { $0.isLetter || $0 == "-" || $0 == "_" }))
+    }
+
+    /// Claude saves a long paste between `<pasted_content id="…">` and
+    /// `</pasted_content id="…">` lines; the prompt shows just what was pasted.
+    private static func unwrappingPastes(_ text: String) -> String {
+        guard text.contains("<pasted_content ") else { return text }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+            !((line.hasPrefix("<pasted_content ") || line.hasPrefix("</pasted_content")) && line.hasSuffix(">"))
+        }.joined(separator: "\n")
     }
 
     /// A prompt that joined a turn mid-way: one typed or relayed, a subagent
