@@ -4,7 +4,7 @@ import SwiftUI
 
 /// This Mac as a host other devices connect to, and every host this Mac shows,
 /// itself included. Every connected host's tasks show in the window at once.
-struct HostsSettingsView: View {
+struct RemoteSettingsView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {

@@ -3,7 +3,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The agents this Mac's own host runs tasks with.
-struct IntegrationsSettingsView: View {
+struct AgentsSettingsView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {

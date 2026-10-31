@@ -13,7 +13,7 @@ struct PairingScreen: View {
         Form {
             Section {
                 Label {
-                    Text("Open Atrium → Settings → Hosts on your Mac and turn on remote access.")
+                    Text("Open Atrium → Settings → Remote on your Mac and turn on remote access.")
                 } icon: {
                     Image(systemName: "macbook")
                 }

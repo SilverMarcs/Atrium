@@ -8,24 +8,18 @@ struct SettingsView: View {
             }
 
             Tab("Agents", systemImage: "puzzlepiece.extension") {
-                IntegrationsSettingsView()
+                AgentsSettingsView()
             }
 
-            Tab("Hosts", systemImage: "network") {
-                HostsSettingsView()
+            Tab("Remote", systemImage: "network") {
+                RemoteSettingsView()
             }
 
             Tab("Updates", systemImage: "arrow.down.circle") {
                 UpdatesSettingsView()
             }
 
-            Tab("Shortcuts", systemImage: "keyboard") {
-                ShortcutsSettingsView()
-            }
-
-            Tab("Credits", systemImage: "heart") {
-                CreditsSettingsView()
-            }
+            // Shortcuts and Credits are hidden for now; their views stay.
         }
         .frame(width: 480, height: 520)
     }
