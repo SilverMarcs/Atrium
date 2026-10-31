@@ -1,12 +1,14 @@
 import Foundation
 
-/// A user turn another agent wrote: a task delegated to this session, or
-/// reports from agents it handed work to, whether sessions Atrium delegated to
-/// or the agent's own subagents. Agents only take input as user turns, so both
-/// arrive as one; apps show neither as typed by the user.
+/// A user turn another agent wrote: a task delegated to this session, a
+/// subagent's instructions from its agent, or reports from agents it handed work
+/// to, whether sessions Atrium delegated to or the agent's own subagents. Agents
+/// only take input as user turns, so all arrive as one; apps show none as typed
+/// by the user.
 public nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
     public enum Kind: String, Codable, Sendable {
-        /// Work for this session. Its text blocks hold only the request.
+        /// Work for this session, delegated through Atrium or from the agent
+        /// running it as a subagent. Its text blocks hold only the request.
         case task
         /// Agents reporting back or asking, which fold into the reply as steps naming them.
         case results
@@ -33,6 +35,8 @@ public nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
     /// A task's requester, or each agent reporting back or asking.
     public var senders: [Sender]
     /// The Atrium tasks whose results it carries, or the task it delegates.
+    /// Empty when no Atrium task is involved, as for a subagent's instructions
+    /// from its agent or its reports.
     public var taskIDs: [String]
     /// The Atrium tasks whose questions it passes on, which are still under way.
     public var questionTaskIDs: [String]
@@ -48,7 +52,7 @@ public nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
 public nonisolated extension [TranscriptMessage] {
     /// The conversation as its user follows it: reports from other agents fold
     /// into the reply they arrived during, as steps naming who reported back or
-    /// asked, so the only prompts left are the user's own and delegated requests.
+    /// asked, so the only prompts left are the user's own and requests from other agents.
     func foldingReports() -> [TranscriptMessage] {
         var folded: [TranscriptMessage] = []
         for var message in self {

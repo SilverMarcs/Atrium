@@ -14,6 +14,7 @@ struct TranscriptMessageRow: View {
             UserMessageView(
                 text: message.blocks.compactMap(\.text).joined(separator: "\n"),
                 images: message.images ?? [],
+                isFromAgent: message.relay != nil,
                 edit: edit, editEnabled: editEnabled,
                 sendFlight: { [id = message.id] in $0.flight(forConfirmed: id) }
             )

@@ -18,7 +18,7 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
     public var editTarget: String? = nil
     /// Sent while the agent was working, so it joined that turn rather than starting one.
     public var isSteer: Bool = false
-    /// Set on a user message Atrium relayed from another agent.
+    /// Set on a user message another agent wrote, rather than the user.
     public var relay: TranscriptRelay? = nil
 
     public init(

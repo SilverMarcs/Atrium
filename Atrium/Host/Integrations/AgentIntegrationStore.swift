@@ -679,7 +679,8 @@ final class AgentIntegrationStore {
         interactions.removeAll { $0.id == request.id }
     }
 
-    /// Prompts another agent wrote show as relayed, holding only what was relayed.
+    /// Prompts another agent wrote show as relayed, holding only what was relayed:
+    /// those Atrium relayed, and every prompt a subagent took from its agent.
     /// Reading a transcript records the media it shows, for clients to fetch.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
         let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
@@ -693,8 +694,12 @@ final class AgentIntegrationStore {
            let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
             message.blocks = [.text(relayed.body, id: first.id)]
             message.relay = relayed.relay
+        } else if source.role == .user, source.relay == nil, let parent = thread.parentSessionID {
+            // Only its own agent prompts a subagent, so each of its prompts is that agent's, even a
+            // fork's: Claude references its parent's history and Codex lists only the fork's own turns.
+            message.relay = TranscriptRelay(kind: .task, senders: [.init(name: thread.provider.name, sessionID: parent)])
         }
-        // A subagent is named as its thread is listed, once it has been.
+        // An agent is named as its thread is listed, once it has been.
         for index in message.relay?.senders.indices ?? 0..<0 {
             guard let id = message.relay?.senders[index].sessionID,
                   let agent = threads.first(where: { $0.provider == thread.provider && $0.sessionID == id }) else { continue }

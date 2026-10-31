@@ -4,9 +4,11 @@ import AppKit
 #endif
 
 /// Shared prompt bubble; only padding, desktop copy, and the mobile flight differ.
+/// A prompt another agent wrote is gray rather than tinted, so the user's own stand out.
 struct UserMessageView: View {
     let text: String
     var images: [Data] = []
+    var isFromAgent = false
     var edit: (() -> Void)?
     var editEnabled = true
     var sendFlight: (PromptSendAnimator) -> PromptSendFlight? = { _ in nil }
@@ -28,7 +30,7 @@ struct UserMessageView: View {
                 #else
                 .padding(12)
                 #endif
-                .background(Color.accentColor.quinary)
+                .background(isFromAgent ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(Color.accentColor.quinary))
                 .clipShape(.rect(cornerRadius: 20))
                 // Menu sits on the bubble itself so iOS lifts just the bubble, not the full-width row.
                 #if os(iOS)

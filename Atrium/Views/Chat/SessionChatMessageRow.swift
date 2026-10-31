@@ -22,6 +22,7 @@ struct SessionChatMessageRow: View {
         UserMessageView(
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: message.images ?? [],
+          isFromAgent: message.relay != nil,
           edit: edit, editEnabled: editEnabled,
           sendFlight: { $0.flight(forTimelineID: message.id) })
       }
