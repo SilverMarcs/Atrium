@@ -11,10 +11,6 @@ struct SettingsView: View {
                 AgentsSettingsView()
             }
 
-            Tab("Integrations", systemImage: "point.3.connected.trianglepath.dotted") {
-                IntegrationsSettingsView()
-            }
-
             Tab("Remote", systemImage: "network") {
                 RemoteSettingsView()
             }

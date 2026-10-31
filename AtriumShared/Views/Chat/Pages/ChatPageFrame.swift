@@ -61,7 +61,7 @@ struct ChatPageFrame: View {
                 .padding(8)
             }
         }
-        .frame(height: min(max(contentHeight ?? CGFloat(page.height ?? 240), Self.minimumHeight), Self.maximumHeight))
+        .frame(height: min(max(contentHeight ?? 240, Self.minimumHeight), Self.maximumHeight))
         .frame(maxWidth: .infinity)
         #if os(macOS)
         .background(ScrollWheelPassthrough(isEnabled: fits))

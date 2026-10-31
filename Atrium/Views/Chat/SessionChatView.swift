@@ -172,7 +172,7 @@ struct SessionChatView: View {
     }
     .modifier(AgentInteractionPresentation(
       // Requests from the work below this task come up here too, as those sessions aren't listed.
-      requests: task.interactions + item.delegatedRequests,
+      requests: task.interactions + item.subagentRequests,
       respond: { request, decision in
         _ = try await host.request(.task(id: request.taskID, action: .respond(interactionID: request.id, decision: decision)))
       }

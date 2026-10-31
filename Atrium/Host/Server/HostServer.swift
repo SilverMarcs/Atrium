@@ -77,7 +77,7 @@ final class HostServer {
     @ObservationIgnored private let sessions: TaskSessionController
     @ObservationIgnored private let orchestrator: Orchestrator
     @ObservationIgnored private let media: MediaService
-    /// ChatGPT's access to the orchestration tools through OpenAI's tunnel client.
+    /// ChatGPT's access to Atrium's tools through OpenAI's tunnel client.
     @ObservationIgnored let chatGPTAccess: ChatGPTAccess
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
@@ -97,18 +97,17 @@ final class HostServer {
     }()
 
     init() {
-        ToolGroup.registerDefaults()
         workspaces = WorkspaceStore()
         let bridge = AgentBridgeServer()
-        integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(bridge: bridge), ClaudeAgentAdapter(bridge: bridge)])
+        integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(), ClaudeAgentAdapter(bridge: bridge)])
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, sessions: sessions, workspaces: workspaces, directory: bridge.storage)
         media = MediaService(integrations: integrations)
-        bridge.toolServer = AtriumToolServer(credentials: bridge.credentials, kits: [
-            OrchestrationTools(orchestrator: orchestrator, integrations: integrations, sessions: sessions, workspaces: workspaces),
-            PageTools(integrations: integrations),
-        ])
-        chatGPTAccess = ChatGPTAccess(bridge: bridge)
+        let credential = ChatGPTCredential(directory: bridge.storage)
+        bridge.toolServer = AtriumToolServer(credential: credential, tools: OrchestrationTools(
+            orchestrator: orchestrator, integrations: integrations, sessions: sessions, workspaces: workspaces
+        ))
+        chatGPTAccess = ChatGPTAccess(bridge: bridge, credential: credential)
         tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator)
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
@@ -118,14 +117,8 @@ final class HostServer {
         integrations.onAttention = { [orchestrator] thread in
             if let target = orchestrator.attentionTarget(for: thread) { alert?(target) }
         }
-        integrations.onThreadRemoved = { [orchestrator, bridge] id in
-            orchestrator.sessionRemoved(id)
-            bridge.credentials.revokeSession(id)
-        }
-        Task {
-            await integrations.refresh()
-            await orchestrator.reconcileDeliveries()
-        }
+        integrations.onThreadRemoved = { [orchestrator] id in orchestrator.sessionRemoved(id) }
+        Task { await integrations.refresh() }
         if isRemoteAccessEnabled { startRemoteAccess() }
     }
 
@@ -296,8 +289,8 @@ final class HostServer {
                 return .failed(message: "This task no longer exists.")
             }
             do {
-                // The work the session delegated stops with it.
-                try await orchestrator.stop(thread, by: nil)
+                // Its subagents stop with it.
+                try await orchestrator.stop(thread)
                 return .done
             } catch {
                 return .failed(message: error.localizedDescription)
@@ -486,9 +479,9 @@ final class HostServer {
         status = .stopped
     }
 
-    /// What a phone is alerted about, by the same rule as the Mac: delegated
-    /// sessions alert as the session they're listed under, and they and
-    /// ChatGPT's sessions only when they need an answer.
+    /// What a phone is alerted about, by the same rule as the Mac: subagents
+    /// alert as the session they're listed under, and they and ChatGPT's
+    /// sessions only when they need an answer.
     private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
         guard task.origin != nil else { return task }
         guard task.status == .waiting else { return nil }

@@ -4,6 +4,7 @@ release.sh
 build
 Atrium.dmg
 .codex/
+.claude/
 .build
 .DS_Store
 

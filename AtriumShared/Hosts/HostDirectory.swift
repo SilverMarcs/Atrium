@@ -106,8 +106,8 @@ final class HostDirectory {
         .sorted { WireTask.newestFirst($0.task, $1.task) }
     }
 
-    /// The tasks lists show on their own. A session another one delegated work
-    /// to is shown in that session instead, and ChatGPT's sessions apart.
+    /// The tasks lists show on their own. A subagent is shown in its session
+    /// instead, and ChatGPT's sessions apart.
     var listedTasks: [HostTask] {
         tasks.filter { $0.task.origin != .chatGPT && $0.parent == nil }
     }

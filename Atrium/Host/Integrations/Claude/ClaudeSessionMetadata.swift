@@ -22,7 +22,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         // Claude has used transcript records for names and, more recently, a separate rename file.
         let customName = string("customTitle", in: tail, last: true) ?? renamedTitle ?? earlierCustomTitle
         let name = customName ?? string("aiTitle", in: tail, last: true) ?? string("aiTitle", in: head, last: true)
-        guard let title = name ?? string("lastPrompt", in: tail, last: true).flatMap(promptTitle)
+        guard let title = name ?? string("lastPrompt", in: tail, last: true).map(promptTitle)
             ?? string("summary", in: tail, last: true) ?? firstPrompt(in: head) else { return nil }
         // A large first prompt can push its cwd beyond the bounded head window.
         let originalDirectory = string("cwd", in: head)
@@ -109,11 +109,9 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         return nil
     }
 
-    /// What a prompt reads as in a title: a delegated task is its request, and
-    /// results relayed back from other agents aren't one.
-    private static func promptTitle(_ text: String) -> String? {
-        if let relayed = RelayedMessage.relay(in: text), relayed.relay.kind == .task { return relayed.body }
-        return RelayedMessage.isRelayed(text) ? nil : text
+    /// What a prompt reads as in a title: a relayed task is its request.
+    private static func promptTitle(_ text: String) -> String {
+        RelayedMessage.relay(in: text)?.body ?? text
     }
 
     private static func firstPrompt(in head: String) -> String? {
@@ -128,7 +126,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             let texts = (content as? String).map { [$0] }
                 ?? blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
             for text in texts {
-                guard let text = promptTitle(text).flatMap({ nonempty($0.replacing("\n", with: " ")) }) else { continue }
+                guard let text = nonempty(promptTitle(text).replacing("\n", with: " ")) else { continue }
                 if let command = tag("command-name", in: text) { fallback = fallback ?? command; continue }
                 if let command = tag("bash-input", in: text) { return "! \(command)" }
                 if ["<local-command-", "<command-message>", "<task-notification>", "<system-reminder>"].contains(where: text.hasPrefix) {

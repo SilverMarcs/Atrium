@@ -14,7 +14,7 @@ final class AppModel {
     /// This Mac's task and command terminals. They stay on its host, so only
     /// its own projects show them; nothing else of the host is reachable here.
     let terminals: HostTerminals
-    /// Whether ChatGPT may reach this Mac's orchestration tools. It stays on
+    /// Whether ChatGPT may reach this Mac's tools. It stays on
     /// this Mac's host, like its terminals.
     let chatGPTAccess: ChatGPTAccess
     /// The task the window shows, on whichever host it lives.

@@ -94,7 +94,7 @@ struct TaskDetailView: View {
 
     private var subtitle: String {
         if let parent = item.parent {
-            return "\(task.isSubagent ? "Subagent of" : "Delegated by") \(parent.provider.name) · \(parent.title)"
+            return "Subagent of \(parent.provider.name) · \(parent.title)"
         }
         if task.origin == .chatGPT { return "Started by ChatGPT" }
         let directory = project?.workspace?.directory ?? task.directory

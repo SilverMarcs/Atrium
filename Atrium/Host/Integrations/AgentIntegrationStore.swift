@@ -679,18 +679,25 @@ final class AgentIntegrationStore {
         interactions.removeAll { $0.id == request.id }
     }
 
-    /// Prompts another agent wrote show as relayed, holding only what was relayed:
-    /// those Atrium relayed, and every prompt a subagent took from its agent.
-    /// Reading a transcript records the media it shows, for clients to fetch.
+    /// The conversation as apps show it. Prompts another agent wrote show as
+    /// relayed, holding only what was relayed: tasks Atrium relayed for ChatGPT,
+    /// and every prompt a subagent took from its agent. Pages written in replies
+    /// show as pages. Reading a transcript records the media it shows, for
+    /// clients to fetch.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
-        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
+        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { presented($0, in: thread) }
         media.record(messages, of: thread)
         return messages
     }
 
-    private func relayed(_ source: TranscriptMessage, in thread: AgentThread) -> TranscriptMessage {
+    private func presented(_ source: TranscriptMessage, in thread: AgentThread) -> TranscriptMessage {
         var message = source
-        if source.role == .user, let first = source.blocks.first, let text = first.text,
+        if source.role == .assistant {
+            message.blocks = source.blocks.flatMap { block in
+                guard case .text(let text, let id) = block else { return [block] }
+                return ChatPages.blocks(inReply: text, id: id)
+            }
+        } else if source.role == .user, let first = source.blocks.first, let text = first.text,
            let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
             message.blocks = [.text(relayed.body, id: first.id)]
             message.relay = relayed.relay
@@ -722,7 +729,7 @@ final class AgentIntegrationStore {
         }
         defer { rewindingThreadIDs.remove(thread.id) }
         let rewound = try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
-        return (rewound.messages.map { relayed($0, in: thread) }, rewound.images)
+        return (rewound.messages.map { presented($0, in: thread) }, rewound.images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

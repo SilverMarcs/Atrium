@@ -36,8 +36,6 @@ nonisolated enum ClaudeTranscript {
     static func messages(fromLines lines: some Sequence<Data>, sidechain: Bool = false) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
         var assistant: TranscriptMessage?
-        /// Pages shown by `render_html` calls, by call ID, until their results say whether they showed.
-        var pageCalls: [String: String] = [:]
         func flushAssistant() {
             if let assistant, !assistant.blocks.isEmpty { messages.append(assistant) }
             assistant = nil
@@ -47,16 +45,6 @@ nonisolated enum ClaudeTranscript {
             let message = record["message"] as? [String: Any]
             switch record["type"] as? String {
             case "user":
-                // A `render_html` call Atrium turned down showed nothing, so it counts as a tool call.
-                for result in message?["content"] as? [[String: Any]] ?? [] where result["is_error"] as? Bool == true {
-                    guard result["type"] as? String == "tool_result", let call = result["tool_use_id"] as? String,
-                          let blockID = pageCalls.removeValue(forKey: call) else { continue }
-                    if let index = assistant?.blocks.firstIndex(where: { $0.id == blockID }) {
-                        assistant?.blocks.countAsToolCall(at: index)
-                    } else if let message = messages.indices.last, let index = messages[message].blocks.firstIndex(where: { $0.id == blockID }) {
-                        messages[message].blocks.countAsToolCall(at: index)
-                    }
-                }
                 let images = imageData(in: record).compactMap { TranscriptImage.thumbnail($0) }
                 let typed = prompt(message?["content"]).map { isCoordinatorMessage(record) ? (text: coordinatorText($0.text), relay: $0.relay) : $0 }
                 let text = typed?.text ?? ""
@@ -88,9 +76,7 @@ nonisolated enum ClaudeTranscript {
             case "assistant":
                 var blocks = assistant?.blocks ?? []
                 for (index, content) in (message?["content"] as? [[String: Any]] ?? []).enumerated() {
-                    let id = "\(uuid).\(index)"
-                    append(content, id: id, directory: record["cwd"] as? String, to: &blocks)
-                    if case .page(_, let blockID)? = blocks.last, blockID == id, let call = content["id"] as? String { pageCalls[call] = id }
+                    append(content, id: "\(uuid).\(index)", directory: record["cwd"] as? String, to: &blocks)
                 }
                 guard !blocks.isEmpty else { continue }
                 if assistant == nil { assistant = TranscriptMessage(id: uuid, role: .assistant, blocks: []) }
@@ -125,7 +111,7 @@ nonisolated enum ClaudeTranscript {
     /// Agents reporting back join the turn they arrive in, so they never push
     /// the user's own turns out of the window.
     private static func startsTurn(_ prompt: (text: String, relay: TranscriptRelay?)) -> Bool {
-        prompt.relay?.kind != .results && !prompt.text.hasPrefix("<\(RelayedMessage.resultsTag)>")
+        prompt.relay?.kind != .results
     }
 
     /// The identifier of the record Claude saves once a turn's Stop hooks finish.
@@ -158,8 +144,8 @@ nonisolated enum ClaudeTranscript {
 
     // MARK: - Claude's frames
 
-    /// What a user turn says: a prompt typed, pasted or relayed by Atrium, or
-    /// subagents reporting back, with the relay naming them. Nil for tool results,
+    /// What a user turn says: a prompt typed, pasted or relayed by Atrium for
+    /// ChatGPT, or subagents reporting back, with the relay naming them. Nil for tool results,
     /// slash-command output, injected context and other sessions' messages.
     static func prompt(_ content: Any?) -> (text: String, relay: TranscriptRelay?)? {
         let text: String
@@ -260,17 +246,15 @@ nonisolated enum ClaudeTranscript {
 
     // MARK: - Tool calls
 
-    /// The block a tool call shows as: a page from `render_html`, the images
-    /// `SendUserFile` sent, written as Markdown, or the report a subagent hands
-    /// back, which closes its reply. Nil for a call that's only counted.
+    /// The block a tool call shows as: the images `SendUserFile` sent, written
+    /// as Markdown, or the report a subagent hands back, which closes its
+    /// reply. Nil for a call that's only counted.
     static func block(forTool name: String?, input: Any?, directory: String?, id: String) -> TranscriptBlock? {
         switch name {
         case "SubagentHandback":
             guard let report = (input as? [String: Any])?["message"] as? String,
                   !report.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return .text(report, id: id)
-        case PageTools.claudeRenderHTML:
-            return ChatPages.page(arguments: input).map { .page($0, id: id) }
         case "SendUserFile":
             guard let input = input as? [String: Any] else { return nil }
             let images = (input["files"] as? [String] ?? []).filter {
@@ -302,24 +286,5 @@ nonisolated enum ClaudeTranscript {
         default:
             break
         }
-    }
-}
-
-private nonisolated extension [TranscriptBlock] {
-    /// Counts the block at `index` as a tool call instead, in one run with the tool calls around it.
-    mutating func countAsToolCall(at index: Int) {
-        var at = index
-        var run = (count: 1, id: self[at].id)
-        remove(at: at)
-        if at > startIndex, case .tools(let count, let id) = self[at - 1] {
-            run = (count + 1, id)
-            at -= 1
-            remove(at: at)
-        }
-        if at < endIndex, case .tools(let count, _) = self[at] {
-            run.count += count
-            remove(at: at)
-        }
-        insert(.tools(count: run.count, id: run.id), at: at)
     }
 }

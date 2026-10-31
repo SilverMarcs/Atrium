@@ -47,7 +47,7 @@ struct ProtocolTests {
     @Test func pageBlocksRoundTrip() throws {
         let blocks: [TranscriptBlock] = [
             .text("Here", id: "1"), .tools(count: 2, id: "2"),
-            .page(TranscriptPage(key: "abc", title: "Revenue", height: 320), id: "3")
+            .page(TranscriptPage(key: "abc", title: "Revenue"), id: "3")
         ]
         #expect(try HostCodec.decode([TranscriptBlock].self, from: HostCodec.encode(blocks)) == blocks)
         let encoded = String(decoding: try HostCodec.encode(blocks[2]), as: UTF8.self)
@@ -55,7 +55,7 @@ struct ProtocolTests {
     }
 
     @Test func reportBlocksRoundTrip() throws {
-        let block = TranscriptBlock.report(.init(name: "Codex · Tests", asksQuestion: true, sessionID: "t"), id: "r")
+        let block = TranscriptBlock.report(.init(name: "Codex · Tests", sessionID: "t"), id: "r")
         #expect(try HostCodec.decode(TranscriptBlock.self, from: HostCodec.encode(block)) == block)
         #expect(String(decoding: try HostCodec.encode(block), as: UTF8.self).contains(#""agent":{"#))
     }
@@ -63,18 +63,18 @@ struct ProtocolTests {
     @Test func reportsFoldIntoTheReplyTheyJoin() {
         let messages = [
             TranscriptMessage(id: "p", role: .user, blocks: [.text("Fix it", id: "p")]),
-            TranscriptMessage(id: "a", role: .assistant, blocks: [.tools(count: 1, id: "a.0"), .text("Delegated.", id: "a.1")]),
+            TranscriptMessage(id: "a", role: .assistant, blocks: [.tools(count: 1, id: "a.0"), .text("Started two subagents.", id: "a.1")]),
             TranscriptMessage(id: "r", role: .user, blocks: [.text("Full report", id: "r")],
                               relay: TranscriptRelay(kind: .results, senders: [.init(name: "Claude · Fix the toolbar"),
-                                                                                .init(name: "Codex · Tests", asksQuestion: true)])),
+                                                                                .init(name: "Codex · Tests")])),
             TranscriptMessage(id: "b", role: .assistant, blocks: [.text("Both done.", id: "b.0")]),
             TranscriptMessage(id: "q", role: .user, blocks: [.text("Thanks", id: "q")])
         ]
         let folded = messages.foldingReports()
         #expect(folded.map(\.id) == ["p", "a", "q"])
         #expect(folded[1].blocks == [
-            .tools(count: 1, id: "a.0"), .text("Delegated.", id: "a.1"),
-            .report(.init(name: "Claude · Fix the toolbar"), id: "r.0"), .report(.init(name: "Codex · Tests", asksQuestion: true), id: "r.1"),
+            .tools(count: 1, id: "a.0"), .text("Started two subagents.", id: "a.1"),
+            .report(.init(name: "Claude · Fix the toolbar"), id: "r.0"), .report(.init(name: "Codex · Tests"), id: "r.1"),
             .text("Both done.", id: "b.0")
         ])
     }
@@ -84,7 +84,7 @@ struct ProtocolTests {
             TranscriptMessage(id: "r", role: .user, blocks: [], relay: TranscriptRelay(kind: .results, senders: [.init(name: "Codex · audit")])),
             TranscriptMessage(id: "b", role: .assistant, blocks: [.text("Done.", id: "b.0")]),
             TranscriptMessage(id: "t", role: .user, blocks: [.text("Do this", id: "t")],
-                              relay: TranscriptRelay(kind: .task, senders: [.init(name: "Claude · Parent")], taskIDs: ["1"]))
+                              relay: TranscriptRelay(kind: .task, senders: [.init(name: "Claude · Parent")], taskID: "1"))
         ]
         let folded = messages.foldingReports()
         #expect(folded.map(\.id) == ["r", "t"])

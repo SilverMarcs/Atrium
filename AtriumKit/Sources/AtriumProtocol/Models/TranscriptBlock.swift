@@ -6,11 +6,10 @@ public nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiab
     /// A run of consecutive tool calls. Only how many there were is kept, so
     /// long tasks stay small on the wire and in memory.
     case tools(count: Int, id: String)
-    /// A page the agent showed with Atrium's `render_html` tool.
+    /// A page the agent wrote in its reply as an `atrium-page` block.
     case page(TranscriptPage, id: String)
-    /// Another agent reporting back or asking a question while the agent
-    /// worked, such as one of its subagents or a session it delegated to. Only
-    /// who it was is kept: what it said is the agent's input, not its reply.
+    /// One of the agent's subagents reporting back while the agent worked.
+    /// Only who it was is kept: what it said is the agent's input, not its reply.
     case report(TranscriptRelay.Sender, id: String)
 
     public var id: String {

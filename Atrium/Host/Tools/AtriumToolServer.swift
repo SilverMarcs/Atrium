@@ -2,18 +2,6 @@ import Foundation
 import MCP
 import OSLog
 
-/// One group of Atrium's tools. Every caller shares the implementation; what
-/// each one may see and do is decided per caller.
-@MainActor
-protocol ToolKit: AnyObject {
-    var group: ToolGroup { get }
-    var tools: [Tool] { get }
-    /// What a caller with this group is told about it when it connects.
-    func instructions(for caller: ToolCaller) -> String
-    /// Throws `ToolError` for a call the tool turns down.
-    func call(_ name: String, arguments: [String: Value], from caller: ToolCaller) async throws -> CallTool.Result
-}
-
 nonisolated extension CallTool.Result {
     static func text(_ text: String, isError: Bool = false) -> Self {
         Self(content: [.text(text: text, annotations: nil, _meta: nil)], isError: isError ? true : nil)
@@ -29,57 +17,39 @@ nonisolated struct ToolError: Error {
     }
 }
 
-/// Atrium's MCP server: one implementation for every agent Atrium starts and
-/// for ChatGPT, served statelessly over the bridge.
+/// Atrium's MCP server, for ChatGPT, which reaches it through OpenAI's
+/// tunnel client and is served statelessly over the bridge.
 ///
-/// Each request is authenticated by its bearer token alone, which names the
-/// caller, so a model never supplies its own identity. A fresh SDK server
-/// answers each request with only the tool groups that caller may use and
-/// Settings has turned on, and calls are checked again against the same rule.
+/// Each request is authenticated by ChatGPT's bearer token alone, and a
+/// fresh SDK server answers it.
 @MainActor
 final class AtriumToolServer {
-    /// The name agents know the server by. Claude prefixes its tools with `mcp__atrium__`.
     nonisolated static let name = "atrium"
 
     private static let log = Logger(subsystem: "Atrium", category: "Tools")
-    private let credentials: ToolCredentials
-    private let kits: [any ToolKit]
-    private let defaults: UserDefaults
+    private let credential: ChatGPTCredential
+    private let orchestration: OrchestrationTools
 
-    init(credentials: ToolCredentials, kits: [any ToolKit], defaults: UserDefaults = .standard) {
-        self.credentials = credentials
-        self.kits = kits
-        self.defaults = defaults
-    }
-
-    /// Every tool name, for agents whose own permission rules list them.
-    var allToolNames: [String] { kits.flatMap { $0.tools.map(\.name) } }
-
-    /// The groups a caller may use right now. Settings turn groups on and off
-    /// for sessions; ChatGPT always has the orchestration tools, as turning its
-    /// access on is what it's for.
-    func groups(for caller: ToolCaller) -> Set<ToolGroup> {
-        caller == .remote ? caller.permittedGroups : ToolGroup.enabled(in: defaults).intersection(caller.permittedGroups)
+    init(credential: ChatGPTCredential, tools: OrchestrationTools) {
+        self.credential = credential
+        self.orchestration = tools
     }
 
     func respond(to request: BridgeRequest) async -> BridgeResponse {
-        // Browsers send an Origin; agents and the tunnel client don't. A page
-        // can't read the token, but refuse it outright anyway.
+        // Browsers send an Origin; the tunnel client doesn't. A page can't
+        // read the token, but refuse it outright anyway.
         if let origin = request.headers["origin"], !Self.isLoopback(origin) {
             return BridgeResponse(status: 403)
         }
-        guard let caller = credentials.caller(presenting: request.headers["authorization"]) else {
+        guard credential.accepts(request.headers["authorization"]) else {
             return BridgeResponse(status: 401, headers: ["WWW-Authenticate": "Bearer"])
         }
-        let groups = groups(for: caller)
-        let available = kits.filter { groups.contains($0.group) }
-        let instructions = available.map { $0.instructions(for: caller) }.joined(separator: "\n\n")
         let server = Server(
             name: Self.name, version: "2.0", title: "Atrium",
-            instructions: instructions.isEmpty ? nil : instructions,
+            instructions: OrchestrationTools.instructions,
             capabilities: .init(tools: .init(listChanged: false))
         )
-        let tools = available.flatMap(\.tools)
+        let tools = OrchestrationTools.tools
         await server.withMethodHandler(ListTools.self) { _ in ListTools.Result(tools: tools) }
         let authorization = request.headers["authorization"]
         await server.withMethodHandler(CallTool.self) { [weak self] params in
@@ -101,25 +71,15 @@ final class AtriumToolServer {
         ))
         await server.stop()
         let method = (try? JSONSerialization.jsonObject(with: request.body) as? [String: Any])?["method"] as? String ?? request.method
-        Self.log.debug("\(String(describing: caller), privacy: .public) \(method, privacy: .public) → \(response.statusCode)")
+        Self.log.debug("ChatGPT \(method, privacy: .public) → \(response.statusCode)")
         return BridgeResponse(status: response.statusCode, headers: response.headers, body: response.bodyData ?? Data())
     }
 
     private func call(_ name: String, arguments: [String: Value], authorization: String?) async -> CallTool.Result {
-        // Who's calling is looked up again, as a session may have been named since.
-        guard let caller = credentials.caller(presenting: authorization) else { return .text("Atrium no longer accepts this credential.", isError: true) }
-        guard caller != .startingSession else { return .text("Atrium is still starting this session. Try again in a moment.", isError: true) }
-        // Settings may have changed since the caller listed its tools.
-        let groups = groups(for: caller)
-        // Tools a caller may never use don't exist as far as it can tell.
-        guard let kit = kits.first(where: { caller.permittedGroups.contains($0.group) && $0.tools.contains { $0.name == name } }) else {
-            return .text("Atrium has no tool named \(name).", isError: true)
-        }
-        guard groups.contains(kit.group) else {
-            return .text("\(name) isn't available to you. The user can turn it on in Atrium Settings → Integrations.", isError: true)
-        }
+        // The token may have been reset since the request arrived.
+        guard credential.accepts(authorization) else { return .text("Atrium no longer accepts this credential.", isError: true) }
         do {
-            return try await kit.call(name, arguments: arguments, from: caller)
+            return try await orchestration.call(name, arguments: arguments)
         } catch let error as ToolError {
             return .text(error.message, isError: true)
         } catch {

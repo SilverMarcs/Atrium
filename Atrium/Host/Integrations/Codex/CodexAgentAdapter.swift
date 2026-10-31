@@ -8,7 +8,6 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
-    private let bridge: AgentBridgeServer
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
@@ -32,6 +31,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var defaultModel: String?
     private var defaultReasoningEffort: String?
     private var defaultServiceTier: String?
+    /// The user's own developer instructions, which Atrium's go after.
+    private var userDeveloperInstructions: String?
     var defaultSettings: TaskStartSettings? {
         TaskStartSettings(
             model: defaultModel, reasoningEffort: defaultReasoningEffort,
@@ -54,8 +55,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var titleResponses: [String: CodexTitleResponse] = [:]
     private var titleModel: String?
 
-    init(bridge: AgentBridgeServer) {
-        self.bridge = bridge
+    init() {
         socket.onMessage = { [weak self] in self?.receive($0) }
         socket.onClose = { [weak self] in self?.disconnect(error: $0) }
     }
@@ -213,38 +213,22 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return state
     }
 
-    /// Gives a thread Atrium's tools, under a credential that identifies it.
-    /// Codex loads a thread's config when it starts or resumes it, so threads
-    /// it already has loaded keep theirs.
-    private func toolConfig(_ grant: ToolCredentials.Grant) async throws -> [String: Any] {
-        let endpoint = try await bridge.start()
-        return ["mcp_servers.\(AtriumToolServer.name)": [
-            "url": endpoint.url("mcp"),
-            "http_headers": ["Authorization": "Bearer " + grant.token],
-            // Atrium's tools are only those Settings turned on, each checked on every call.
-            "default_tools_approval_mode": "approve"
-        ]]
+    /// What Codex tells a thread's agent as developer instructions: the
+    /// user's own, then Atrium's. Codex takes them when it starts or resumes a
+    /// thread, so threads it already has loaded keep theirs.
+    private var developerInstructions: String {
+        [userDeveloperInstructions, AgentInstructions.text].compactMap(\.self).joined(separator: "\n\n")
     }
 
-    /// Starts a thread with a credential issued for it, bound once Codex names it.
     private func startThread(_ method: String, params: [String: Any]) async throws -> [String: Any] {
-        let grant = try bridge.credentials.issueForLaunch()
-        do {
-            var params = params
-            var config = params["config"] as? [String: Any] ?? [:]
-            config.merge(try await toolConfig(grant)) { $1 }
-            params["config"] = config
-            let data = try await request(method, params: params)
-            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let id = (result["thread"] as? [String: Any])?["id"] as? String else {
-                throw IntegrationError(message: "Codex did not return a thread.")
-            }
-            bridge.credentials.bind(grant, toSession: provider.rawValue + ":" + id)
-            return result
-        } catch {
-            bridge.credentials.revoke(grant)
-            throw error
+        var params = params
+        params["developerInstructions"] = developerInstructions
+        let data = try await request(method, params: params)
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              result["thread"] is [String: Any] else {
+            throw IntegrationError(message: "Codex did not return a thread.")
         }
+        return result
     }
 
     func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
@@ -313,8 +297,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if let opening = openingConversations[thread.sessionID] { return try await opening.value }
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
-            let grant = try self.bridge.credentials.grant(forSession: thread.id)
-            _ = try await self.request("thread/resume", params: ["threadId": thread.sessionID, "excludeTurns": true, "config": try await self.toolConfig(grant)])
+            _ = try await self.request("thread/resume", params: [
+                "threadId": thread.sessionID, "excludeTurns": true, "developerInstructions": self.developerInstructions
+            ])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
             let spawned = self.recordSubagents(in: rows.flatMap { $0["items"] as? [[String: Any]] ?? [] }, of: thread.sessionID)
@@ -897,6 +882,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         defaultModel = config["model"] as? String
         defaultReasoningEffort = config["model_reasoning_effort"] as? String
         defaultServiceTier = config["service_tier"] as? String
+        userDeveloperInstructions = (config["developer_instructions"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         // Fast mode is reported from each model's service tiers.
         _ = try? await listModels()
     }
@@ -967,7 +953,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         guard let id = row["id"] as? String, let directory = row["cwd"] as? String else { return nil }
         let name = (row["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let rawPreview = row["preview"] as? String ?? ""
-        // A delegated task's preview is its request, not Atrium's framing.
+        // A relayed task's preview is its request, not Atrium's framing.
         let preview = RelayedMessage.relay(in: rawPreview).map(\.body).flatMap { $0.isEmpty ? nil : $0 } ?? rawPreview
         let hasProviderTitle = !name.isEmpty && name != "New Codex thread"
         // Match thread/list's main-task sources. Subagents have an object-valued

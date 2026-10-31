@@ -1,20 +1,12 @@
 import Foundation
 import Observation
 
-/// Delegated tasks and the budgets of their chains, saved as they change so
-/// a restart neither loses a result nor sends one twice. Task lists observe
-/// the tasks, to list delegated sessions under who started them.
+/// ChatGPT's delegated tasks, saved as they change so a restart doesn't lose
+/// a result. Task lists observe the tasks, to list ChatGPT's sessions apart.
 @MainActor
 @Observable
 final class OrchestrationStore {
-    private struct Saved: Codable {
-        var tasks: [DelegatedTask]
-        var spent: [UUID: Int]
-    }
-
     private(set) var tasks: [String: DelegatedTask] = [:]
-    /// Tasks and deliveries each chain has used.
-    @ObservationIgnored private var spent: [UUID: Int] = [:]
     /// Tasks still running when Atrium last quit, whose sessions need opening again.
     @ObservationIgnored var resumedTaskIDs: Set<String> = []
     @ObservationIgnored private let file: URL
@@ -25,9 +17,8 @@ final class OrchestrationStore {
 
     init(file: URL) {
         self.file = file
-        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(Saved.self, from: data) else { return }
-        tasks = Dictionary(saved.tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
-        spent = saved.spent
+        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DelegatedTask].self, from: data) else { return }
+        tasks = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
     }
 
     /// Settles what Atrium was doing when it quit. A task that never reached
@@ -48,30 +39,14 @@ final class OrchestrationStore {
             task.updatedAt = .now
             tasks[id] = task
         }
-        prune()
+        let expiry = Date.now.addingTimeInterval(-Self.retention)
+        tasks = tasks.filter { !($0.value.state.isFinished && $0.value.updatedAt < expiry) }
         save()
     }
 
     func update(_ task: DelegatedTask) {
         tasks[task.id] = task
         save()
-    }
-
-    /// Takes one unit of a chain's budget, if any is left.
-    func spend(_ chainID: UUID, budget: Int) -> Bool {
-        guard spent[chainID, default: 0] < budget else { return false }
-        spent[chainID, default: 0] += 1
-        save()
-        return true
-    }
-
-    private func prune() {
-        let expiry = Date.now.addingTimeInterval(-Self.retention)
-        tasks = tasks.filter { _, task in
-            !(task.state.isFinished && task.updatedAt < expiry && task.delivery != .pending && task.delivery != .delivering)
-        }
-        let chains = Set(tasks.values.map(\.chainID))
-        spent = spent.filter { chains.contains($0.key) }
     }
 
     /// Writes once the current change is through, however many tasks it touched.
@@ -85,8 +60,7 @@ final class OrchestrationStore {
     }
 
     private func write() {
-        let saved = Saved(tasks: tasks.values.sorted { $0.createdAt < $1.createdAt }, spent: spent)
-        guard let data = try? JSONEncoder().encode(saved) else { return }
+        guard let data = try? JSONEncoder().encode(tasks.values.sorted { $0.createdAt < $1.createdAt }) else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                  attributes: [.posixPermissions: 0o700])
         try? data.write(to: file, options: .atomic)

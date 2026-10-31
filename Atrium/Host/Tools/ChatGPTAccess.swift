@@ -1,11 +1,10 @@
 import Foundation
 import Observation
 
-/// ChatGPT's way in to the orchestration tools: while it's on and Atrium is
-/// open, Atrium runs OpenAI's tunnel client, which takes ChatGPT's requests
-/// over its own outbound connection and forwards them to the bridge on the
-/// loopback interface with the header kept in `headerFile`. Nothing listens
-/// beyond this Mac.
+/// ChatGPT's way in to Atrium's tools: while it's on and Atrium is open,
+/// Atrium runs OpenAI's tunnel client, which takes ChatGPT's requests over its
+/// own outbound connection and forwards them to the bridge on the loopback
+/// interface with the credential's header. Nothing listens beyond this Mac.
 ///
 /// It isn't offered to everyone yet: it stays hidden, off and with no token
 /// until unlocked in Settings → Integrations.
@@ -30,11 +29,11 @@ final class ChatGPTAccess {
     let tunnel: ChatGPTTunnel
 
     @ObservationIgnored private let bridge: AgentBridgeServer
+    @ObservationIgnored private let credential: ChatGPTCredential
 
-    var headerFile: URL { bridge.credentials.remoteHeaderFile }
-
-    init(bridge: AgentBridgeServer) {
+    init(bridge: AgentBridgeServer, credential: ChatGPTCredential) {
         self.bridge = bridge
+        self.credential = credential
         tunnel = ChatGPTTunnel(directory: bridge.storage)
         let defaults = UserDefaults.standard
         let isEnabled = defaults.bool(forKey: Self.enabledKey)
@@ -42,12 +41,10 @@ final class ChatGPTAccess {
         isUnlocked = defaults.bool(forKey: Self.unlockedKey) || isEnabled
         tunnelID = defaults.string(forKey: Self.tunnelIDKey) ?? ""
         if isEnabled {
-            if !bridge.credentials.hasRemoteToken || !FileManager.default.fileExists(atPath: headerFile.path(percentEncoded: false)) {
-                issueToken()
-            }
+            if !credential.exists { issueToken() }
             connect()
-        } else if bridge.credentials.hasRemoteToken {
-            bridge.credentials.revokeRemoteToken()
+        } else if credential.exists {
+            credential.revoke()
         }
     }
 
@@ -68,7 +65,7 @@ final class ChatGPTAccess {
             connect()
         } else {
             tunnel.stop()
-            bridge.credentials.revokeRemoteToken()
+            credential.revoke()
         }
     }
 
@@ -91,7 +88,7 @@ final class ChatGPTAccess {
 
     private func issueToken() {
         do {
-            try bridge.credentials.issueRemoteToken()
+            try credential.issue()
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -104,7 +101,7 @@ final class ChatGPTAccess {
             do {
                 let url = try await bridge.start().url("mcp")
                 guard isEnabled, let serverURL = URL(string: url) else { return }
-                tunnel.start(serverURL: serverURL, headerFile: headerFile, tunnelID: tunnelID.trimmingCharacters(in: .whitespacesAndNewlines))
+                tunnel.start(serverURL: serverURL, headerFile: credential.headerFile, tunnelID: tunnelID.trimmingCharacters(in: .whitespacesAndNewlines))
             } catch {
                 self.error = error.localizedDescription
             }

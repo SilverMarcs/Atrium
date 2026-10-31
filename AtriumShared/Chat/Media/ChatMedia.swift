@@ -12,7 +12,8 @@ nonisolated struct ChatMedia: Equatable, Sendable {
     let directory: String
 
     func page(_ page: TranscriptPage) async -> String? {
-        await host.page(taskID: taskID, key: page.key)
+        guard let key = page.key else { return nil }
+        return await host.page(taskID: taskID, key: key)
     }
 
     /// A file on the host, scaled to fit `maxPixelSize`.

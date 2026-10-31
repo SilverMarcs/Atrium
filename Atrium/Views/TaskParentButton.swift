@@ -2,7 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Returns from a delegated session or subagent to the session that started it.
+/// Returns from a subagent to the session that runs it.
 struct TaskParentButton: View {
     let parent: WireTask
     let hostID: String

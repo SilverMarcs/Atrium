@@ -43,7 +43,6 @@ struct ChatPageButton: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .imageScale(.small)
                         .foregroundStyle(.secondary)

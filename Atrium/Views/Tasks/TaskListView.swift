@@ -41,7 +41,7 @@ struct TaskListView: View {
 
         let chatGPTTasks = hosts.chatGPTTasks.filter(matchesSearch)
 
-        // A delegated session on screen isn't listed, so no row is selected and choosing its session's row goes back.
+        // A subagent on screen isn't listed, so no row is selected and choosing its session's row goes back.
         List(selection: Bindable(app).selection) {
             rows(sections.active)
             if !sections.snoozed.isEmpty {

@@ -32,8 +32,8 @@ struct CompanionRootView: View {
                             RouteDestination(route: route)
                         }
                     }
-                    // Delegated sessions open over the session that asked, so Back returns to it.
-                    .environment(\.openDelegatedTask) { ref in detailPath.append(.task(ref)) }
+                    // Subagents open over their session, so Back returns to it.
+                    .environment(\.openSubagent) { ref in detailPath.append(.task(ref)) }
                 }
             } else {
                 NavigationStack {

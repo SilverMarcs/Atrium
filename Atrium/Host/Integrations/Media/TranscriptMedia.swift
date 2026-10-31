@@ -39,8 +39,8 @@ final class TranscriptMedia {
                 paths.formUnion(Self.hostPaths(MediaSource.markdownImages(in: text), directory: thread.directory))
             case .page(let page, _):
                 // A key names the page's content, so its images are read once.
-                guard !keys.contains(page.key), let html = ChatPages.html(forKey: page.key) else { continue }
-                keys.insert(page.key)
+                guard let key = page.key, !keys.contains(key), let html = ChatPages.html(forKey: key) else { continue }
+                keys.insert(key)
                 paths.formUnion(Self.imagePaths(inPage: html, directory: thread.directory))
             case .tools, .report:
                 continue

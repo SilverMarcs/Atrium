@@ -2,13 +2,13 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's scratch pad, project links and model in one menu, and its delegated sessions when it includes them.
+/// A task's scratch pad, project links and model in one menu, and its subagents when it includes them.
 struct TaskMoreMenu: View {
     let item: HostTask
     let models: [AgentModel]
-    let includesDelegatedTasks: Bool
+    let includesSubagents: Bool
     @Binding var showingScratchPad: Bool
-    @Environment(\.openDelegatedTask) private var openDelegatedTask
+    @Environment(\.openSubagent) private var openSubagent
 
     var body: some View {
         Menu {
@@ -34,15 +34,15 @@ struct TaskMoreMenu: View {
                     }
                 }
             }
-            if includesDelegatedTasks, item.hasDelegatedTasks {
+            if includesSubagents, item.hasSubagents {
                 Section("Subagents") {
-                    DelegatedTaskButtons(item: item, open: openDelegatedTask)
+                    SubagentButtons(item: item, open: openSubagent)
                 }
             }
         } label: {
             Label("More", systemImage: "ellipsis")
         }
         // Only the menu containing subagents counts their ongoing work.
-        .badge(includesDelegatedTasks ? item.workingDelegatedTasks : 0)
+        .badge(includesSubagents ? item.workingSubagents : 0)
     }
 }

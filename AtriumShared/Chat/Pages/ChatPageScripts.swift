@@ -1,7 +1,7 @@
 import Foundation
 
 /// What every page an agent shows runs before its own content: the theme and
-/// classes the `render_html` tool describes to agents, what makes its tabs and
+/// classes Atrium's instructions describe to agents, what makes its tabs and
 /// tooltips work, and a report of the page's height.
 enum ChatPageScripts {
     static let heightMessage = "atriumPageHeight"

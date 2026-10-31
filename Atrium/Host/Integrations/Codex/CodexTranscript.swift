@@ -47,13 +47,11 @@ nonisolated enum CodexTranscript {
                         messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images, editTarget: editTarget, isSteer: isSteer))
                     }
                 } else if let report = report(in: item) {
-                    // A subagent reporting back is input to the agent, like Atrium's relayed results.
+                    // A subagent reporting back is input to the agent, not part of its reply.
                     flushAssistant()
                     messages.append(TranscriptMessage(id: id, role: .user, blocks: [], relay: report))
                 } else if item["type"] as? String == "agentMessage" {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
-                } else if let page = page(in: item) {
-                    blocks.append(.page(page, id: id))
                 } else if let image = generatedImage(in: item) {
                     blocks.append(.text(image, id: id))
                 } else if toolTypes.contains(item["type"] as? String ?? "") {
@@ -72,13 +70,6 @@ nonisolated enum CodexTranscript {
         let path = (item["agentPath"] as? String)?.split(separator: "/").last.map(String.init)
         let name = [AgentProvider.codex.name, path].compactMap(\.self).joined(separator: " · ")
         return TranscriptRelay(kind: .results, senders: [.init(name: name, sessionID: item["agentThreadId"] as? String)])
-    }
-
-    /// The page a finished `render_html` call showed.
-    private static func page(in item: [String: Any]) -> TranscriptPage? {
-        guard item["type"] as? String == "mcpToolCall", item["server"] as? String == AtriumToolServer.name,
-              item["tool"] as? String == PageTools.renderHTML, item["status"] as? String == "completed" else { return nil }
-        return ChatPages.page(arguments: item["arguments"])
     }
 
     /// A finished generated image, as Markdown pointing to the file Codex saved it to.

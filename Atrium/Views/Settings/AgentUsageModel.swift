@@ -14,7 +14,7 @@ final class AgentUsageModel {
             case .codex:
                 // A separate, short-lived connection keeps Settings independent of
                 // enabled integrations and can't interrupt an active conversation.
-                let reader = CodexAgentAdapter(bridge: AgentBridgeServer())
+                let reader = CodexAgentAdapter()
                 defer { reader.setEnabled(false) }
                 result = try await reader.usageSnapshot()
             case .claude:

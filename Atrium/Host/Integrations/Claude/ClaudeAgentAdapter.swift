@@ -478,17 +478,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // Any new options on a saved background job tell Claude to COPY it,
         // even if those options equal its old ones. Preserve the job's options.
         var arguments = ["--bg"]
-        // A new session's tools carry a credential bound to it once Claude names it.
-        var launchGrant: ToolCredentials.Grant?
         if !existingBackground {
-            let grant: ToolCredentials.Grant
-            if let sessionID, !forking {
-                grant = try bridge.credentials.grant(forSession: provider.rawValue + ":" + sessionID)
-            } else {
-                grant = try bridge.credentials.issueForLaunch()
-                launchGrant = grant
-            }
-            arguments += ["--mcp-config", try await bridge.claudeToolConfig(for: grant).path, "--settings", settingsFile.path]
+            arguments += ["--settings", settingsFile.path, "--append-system-prompt", AgentInstructions.text]
         }
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
@@ -504,9 +495,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let id = String(identifier)
         do {
             let session = try await runningSession(jobID: id)
-            if let launchGrant, let started = session.thread?.sessionID {
-                bridge.credentials.bind(launchGrant, toSession: provider.rawValue + ":" + started)
-            }
             guard let thread = session.thread else {
                 throw IntegrationError(message: "Claude did not provide its background conversation identifier.")
             }
@@ -520,7 +508,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             backgroundSessions[thread.sessionID] = session
             return session
         } catch {
-            if let launchGrant { bridge.credentials.revoke(launchGrant) }
             _ = try? await Task {
                 try await IntegrationProcess.run("claude", arguments: ["stop", id], directory: directory)
             }.value
@@ -801,7 +788,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     /// The settings that send Claude's hooks to Atrium, pointing at the
-    /// bridge's current endpoint. Each session's tools come with its own credential.
+    /// bridge's current endpoint.
     private func settingsForBridge() async throws -> URL {
         let endpoint = try await bridge.start()
         if let launchSettings, launchSettings.endpoint == endpoint { return launchSettings.file }
@@ -810,9 +797,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
         let settings = try bridge.writePrivateFile([
             "hooks": hooks,
-            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"],
-            // Atrium's tools are only those Settings turned on, each checked on every call.
-            "permissions": ["allow": ["mcp__\(AtriumToolServer.name)"]]
+            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"]
         ], named: "settings.json")
         launchSettings = (endpoint, settings)
         return settings

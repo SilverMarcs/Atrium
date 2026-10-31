@@ -36,10 +36,10 @@ struct TaskDetailToolbar: ToolbarContent {
                 ScratchPadButton(isPresented: $showingScratchPad)
             }
         }
-        if item.hasDelegatedTasks {
+        if item.hasSubagents {
             ToolbarSpacer(.fixed)
             ToolbarItem {
-                DelegatedTaskMenu(item: item) { app.selection = $0 }
+                SubagentMenu(item: item) { app.selection = $0 }
             }
         }
     }

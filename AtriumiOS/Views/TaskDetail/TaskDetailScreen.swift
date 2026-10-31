@@ -7,7 +7,7 @@ struct TaskDetailScreen: View {
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
-    @Environment(\.openDelegatedTask) private var openDelegatedTask
+    @Environment(\.openSubagent) private var openSubagent
     let ref: TaskRef
     @State private var showingScratchPad = false
     /// Shared by every task the screen shows, so the composer's field
@@ -91,15 +91,15 @@ struct TaskDetailScreen: View {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
                     }
                 }
-                if !isPhone, let item, item.hasDelegatedTasks {
+                if !isPhone, let item, item.hasSubagents {
                     ToolbarItem(placement: .primaryAction) {
-                        DelegatedTaskMenu(item: item, open: openDelegatedTask)
+                        SubagentMenu(item: item, open: openSubagent)
                     }
                 }
-                if let item, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasDelegatedTasks) {
+                if let item, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasSubagents) {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
-                            item: item, models: models, includesDelegatedTasks: isPhone,
+                            item: item, models: models, includesSubagents: isPhone,
                             showingScratchPad: $showingScratchPad
                         )
                     }
@@ -152,7 +152,7 @@ struct TaskDetailScreen: View {
         }
         .modifier(AgentInteractionPresentation(
             // Requests from the work below this task come up here too, as those sessions aren't listed.
-            requests: (hostTask?.interactions ?? []) + (item?.delegatedRequests ?? []),
+            requests: (hostTask?.interactions ?? []) + (item?.subagentRequests ?? []),
             respond: { interaction, decision in
                 _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },

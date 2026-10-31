@@ -1,19 +1,19 @@
 import Foundation
 
 public nonisolated extension WireTasksSnapshot {
-    /// The sessions a task delegated work to and its agent's own subagents, newest first.
+    /// The subagents a task's agent ran, newest first.
     func children(of id: String) -> [WireTask] {
         tasks.filter { $0.origin?.parentID == id }.sorted(by: WireTask.newestFirst)
     }
 
-    /// The session a delegated one is listed under, when that session is listed.
+    /// The session a subagent works for, when that session is listed.
     func parent(of task: WireTask) -> WireTask? {
         guard let id = task.origin?.parentID else { return nil }
         return tasks.first { $0.id == id }
     }
 
-    /// The listed session a task belongs under, following delegation up to
-    /// the first one listed on its own, or nil when the task is listed itself.
+    /// The listed session a task belongs under, following subagents up to
+    /// the first session listed on its own, or nil when the task is listed itself.
     func listedAncestor(of task: WireTask) -> WireTask? {
         var visited: Set<String> = [task.id]
         var ancestor = parent(of: task)
@@ -23,7 +23,7 @@ public nonisolated extension WireTasksSnapshot {
         return ancestor
     }
 
-    /// Everything a task delegated, at any depth.
+    /// Every subagent below a task, at any depth.
     func descendants(of id: String) -> [WireTask] {
         var found: [WireTask] = []
         var pending = [id]
@@ -37,8 +37,8 @@ public nonisolated extension WireTasksSnapshot {
         return found
     }
 
-    /// Whether anything a task delegated, at any depth, is waiting for an answer.
-    func delegatedWorkNeedsInput(_ id: String) -> Bool {
+    /// Whether any subagent below a task, at any depth, is waiting for an answer.
+    func subagentsNeedInput(_ id: String) -> Bool {
         descendants(of: id).contains { $0.status == .waiting }
     }
 }

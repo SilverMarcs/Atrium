@@ -2,9 +2,9 @@ import Foundation
 import Network
 
 /// Agents call directly into Atrium on the loopback interface: Claude's hooks at
-/// `/claude`, with the bridge's own token, and Atrium's MCP tools at `/mcp`, with
-/// each caller's own credential. ChatGPT reaches `/mcp` through the tunnel client
-/// running on this Mac. A persistent endpoint lets running agents reconnect after relaunch.
+/// `/claude`, with the bridge's own token. ChatGPT reaches Atrium's MCP tools at
+/// `/mcp`, with its own credential, through the tunnel client running on this
+/// Mac. A persistent endpoint lets running agents reconnect after relaunch.
 @MainActor
 final class AgentBridgeServer {
     struct Endpoint: Equatable {
@@ -21,7 +21,6 @@ final class AgentBridgeServer {
     var toolServer: AtriumToolServer?
     /// Where agents' launch files that point at the endpoint are kept.
     let storage: URL
-    let credentials: ToolCredentials
     private var listener: NWListener?
     private var connections: [UUID: AgentBridgeConnection] = [:]
     private var startup: Task<Endpoint, Error>?
@@ -36,7 +35,6 @@ final class AgentBridgeServer {
         let folder = "ClaudeBridge"
         #endif
         self.storage = HostStorage.directory.appending(path: folder, directoryHint: .isDirectory)
-        credentials = ToolCredentials(directory: storage)
     }
 
     /// Where the bridge listens, for setting up clients outside Atrium such as the tunnel client.
@@ -120,26 +118,12 @@ final class AgentBridgeServer {
                 listener.start(queue: .global(qos: .utility))
             }
         } onCancel: { listener.cancel() }
-        // Jobs launched before sessions had their own credentials share this
-        // file; it gives them no tools rather than ones that turn them away.
-        if FileManager.default.fileExists(atPath: storage.appending(path: "mcp.json").path(percentEncoded: false)) {
-            _ = try? writePrivateFile(["mcpServers": [String: Any]()], named: "mcp.json")
-        }
         let data = try JSONSerialization.data(withJSONObject: ["port": actualPort, "token": token])
         try data.write(to: endpointFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: endpointFile.path)
         let endpoint = Endpoint(port: actualPort, token: token)
         self.endpoint = endpoint
         return endpoint
-    }
-
-    /// The MCP config that gives a Claude session Atrium's tools under its own
-    /// credential. Claude reads it again whenever it restarts the session's job.
-    func claudeToolConfig(for grant: ToolCredentials.Grant) async throws -> URL {
-        let endpoint = try await start()
-        return try writePrivateFile([
-            "mcpServers": [AtriumToolServer.name: ["type": "http", "url": endpoint.url("mcp"), "headers": ["Authorization": "Bearer " + grant.token]]]
-        ], named: "mcp-\(grant.id.uuidString).json")
     }
 
     /// Writes a launch file only Atrium's user can read, since it holds the endpoint's token.

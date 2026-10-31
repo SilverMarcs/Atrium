@@ -9,9 +9,9 @@ struct TaskRow: View {
 
     var body: some View {
         let task = item.task
-        // Work it delegated shows on the task listed for it, as in its chat:
+        // Its subagents show on the task listed for them, as in its chat:
         // waiting for an answer, or still running after the task's turn ends.
-        let needsInput = task.status != .waiting && item.host.tasks?.delegatedWorkNeedsInput(task.id) == true
+        let needsInput = task.status != .waiting && item.host.tasks?.subagentsNeedInput(task.id) == true
         TaskRowContent(
             title: task.title,
             projectName: task.projectName,

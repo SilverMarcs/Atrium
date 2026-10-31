@@ -8,7 +8,7 @@ extension TranscriptBlock {
 
     /// What a step reads as when it isn't the agent's own note.
     var stepTitle: String {
-        text ?? reporter.map { $0.asksQuestion ? "\($0.name) asked a question" : "\($0.name) reported back" } ?? Self.toolCalls(toolCount)
+        text ?? reporter.map { "\($0.name) reported back" } ?? Self.toolCalls(toolCount)
     }
 
     static func toolCalls(_ count: Int) -> String {
