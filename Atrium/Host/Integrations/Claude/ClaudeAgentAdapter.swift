@@ -102,10 +102,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     }
 
     /// Claude marks a subagent finished when it reports back. Until then it
-    /// runs, unless its turn was interrupted or its session's job stopped:
+    /// runs, unless its turn was interrupted or the job that ran it stopped:
     /// subagents run in the background, so their session can be idle meanwhile.
+    /// A job resuming the session doesn't revive one the last job left
+    /// unfinished, so it runs only once it's written to since the job began.
     private func subagentThread(_ subagent: ClaudeSessionHistory.Subagent, of session: AgentThread) -> AgentThread {
-        let isRunning = backgroundSessions[session.sessionID]?.isRunning == true && !subagent.wasInterrupted
+        let isRunning = backgroundSessions[session.sessionID].map { job in
+            job.isRunning && subagent.updatedAt >= Date(timeIntervalSince1970: job.startedAt / 1000)
+        } == true && !subagent.wasInterrupted
         return AgentThread(
             sessionID: Self.subagentSessionID(session.sessionID, agentID: subagent.agentID), provider: .claude,
             title: subagent.title, directory: session.directory, updatedAt: subagent.updatedAt,

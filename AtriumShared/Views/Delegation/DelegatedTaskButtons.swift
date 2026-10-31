@@ -34,14 +34,14 @@ extension HostTask {
 
     /// Its delegated sessions and subagents still working or waiting for an answer.
     var workingDelegatedTasks: Int {
-        host.tasks?.children(of: task.id).count { $0.status == .processing || $0.status == .waiting } ?? 0
+        host.tasks?.children(of: task.id).count(where: \.status.isWorking) ?? 0
     }
 
     /// The task's status for its progress indicators in its chat and its
     /// list row, which stay up while work below it runs after its own turn
     /// ends, as an agent's does while its subagents work in the background.
     var progressStatus: AgentThreadStatus {
-        task.status == .processing || task.status == .waiting || workingDelegatedTasks == 0 ? task.status : .processing
+        task.status.isWorking || workingDelegatedTasks == 0 ? task.status : .processing
     }
 
     /// The session that delegated this one or ran it as a subagent, when it's listed.

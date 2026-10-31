@@ -159,13 +159,21 @@ actor ClaudeSessionHistory {
     }
 
     /// Claude ends a stopped turn with an interruption notice as its last prompt.
+    /// Only that prompt counts: a working subagent's latest tool call or result
+    /// can quote the notice too. Its record is short, so a longer last line,
+    /// cut off by the window, never is one.
     private static func endsInterrupted(_ url: URL, size: Int) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         try? handle.seek(toOffset: UInt64(max(0, size - 4096)))
         let tail = (try? handle.readToEnd()) ?? Data()
-        guard let last = tail.split(separator: 10).last else { return false }
-        return last.range(of: Data("[Request interrupted".utf8)) != nil
+        guard let last = tail.split(separator: 10).last,
+              let record = try? JSONSerialization.jsonObject(with: last) as? [String: Any],
+              record["type"] as? String == "user",
+              let content = (record["message"] as? [String: Any])?["content"] else { return false }
+        let text = content as? String
+            ?? (content as? [[String: Any]])?.first { $0["type"] as? String == "text" }?["text"] as? String
+        return text?.hasPrefix("[Request interrupted") == true
     }
 
     /// The last turns of a subagent's transcript.
