@@ -10,7 +10,6 @@ struct TaskDetailView: View {
     @State private var showingScratchPad = false
 
     private var task: WireTask { item.task }
-    private var models: [AgentModel] { item.host.models(for: task.provider) }
     private var project: Project? {
         task.workspaceID.flatMap { app.project(WorkspaceRef(hostID: item.host.id, workspaceID: $0)) }
     }
@@ -78,54 +77,10 @@ struct TaskDetailView: View {
         }
         .toolbarBackgroundVisibility(showsTerminal ? .hidden : .automatic, for: .windowToolbar)
         .toolbar {
-            if !showsTerminal, !TaskDraft.isDraftID(task.id), !task.isSubagent {
-                ToolbarItem {
-                    TaskModelMenu(
-                        provider: task.provider, selection: task.modelSelection, models: models,
-                        perform: { item.host.send(.task(id: task.id, action: $0)) }, showsToolbarLabel: true
-                    )
-                    .disabled(models.isEmpty)
-                }
-            }
-            if hasTerminal {
-                ToolbarItem {
-                    Picker("Session View", selection: $presentation) {
-                        Label("Chat", systemImage: "bubble.left").tag("chat")
-                        Label("Terminal", systemImage: "terminal").tag("terminal")
-                    }
-                    .pickerStyle(.segmented)
-                    .labelStyle(.iconOnly)
-                }
-            }
-            if project != nil || item.hasDelegatedTasks {
-                ToolbarSpacer(.fixed)
-            }
-            if project != nil {
-                ToolbarItem {
-                    Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
-                        .keyboardShortcut(".")
-                }
-            }
-            if let parent = item.parent {
-                // Delegated sessions and subagents aren't listed, so they lead back to their session.
-                ToolbarItem(placement: .navigation) {
-                    Button("Back to \(parent.title)", systemImage: "chevron.backward") {
-                        app.selection = TaskRef(hostID: item.host.id, taskID: parent.id)
-                    }
-                    .help("Back to \(parent.title)")
-                }
-            }
-            if item.hasDelegatedTasks {
-                ToolbarItem {
-                    Menu("Subagents", systemImage: "rectangle.stack") {
-                        DelegatedTaskButtons(item: item) { app.selection = $0 }
-                    }
-                    .menuIndicator(.hidden)
-                    // How many are still working, or waiting for an answer.
-                    .badge(item.workingDelegatedTasks)
-                    .help("Sessions working for this task")
-                }
-            }
+            TaskDetailToolbar(
+                item: item, hasTerminal: hasTerminal, showsTerminal: showsTerminal,
+                presentation: $presentation, showingScratchPad: $showingScratchPad
+            )
         }
         .sheet(isPresented: $showingScratchPad) {
             if let workspaceID = task.workspaceID {

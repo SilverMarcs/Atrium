@@ -28,7 +28,6 @@ struct TaskDetailScreen: View {
     /// The host's task, or what a draft shows until the host lists it.
     private var item: HostTask? { hosts.task(resolvedRef) }
     private var task: WireTask? { item?.task }
-    private var workspace: WorkspaceRef? { task?.workspaceID.map { WorkspaceRef(hostID: ref.hostID, workspaceID: $0) } }
 
     /// Drafts choose a model beside the composer; only created chats also
     /// show the picker in the detail toolbar or More menu.
@@ -94,68 +93,17 @@ struct TaskDetailScreen: View {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
                     }
                 }
-                if isPhone {
-                    if task.workspaceID != nil || !models.isEmpty || item?.hasDelegatedTasks == true {
-                        ToolbarItem(placement: .primaryAction) {
-                            Menu {
-                                if !models.isEmpty {
-                                    Section {
-                                        TaskModelMenu(provider: task.provider, selection: task.modelSelection, models: models) { action in
-                                            host?.send(.task(id: task.id, action: action))
-                                        }
-                                    }
-                                }
-                                if let workspace {
-                                    Section {
-                                        ProjectLinks(workspace: workspace, root: projectPath)
-                                        Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
-                                    }
-                                }
-                                if let item, item.hasDelegatedTasks {
-                                    Section("Subagents") {
-                                        DelegatedTaskButtons(item: item, open: openDelegatedTask)
-                                    }
-                                }
-                            } label: {
-                                Label("More", systemImage: "ellipsis")
-                            }
-                            // Delegated sessions and subagents open from this menu, so it counts the ones still working.
-                            .badge(item?.workingDelegatedTasks ?? 0)
-                        }
+                if !isPhone, let item, item.hasDelegatedTasks {
+                    ToolbarItem(placement: .primaryAction) {
+                        DelegatedTaskMenu(item: item, open: openDelegatedTask)
                     }
-                } else {
-                    // iPad has room for the model picker, workspace links and
-                    // scratch pad in place of the More menu.
-                    if let item, item.hasDelegatedTasks {
-                        ToolbarItem(placement: .primaryAction) {
-                            Menu("Subagents", systemImage: "rectangle.stack") {
-                                DelegatedTaskButtons(item: item, open: openDelegatedTask)
-                            }
-                            .badge(item.workingDelegatedTasks)
-                        }
-                    }
-                    if !models.isEmpty {
-                        ToolbarItem(placement: .primaryAction) {
-                            TaskModelMenu(
-                                provider: task.provider,
-                                selection: task.modelSelection,
-                                models: models,
-                                perform: { action in host?.send(.task(id: task.id, action: action)) },
-                                showsToolbarLabel: true
-                            )
-                            .labelStyle(.titleOnly)
-                        }
-                        if task.workspaceID != nil {
-                            ToolbarSpacer(.fixed, placement: .primaryAction)
-                        }
-                    }
-                    if let workspace {
-                        ToolbarItem(placement: .navigation) {
-                            Button("Scratch Pad", systemImage: "note.text") { showingScratchPad = true }
-                        }
-                        ToolbarItemGroup(placement: .primaryAction) {
-                            ProjectLinks(workspace: workspace, root: projectPath)
-                        }
+                }
+                if let item, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasDelegatedTasks) {
+                    ToolbarItem(placement: .primaryAction) {
+                        TaskMoreMenu(
+                            item: item, models: models, includesDelegatedTasks: isPhone,
+                            showingScratchPad: $showingScratchPad
+                        )
                     }
                 }
             }
@@ -238,10 +186,6 @@ struct TaskDetailScreen: View {
                 host?.send(.task(id: task.id, action: .viewed))
             }
         }
-    }
-
-    private var projectPath: String {
-        host?.workspace(task?.workspaceID)?.path ?? ""
     }
 
     private var subtitle: String {

@@ -2,7 +2,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's model picker, named for the model and effort it runs with: a
-/// submenu of the iPhone's More menu, and a toolbar button on iPad.
+/// submenu of More on iPhone and iPad, and a toolbar button on Mac.
 struct TaskModelMenu: View {
   let provider: AgentProvider
   let selection: TaskModelSelection
@@ -23,17 +23,12 @@ struct TaskModelMenu: View {
           Image(systemName: "cpu")
         }
       } else if showsToolbarLabel {
-        #if os(macOS)
         Label {
           Text(name)
           Text(detail)
         } icon: {
           Image(provider.symbolName)
         }
-        #else
-        Text(name)
-        Text(detail)
-        #endif
       } else {
         Label {
           Text([name, detail].filter { !$0.isEmpty }.joined(separator: " · "))
