@@ -4,8 +4,8 @@ import SwiftUI
 
 /// One folder of a project on its host, loaded on its own and kept current
 /// while shown. Folders open as screens of their own; files open a preview.
-/// Without a folder it shows what the project's scope does: the repository
-/// picked in Source Control when it's inside the project folder.
+/// Without a folder it shows what the project's scope does, titled and picked
+/// as Source Control is.
 struct FilesScreen: View {
     let host: HostClient
     let workspaceID: UUID
@@ -59,8 +59,10 @@ struct FilesScreen: View {
                 ContentUnavailableView("Empty Folder", systemImage: "folder")
             }
         }
-        .navigationTitle(title)
-        .toolbarTitleDisplayMode(.inline)
+        .projectScopeTitle(
+            host: host, workspaceID: workspaceID, placeholder: "Files",
+            title: folder.map { URL(filePath: $0).lastPathComponent }
+        )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -85,15 +87,5 @@ struct FilesScreen: View {
         .task(id: topic) {
             await host.follow(topic)
         }
-        .task(id: scope.gitScope) {
-            guard folder == nil else { return }
-            await host.follow(.git(scope.gitScope))
-        }
-    }
-
-    /// A folder's name, or for the scope's folder the repository picked or the project.
-    private var title: String {
-        guard folder == nil else { return URL(filePath: shownFolder).lastPathComponent }
-        return scope.selectedNestedRepository?.lastPathComponent ?? host.workspace(workspaceID)?.name ?? "Files"
     }
 }

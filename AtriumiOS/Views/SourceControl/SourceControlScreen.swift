@@ -5,8 +5,8 @@ import SwiftUI
 /// Source control for one project: unpushed commits, staged and working
 /// changes, each shown only when non-empty. The list and toolbars stay in place
 /// while loading, so only the list's contents change when the status arrives.
-/// The title menu switches branches; the actions menu commits and runs remote
-/// operations.
+/// The title menu switches branches and repositories; the actions menu commits
+/// and runs remote operations.
 struct SourceControlScreen: View {
     @State private var source: SourceControl
     @State private var commitMessage = ""
@@ -25,12 +25,8 @@ struct SourceControlScreen: View {
             .refreshable {
                 if let status { await source.perform(.fetch, in: status.mainRepositoryURL) }
             }
-            .navigationTitle(status?.branchName ?? "Source Control")
-            .toolbarTitleDisplayMode(.inline)
-            .toolbarTitleMenu {
-                if let status {
-                    BranchMenuItems(source: source, status: status) { showingNewBranch = true }
-                }
+            .projectScopeTitle(host: source.host, workspaceID: source.workspaceID, placeholder: "Source Control") {
+                showingNewBranch = true
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -60,9 +56,6 @@ struct SourceControlScreen: View {
                 Button("Cancel", role: .cancel) {}
             } message: { discard in
                 Text(discard.message)
-            }
-            .task(id: source.scope.gitScope) {
-                await source.host.follow(.git(source.scope.gitScope))
             }
     }
 

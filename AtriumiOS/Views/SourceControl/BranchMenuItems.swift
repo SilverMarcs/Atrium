@@ -2,12 +2,20 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The source control title menu: branches and linked worktrees, a new branch,
-/// and the other repositories in the project when there's more than one.
+/// The title menu of a project's pages: branches and linked worktrees, a new
+/// branch, and the other repositories in the project when there's more than one.
 struct BranchMenuItems: View {
     @Bindable var source: SourceControl
     let status: GitRepositoryStatus
-    let onNewBranch: () -> Void
+    var onNewBranch: (() -> Void)?
+
+    /// New Branch stays out of the menu for now.
+    private static let showsNewBranch = false
+
+    /// Whether there's another branch, worktree or repository to pick.
+    static func hasChoices(in status: GitRepositoryStatus, repositories: [GitRepositoryStatus]?) -> Bool {
+        status.localBranches.contains { $0 != status.branchName } || (repositories?.count ?? 0) > 1
+    }
 
     var body: some View {
         let linkedBranches = Set(status.worktrees.filter { !$0.isMain && !$0.isBare }.compactMap(\.branch))
@@ -26,14 +34,17 @@ struct BranchMenuItems: View {
             BranchMenuItem(source: source, status: status, branch: branch, isWorktree: true)
         }
 
-        if !branches.isEmpty || !worktrees.isEmpty {
-            Divider()
+        if Self.showsNewBranch, let onNewBranch {
+            if !branches.isEmpty || !worktrees.isEmpty {
+                Divider()
+            }
+            Button("New Branch…", systemImage: "plus", action: onNewBranch)
         }
 
-        Button("New Branch…", systemImage: "plus", action: onNewBranch)
-
         if let repositories = source.repositories, repositories.count > 1 {
-            Divider()
+            if !branches.isEmpty || !worktrees.isEmpty || (Self.showsNewBranch && onNewBranch != nil) {
+                Divider()
+            }
             Menu("Repository", systemImage: "folder") {
                 RepositoryPicker(repositories: repositories, selection: Binding(
                     get: { Optional(status.mainRepositoryURL) },

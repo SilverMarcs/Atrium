@@ -60,8 +60,7 @@ struct SearchScreen: View {
         .onSubmit(of: .search) {
             Task { await search() }
         }
-        .navigationTitle("Search")
-        .toolbarTitleDisplayMode(.inline)
+        .projectScopeTitle(host: host, workspaceID: workspaceID, placeholder: "Search")
         // Searching again below the folder now shown, so no result points into another checkout.
         .onChange(of: scope.filesRoot) {
             if results != nil { Task { await search() } }
