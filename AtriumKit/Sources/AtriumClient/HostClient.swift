@@ -618,7 +618,10 @@ public final class HostClient: Identifiable {
             tasksDidChange(from: previous)
         case .transcript(let taskID, let messages):
             transcriptErrors[taskID] = nil
-            conversations.transcripts[taskID] = messages
+            // A subscription starts with only the latest turns. Earlier ones
+            // this client already shows stay, as they do while it follows the
+            // task, so the timeline doesn't shrink under the reader.
+            conversations.transcripts[taskID] = (conversations.transcripts[taskID] ?? []).extended(by: messages)
             reconcilePendingPrompts(for: taskID)
         case .transcriptChanged(let taskID, let delta):
             conversations.transcripts[taskID, default: []].apply(delta)

@@ -161,6 +161,23 @@ struct HostClientTests {
         #expect(messages.prompt(1, after: nil)?.id == "u1")
     }
 
+    @Test func resubscribingKeepsTurnsBeforeTheHostsWindow() async throws {
+        let connection = FakeConnection()
+        let host = HostClient(localID: "local", name: "Mac") { connection }
+        host.start()
+        await connected(host)
+        let messages = (1...4).map { TranscriptMessage(id: "m\($0)", role: $0.isMultiple(of: 2) ? .assistant : .user, blocks: []) }
+        connection.onEvent?(.transcript(taskID: "t", messages: messages))
+        // A subscription later starts from the latest turns, one of them new.
+        let next = TranscriptMessage(id: "m5", role: .user, blocks: [])
+        connection.onEvent?(.transcript(taskID: "t", messages: Array(messages[2...]) + [next]))
+        #expect(host.conversations.transcripts["t"]?.map(\.id) == ["m1", "m2", "m3", "m4", "m5"])
+        // A window sharing nothing with what's shown replaces it.
+        connection.onEvent?(.transcript(taskID: "t", messages: [TranscriptMessage(id: "x", role: .user, blocks: [])]))
+        #expect(host.conversations.transcripts["t"]?.map(\.id) == ["x"])
+        host.stop()
+    }
+
     @Test func terminalUpdatesAreAcknowledgedAndUnfollowedScreensAreDiscarded() async throws {
         let connection = FakeConnection()
         let host = HostClient(localID: "local", name: "Mac") { connection }
