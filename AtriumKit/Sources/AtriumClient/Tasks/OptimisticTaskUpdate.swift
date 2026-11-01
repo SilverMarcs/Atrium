@@ -29,8 +29,9 @@ struct OptimisticTaskUpdate: Identifiable {
 
     func apply(to snapshot: inout WireTasksSnapshot) {
         guard let index = snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
-        // Prevent another menu action on this row until the host acknowledges it.
-        snapshot.tasks[index].actions.formIntersection([.prompt, .interrupt])
+        // Prevent another menu action on this row until the host acknowledges it,
+        // leaving the composer as it was: a prompt can wait seconds for its reply.
+        snapshot.tasks[index].actions.formIntersection([.prompt, .interrupt, .attachImages])
         switch action {
         case .settle:
             snapshot.tasks[index].isSettled = true

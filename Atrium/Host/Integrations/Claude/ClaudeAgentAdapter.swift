@@ -34,6 +34,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var runningTurns: Set<String> = []
     /// What each session waits for in a dialog only its terminal shows, by session ID.
     private var terminalPrompts: [String: String] = [:]
+    /// Terminal dialogs waiting out a moment before they're shown, by session ID.
+    private var pendingTerminalPrompts: [String: (prompt: String, task: Task<Void, Never>)] = [:]
     private struct UnsavedTurn: Equatable {
         /// The latest Stop record saved when the turn ended, from an earlier stop.
         let previousStop: String?
@@ -540,6 +542,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             liveStatuses.removeAll()
             runningTurns.removeAll()
             terminalPrompts.removeAll()
+            for pending in pendingTerminalPrompts.values { pending.task.cancel() }
+            pendingTerminalPrompts.removeAll()
             backgroundListTask?.cancel()
             statusRevision += 1
             for sideChat in sideChats.values { sideChat.cancel() }
@@ -742,17 +746,46 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if type == "settled" { runningTurns.remove(sessionID) }
         if type == "settled" || state["tempo"] != nil {
             // Claude reports a dialog no hook carries, such as computer use asking for macOS
-            // permissions, only as being blocked on what it needs. Once a turn ends it's
-            // blocked on a reply instead, which the chat sends.
+            // permissions, only as being blocked on what it needs, leaving the job's state as
+            // it was. Claude also reads its replies for questions to the user and reports
+            // those as a blocked state, which can come in before the turn's Stop hook does;
+            // the chat answers them with a reply.
             let needs = (state["needs"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let waitsInTerminal = state["tempo"] as? String == "blocked" && !needs.isEmpty && runningTurns.contains(sessionID)
-                && !decisions.values.contains { $0.sessionID == sessionID }
+            let waitsInTerminal = state["tempo"] as? String == "blocked" && state["state"] as? String != "blocked"
+                && !needs.isEmpty && waitsForTerminal(sessionID)
             setTerminalPrompt(waitsInTerminal ? needs : nil, sessionID: sessionID)
         }
     }
 
+    /// Whether a blocked session can only be waiting on its terminal: a turn is running and
+    /// no request it raised through a hook is waiting here.
+    private func waitsForTerminal(_ sessionID: String) -> Bool {
+        runningTurns.contains(sessionID) && !decisions.values.contains { $0.sessionID == sessionID }
+    }
+
     /// Shows what the session waits for in its terminal as a request Atrium can't answer.
+    /// It waits a moment first, while the hook for an approval Claude asks for at the same
+    /// time, or the end of the turn, can still come in.
     private func setTerminalPrompt(_ prompt: String?, sessionID: String) {
+        guard let prompt else {
+            pendingTerminalPrompts.removeValue(forKey: sessionID)?.task.cancel()
+            showTerminalPrompt(nil, sessionID: sessionID)
+            return
+        }
+        guard pendingTerminalPrompts[sessionID]?.prompt != prompt else { return }
+        pendingTerminalPrompts.removeValue(forKey: sessionID)?.task.cancel()
+        guard terminalPrompts[sessionID] != prompt else { return }
+        let task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard let self, !Task.isCancelled else { return }
+            self.pendingTerminalPrompts[sessionID] = nil
+            guard self.waitsForTerminal(sessionID) else { return }
+            self.showTerminalPrompt(prompt, sessionID: sessionID)
+        }
+        pendingTerminalPrompts[sessionID] = (prompt, task)
+    }
+
+    private func showTerminalPrompt(_ prompt: String?, sessionID: String) {
         guard terminalPrompts[sessionID] != prompt else { return }
         terminalPrompts[sessionID] = prompt
         let id = "claude:terminal:" + sessionID
@@ -852,6 +885,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             try await withCheckedThrowingContinuation { continuation in
                 decisions[id] = ClaudePendingDecision(sessionID: sessionID, eventName: eventName, input: encoded, continuation: continuation)
                 liveStatuses[sessionID] = .waiting
+                // Claude reports its own dialog for this request too, which this request answers.
+                setTerminalPrompt(nil, sessionID: sessionID)
                 onEvent?(.interactionRequested(request))
                 onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: .waiting)))
             }

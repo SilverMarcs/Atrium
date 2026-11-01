@@ -8,7 +8,8 @@ struct CommandConsoleView: View {
     let command: WireCommand
     let console: CommandConsole
     let project: Project
-    @AppStorage(EditorFontSize.key) private var fontSize: Double = EditorFontSize.default
+    // Saved commands used a fixed 12-point font in the embedded terminal.
+    private let fontSize: Double = 12
 
     var body: some View {
         VStack(spacing: 0) {

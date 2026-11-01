@@ -248,3 +248,19 @@ final class FakeConnection: HostConnection {
         #expect(requests.count >= count)
     }
 }
+
+struct OptimisticTaskUpdateTests {
+    @Test func aPendingPromptKeepsTheComposerButLocksTheMenus() throws {
+        var snapshot = WireTasksSnapshot(tasks: [
+            WireTask(
+                id: "task", title: "", provider: .claude, status: .idle, projectName: "", path: "", directory: "",
+                updatedAt: .distantPast, hasUnreadResult: false, isSettled: true, supportsDeletion: true,
+                actions: [.prompt, .attachImages, .settle, .rename, .delete]
+            )
+        ], workspaces: [], providers: [])
+        let update = try #require(OptimisticTaskUpdate(.prompt(taskID: "task", text: "Hi", images: [])))
+        update.apply(to: &snapshot)
+        #expect(snapshot.tasks[0].actions == [.prompt, .attachImages])
+        #expect(!snapshot.tasks[0].isSettled)
+    }
+}
