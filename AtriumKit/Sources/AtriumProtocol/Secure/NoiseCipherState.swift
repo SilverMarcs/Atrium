@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 /// A Noise cipher state: a ChaCha20-Poly1305 key and a counter nonce. Each side

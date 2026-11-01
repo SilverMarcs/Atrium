@@ -11,6 +11,9 @@ final class ServerConnection {
     let isLocal: Bool
     private(set) var device: ClientDevice?
     private(set) var topics: Set<HostTopic> = []
+    /// Whether this client has said if it's in the foreground, which makes it
+    /// one that alerts are routed by.
+    var reportsActivity = false
     private var sentTasks: WireTasksSnapshot?
     private var sentTranscripts: [String: [TranscriptMessage]] = [:]
     private var sentOutputs: [UUID: WireCommandOutput] = [:]

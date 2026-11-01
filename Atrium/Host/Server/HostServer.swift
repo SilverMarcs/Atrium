@@ -178,8 +178,10 @@ final class HostServer {
 
     private func authenticate(_ connection: ServerConnection, as device: ClientDevice) {
         // A device that reconnects after its socket dropped replaces the stale
-        // connection, whose foreground presence would otherwise keep steering alerts.
-        for other in connections.values where other !== connection && other.device?.id == device.id {
+        // connection, whose foreground presence would otherwise keep steering
+        // alerts. Connections that never reported presence, such as several
+        // commands from the command-line client at once, share their device.
+        for other in connections.values where other !== connection && other.device?.id == device.id && other.reportsActivity {
             NotificationRouting.shared.remove(connectionID: other.id)
             other.close()
         }
@@ -230,6 +232,7 @@ final class HostServer {
         case .unsupported:
             return .unsupported
         case .activity(let activity):
+            connection.reportsActivity = true
             if connection.isLocal {
                 NotificationRouting.shared.macTaskID = activity.taskID
                 integrations.setViewedThread(activity.isActive ? activity.taskID : nil)

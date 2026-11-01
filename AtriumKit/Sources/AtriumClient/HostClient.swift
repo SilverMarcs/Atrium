@@ -184,10 +184,12 @@ public final class HostClient: Identifiable {
             return loopback()
         }
         guard let pairedHost else { preconditionFailure("A remote host is always paired") }
+        #if canImport(Network)
         if !skipsLocalNetwork, let endpoint = connections?.localEndpoint(for: id) {
             connectingRoute = .localNetwork
             return RemoteHostConnection(host: pairedHost, over: FramedChannel(endpoint: endpoint))
         }
+        #endif
         connectingRoute = .relay
         // A paired host that's offline is waited for at the relay; pairing fails instead.
         let relay = RelayClientChannel(hostID: id, waitsForHost: !isPairing)
@@ -224,6 +226,7 @@ public final class HostClient: Identifiable {
     /// over. If it can't, the relay carries on until the host is found nearby
     /// again, as after the network changes or the app returns to the foreground.
     private func upgradeToLocalNetwork() {
+        #if canImport(Network)
         guard route == .relay, upgrade == nil, !skipsLocalNetwork, case .token(let token) = authentication, let pairedHost,
               let device = connections?.credentials.device, let endpoint = connections?.localEndpoint(for: id) else { return }
         let candidate = RemoteHostConnection(host: pairedHost, over: FramedChannel(endpoint: endpoint))
@@ -253,6 +256,7 @@ public final class HostClient: Identifiable {
             }
         }
         candidate.start()
+        #endif
     }
 
     private func adopt(_ candidate: any HostConnection) {

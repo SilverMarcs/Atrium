@@ -1,3 +1,4 @@
+#if canImport(Network)
 import AtriumProtocol
 import Foundation
 import Network
@@ -65,3 +66,4 @@ final class LocalHostBrowser {
         onChange?()
     }
 }
+#endif

@@ -2,7 +2,8 @@ import AtriumProtocol
 import Foundation
 
 /// Where a client keeps its own identity, the hosts it's paired with and the
-/// token each host issued it, in the Keychain.
+/// token each host issued it. The apps use the Keychain; the command-line
+/// client uses a file only its user can read.
 @MainActor
 public protocol CredentialStore: AnyObject {
     /// This install, as it introduces itself when pairing. Its id is stable.

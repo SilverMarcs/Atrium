@@ -1,5 +1,9 @@
 @testable import AtriumProtocol
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 import Testing
 

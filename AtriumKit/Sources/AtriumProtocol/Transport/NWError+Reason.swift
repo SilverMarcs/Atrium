@@ -1,3 +1,4 @@
+#if canImport(Network)
 import Network
 
 extension NWError {
@@ -10,3 +11,4 @@ extension NWError {
         }
     }
 }
+#endif
