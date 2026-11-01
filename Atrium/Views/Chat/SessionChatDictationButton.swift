@@ -22,7 +22,7 @@ struct SessionChatDictationButton: View {
               if composer.dictation.isBusy {
                 ProgressView()
                   .progressViewStyle(.circular)
-                  .controlSize(.small)
+                  .controlSize(.mini)
               } else {
                 Label(composer.dictation.isRecording ? "Finish Dictation" : "Dictate", systemImage: "waveform")
                   .labelStyle(.iconOnly)
