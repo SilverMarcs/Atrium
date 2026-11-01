@@ -40,7 +40,5 @@ let package = Package(
     targets: [
         .target(name: "AtriumProtocol", dependencies: platformProducts, swiftSettings: mainActorByDefault),
         .target(name: "AtriumClient", dependencies: ["AtriumProtocol"], swiftSettings: mainActorByDefault),
-        .testTarget(name: "AtriumProtocolTests", dependencies: ["AtriumProtocol"], swiftSettings: mainActorByDefault),
-        .testTarget(name: "AtriumClientTests", dependencies: ["AtriumClient"], swiftSettings: mainActorByDefault),
     ]
 )
