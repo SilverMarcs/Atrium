@@ -186,7 +186,7 @@ final class AgentIntegrationStore {
         return "\(scope) Open tasks for deleted threads will be stopped. This cannot be undone."
     }
 
-    /// The controller stops this app's terminal before the provider removes its saved history.
+    /// Deletes the thread and its saved history from the provider.
     func deleteThread(_ thread: AgentThread) async {
         guard canDelete(thread), let adapter = adapters[thread.provider] else { return }
         deletingThreadIDs.insert(thread.id)
@@ -616,12 +616,11 @@ final class AgentIntegrationStore {
     }
 
     /// Whether the chat can be forked into a provider: its own, which copies the
-    /// conversation itself, or the other, which takes over the conversation
-    /// through prompts.
+    /// conversation itself if it can, or the other, which takes over the
+    /// conversation through prompts.
     func canFork(_ thread: AgentThread, into provider: AgentProvider) -> Bool {
-        let capability: AgentCapabilities = provider == thread.provider ? .forkThread : .prompt
-        return enabled.contains(thread.provider) && enabled.contains(provider)
-            && adapters[provider]?.capabilities.contains(capability) == true
+        enabled.contains(thread.provider) && enabled.contains(provider)
+            && (provider != thread.provider || adapters[provider]?.capabilities.contains(.forkThread) == true)
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
@@ -715,13 +714,12 @@ final class AgentIntegrationStore {
         saveActivity()
     }
 
-    func prepareLaunch(for thread: AgentThread, isNew: Bool = false) async throws -> AgentLaunch {
+    func prepareLaunch(for thread: AgentThread) async throws -> AgentLaunch {
         if let stopTask = stopTasks[thread.id] { await stopTask.value }
         try Task.checkCancellation()
         let adapter = try enabledAdapter(for: thread.provider)
         let generation = generations[thread.provider, default: 0]
-        let intent: AgentLaunchIntent = isNew || drafts[thread.id] != nil ? .create : .resume
-        let launch = try await adapter.prepareLaunch(for: thread, intent: intent)
+        let launch = try await adapter.prepareLaunch(for: thread)
         try Task.checkCancellation()
         guard isCurrent(thread.provider, generation: generation) else { throw CancellationError() }
         return launch
@@ -800,8 +798,13 @@ final class AgentIntegrationStore {
         return message
     }
 
-    func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
+    func sendPrompt(_ text: String, images: [URL] = [], to thread: AgentThread) async throws {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !images.isEmpty else { return }
         guard !thread.isSubagent else { throw IntegrationError(message: "A subagent takes instructions only from its own agent.") }
+        guard thread.status != .waiting else {
+            throw IntegrationError(message: "\(thread.provider.name) is waiting for an answer. Reply on the host.")
+        }
         guard !rewindingThreadIDs.contains(thread.id) else {
             throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
         }
@@ -889,12 +892,6 @@ final class AgentIntegrationStore {
         record(change, for: thread.id)
     }
 
-    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String] {
-        let commands = try enabledAdapter(for: thread.provider).terminalCommands(for: change, of: thread)
-        record(change, for: thread.id)
-        return commands
-    }
-
     /// Shows a settings change right away. Its adapter reports it from then on,
     /// until the provider reports the thread's settings itself.
     private func record(_ change: AgentSettingsChange, for id: String) {
@@ -902,12 +899,6 @@ final class AgentIntegrationStore {
         threads[index] = change.applying(to: threads[index])
         if drafts[id] != nil { drafts[id] = threads[index] }
         revisions[id, default: 0] += 1
-    }
-
-    func recordProcessExit(threadID: String, code: Int32?) {
-        guard !settledThreadIDs.contains(threadID), let index = threads.firstIndex(where: { $0.id == threadID }) else { return }
-        let thread = threads[index]
-        adapters[thread.provider]?.didExit(thread)
     }
 
     private func enabledAdapter(for provider: AgentProvider) throws -> any AgentProviderAdapter {

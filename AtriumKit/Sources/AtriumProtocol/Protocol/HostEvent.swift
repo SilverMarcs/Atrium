@@ -9,10 +9,10 @@ public nonisolated enum HostEvent: Codable, Sendable {
     case transcriptChanged(taskID: String, delta: WireTranscriptDelta)
     /// The host couldn't load a task's conversation.
     case transcriptUnavailable(taskID: String, message: String)
-    case terminal(taskID: String, frame: WireTerminalFrame)
-    case terminalUnavailable(taskID: String, message: String)
     case git(GitScope, repositories: [GitRepositoryStatus])
     case commands(workspaceID: UUID, commands: [WireCommand])
+    /// A followed command's output: complete when a client subscribes, then what changed.
+    case commandOutput(workspaceID: UUID, commandID: UUID, output: WireCommandOutput)
     /// The entries of a followed folder, whenever they change.
     case directory(workspaceID: UUID, path: String, entries: [FileEntry])
     /// A followed file changed on the host.

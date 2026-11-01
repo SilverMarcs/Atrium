@@ -34,7 +34,8 @@ final class CommandsFeed: TopicFeed {
 
     private func snapshot() -> [WireCommand] {
         workspace.commands.map {
-            WireCommand(id: $0.id, title: $0.displayTitle, script: $0.runScript, isRunning: $0.isRunning, isDefault: $0.isDefault)
+            WireCommand(id: $0.id, title: $0.displayTitle, script: $0.script, isRunning: $0.isRunning, isDefault: $0.isDefault,
+                        directory: $0.directory, exitCode: $0.exitCode)
         }
     }
 }

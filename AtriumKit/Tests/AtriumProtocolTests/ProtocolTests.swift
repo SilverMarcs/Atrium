@@ -106,6 +106,26 @@ struct ProtocolTests {
         #expect(applied.tasks.map(\.title) == ["Second", "Three"])
     }
 
+    @Test func commandOutputChangesResendOnlyTheTail() throws {
+        let id = UUID()
+        let output = WireCommandOutput(id: id, firstLine: 2, start: 2, lines: ["c", "d", "e"])
+        let change = output.changes(from: 4)
+        #expect(change.start == 4)
+        #expect(change.lines == ["e"])
+        #expect(output.changes(from: 0) == output)
+        let previous = WireCommandOutput(id: id, firstLine: 0, start: 0, lines: ["a", "b", "c", "d", "e…"])
+        #expect(change.applying(to: previous) == output)
+        // A change can't be applied to another output, nor to one missing lines before it.
+        #expect(change.applying(to: WireCommandOutput(id: UUID(), firstLine: 0, start: 0, lines: ["a", "b", "c", "d"])) == nil)
+        #expect(change.applying(to: WireCommandOutput(id: id, firstLine: 0, start: 0, lines: ["a", "b"])) == nil)
+        #expect(change.applying(to: nil) == nil)
+        #expect(output.applying(to: nil) == output)
+        let topic = HostTopic.commandOutput(workspaceID: UUID(), commandID: UUID())
+        #expect(try HostCodec.decode(HostTopic.self, from: HostCodec.encode(topic)) == topic)
+        let action = try HostCodec.decode(CommandAction.self, from: HostCodec.encode(CommandAction.run(directory: "/p")))
+        guard case .run("/p", nil) = action else { Issue.record("Expected a run of the saved script"); return }
+    }
+
     @Test func sideChatsStayApartFromDelegatedWork() throws {
         func task(_ id: String, origin: WireTaskOrigin?) -> WireTask {
             WireTask(

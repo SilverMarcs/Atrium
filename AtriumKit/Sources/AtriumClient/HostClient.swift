@@ -36,8 +36,7 @@ public final class HostClient: Identifiable {
     }
 
     public let id: String
-    /// Whether this is the host running in this app. Its terminal views are
-    /// accessed directly; paired hosts publish copied terminal state.
+    /// Whether this is the host running in this app.
     public let isLocal: Bool
     public private(set) var pairedHost: PairedHost?
     /// A name the user chose for this Mac's own host, shown instead of its own.
@@ -62,6 +61,9 @@ public final class HostClient: Identifiable {
     }
     public private(set) var gitStatuses: [GitScope: [GitRepositoryStatus]] = [:]
     public private(set) var commands: [UUID: [WireCommand]] = [:]
+    /// What followed commands printed, by command. Kept after they're no longer
+    /// followed, until the host sends them again.
+    public private(set) var commandOutputs: [UUID: WireCommandOutput] = [:]
     /// Entries of followed folders, by their `.directory` topic.
     public private(set) var directories: [HostTopic: [FileEntry]] = [:]
     /// The host's remote access, while its own Mac UI follows it.
@@ -71,8 +73,6 @@ public final class HostClient: Identifiable {
     public let conversations = ConversationStore()
     /// Why a followed conversation couldn't be loaded, by task.
     public private(set) var transcriptErrors: [String: String] = [:]
-    public private(set) var terminals: [String: WireTerminalFrame] = [:]
-    public private(set) var terminalErrors: [String: String] = [:]
     /// New tasks opened on this device, by draft ID. One stays after its first
     /// prompt until the task list shows the task the host created for it.
     public internal(set) var drafts: [String: TaskDraft] = [:]
@@ -412,29 +412,18 @@ public final class HostClient: Identifiable {
                 try? await request(.unsubscribe(topic))
             }
         }
-        if remaining <= 0, case .terminal(let taskID) = topic {
-            terminals[taskID] = nil
-            terminalErrors[taskID] = nil
-        }
     }
 
     /// Subscribes again, which has the host reload what it can.
     public func reload(_ topic: HostTopic) {
         if case .transcript(let taskID) = topic { transcriptErrors[taskID] = nil }
-        if case .terminal(let taskID) = topic { terminalErrors[taskID] = nil }
         if isConnected { subscribe(topic) }
     }
 
     private func subscribe(_ topic: HostTopic) {
         Task {
             guard (topicCounts[topic] ?? 0) > 0 else { return }
-            do {
-                _ = try await request(.subscribe(topic))
-            } catch {
-                if case .terminal(let taskID) = topic, isConnected, (topicCounts[topic] ?? 0) > 0 {
-                    terminalErrors[taskID] = error.localizedDescription
-                }
-            }
+            _ = try? await request(.subscribe(topic))
         }
     }
 
@@ -628,24 +617,16 @@ public final class HostClient: Identifiable {
             reconcilePendingPrompts(for: taskID)
         case .transcriptUnavailable(let taskID, let message):
             transcriptErrors[taskID] = message
-        case .terminal(let taskID, let frame):
-            guard (topicCounts[.terminal(taskID: taskID)] ?? 0) > 0 else { return }
-            guard let state = frame.applying(to: terminals[taskID]) else {
-                // An invalid complete checkpoint cannot be repaired by resubscribing.
-                if frame.baseSequence != nil { reload(.terminal(taskID: taskID)) }
-                else { terminalErrors[taskID] = "The host sent an unsupported terminal screen." }
-                return
-            }
-            terminals[taskID] = state
-            terminalErrors[taskID] = nil
-            send(.terminal(taskID: taskID, action: .acknowledge(terminalID: frame.terminalID, sequence: frame.sequence)))
-        case .terminalUnavailable(let taskID, let message):
-            guard (topicCounts[.terminal(taskID: taskID)] ?? 0) > 0 else { return }
-            terminalErrors[taskID] = message
         case .git(let scope, let repositories):
             gitStatuses[scope] = repositories
         case .commands(let workspaceID, let commands):
             self.commands[workspaceID] = commands
+        case .commandOutput(let workspaceID, let commandID, let output):
+            let topic = HostTopic.commandOutput(workspaceID: workspaceID, commandID: commandID)
+            guard (topicCounts[topic] ?? 0) > 0 else { return }
+            // A change that doesn't follow what this client has needs the whole output again.
+            guard let complete = output.applying(to: commandOutputs[commandID]) else { return reload(topic) }
+            commandOutputs[commandID] = complete
         case .directory(let workspaceID, let path, let entries):
             directories[.directory(workspaceID: workspaceID, path: path)] = entries
         case .fileChanged(let workspaceID, let path):
@@ -690,7 +671,7 @@ private extension HostRequest {
     /// Losing that connection isn't a failed user action.
     var isAutomatic: Bool {
         switch self {
-        case .activity, .registerPush, .subscribe, .unsubscribe, .task(_, .viewed), .terminal(_, .acknowledge): true
+        case .activity, .registerPush, .subscribe, .unsubscribe, .task(_, .viewed): true
         default: false
         }
     }

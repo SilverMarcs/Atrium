@@ -1,7 +1,7 @@
 # Atrium
 
 A native macOS workspace for Codex and Claude tasks, built with SwiftUI.
-Work across projects with an integrated terminal, editor, and Git inspector.
+Work across projects with native chat, a command runner, an editor, and a Git inspector.
 
 <img width="1587" height="1103" alt="Screenshot 2026-10-24 at 12 02 11 PM" src="https://github.com/user-attachments/assets/9b29ada6-0e59-4e28-be14-bacceb16ab31" />
 <img width="1587" height="1103" alt="Screenshot 2026-10-24 at 12 02 27 PM" src="https://github.com/user-attachments/assets/f88a530c-90c6-4442-9fb0-5422793b146c" />
@@ -17,15 +17,15 @@ Work across projects with an integrated terminal, editor, and Git inspector.
 ## Features
 
 - Codex and Claude tasks grouped by project
-- Native chat with optional terminal attachment to the same running conversation
+- Native chat, with any conversation one click away in your terminal app, attached to the same running session
 - Streaming replies, images, mid-turn guidance, and native approval/question controls
-- Workspace-based terminal sessions
+- Saved commands per project that run on its host, with their output, replies and keys from the Mac or iPhone
 - Built-in text editor with syntax highlighting
 - Git changes, diffs, branches, and worktrees
 
 ## Hosts and clients
 
-Every Mac running Atrium is a host. The host alone touches projects, Git, files and the agent integrations; everything else, including the Mac's own window, is a client of it. The Mac's UI talks to its own host in process, and to other hosts (another Mac's Atrium) through the same end-to-end encrypted relay the iOS app uses. Clients stay connected to all their hosts at once and show every host's tasks in one list, which the host menu filters. Terminals stay on their host, and files on another host are read-only.
+Every Mac running Atrium is a host. The host alone touches projects, Git, files and the agent integrations; everything else, including the Mac's own window, is a client of it. The Mac's UI talks to its own host in process, and to other hosts (another Mac's Atrium) through the same end-to-end encrypted relay the iOS app uses. Clients stay connected to all their hosts at once and show every host's tasks in one list, which the host menu filters. Commands run on their host, a conversation opens in a terminal only on its own host, and files on another host are read-only.
 
 Turn on remote access in Settings → Remote, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Remote on another Mac.
 

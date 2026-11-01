@@ -49,7 +49,6 @@ struct AppCommands: Commands {
             CommandGroup(replacing: .toolbar) {
                 Button {
                     chatFontSize = min(chatFontSize + ChatFontSize.step, ChatFontSize.max)
-                    app.activeTerminal?.increaseFontSize()
                     editorFontSize = min(editorFontSize + 0.5, EditorFontSize.max)
                 } label: {
                     Label("Zoom In", systemImage: "plus.magnifyingglass")
@@ -58,7 +57,6 @@ struct AppCommands: Commands {
 
                 Button {
                     chatFontSize = max(chatFontSize - ChatFontSize.step, ChatFontSize.min)
-                    app.activeTerminal?.decreaseFontSize()
                     editorFontSize = max(editorFontSize - 0.5, EditorFontSize.min)
                 } label: {
                     Label("Zoom Out", systemImage: "minus.magnifyingglass")
@@ -67,7 +65,6 @@ struct AppCommands: Commands {
 
                 Button {
                     chatFontSize = ChatFontSize.default
-                    app.activeTerminal?.resetFontSize()
                     editorFontSize = EditorFontSize.default
                 } label: {
                     Label("Actual Size", systemImage: "1.magnifyingglass")

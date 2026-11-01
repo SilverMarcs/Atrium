@@ -1,7 +1,6 @@
 import AtriumProtocol
 import Foundation
 import Observation
-import SwiftTerm
 import SystemConfiguration
 
 /// The host: the only part of Atrium that touches projects, Git, the file
@@ -68,9 +67,6 @@ final class HostServer {
             }
         )
     }
-
-    /// The task terminals owned by this host, including ones viewed remotely.
-    var terminals: HostTerminals { HostTerminals(sessions: sessions, workspaces: workspaces) }
 
     @ObservationIgnored private let integrations: AgentIntegrationStore
     @ObservationIgnored private let workspaces: WorkspaceStore
@@ -271,6 +267,8 @@ final class HostServer {
         case .refreshTasks:
             await integrations.refresh()
             return .done
+        case .task(_, .openTerminal) where !connection.isLocal:
+            return .hostOnly
         case .task(let id, let action):
             let reply = await tasks.perform(action, onTask: id)
             // Reconcile optimistic client actions before acknowledging them.
@@ -294,31 +292,6 @@ final class HostServer {
                 return .done
             } catch {
                 return .failed(message: error.localizedDescription)
-            }
-        case .terminal(let taskID, let action):
-            guard connection.topics.contains(.terminal(taskID: taskID)) else {
-                return .failed(message: "Open this task’s terminal first.")
-            }
-            switch action {
-            case .acknowledge(let terminalID, let sequence):
-                connection.acknowledgeTerminal(taskID: taskID, terminalID: terminalID, sequence: sequence)
-                return .done
-            case .input(let terminalID, let data):
-                guard !data.isEmpty, data.count <= 65_536,
-                      let session = sessions.sessions[taskID], session.terminal.id == terminalID,
-                      !session.terminal.hasExited, let view = session.terminal.localProcessTerminalView else {
-                    return .failed(message: "This terminal changed or closed. Reopen it before typing.")
-                }
-                view.send(data: Array(data)[...])
-                return .done
-            case .resume:
-                guard let session = sessions.session(for: taskID) else {
-                    return .failed(message: "This task’s terminal is no longer available.")
-                }
-                await sessions.attachTerminal(to: session)
-                feeds[.terminal(taskID: taskID)]?.refresh()
-                if let error = session.terminalError { return .failed(message: error) }
-                return .done
             }
         case .addWorkspace(let path):
             guard connection.isLocal else { return .hostOnly }
@@ -376,15 +349,15 @@ final class HostServer {
         case .transcript(let taskID):
             guard integrations.threads.contains(where: { $0.id == taskID }) else { return nil }
             feed = TranscriptFeed(taskID: taskID, integrations: integrations)
-        case .terminal(let taskID):
-            guard let session = sessions.session(for: taskID) else { return nil }
-            feed = TerminalFeed(session: session, sessions: sessions)
         case .git(let scope):
             guard let workspace = workspace(scope.workspaceID) else { return nil }
             feed = GitFeed(scope: scope, workspace: workspace)
         case .commands(let workspaceID):
             guard let workspace = workspace(workspaceID) else { return nil }
             feed = CommandsFeed(workspace: workspace)
+        case .commandOutput(let workspaceID, let commandID):
+            guard let command = workspace(workspaceID)?.commands.first(where: { $0.id == commandID }) else { return nil }
+            feed = CommandOutputFeed(workspaceID: workspaceID, command: command)
         case .directory(let workspaceID, let path):
             guard let workspace = workspace(workspaceID), WorkspaceAccess(directory: workspace.directory).allows(path) else { return nil }
             feed = DirectoryFeed(workspaceID: workspaceID, path: path)

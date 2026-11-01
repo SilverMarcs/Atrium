@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
         AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
-		08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC272F74722D009C370D /* SwiftTerm */; };
 		0A7C00000000000000000402 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000403 /* MCP */; };
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
@@ -99,7 +98,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				08BEFC282F74722D009C370D /* SwiftTerm in Frameworks */,
 				0A7C00000000000000000402 /* MCP in Frameworks */,
                 AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */,
 				0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */,
@@ -185,7 +183,6 @@
 			);
 			name = Atrium;
 			packageProductDependencies = (
-				08BEFC272F74722D009C370D /* SwiftTerm */,
 				0A7C00000000000000000403 /* MCP */,
                 0A7C00000000000000000103 /* SwiftMarkdownView */,
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
@@ -282,7 +279,6 @@
 			mainGroup = 08D10C412F64897100754649;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
@@ -780,14 +776,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/SilverMarcs/SwiftTerm";
-			requirement = {
-				branch = feature;
-				kind = branch;
-			};
-		};
 		08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
@@ -831,11 +819,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		08BEFC272F74722D009C370D /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 08BEFC262F74722D009C370D /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
-		};
 		08BEFC292F74722D009C370E /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */;

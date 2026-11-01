@@ -3,7 +3,8 @@ import Foundation
 
 /// One client of this host: the Mac's own UI in process, or a device through
 /// the relay. Holds its authentication and subscriptions and sends it events,
-/// turning task and transcript states into changes against what it last got.
+/// turning task, transcript and command output states into changes against
+/// what it last got.
 @MainActor
 final class ServerConnection {
     let id = UUID()
@@ -12,9 +13,7 @@ final class ServerConnection {
     private(set) var topics: Set<HostTopic> = []
     private var sentTasks: WireTasksSnapshot?
     private var sentTranscripts: [String: [TranscriptMessage]] = [:]
-    private var sentTerminals: [String: WireTerminalFrame] = [:]
-    private var awaitingTerminalAck: Set<String> = []
-    private var pendingTerminals: [String: WireTerminalFrame] = [:]
+    private var sentOutputs: [UUID: WireCommandOutput] = [:]
     private let send: (HostEvent) -> Void
     private let closeChannel: () -> Void
 
@@ -39,10 +38,7 @@ final class ServerConnection {
         switch topic {
         case .tasks: sentTasks = nil
         case .transcript(let taskID): sentTranscripts[taskID] = nil
-        case .terminal(let taskID):
-            sentTerminals[taskID] = nil
-            pendingTerminals[taskID] = nil
-            awaitingTerminalAck.remove(taskID)
+        case .commandOutput(_, let commandID): sentOutputs[commandID] = nil
         default: break
         }
     }
@@ -50,11 +46,7 @@ final class ServerConnection {
     func unsubscribe(_ topic: HostTopic) {
         topics.remove(topic)
         if case .transcript(let taskID) = topic { sentTranscripts[taskID] = nil }
-        if case .terminal(let taskID) = topic {
-            sentTerminals[taskID] = nil
-            pendingTerminals[taskID] = nil
-            awaitingTerminalAck.remove(taskID)
-        }
+        if case .commandOutput(_, let commandID) = topic { sentOutputs[commandID] = nil }
     }
 
     func sendHello(_ hello: HostHello) {
@@ -69,38 +61,25 @@ final class ServerConnection {
             push(tasks: snapshot)
         case .transcript(let taskID, let messages):
             push(transcript: messages, of: taskID)
-        case .terminal(let taskID, let frame):
-            push(terminal: frame, of: taskID)
-        case .terminalUnavailable(let taskID, _):
-            sentTerminals[taskID] = nil
-            pendingTerminals[taskID] = nil
-            awaitingTerminalAck.remove(taskID)
-            send(event)
+        case .commandOutput(let workspaceID, let commandID, let output):
+            push(output: output, of: commandID, in: workspaceID)
         default:
             send(event)
         }
     }
 
-    /// Only one terminal frame is in flight per task. New output replaces the
-    /// pending frame; its delta is computed against what the client actually got.
-    private func push(terminal frame: WireTerminalFrame, of taskID: String) {
-        if awaitingTerminalAck.contains(taskID) {
-            pendingTerminals[taskID] = frame
-            return
+    /// Sends a command's output in full first, then from the last line sent,
+    /// which may have been unfinished.
+    private func push(output: WireCommandOutput, of commandID: UUID, in workspaceID: UUID) {
+        let sent = sentOutputs[commandID]
+        guard sent != output else { return }
+        sentOutputs[commandID] = output
+        let change = if let sent, sent.id == output.id, sent.end > output.firstLine {
+            output.changes(from: sent.end - 1)
+        } else {
+            output
         }
-        guard sentTerminals[taskID] != frame else { return }
-        let previous = sentTerminals[taskID]
-        sentTerminals[taskID] = frame
-        awaitingTerminalAck.insert(taskID)
-        send(.terminal(taskID: taskID, frame: frame.changes(since: previous)))
-    }
-
-    func acknowledgeTerminal(taskID: String, terminalID: UUID, sequence: UInt64) {
-        guard let sent = sentTerminals[taskID], sent.terminalID == terminalID,
-              sent.sequence == sequence, awaitingTerminalAck.remove(taskID) != nil else { return }
-        if let pending = pendingTerminals.removeValue(forKey: taskID) {
-            push(terminal: pending, of: taskID)
-        }
+        send(.commandOutput(workspaceID: workspaceID, commandID: commandID, output: change))
     }
 
     /// Sends the first snapshot in full and only what changed after that.

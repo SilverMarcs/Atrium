@@ -5,7 +5,7 @@ import OSLog
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .prompt, .selectModel, .editMessage, .sideChat]
+    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .selectModel, .editMessage, .sideChat]
     private(set) var defaultSettings: TaskStartSettings?
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
@@ -40,7 +40,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Turns whose Stop hook ran before Claude saved them, keyed by session.
     /// Their chat stays as the hooks reported it until history has all of it.
     private var unsavedTurns: [String: UnsavedTurn] = [:]
-    /// Settings typed into each thread's terminal that its transcript doesn't show yet.
+    /// Settings sent to each thread as slash commands that its transcript doesn't show yet.
     private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
     /// The session each fork was made from, until Claude saves the fork. Claude writes
     /// a fork's file, with the history it copied, only once the fork gets its first prompt.
@@ -352,7 +352,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { return }
-        for command in try terminalCommands(for: change, of: thread) { try await daemon.reply(command, jobID: id) }
+        for command in slashCommands(for: change, of: thread) { try await daemon.reply(command, jobID: id) }
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
     }
 
@@ -423,7 +423,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return config["penguinModeOrgEnabled"] as? Bool == true
     }
 
-    func terminalCommands(for change: AgentSettingsChange, of thread: AgentThread) throws -> [String] {
+    /// The slash commands that make a change when Claude reads them as a prompt.
+    /// The change shows from then on, until Claude's transcript reports it.
+    private func slashCommands(for change: AgentSettingsChange, of thread: AgentThread) -> [String] {
         var override = settingsOverrides[thread.sessionID] ?? ClaudeSettingsOverride(reportedBy: thread)
         override.append(change)
         settingsOverrides[thread.sessionID] = override
@@ -487,7 +489,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return fork
     }
 
-    func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch {
+    func prepareLaunch(for thread: AgentThread) async throws -> AgentLaunch {
         guard UUID(uuidString: thread.sessionID) != nil else {
             throw IntegrationError(message: "Invalid Claude session identifier.")
         }
@@ -513,10 +515,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         _ = try await IntegrationProcess.run("claude", arguments: ["stop", id])
         if let pid = session.pid { try await AgentProcessExit.wait(for: pid) }
         try await refreshBackgroundSessions()
-    }
-
-    func didExit(_ thread: AgentThread) {
-        requestStatusRefresh()
     }
 
     func setEnabled(_ isEnabled: Bool) {

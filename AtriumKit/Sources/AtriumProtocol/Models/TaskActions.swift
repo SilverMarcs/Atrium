@@ -32,4 +32,6 @@ public nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     public static let sideChat = Self(rawValue: 1 << 13)
     /// Prompts can include images.
     public static let attachImages = Self(rawValue: 1 << 14)
+    /// The conversation can open in a terminal on the host, attached to the same session.
+    public static let openTerminal = Self(rawValue: 1 << 15)
 }

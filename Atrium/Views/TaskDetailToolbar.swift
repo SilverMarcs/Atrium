@@ -5,14 +5,11 @@ import SwiftUI
 /// The Mac toolbar of a task's detail view.
 struct TaskDetailToolbar: ToolbarContent {
     let item: HostTask
-    let hasTerminal: Bool
-    let showsTerminal: Bool
-    @Binding var presentation: String
     @Binding var showingScratchPad: Bool
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if !showsTerminal, !TaskDraft.isDraftID(item.task.id), !item.task.isSubagent, !item.task.isSideChat {
+        if !TaskDraft.isDraftID(item.task.id), !item.task.isSubagent, !item.task.isSideChat {
             ToolbarItem {
                 let models = item.host.models(for: item.task.provider)
                 TaskModelMenu(
@@ -22,9 +19,10 @@ struct TaskDetailToolbar: ToolbarContent {
                 .disabled(models.isEmpty)
             }
         }
-        if hasTerminal {
+        // The terminal runs on the task's host, so only this Mac's own tasks open in one.
+        if item.host.isLocal, item.task.actions.contains(.openTerminal) {
             ToolbarItem {
-                TaskSessionViewPicker(selection: $presentation)
+                TaskTerminalButton(item: item)
             }
         }
         if let parent = item.parent {

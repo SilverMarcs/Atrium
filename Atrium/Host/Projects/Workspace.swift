@@ -11,7 +11,7 @@ final class Workspace: Identifiable, Hashable, Codable {
     var isArchived: Bool = false
     private(set) var customIconFilename: String?
 
-    private(set) var commands: [Terminal]
+    private(set) var commands: [Command]
 
     @ObservationIgnored
     weak var store: WorkspaceStore?
@@ -98,7 +98,7 @@ final class Workspace: Identifiable, Hashable, Codable {
         self.scratchPad = try c.decodeIfPresent(String.self, forKey: .scratchPad) ?? ""
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         self.customIconFilename = try c.decodeIfPresent(String.self, forKey: .customIconFilename)
-        self.commands = try c.decodeIfPresent([Terminal].self, forKey: .commands) ?? []
+        self.commands = try c.decodeIfPresent([Command].self, forKey: .commands) ?? []
         for cmd in commands { cmd.workspace = self }
     }
 
@@ -126,19 +126,14 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     // MARK: - Command Management
 
-    @discardableResult
-    func addCommand(title: String = "Terminal", runScript: String? = nil) -> Terminal {
-        let entry = Terminal(workspace: self, title: title, runScript: runScript)
-        commands.append(entry)
+    func addCommand(title: String, script: String?) -> Command {
+        let command = Command(workspace: self, title: title, script: script)
+        commands.append(command)
         store?.scheduleSave()
-        return entry
+        return command
     }
 
-    var defaultCommand: Terminal? {
-        commands.first { $0.isDefault }
-    }
-
-    func setDefaultCommand(_ entry: Terminal) {
+    func setDefaultCommand(_ entry: Command) {
         for cmd in commands {
             cmd.isDefault = cmd.id == entry.id
         }
@@ -150,23 +145,9 @@ final class Workspace: Identifiable, Hashable, Codable {
         store?.scheduleSave()
     }
 
-    func removeCommand(_ entry: Terminal) {
+    func removeCommand(_ entry: Command) {
         entry.terminate()
         commands.removeAll { $0.id == entry.id }
         store?.scheduleSave()
-    }
-
-    /// Sends the command's `runScript`, starting its shell first if needed. A
-    /// freshly started shell gets a moment to reach its prompt so the script
-    /// isn't typed into its startup.
-    func runCommand(_ entry: Terminal) {
-        let needsSpawn = entry.localProcessTerminalView == nil
-        entry.ensureProcess()
-        Task { @MainActor in
-            if needsSpawn {
-                try? await Task.sleep(for: .milliseconds(300))
-            }
-            entry.run()
-        }
     }
 }

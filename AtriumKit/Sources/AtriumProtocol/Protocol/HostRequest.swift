@@ -25,7 +25,6 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case prompt(taskID: String, text: String, images: [Data])
     /// Stops the agent's current turn.
     case interrupt(taskID: String)
-    case terminal(taskID: String, action: TerminalAction)
     /// Adds a folder on the host as a project. Only the host itself may.
     case addWorkspace(path: String)
     case workspace(id: UUID, action: WorkspaceAction)
@@ -60,6 +59,9 @@ public nonisolated enum TaskAction: Codable, Sendable {
     /// previous one. The reply names it.
     case startSideChat
     case delete
+    /// Opens the conversation in the host's default terminal app, attached to
+    /// the same running session. Only the host itself may.
+    case openTerminal
     /// Switches the model, and its reasoning effort when it has one, for the
     /// agent's next turns. The model is one its provider lists.
     case selectModel(id: String, reasoningEffort: String?)
@@ -87,10 +89,18 @@ public nonisolated enum WorkspaceAction: Codable, Sendable {
 }
 
 public nonisolated enum CommandAction: Codable, Sendable {
-    /// Runs the command in `directory`: the project folder, or the same folder
-    /// in a linked worktree of its repository that the client shows.
-    case run(directory: String)
+    /// Runs the command's saved script, or `script` once in its place, in
+    /// `directory`: the project folder, or the same folder in a linked worktree
+    /// of its repository that the client shows. A running command restarts.
+    /// The saved script starts with cleared output; a one-off adds to it.
+    case run(directory: String, script: String? = nil)
+    /// Interrupts the running command, then terminates and kills it if it's
+    /// asked again while it keeps running.
     case stop
+    /// Types a reply into the running command and presses Return.
+    case input(String)
+    case key(CommandKey)
+    case clear
     case update(title: String, script: String?)
     case setDefault
     case move(toIndex: Int)

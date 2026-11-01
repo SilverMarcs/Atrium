@@ -1,8 +1,8 @@
 import Foundation
 
-/// Settings typed into a Claude terminal, which its transcript records only with
+/// Settings sent to Claude as slash commands, which its transcript records only with
 /// Claude's next reply. They're shown in place of the transcript's own until it
-/// reports anything other than it did when they were typed.
+/// reports anything other than it did when they were sent.
 struct ClaudeSettingsOverride {
     private let reported: Settings
     private var changes: [AgentSettingsChange] = []

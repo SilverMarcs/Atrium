@@ -3,12 +3,12 @@ import SwiftUI
 
 /// Presents the oldest pending request and keeps it available after dismissing
 /// it. An approval is a native alert naming what the agent wants to do; a
-/// question opens a sheet to answer it in.
+/// question opens a sheet to answer it in. A request only the agent's own
+/// interface can answer offers to open it in a terminal, where that's possible.
 struct AgentInteractionPresentation: ViewModifier {
     let requests: [AgentInteraction]
     let respond: (AgentInteraction, AgentDecision) async throws -> Void
-    /// Shows the task's terminal, where this device has one.
-    var showTerminal: (() -> Void)?
+    var openTerminal: (() -> Void)?
     var canPresent = true
     var prepareToPresent: () -> Void = {}
     @State private var presented: AgentInteraction?
@@ -45,9 +45,8 @@ struct AgentInteractionPresentation: ViewModifier {
                     Button("Decline", role: .destructive) { submit(AgentDecision(allowed: false), to: request) }
                     // Leaves it pending; Review Request in the toolbar brings it back.
                     Button("Not Now", role: .cancel) {}
-                } else if let showTerminal {
-                    // Only the terminal can answer it.
-                    Button("Show Terminal", action: showTerminal)
+                } else if let openTerminal {
+                    Button("Open in Terminal", action: openTerminal)
                     Button("Not Now", role: .cancel) {}
                 } else {
                     Button("OK", role: .cancel) {}

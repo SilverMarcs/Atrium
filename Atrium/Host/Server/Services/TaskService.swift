@@ -48,6 +48,9 @@ struct TaskService {
                 if let sideChat = await sessions.startSideChat(of: thread) { return .task(id: sideChat.id) }
             case .delete:
                 await sessions.delete(thread)
+            case .openTerminal:
+                do { try await sessions.openTerminal(for: thread) }
+                catch { return .failed(message: error.localizedDescription) }
             case .selectModel(let model, let reasoningEffort):
                 return await changeSettings(.model(model, reasoningEffort: reasoningEffort), of: thread)
             case .setFastMode(let isOn):
@@ -63,7 +66,7 @@ struct TaskService {
         }
         do {
             let imageURLs = try PromptAttachments.save(images)
-            try await sessions.sendPrompt(text, images: imageURLs, to: thread)
+            try await integrations.sendPrompt(text, images: imageURLs, to: thread)
             // A successful prompt wakes the task even before its provider reports
             // the new turn, matching the client's optimistic move.
             sessions.restore(thread)

@@ -16,6 +16,7 @@ struct OptimisticTaskUpdate: Identifiable {
             if case .startSideChat = action { return nil }
             if case .respond = action { return nil }
             if case .rewind = action { return nil }
+            if case .openTerminal = action { return nil }
             self.taskID = taskID
             self.action = action
         case .prompt(let taskID, _, _):
@@ -55,7 +56,7 @@ struct OptimisticTaskUpdate: Identifiable {
             snapshot.tasks[index].isFastMode = isOn
         case .delete:
             snapshot.tasks.remove(at: index)
-        case .fork, .startSideChat, .respond, .rewind:
+        case .fork, .startSideChat, .respond, .rewind, .openTerminal:
             break
         }
     }

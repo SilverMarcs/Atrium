@@ -171,7 +171,7 @@ final class Orchestrator {
     private func send(_ text: String, to thread: AgentThread) async throws {
         prompted.insert(thread.id)
         do {
-            try await sessions.sendPrompt(text, to: thread)
+            try await integrations.sendPrompt(text, to: thread)
         } catch {
             prompted.remove(thread.id)
             throw error
@@ -301,12 +301,12 @@ final class Orchestrator {
     /// on or wakes it. ChatGPT's tasks in the session end with it.
     func stop(_ thread: AgentThread, byChatGPT: Bool = false) async throws {
         // The session stops first: one that can't carries on as it was.
-        if thread.status.isWorking { try await sessions.interrupt(thread) }
+        if thread.status.isWorking { try await integrations.interrupt(thread) }
         for task in activeTasks(in: thread.id) {
             finish(task.id, state: .interrupted, result: byChatGPT ? "You stopped this task before it finished." : "The user stopped this task before it finished.")
         }
         for subagent in subagents(below: thread.id) where subagent.status.isWorking {
-            try? await sessions.interrupt(subagent)
+            try? await integrations.interrupt(subagent)
             try? await integrations.endBackgroundWork(subagent)
         }
     }

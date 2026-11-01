@@ -2,11 +2,9 @@ import SwiftUI
 
 struct BottomSheetView: View {
     let project: Project
-    let showsCollapsedHeader: Bool
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
     @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
-    @State private var headerHeight: CGFloat = 30
 
     private var panel: EditorPanel { project.editor }
 
@@ -15,14 +13,13 @@ struct BottomSheetView: View {
             dragBorder
             content
         }
-        .frame(maxHeight: panel.isOpen ? panelHeight : (showsCollapsedHeader ? headerHeight + 1 : 0), alignment: .top)
+        .frame(maxHeight: panel.isOpen ? panelHeight : 0, alignment: .top)
         .clipped()
-        .allowsHitTesting(panel.isOpen || showsCollapsedHeader)
-        .accessibilityHidden(!panel.isOpen && !showsCollapsedHeader)
+        .allowsHitTesting(panel.isOpen)
+        .accessibilityHidden(!panel.isOpen)
         .background(colorScheme == .dark ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.bar))
         .environment(\.editorFontSize, CGFloat(editorFontSize))
         .environment(project.editor)
-        .onPreferenceChange(PanelHeaderHeightKey.self) { headerHeight = $0 }
     }
 
     private var borderColor: Color {

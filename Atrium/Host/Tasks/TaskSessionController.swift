@@ -2,21 +2,18 @@ import AtriumProtocol
 import Foundation
 import Observation
 
-/// Creates, forks and changes tasks on the host, and owns the terminals their
-/// agents run in. Clients reach it only through the host server.
+/// Creates, forks and changes tasks on the host. Their agents run in the
+/// background whether or not a terminal is attached; one opens on request in
+/// the user's terminal app. Clients reach it only through the host server.
 @MainActor
 @Observable
 final class TaskSessionController {
     private(set) var isOpening = false
-    /// Task terminals, live or ready to launch, by task ID.
-    @ObservationIgnored private(set) var sessions: [String: TaskSession] = [:]
 
     private let integrations: AgentIntegrationStore
-    private let workspaces: WorkspaceStore
 
     init(integrations: AgentIntegrationStore, workspaces: WorkspaceStore) {
         self.integrations = integrations
-        self.workspaces = workspaces
         NotificationRouting.shared.isMainTask = { [weak integrations] id in
             integrations?.threads.first(where: { $0.id == id })?.isMainTask == true
         }
@@ -25,7 +22,7 @@ final class TaskSessionController {
         }
     }
 
-    /// Creates and opens a task, returning it once its terminal is launching.
+    /// Creates and opens a task, returning it once its conversation is open.
     @discardableResult
     func compose(provider: AgentProvider, workspace: Workspace, settings: TaskStartSettings? = nil) async -> AgentThread? {
         guard !isOpening, integrations.enabledProviders.contains(provider) else { return nil }
@@ -36,7 +33,7 @@ final class TaskSessionController {
             var thread = try await integrations.createThread(provider: provider, directory: workspace.directory, settings: settings)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
-            let launch = try await integrations.prepareLaunch(for: thread, isNew: true)
+            try await integrations.openConversation(thread)
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             integrations.registerDraft(thread)
@@ -50,9 +47,6 @@ final class TaskSessionController {
                     thread = change.applying(to: thread)
                 }
             }
-            try Task.checkCancellation()
-            guard canOpen(thread) else { return nil }
-            launchSession(thread, configuration: launch, workspace: workspace)
             return thread
         } catch is CancellationError {
             return nil
@@ -62,7 +56,7 @@ final class TaskSessionController {
         }
     }
 
-    /// Forks a task into a provider and opens the fork, returning it once its terminal is launching.
+    /// Forks a task into a provider and opens the fork, returning it once its conversation is open.
     @discardableResult
     func fork(_ thread: AgentThread, into provider: AgentProvider) async -> AgentThread? {
         guard !isOpening, integrations.canFork(thread, into: provider) else { return nil }
@@ -73,10 +67,7 @@ final class TaskSessionController {
             let fork = try await integrations.forkThread(thread, into: provider)
             try Task.checkCancellation()
             guard canOpen(fork) else { return nil }
-            let launch = try await integrations.prepareLaunch(for: fork)
-            try Task.checkCancellation()
-            guard canOpen(fork) else { return nil }
-            launchSession(fork, configuration: launch, workspace: workspace(for: fork))
+            try await integrations.openConversation(fork)
             return fork
         } catch is CancellationError {
             return nil
@@ -102,7 +93,6 @@ final class TaskSessionController {
         guard !isOpening, !integrations.settledThreadIDs.contains(thread.id), !integrations.renamingThreadIDs.contains(thread.id),
               !integrations.deletingThreadIDs.contains(thread.id), !integrations.deletedThreadIDs.contains(thread.id) else { return }
         integrations.settle(thread)
-        closeSession(thread.id)
     }
 
     func restore(_ thread: AgentThread) {
@@ -144,7 +134,7 @@ final class TaskSessionController {
         if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
         if integrations.canSnooze(thread) { allowed.insert(.snooze) }
         if !integrations.deletingThreadIDs.contains(id) { allowed.insert(.unsnooze) }
-        if integrations.enabledProviders.contains(thread.provider), !capabilities.isDisjoint(with: [.prompt, .terminalPrompt]) {
+        if integrations.enabledProviders.contains(thread.provider) {
             if thread.status != .waiting { allowed.insert(.prompt) }
             allowed.insert(.attachImages)
             if thread.status == .processing { allowed.insert(.interrupt) }
@@ -158,6 +148,7 @@ final class TaskSessionController {
             allowed.insert(.editMessage)
         }
         if integrations.rewindingThreadIDs.contains(id) { allowed.subtract([.prompt, .selectModel]) }
+        if canOpen(thread), !isOpening, !isChanging { allowed.insert(.openTerminal) }
         if !isOpening {
             if integrations.canFork(thread) { allowed.insert(.fork) }
             if integrations.canStartSideChat(thread) { allowed.insert(.sideChat) }
@@ -184,36 +175,8 @@ final class TaskSessionController {
         }
     }
 
-    /// Native providers own the conversation independently of terminal attachments.
-    func sendPrompt(_ text: String, images: [URL] = [], to thread: AgentThread) async throws {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !images.isEmpty else { return }
-        guard thread.status != .waiting else {
-            throw IntegrationError(message: "\(thread.provider.name) is waiting for an answer. Reply on the host.")
-        }
-        let capabilities = integrations.capabilities(of: thread.provider)
-        if capabilities.contains(.prompt) {
-            try await integrations.sendPrompt(text, images: images, to: thread)
-        } else if capabilities.contains(.terminalPrompt) {
-            let session = try await attachedSession(for: thread)
-            await session.terminal.submit(text, attaching: images)
-        } else {
-            throw IntegrationError(message: "\(thread.provider.name) doesn’t accept prompts from Atrium.")
-        }
-    }
-
-    func interrupt(_ thread: AgentThread) async throws {
-        let capabilities = integrations.capabilities(of: thread.provider)
-        if capabilities.contains(.prompt) {
-            try await integrations.interrupt(thread)
-        } else if capabilities.contains(.terminalPrompt) {
-            try await attachedSession(for: thread).terminal.sendEscape()
-        }
-    }
-
     /// Changes the model, reasoning effort or fast mode a thread's next turns use, as if
-    /// chosen on the Mac. A terminal provider gets the change typed into the thread's
-    /// terminal, attached first as for a prompt.
+    /// chosen on the Mac.
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
         guard menuState(for: thread).allowed.contains(.selectModel) else {
             throw IntegrationError(message: thread.status == .waiting
@@ -221,73 +184,20 @@ final class TaskSessionController {
                 : "\(thread.provider.name) can’t change models right now.")
         }
         try integrations.validate(change, for: thread)
-        let capabilities = integrations.capabilities(of: thread.provider)
-        if capabilities.contains(.prompt) {
-            try await integrations.changeSettings(change, of: thread)
-        } else if capabilities.contains(.terminalPrompt) {
-            let session = try await attachedSession(for: thread)
-            for command in try integrations.terminalCommands(for: change, of: thread) {
-                await session.terminal.submit(command)
-            }
-        }
+        try await integrations.changeSettings(change, of: thread)
     }
 
-    private func attachedSession(for thread: AgentThread) async throws -> TaskSession {
-        if let session = sessions[thread.id], !session.terminal.hasExited,
-           session.terminal.localProcessTerminalView != nil {
-            return session
-        }
-        guard canOpen(thread) else { throw IntegrationError(message: "This task can’t be opened right now.") }
+    /// Opens the thread's conversation in the user's terminal app, attached to
+    /// the same running session the chat shows. Closing the terminal detaches
+    /// it and leaves the session running.
+    func openTerminal(for thread: AgentThread) async throws {
+        guard canOpen(thread) else { throw IntegrationError(message: "This task can’t open in a terminal.") }
         try validateDirectory(thread.directory)
         let launch = try await integrations.prepareLaunch(for: thread)
-        let session: TaskSession
-        if let existing = sessions[thread.id] {
-            existing.thread = thread
-            existing.restart(launch: launch)
-            session = existing
-        } else {
-            session = TaskSession(thread: thread, workspace: workspace(for: thread), launch: launch)
-            sessions[thread.id] = session
-        }
-        observeTerminal(of: session)
-        session.terminal.ensureProcess()
-        session.isTerminalAttached = true
-        await session.terminal.waitUntilQuiet()
-        return session
+        try await AgentTerminal.open(launch, in: thread.directory)
     }
 
-    /// The task's terminal session, made ready to attach if it has none.
-    func session(for taskID: String) -> TaskSession? {
-        guard let thread = integrations.threads.first(where: { $0.id == taskID }), canOpen(thread) else { return nil }
-        if let session = sessions[taskID] {
-            session.thread = thread
-            session.terminal.title = thread.title
-            return session
-        }
-        let session = TaskSession(thread: thread, workspace: workspace(for: thread))
-        sessions[taskID] = session
-        return session
-    }
-
-    func attachTerminal(to session: TaskSession) async {
-        guard !session.isAttachingTerminal else { return }
-        if session.isTerminalAttached, !session.terminal.hasExited { return }
-        session.isAttachingTerminal = true
-        session.terminalError = nil
-        defer { session.isAttachingTerminal = false }
-        do {
-            let launch = try await integrations.prepareLaunch(for: session.thread)
-            try Task.checkCancellation()
-            guard sessions[session.id] === session else { return }
-            session.restart(launch: launch)
-            observeTerminal(of: session)
-            session.terminal.ensureProcess()
-            session.isTerminalAttached = true
-        } catch is CancellationError {
-        } catch { session.terminalError = error.localizedDescription }
-    }
-
-    /// A subagent runs inside its session's agent and a side chat beside it, with no terminal of their own.
+    /// A subagent runs inside its session's agent and a side chat beside it, so neither opens on its own.
     private func canOpen(_ thread: AgentThread) -> Bool {
         !thread.isSubagent && !thread.isSideChat && integrations.enabledProviders.contains(thread.provider)
             && !integrations.deletingThreadIDs.contains(thread.id) && !integrations.deletedThreadIDs.contains(thread.id)
@@ -295,43 +205,7 @@ final class TaskSessionController {
 
     func delete(_ thread: AgentThread) async {
         guard !isOpening, integrations.canDelete(thread) else { return }
-        // A live CLI can rewrite its transcript. Stop our writer before deleting it.
-        closeSession(thread.id)
         await integrations.deleteThread(thread)
-        for id in integrations.deletedThreadIDs { closeSession(id) }
-    }
-
-    private func closeSession(_ id: String) {
-        sessions.removeValue(forKey: id)?.terminal.terminate()
-    }
-
-    /// Keeps a new task's terminal ready to launch its agent once attached.
-    private func launchSession(_ thread: AgentThread, configuration: AgentLaunch, workspace: Workspace) {
-        let session = TaskSession(thread: thread, workspace: workspace, launch: configuration)
-        observeTerminal(of: session)
-        sessions[thread.id] = session
-    }
-
-    private func observeTerminal(of session: TaskSession) {
-        let terminal = session.terminal
-        terminal.onProcessExit = { [weak self, weak session, weak terminal] code in
-            guard let self, let session, session.terminal === terminal,
-                  self.sessions[session.id] === session else { return }
-            if !self.integrations.capabilities(of: session.thread.provider).contains(.prompt) {
-                self.integrations.recordProcessExit(threadID: session.id, code: code)
-            }
-        }
-    }
-
-    private func workspace(for thread: AgentThread) -> Workspace {
-        if let existing = workspaces.workspace(for: thread) {
-            return existing
-        }
-        let directory = WorkspaceStore.projectDirectory(for: thread)
-        let workspace = Workspace(name: URL(fileURLWithPath: directory).lastPathComponent, directory: directory)
-        workspace.detectProjectType()
-        workspaces.addWorkspace(workspace)
-        return workspace
     }
 
     private func validateDirectory(_ directory: String) throws {

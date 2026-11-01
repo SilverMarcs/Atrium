@@ -88,15 +88,6 @@ final class WorkspaceStore {
         return nil
     }
 
-    /// The folder a project for a task without one should open: never a linked worktree,
-    /// which would otherwise appear as a separate project lacking the real one's commands.
-    static func projectDirectory(for thread: AgentThread) -> String {
-        let directory = thread.projectDirectory ?? thread.directory
-        guard let checkout = GitCheckout(containing: URL(fileURLWithPath: directory)),
-              checkout.linkedWorktreeURL != nil else { return directory }
-        return Self.path(of: checkout.mainCheckoutURL)
-    }
-
     private func workspace(at url: URL) -> Workspace? {
         let path = Self.path(of: url)
         return workspaces.first { Self.path(of: $0.url) == path }

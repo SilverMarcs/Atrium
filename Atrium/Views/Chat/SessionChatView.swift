@@ -6,8 +6,6 @@ import SwiftUI
 struct SessionChatView: View {
   let item: HostTask
   let project: Project?
-  /// Shows the task's terminal, when it has one.
-  var showTerminal: (() -> Void)?
   @Environment(AppModel.self) private var app
   @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
   @State private var isPinned = true
@@ -178,7 +176,9 @@ struct SessionChatView: View {
       respond: { request, decision in
         _ = try await host.request(.task(id: request.taskID, action: .respond(interactionID: request.id, decision: decision)))
       },
-      showTerminal: showTerminal
+      // Requests from subagents are answered in their session's own terminal too.
+      openTerminal: host.isLocal && task.actions.contains(.openTerminal)
+        ? { host.send(.task(id: task.id, action: .openTerminal)) } : nil
     ))
     .font(.system(size: chatFontSize))
     .composerDictationLifecycle(composer)

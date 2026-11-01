@@ -2,8 +2,8 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A remote control for the project's saved commands on its host. Output stays
-/// in the host's Commands inspector.
+/// The project's saved commands on its host. Each runs there in the checkout
+/// the project's other pages show, and opens to its output and input.
 struct CommandsScreen: View {
     let host: HostClient
     let workspaceID: UUID
@@ -12,10 +12,14 @@ struct CommandsScreen: View {
 
     var body: some View {
         List(commands ?? []) { command in
-            CommandRow(command: command) {
-                // Runs in the checkout the project's other pages show.
-                let run = CommandAction.run(directory: host.scope(for: workspaceID).root.filePath)
-                host.send(.command(workspaceID: workspaceID, commandID: command.id, action: command.isRunning ? .stop : run))
+            NavigationLink(value: Route.command(WorkspaceRef(hostID: host.id, workspaceID: workspaceID), commandID: command.id)) {
+                CommandRow(command: command) {
+                    if command.isRunning {
+                        host.send(.command(workspaceID: workspaceID, commandID: command.id, action: .stop))
+                    } else {
+                        host.run(command.id, in: workspaceID)
+                    }
+                }
             }
         }
         .contentMargins(.top, 10)

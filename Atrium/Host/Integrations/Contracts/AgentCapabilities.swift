@@ -6,12 +6,7 @@ struct AgentCapabilities: OptionSet, Sendable {
     static let deleteDescendants = Self(rawValue: 1 << 2)
     static let forkThread = Self(rawValue: 1 << 4)
     static let renameThread = Self(rawValue: 1 << 3)
-    /// The adapter delivers prompts and interrupts itself, without a terminal.
-    static let prompt = Self(rawValue: 1 << 6)
-    /// Prompts are typed into the thread's attached terminal instead.
-    static let terminalPrompt = Self(rawValue: 1 << 7)
-    /// The model, reasoning effort and fast mode can be changed, through the
-    /// adapter with `.prompt` or by typing commands with `.terminalPrompt`.
+    /// The model, reasoning effort and fast mode can be changed for a thread's next turns.
     static let selectModel = Self(rawValue: 1 << 8)
     static let editMessage = Self(rawValue: 1 << 9)
     /// Side chats can start about a thread's conversation, in the provider's own way.

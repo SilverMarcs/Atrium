@@ -1,11 +1,10 @@
 import AtriumProtocol
 import SwiftUI
 
-/// A project's saved commands. On this Mac's own host each runs in a terminal
-/// shown below the list; on another host they run there, with their state here.
+/// A project's saved commands, which run on its host, with the selected one's
+/// output and input below the list.
 struct CommandsInspectorView: View {
     @Bindable var project: Project
-    @Environment(AppModel.self) private var app
     @State private var editing: CommandEditing?
 
     var body: some View {
@@ -28,19 +27,16 @@ struct CommandsInspectorView: View {
             .scrollContentBackground(.hidden)
             .layoutPriority(1)
 
-            if project.isLocal {
-                Group {
-                    if let id = project.selectedCommandID,
-                       let command = project.commands.first(where: { $0.id == id }),
-                       let terminal = app.terminals.command(id, in: project.workspaceID) {
-                        CommandTerminalOutputView(command: command, terminal: terminal, project: project)
-                    } else {
-                        Color.clear
-                    }
+            Group {
+                if let id = project.selectedCommandID, let command = project.commands.first(where: { $0.id == id }) {
+                    CommandConsoleView(command: command, console: project.console(for: command), project: project)
+                        .id(command.id)
+                } else {
+                    Color.clear
                 }
-                .frame(minHeight: 390, maxHeight: .infinity)
-                .frame(maxWidth: .infinity)
             }
+            .frame(minHeight: 390, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
         }
         .safeAreaBar(edge: .top) {
             HStack {

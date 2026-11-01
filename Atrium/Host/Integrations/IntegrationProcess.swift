@@ -8,10 +8,16 @@ enum IntegrationProcess {
         ["-lc", "exec \"$@\"", "atrium", command] + arguments
     }
 
+    /// Where agent CLIs are looked for after the inherited PATH, which an app
+    /// opened from the Dock barely has.
+    static var searchPath: [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    }
+
     static var environment: [String: String] {
         var values = ProcessInfo.processInfo.environment
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        values["PATH"] = [values["PATH"] ?? "", "\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].joined(separator: ":")
+        values["PATH"] = ([values["PATH"] ?? ""] + searchPath).joined(separator: ":")
         return values
     }
 

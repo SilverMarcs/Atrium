@@ -6,7 +6,7 @@ import OSLog
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
     let capabilities: AgentCapabilities = [
-        .forkThread, .deleteThread, .deleteDescendants, .renameThread, .prompt, .selectModel, .editMessage, .sideChat, .sideChatImages
+        .forkThread, .deleteThread, .deleteDescendants, .renameThread, .selectModel, .editMessage, .sideChat, .sideChatImages
     ]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
@@ -625,7 +625,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         onEvent?(.listInvalidated)
     }
 
-    func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch {
+    func prepareLaunch(for thread: AgentThread) async throws -> AgentLaunch {
         guard UUID(uuidString: thread.sessionID) != nil else {
             throw IntegrationError(message: "Invalid Codex session identifier.")
         }
@@ -660,10 +660,6 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         conversations[thread.sessionID] = nil
         resolveDecisions(sessionID: thread.sessionID)
-    }
-
-    func didExit(_ thread: AgentThread) {
-        onEvent?(.threadInvalidated(sessionID: thread.sessionID))
     }
 
     func setEnabled(_ isEnabled: Bool) {
@@ -770,7 +766,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 let turnID = (params["turn"] as? [String: Any])?["id"] as? String
                 activeTurnIDs[id] = turnID
                 if !startingTurnThreadIDs.contains(id), !startedTurnIDs.contains(turnID ?? "") {
-                    // The Mac's terminal started this turn with its own settings.
+                    // A terminal attached to the thread started this turn with its own settings.
                     pendingSettings[id] = nil
                     serviceTiers[id] = nil
                 }

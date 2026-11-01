@@ -1,13 +1,5 @@
 import SwiftUI
 
-/// Preference key that lets the bottom sheet measure the panel header height.
-struct PanelHeaderHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Layout contract for bottom-sheet panel content.
 ///
 /// Each panel type (file editor, diff viewer, etc.) wraps its content in
@@ -31,11 +23,6 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: PanelHeaderHeightKey.self, value: geo.size.height)
-                    }
-                )
             Rectangle()
                 .fill(borderColor)
                 .frame(height: 1)

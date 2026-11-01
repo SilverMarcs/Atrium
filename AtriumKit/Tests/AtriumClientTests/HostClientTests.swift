@@ -178,63 +178,40 @@ struct HostClientTests {
         host.stop()
     }
 
-    @Test func terminalUpdatesAreAcknowledgedAndUnfollowedScreensAreDiscarded() async throws {
+    @Test func commandOutputChangesExtendWhatTheClientHasAndGapsResubscribe() async throws {
         let connection = FakeConnection()
         let host = HostClient(localID: "local", name: "Mac") { connection }
         host.start()
         await connected(host)
-        let following = Task { await host.follow(.terminal(taskID: "t")) }
-        try await connection.waitForRequests(2)
-        let frame = terminalFrame(sequence: 1)
-        connection.onEvent?(.terminal(taskID: "t", frame: frame))
-        #expect(host.terminals["t"] == frame)
-        try await connection.waitForRequests(3)
-        guard case .terminal("t", .acknowledge(frame.terminalID, 1)) = connection.requests.last?.request else {
-            Issue.record("Expected a terminal acknowledgement"); following.cancel(); return
-        }
-        var next = frame
-        next.sequence = 2
-        next.lines[0].content = "updated"
-        connection.onEvent?(.terminal(taskID: "t", frame: next.changes(since: frame)))
-        #expect(host.terminals["t"] == next)
-        following.cancel()
-        await following.value
-        #expect(host.terminals["t"] == nil)
-        connection.onEvent?(.terminal(taskID: "t", frame: next))
-        #expect(host.terminals["t"] == nil)
-        host.stop()
-    }
-
-    @Test func terminalGapsRequestAFullCheckpointAndRestartsReplaceTheOldScreen() async throws {
-        let connection = FakeConnection()
-        let host = HostClient(localID: "local", name: "Mac") { connection }
-        host.start()
-        await connected(host)
-        let following = Task { await host.follow(.terminal(taskID: "t")) }
+        let workspaceID = UUID(), commandID = UUID()
+        let topic = HostTopic.commandOutput(workspaceID: workspaceID, commandID: commandID)
+        let following = Task { await host.follow(topic) }
         defer { following.cancel(); host.stop() }
         try await connection.waitForRequests(2)
-        let frame = terminalFrame(sequence: 1)
-        connection.onEvent?(.terminal(taskID: "t", frame: frame))
-        try await connection.waitForRequests(3)
-        var missing = frame
-        missing.sequence = 3
-        missing.baseSequence = 2
-        connection.onEvent?(.terminal(taskID: "t", frame: missing))
-        #expect(host.terminals["t"] == frame)
-        try await connection.waitForRequests(4)
-        guard case .subscribe(.terminal("t")) = connection.requests.last?.request else {
-            Issue.record("Expected terminal resynchronization"); return
+        func receive(_ output: WireCommandOutput) {
+            connection.onEvent?(.commandOutput(workspaceID: workspaceID, commandID: commandID, output: output))
         }
-        let replacement = terminalFrame(sequence: 1)
-        connection.onEvent?(.terminal(taskID: "t", frame: replacement))
-        #expect(host.terminals["t"]?.terminalID == replacement.terminalID)
-    }
+        let id = UUID()
+        receive(WireCommandOutput(id: id, firstLine: 0, start: 0, lines: ["$ make", "build"]))
+        // The last line was still being written, so a change sends it again.
+        receive(WireCommandOutput(id: id, firstLine: 0, start: 1, lines: ["building", "done"]))
+        #expect(host.commandOutputs[commandID]?.lines == ["$ make", "building", "done"])
+        // Dropping old lines on the host drops them here too.
+        receive(WireCommandOutput(id: id, firstLine: 1, start: 3, lines: ["next"]))
+        #expect(host.commandOutputs[commandID]?.lines == ["building", "done", "next"])
+        #expect(host.commandOutputs[commandID]?.firstLine == 1)
 
-    private func terminalFrame(sequence: UInt64) -> WireTerminalFrame {
-        WireTerminalFrame(terminalID: UUID(), sequence: sequence, columns: 80, rows: 1,
-                          firstRow: 0, screenRow: 0, cursorRow: 0, cursorColumn: 0,
-                          isAlternate: false, inputModes: "", hasExited: false,
-                          lines: [WireTerminalLine(row: 0, content: "prompt")])
+        // A change past what this client has needs the whole output again.
+        let requests = connection.requests.count
+        receive(WireCommandOutput(id: id, firstLine: 1, start: 9, lines: ["late"]))
+        #expect(host.commandOutputs[commandID]?.lines == ["building", "done", "next"])
+        try await connection.waitForRequests(requests + 1)
+        guard case .subscribe(topic) = connection.requests.last?.request else {
+            Issue.record("Expected the output to be requested again"); return
+        }
+        // Cleared output starts over.
+        receive(WireCommandOutput(id: UUID(), firstLine: 0, start: 0, lines: ["$ make"]))
+        #expect(host.commandOutputs[commandID]?.lines == ["$ make"])
     }
 }
 

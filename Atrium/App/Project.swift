@@ -17,6 +17,8 @@ final class Project: Identifiable {
     @ObservationIgnored private(set) lazy var fileTree = FileTreeModel(project: self)
     @ObservationIgnored private(set) lazy var search = SearchInspectorModel(project: self)
     @ObservationIgnored private(set) lazy var git = GitInspectorState(project: self)
+    /// What's typed into each command, kept while the window shows other tasks.
+    @ObservationIgnored private var consoles: [UUID: CommandConsole] = [:]
 
     init(host: HostClient, workspaceID: UUID) {
         self.host = host
@@ -37,7 +39,7 @@ final class Project: Identifiable {
     var repositories: [GitRepositoryStatus]? { scope.repositories }
     var commands: [WireCommand] { host.commands[workspaceID] ?? [] }
     var defaultCommand: WireCommand? { commands.first(where: \.isDefault) }
-    /// Only a project on this Mac's own host can be edited and shows terminals.
+    /// Only a project on this Mac's own host can be edited.
     var isLocal: Bool { host.isLocal }
 
     /// The checkout holding a file, where Git runs for it: a worktree shown
@@ -67,7 +69,14 @@ final class Project: Identifiable {
 
     /// Runs a command in the checkout shown, restarting it if it's running.
     func run(_ command: WireCommand) {
-        send(.run(directory: root.filePath), to: command)
+        host.run(command.id, in: workspaceID)
+    }
+
+    func console(for command: WireCommand) -> CommandConsole {
+        if let console = consoles[command.id] { return console }
+        let console = CommandConsole(host: host, workspaceID: workspaceID, commandID: command.id)
+        consoles[command.id] = console
+        return console
     }
 
     /// Stops a running command, or runs one that isn't.
@@ -82,7 +91,7 @@ final class Project: Identifiable {
         selectedTab = .files
     }
 
-    /// Opens a link from chat or a terminal when it names a file in the project.
+    /// Opens a link from chat or a command's output when it names a file in the project.
     func openLink(_ link: String, from directory: String? = nil) async -> Bool {
         guard case .location(let path, let line) = try? await files(.resolveLink(link, directory: directory ?? root.path)) else {
             return false

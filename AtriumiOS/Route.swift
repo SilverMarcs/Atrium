@@ -7,6 +7,7 @@ enum Route: Hashable {
     case sourceControl(WorkspaceRef)
     case fileDiff(WorkspaceRef, file: GitChangedFile, repository: URL, isStaged: Bool)
     case commands(WorkspaceRef)
+    case command(WorkspaceRef, commandID: UUID)
     /// A folder, or for nil what the project's scope shows.
     case files(WorkspaceRef, folder: String? = nil)
     case file(WorkspaceRef, path: String, line: Int? = nil)

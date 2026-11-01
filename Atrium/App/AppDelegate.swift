@@ -38,24 +38,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if let threadID = userInfo["threadID"] as? String {
                 app.selection = TaskRef(hostID: localHost.id, taskID: threadID)
             } else if let workspaceID = (userInfo["workspaceID"] as? String).flatMap(UUID.init(uuidString:)),
-                      let terminalID = (userInfo["terminalID"] as? String).flatMap(UUID.init(uuidString:)),
+                      let commandID = (userInfo["commandID"] as? String).flatMap(UUID.init(uuidString:)),
                       let project = app.project(WorkspaceRef(hostID: localHost.id, workspaceID: workspaceID)) {
                 app.showingInspector = true
                 project.selectedTab = .commands
-                project.selectedCommandID = terminalID
+                project.selectedCommandID = commandID
             }
         }
         AppDelegate.clearBadge()
         completionHandler()
     }
 
-    static func sendNotification(workspaceID: UUID, terminalID: UUID, workspaceName: String? = nil, terminalName: String? = nil) {
+    /// Tells the user a saved command asked for attention by ringing the bell.
+    static func sendNotification(workspaceID: UUID, commandID: UUID, workspaceName: String, commandName: String) {
         let content = UNMutableNotificationContent()
-        content.title = workspaceName ?? "Terminal"
-        content.body = terminalName ?? "Terminal needs attention"
+        content.title = workspaceName
+        content.body = "\(commandName) needs attention"
         content.sound = .default
         content.userInfo = [
-            "terminalID": terminalID.uuidString,
+            "commandID": commandID.uuidString,
             "workspaceID": workspaceID.uuidString,
         ]
 
