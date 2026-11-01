@@ -1,12 +1,11 @@
 import AtriumProtocol
 import SwiftUI
 import SwiftMarkdownView
-import SwiftMediaViewer
 
 /// Renders an agent's Markdown natively with TextKit, the same way LynkChat
 /// does: syntax-highlighted code blocks with copy buttons, tables, quotes,
 /// lists, headings and images. Images load from the web, or from the task's
-/// host for the paths an agent writes, and open in SwiftMediaViewer when tapped.
+/// host for the paths an agent writes, and open in the image viewer when tapped.
 struct MarkdownText: View {
     /// Matches LynkChat's default iOS body size so replies read identically.
     #if os(iOS)
@@ -19,7 +18,7 @@ struct MarkdownText: View {
 
     let text: String
     @Environment(\.chatMedia) private var media
-    @State private var viewedImage: ViewedImage?
+    @State private var viewedImage: ViewedImages?
     @Namespace private var namespace
 
     var body: some View {
@@ -35,35 +34,9 @@ struct MarkdownText: View {
                 await MediaSource(source)?.imageData(from: media, maxPixelSize: Self.imagePixelSize)
             }
             .onMarkdownImageTap { source in
-                viewedImage = MediaSource(source)?.url(in: media).map(ViewedImage.init)
+                viewedImage = MediaSource(source)?.url(in: media).map { ViewedImages(urls: [$0]) }
             }
             .transaction { $0.animation = nil }
-            #if os(macOS)
-            .sheet(item: $viewedImage) { image in
-                NavigationStack {
-                    SMVImageModal(urls: [image.url], targetSize: Self.viewerPixelSize, namespace: namespace)
-                        .toolbar {
-                            ToolbarItem(placement: .close) {
-                                Button(role: .close) { viewedImage = nil }
-                            }
-                        }
-                }
-                // As wide as a page, and as tall as the image is at that width.
-                .presentationSizing(.page.fitted(horizontal: false, vertical: true))
-            }
-            #else
-            .fullScreenCover(item: $viewedImage) { image in
-                SMVImageModal(urls: [image.url], targetSize: Self.viewerPixelSize, namespace: namespace)
-            }
-            #endif
+            .imageViewer($viewedImage, namespace: namespace)
     }
-
-    /// Full screen, or a large sheet on Mac.
-    private static let viewerPixelSize = 4096
-}
-
-/// An image someone tapped, open on its own.
-private struct ViewedImage: Identifiable {
-    let url: URL
-    var id: URL { url }
 }

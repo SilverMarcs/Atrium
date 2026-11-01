@@ -19,12 +19,29 @@ struct UserMessageView: View {
     /// have one (nil) skips the effect and never observes flights.
     var sendFlight: ((PromptSendAnimator) -> PromptSendFlight?)?
     #endif
+    @State private var viewedImages: ViewedImages?
+    /// Names this prompt's images for the viewer, which zooms out of their thumbnails.
+    @State private var imagesID = UUID()
+    @Namespace private var namespace
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             if !images.isEmpty {
                 HStack {
-                    ForEach(images.enumerated(), id: \.offset) { _, data in PromptImageThumbnail(data: data) }
+                    let urls = PromptImageLoan.urls(id: imagesID, count: images.count)
+                    ForEach(images.enumerated(), id: \.offset) { index, data in
+                        Button {
+                            viewedImages = ViewedImages(prompt: images, id: imagesID, startIndex: index)
+                        } label: {
+                            PromptImageThumbnail(data: data)
+                        }
+                        .buttonStyle(.plain)
+                        #if os(iOS)
+                        .matchedTransitionSource(id: urls[index], in: namespace) {
+                            $0.clipShape(.rect(cornerRadius: PromptImageThumbnail.cornerRadius))
+                        }
+                        #endif
+                    }
                 }
                 .contextMenu { PromptContextMenu(text: text, edit: edit, fork: fork) }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -51,6 +68,7 @@ struct UserMessageView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .textSelection(.enabled)
+        .imageViewer($viewedImages, namespace: namespace)
     }
 }
 

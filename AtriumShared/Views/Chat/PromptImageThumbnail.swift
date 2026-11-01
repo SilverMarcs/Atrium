@@ -6,6 +6,8 @@ import UIKit
 #endif
 
 struct PromptImageThumbnail: View {
+    static let cornerRadius: CGFloat = 14
+
     let data: Data
 
     var body: some View {
@@ -21,7 +23,7 @@ struct PromptImageThumbnail: View {
             #endif
         }
         .frame(width: 96, height: 96)
-        .clipShape(.rect(cornerRadius: 14))
+        .clipShape(.rect(cornerRadius: Self.cornerRadius))
         .accessibilityLabel("Attached image")
     }
 }
