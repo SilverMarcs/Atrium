@@ -19,12 +19,7 @@ struct ContentView: View {
             if let task = app.selectedTask {
                 TaskDetailView(item: task)
             } else {
-                ContentUnavailableView(
-                    "No Task Selected",
-                    systemImage: "sidebar.left",
-                    description: Text("Select a task or start a new chat.")
-                )
-                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                NewChatUnavailableView { app.selection = $0 }
             }
         }
         .inspector(isPresented: $app.showingInspector) {
@@ -42,8 +37,8 @@ struct ContentView: View {
             guard let project = app.selectedProject else { return }
             await project.host.follow(.commands(workspaceID: project.workspaceID))
         }
-        .onChange(of: app.selection, initial: true) { _, selection in
-            app.hosts.setVisibleTask(selection)
+        .onChange(of: app.selectedTask?.id, initial: true) { _, ref in
+            app.hosts.setVisibleTask(ref)
         }
 
         .onChange(of: scenePhase, initial: true) { _, phase in

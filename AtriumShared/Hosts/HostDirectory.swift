@@ -241,21 +241,31 @@ final class HostDirectory {
     /// Opens the new chat, starting one in the project this device last
     /// started a task in if none is unsent.
     func openNewChat() {
-        if let newChat {
-            open(newChat)
-            return
-        }
+        guard let ref = prepareNewChat() else { return }
+        open(ref)
+    }
+
+    /// Prepares the detail column's default draft without navigating away
+    /// from the task list when the split view is collapsed.
+    @discardableResult
+    func prepareNewChat() -> TaskRef? {
+        if let newChat { return newChat }
         let lastHost = UserDefaults.standard.string(forKey: HostClient.newTaskHostKey)
         guard let host = newChatHosts.first(where: { $0.id == lastHost }) ?? newChatHosts.first,
-              let workspaceID = host.defaultWorkspaceID else { return }
-        openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID))
+              let workspaceID = host.defaultWorkspaceID else { return nil }
+        return prepareNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID))
     }
 
     /// Opens the new chat in a project on any host, moving an unsent one
     /// there with what's typed in it. A new task's host creates it once its
     /// first prompt is sent, so leaving one unsent leaves nothing behind.
     func openNewChat(in workspace: WorkspaceRef, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) {
-        guard let host = host(workspace.hostID) else { return }
+        guard let ref = prepareNewChat(in: workspace, provider: provider, settings: settings) else { return }
+        open(ref)
+    }
+
+    private func prepareNewChat(in workspace: WorkspaceRef, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) -> TaskRef? {
+        guard let host = host(workspace.hostID) else { return nil }
         let current = newChat
         if let current, current.hostID == host.id {
             host.updateDraft(current.taskID) { draft in
@@ -267,18 +277,17 @@ final class HostDirectory {
                     draft.settings = settings
                 }
             }
-            open(current)
-            return
+            return current
         }
         // Moving to another host keeps the agent where that host has it enabled.
         let previous = current.flatMap { self.host($0.hostID)?.drafts[$0.taskID]?.provider }
-        guard let provider = provider ?? previous.flatMap({ host.enabledProviders.contains($0) ? $0 : nil }) ?? host.defaultProvider else { return }
+        guard let provider = provider ?? previous.flatMap({ host.enabledProviders.contains($0) ? $0 : nil }) ?? host.defaultProvider else { return nil }
         let id = host.openDraft(in: workspace.workspaceID, provider: provider, settings: settings)
         // One on screen closes once the new one replaces it.
         if let current, !isShowing(current) { self.host(current.hostID)?.closeDraft(current.taskID) }
         let ref = TaskRef(hostID: host.id, taskID: id)
         newChatRef = ref
-        open(ref)
+        return ref
     }
 
     /// Opens the new chat in a task's project with its agent's own defaults.

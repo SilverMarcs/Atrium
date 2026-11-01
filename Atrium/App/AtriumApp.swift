@@ -11,6 +11,7 @@ struct AtriumApp: App {
         Window("Atrium", id: "atrium") {
             ContentView()
                 .environment(app)
+                .environment(app.hosts)
                 .environment(dictationSettings)
                 .frame(minWidth: 600, minHeight: 400)
         }

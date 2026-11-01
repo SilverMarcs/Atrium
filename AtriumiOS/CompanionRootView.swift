@@ -25,7 +25,7 @@ struct CompanionRootView: View {
                             if let detailTask {
                                 TaskDetailScreen(ref: detailTask)
                             } else {
-                                ContentUnavailableView("No Task Selected", systemImage: "sidebar.left")
+                                NewChatUnavailableView { lastSelectedTask = $0 }
                             }
                         }
                         .navigationDestination(for: Route.self) { route in
