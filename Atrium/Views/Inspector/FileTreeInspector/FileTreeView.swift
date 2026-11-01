@@ -59,6 +59,7 @@ struct FileTreeView: View {
                     .help("Show only changed files")
                 }
                 .padding(.horizontal, 10)
+                .padding(.top, 9)
             }
             .safeAreaBar(edge: .bottom) {
                 if (project.scope.repositories?.count ?? 0) > 1 {
