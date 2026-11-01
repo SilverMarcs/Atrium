@@ -3,13 +3,10 @@ import Foundation
 
 /// Splits a reply into the text the timeline shows and the steps folded behind
 /// it. A finished reply shows its closing text, written after the last tool
-/// call, report or page. A running one shows its latest notes, so the work so far
-/// stays short. Pages the agent showed never fold: they stay above the text,
-/// where the agent was told they appear.
+/// call, report or page. A running one shows all its notes. Pages the agent
+/// showed never fold: they stay above the text, where the agent was told
+/// they appear.
 struct AssistantReply {
-    /// How many of a running reply's latest notes stay in the timeline.
-    static let runningNoteLimit = 4
-
     /// Every other block, in order, with tool calls between hidden notes counted together.
     let steps: [TranscriptBlock]
     /// The shown notes as one document.
@@ -29,7 +26,7 @@ struct AssistantReply {
 
     init(blocks: [TranscriptBlock], isStreaming: Bool) {
         let shown: [Int] = if isStreaming {
-            Array(blocks.indices.filter { blocks[$0].text != nil }.suffix(Self.runningNoteLimit))
+            blocks.indices.filter { blocks[$0].text != nil }
         } else {
             Array((blocks.lastIndex { $0.text == nil }.map { $0 + 1 } ?? 0)..<blocks.endIndex)
         }

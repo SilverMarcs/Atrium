@@ -2,9 +2,9 @@ import AtriumProtocol
 import SwiftUI
 
 /// An agent's reply. One chip above its text counts every tool call folded
-/// behind it. While it's being written, the latest notes stay in the timeline
-/// and older ones fold into the chip. Once finished, only its closing text
-/// stays and every step before it folds. The chip only opens when there is
+/// behind it. While it's being written, all notes stay in the timeline.
+/// Once finished, only its closing text stays and every step before it folds.
+/// The chip only opens when there is
 /// folded text to read or an agent reported back. Pages the agent showed sit
 /// between the chip and the text.
 struct AssistantMessageView: View {
