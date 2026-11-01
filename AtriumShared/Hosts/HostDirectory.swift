@@ -26,6 +26,10 @@ final class HostDirectory {
     var pendingTask: TaskRef?
     /// The task on screen, if any, which the host it's on treats as read.
     private(set) var visibleTask: TaskRef?
+    /// The draft each task on screen started as, when it was the draft on
+    /// screen as its first prompt was sent. The task carries on in that
+    /// draft's screen rather than a new one.
+    private var startedAsDraft: [TaskRef: TaskRef] = [:]
     /// This install's APNs token, sent to each host so it can alert this phone.
     private(set) var pushRegistration: PushRegistration?
 
@@ -286,6 +290,9 @@ final class HostDirectory {
     func setVisibleTask(_ ref: TaskRef?) {
         guard visibleTask != ref else { return }
         visibleTask = ref
+        if startedAsDraft.keys.contains(where: { $0 != ref }) {
+            startedAsDraft = startedAsDraft.filter { $0.key == ref }
+        }
         if let ref {
             // A draft the new chat has moved on from leaves nothing behind.
             if let last = lastShownTask, last != ref, last != newChatRef { host(last.hostID)?.closeDraft(last.taskID) }
@@ -296,6 +303,13 @@ final class HostDirectory {
 
     func isShowing(_ ref: TaskRef) -> Bool {
         visibleTask == ref
+    }
+
+    /// What a task's screen is identified by: the draft it started as, while
+    /// it's still the one on screen, so sending a new chat's first prompt
+    /// keeps the same timeline instead of building another.
+    func screenID(for ref: TaskRef) -> TaskRef {
+        startedAsDraft[ref] ?? ref
     }
 
     private func publishActivity() {
@@ -394,6 +408,7 @@ extension HostDirectory: HostConnectionsDelegate {
         if let filter, filter != host.id { self.filter = nil }
         // A draft on screen carries on as its task.
         if isShowing(TaskRef(hostID: host.id, taskID: draft.id)) {
+            startedAsDraft[TaskRef(hostID: host.id, taskID: taskID)] = TaskRef(hostID: host.id, taskID: draft.id)
             open(TaskRef(hostID: host.id, taskID: taskID))
         }
     }

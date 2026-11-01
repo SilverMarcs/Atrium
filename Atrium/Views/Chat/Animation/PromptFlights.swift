@@ -141,37 +141,48 @@ final class PromptFlights: PromptSendAnimating {
     guard delta > 0.5, isSending, let scrollView, let layer = scrollView.documentView?.layer else { return }
     let flipped = layer.superlayer?.contentsAreFlipped() ?? true
     layer.add(slide(from: flipped ? delta : -delta), forKey: "promptSlide-\(CACurrentMediaTime())")
-    if let snapshot = snapshot.take(), let host = scrollView.layer {
-      let clip = scrollView.contentView
-      let window = CALayer()
-      window.frame = clip.frame
-      window.masksToBounds = true
-      let cover = CALayer()
-      cover.contents = snapshot.image
-      cover.contentsScale = snapshot.scale
-      cover.contentsGravity = .resize
-      cover.backgroundColor = snapshot.background
-      cover.isGeometryFlipped = false
-      // Where the content it shows is now: `delta` above the visible rect.
-      let up: CGFloat = host.contentsAreFlipped() ? -delta : delta
-      cover.frame = CGRect(origin: CGPoint(x: 0, y: up), size: clip.bounds.size)
-      window.addSublayer(cover)
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      CATransaction.setCompletionBlock { window.removeFromSuperlayer() }
-      host.addSublayer(window)
-      cover.add(slide(from: -up), forKey: "promptSlide")
-      CATransaction.commit()
-    }
+    guard let snapshot = snapshot.take(), let host = scrollView.layer else { return }
+    // Only the rows above the new visible rect are gone: the top `delta`
+    // points of what was on screen. A piece of the picture covers just them,
+    // and leaves the screen exactly as the slide ends.
+    let clip = scrollView.contentView
+    let height = min(delta, clip.bounds.height)
+    guard let piece = snapshot.image.cropping(to: CGRect(
+      x: 0, y: 0, width: CGFloat(snapshot.image.width), height: (height * snapshot.scale).rounded()
+    )) else { return }
+    let frame = CALayer()
+    frame.frame = clip.frame
+    frame.masksToBounds = true
+    let cover = CALayer()
+    cover.contents = piece
+    cover.contentsScale = snapshot.scale
+    cover.contentsGravity = .resize
+    cover.backgroundColor = snapshot.background
+    // Where the rows it shows are now, `delta` above where they were: the
+    // slide starts it at the top of the visible rect.
+    let hostFlipped = host.contentsAreFlipped()
+    cover.frame = CGRect(
+      x: 0, y: hostFlipped ? -delta : clip.bounds.height - height + delta,
+      width: clip.bounds.width, height: height
+    )
+    frame.addSublayer(cover)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    CATransaction.setCompletionBlock { frame.removeFromSuperlayer() }
+    host.addSublayer(frame)
+    cover.add(slide(from: hostFlipped ? delta : -delta), forKey: "promptSlide")
+    CATransaction.commit()
   }
 
-  private func slide(from offset: CGFloat) -> CASpringAnimation {
-    let slide = CASpringAnimation(perceptualDuration: Self.response, bounce: 0)
-    slide.keyPath = "transform.translation.y"
+  /// The conversation moves up as quickly as the scroll it replaces did, so
+  /// the sent bubble, on its slower spring, visibly flies in after it.
+  private func slide(from offset: CGFloat) -> CABasicAnimation {
+    let slide = CABasicAnimation(keyPath: "transform.translation.y")
     slide.isAdditive = true
     slide.fromValue = offset
     slide.toValue = 0
-    slide.duration = slide.settlingDuration
+    slide.duration = 0.25
+    slide.timingFunction = CAMediaTimingFunction(name: .easeOut)
     slide.speed = Self.speed
     return slide
   }
@@ -262,7 +273,7 @@ final class PromptFlights: PromptSendAnimating {
   private func render(_ bubble: PromptBubbleCopy, width: CGFloat, in view: NSView) -> (image: CGImage, size: CGSize, scale: CGFloat)? {
     guard width > 0 else { return nil }
     let isDark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-    let renderer = ImageRenderer(content: PromptBubble(text: bubble.text, isFromAgent: bubble.isFromAgent)
+    let renderer = ImageRenderer(content: PromptBubble(text: bubble.text, isFromAgent: bubble.isFromAgent, accent: Color("AccentColor"))
       .font(.system(size: bubble.fontSize))
       .environment(\.colorScheme, isDark ? .dark : .light))
     renderer.proposedSize = ProposedViewSize(width: width, height: nil)
@@ -272,12 +283,15 @@ final class PromptFlights: PromptSendAnimating {
     return (image, size, renderer.scale)
   }
 
+  /// A view over the window's content, in its coordinates. It's a sibling of
+  /// the content view rather than a subview: SwiftUI's hosting view draws its
+  /// own content over views added to it, so a copy there never showed.
   private func overlayView() -> FlightOverlayView? {
     if let overlay, overlay.window != nil { return overlay }
-    guard let content = scrollView?.window?.contentView else { return nil }
-    let view = FlightOverlayView(frame: content.bounds)
+    guard let content = scrollView?.window?.contentView, let frame = content.superview else { return nil }
+    let view = FlightOverlayView(frame: content.frame)
     view.autoresizingMask = [.width, .height]
-    content.addSubview(view, positioned: .above, relativeTo: nil)
+    frame.addSubview(view, positioned: .above, relativeTo: content)
     overlay = view
     return view
   }

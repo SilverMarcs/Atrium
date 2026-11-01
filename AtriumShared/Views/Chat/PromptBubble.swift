@@ -6,6 +6,8 @@ import SwiftUI
 struct PromptBubble: View {
     let text: String
     var isFromAgent = false
+    /// The app's accent, which an off-screen render doesn't pick up by itself.
+    var accent: Color = .accentColor
 
     var body: some View {
         ExpandableText(text: text)
@@ -15,7 +17,7 @@ struct PromptBubble: View {
             #else
             .padding(12)
             #endif
-            .background(isFromAgent ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(Color.accentColor.quinary))
+            .background(isFromAgent ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(accent.quinary))
             .clipShape(.rect(cornerRadius: 20))
     }
 }

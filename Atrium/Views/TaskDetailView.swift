@@ -15,7 +15,8 @@ struct TaskDetailView: View {
 
     var body: some View {
         SessionChatView(item: item, project: project)
-            .id(item.id)
+            // A new chat's task keeps its draft's timeline once the host creates it.
+            .id(app.hosts.screenID(for: item.id))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task(id: task.hasUnreadResult) {
                 // Viewing a finished task reads it, on whichever host it's on.

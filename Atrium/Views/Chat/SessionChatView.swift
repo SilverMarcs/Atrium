@@ -56,7 +56,9 @@ struct SessionChatView: View {
                 pendingPrompt: row.pendingPrompt
               )
               .equatable()
-              .padding(.top, ChatMessageSpacing.before(row.message.role, after: index > 0 ? rows[index - 1].message.role : nil))
+              // The first message has the usual gap above it too, so held at
+              // the top it sits as far below the toolbar as a later prompt.
+              .padding(.top, index == 0 ? ChatMessageSpacing.standard : ChatMessageSpacing.before(row.message.role, after: rows[index - 1].message.role))
               .background {
                 if row.id == anchorID { TurnTopReporter(fill: turnFill) }
               }
