@@ -4,6 +4,12 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// Trades the one-time secret from a host's pairing link for a long-lived device token.
     case pair(secret: String, device: ClientDevice)
     case authenticate(token: String, deviceID: UUID)
+    /// The agent sessions a command-line client on the host itself may be
+    /// running in, as task IDs from its environment, nearest first. The host
+    /// takes the first that's working as the caller: sessions the client
+    /// prompts are linked to it, and their results go back to it. Other
+    /// clients' are ignored.
+    case caller(taskIDs: [String])
     /// Whether this client is in the foreground and which task it shows.
     case activity(ClientActivity)
     /// Where the host sends this phone's task alerts. Sent after each authentication.

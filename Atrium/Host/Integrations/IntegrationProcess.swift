@@ -15,6 +15,13 @@ enum IntegrationProcess {
         return ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
     }
 
+    /// The PATH Atrium gives the agents it runs: the `atrium` client bundled
+    /// in this app first, then Atrium's own.
+    static var agentPath: String {
+        let helpers = Bundle.main.bundleURL.appending(path: "Contents/Helpers", directoryHint: .isDirectory)
+        return [helpers.path(percentEncoded: false), environment["PATH"] ?? ""].joined(separator: ":")
+    }
+
     static var environment: [String: String] {
         var values = ProcessInfo.processInfo.environment
         values["PATH"] = ([values["PATH"] ?? ""] + searchPath).joined(separator: ":")

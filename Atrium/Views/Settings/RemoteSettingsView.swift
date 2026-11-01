@@ -4,7 +4,6 @@ import SwiftUI
 
 /// This Mac as a host other devices connect to, and every host this Mac shows,
 /// itself included. Every connected host's tasks show in the window at once.
-/// ChatGPT's access to this Mac shows here once it's unlocked.
 struct RemoteSettingsView: View {
     @Environment(AppModel.self) private var app
 
@@ -14,21 +13,8 @@ struct RemoteSettingsView: View {
                 ThisMacSections(host: host)
             }
             HostsSection(hosts: app.hosts)
-            if app.chatGPTAccess.isUnlocked {
-                ChatGPTSettingsSection(access: app.chatGPTAccess)
-            }
         }
         .formStyle(.grouped)
-        // ChatGPT access isn't offered yet: seven clicks along the bottom of the page turn it on.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !app.chatGPTAccess.isUnlocked {
-                Color.clear
-                    .frame(height: 44)
-                    .contentShape(.rect)
-                    .onTapGesture(count: 7) { app.chatGPTAccess.unlock() }
-                    .accessibilityHidden(true)
-            }
-        }
     }
 }
 
@@ -84,7 +70,7 @@ private struct ThisMacSections: View {
             } header: {
                 Text("Pair a Device")
             } footer: {
-                Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac. Each link works once.")
+                Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac or into `atrium pair` on another computer. Each link works once.")
             }
 
             Section("Paired Devices") {

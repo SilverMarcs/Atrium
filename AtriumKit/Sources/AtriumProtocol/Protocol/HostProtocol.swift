@@ -11,7 +11,7 @@ import Foundation
 /// doesn't recognize decodes as `.unknown` and is ignored, so the version only
 /// tells a client that it's older than its host.
 public nonisolated enum HostProtocol {
-    public static let version = 10
+    public static let version = 11
     /// Bounds a single message so a corrupt or hostile peer can't exhaust memory.
     public static let maxMessageBytes = 16 * 1024 * 1024
 
@@ -110,3 +110,21 @@ public nonisolated enum ServerFrame: Codable, Sendable {
         }
     }
 }
+
+#if os(macOS)
+public nonisolated extension HostProtocol {
+    /// The socket an app's host accepts its own agents' command-line clients
+    /// on, in its Application Support folder, while the Orchestrator is on.
+    /// The bundled client finds it from the app it's inside.
+    static func localAgentsSocket(appBundleIdentifier identifier: String) -> URL {
+        // The released app keeps its data under its name; test builds under their bundle ID.
+        let folder = identifier == "com.SilverMarcs.Atrium" ? "Atrium" : identifier
+        #if DEBUG
+        let name = "agents-development.sock"
+        #else
+        let name = "agents.sock"
+        #endif
+        return URL.applicationSupportDirectory.appending(path: folder, directoryHint: .isDirectory).appending(path: name)
+    }
+}
+#endif

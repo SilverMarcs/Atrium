@@ -111,7 +111,7 @@ nonisolated enum ClaudeTranscript {
     /// Agents reporting back join the turn they arrive in, so they never push
     /// the user's own turns out of the window.
     private static func startsTurn(_ prompt: (text: String, relay: TranscriptRelay?)) -> Bool {
-        prompt.relay?.kind != .results
+        prompt.relay?.kind != .results && !RelayedMessage.isResults(prompt.text)
     }
 
     /// The identifier of the record Claude saves once a turn's Stop hooks finish.
@@ -144,8 +144,8 @@ nonisolated enum ClaudeTranscript {
 
     // MARK: - Claude's frames
 
-    /// What a user turn says: a prompt typed, pasted or relayed by Atrium for
-    /// ChatGPT, or subagents reporting back, with the relay naming them. Nil for tool results,
+    /// What a user turn says: a prompt typed, pasted or relayed by Atrium, or
+    /// subagents reporting back, with the relay naming them. Nil for tool results,
     /// slash-command output, injected context and other sessions' messages.
     static func prompt(_ content: Any?) -> (text: String, relay: TranscriptRelay?)? {
         let text: String

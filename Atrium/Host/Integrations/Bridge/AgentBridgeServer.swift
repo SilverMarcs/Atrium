@@ -2,9 +2,8 @@ import Foundation
 import Network
 
 /// Agents call directly into Atrium on the loopback interface: Claude's hooks at
-/// `/claude`, with the bridge's own token. ChatGPT reaches Atrium's MCP tools at
-/// `/mcp`, with its own credential, through the tunnel client running on this
-/// Mac. A persistent endpoint lets running agents reconnect after relaunch.
+/// `/claude`, with the bridge's own token. A persistent endpoint lets running
+/// agents reconnect after relaunch.
 @MainActor
 final class AgentBridgeServer {
     struct Endpoint: Equatable {
@@ -17,8 +16,6 @@ final class AgentBridgeServer {
     }
 
     var onClaudeHook: ((Data) async throws -> Data)?
-    /// Answers `/mcp`; set once the host has everything its tools reach.
-    var toolServer: AtriumToolServer?
     /// Where agents' launch files that point at the endpoint are kept.
     let storage: URL
     private var listener: NWListener?
@@ -36,9 +33,6 @@ final class AgentBridgeServer {
         #endif
         self.storage = HostStorage.directory.appending(path: folder, directoryHint: .isDirectory)
     }
-
-    /// Where the bridge listens, for setting up clients outside Atrium such as the tunnel client.
-    var currentEndpoint: Endpoint? { listener == nil ? nil : endpoint }
 
     func start() async throws -> Endpoint {
         if let endpoint, listener != nil { return endpoint }
@@ -61,9 +55,6 @@ final class AgentBridgeServer {
                 // A hook that cannot reach its native UI must leave Claude's terminal fallback usable.
                 return BridgeResponse(status: 200, body: Data("{}".utf8))
             }
-        case "/mcp":
-            guard let toolServer else { return BridgeResponse(status: 503) }
-            return await toolServer.respond(to: request)
         default:
             return BridgeResponse(status: 404)
         }

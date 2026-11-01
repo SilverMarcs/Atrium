@@ -27,15 +27,17 @@ Work across projects with native chat, a command runner, an editor, and a Git in
 
 Every Mac running Atrium is a host. The host alone touches projects, Git, files and the agent integrations; everything else, including the Mac's own window, is a client of it. The Mac's UI talks to its own host in process, and to other hosts (another Mac's Atrium) through the same end-to-end encrypted relay the iOS app uses. Clients stay connected to all their hosts at once and show every host's tasks in one list, which the host menu filters. Commands run on their host, a conversation opens in a terminal only on its own host, and files on another host are read-only.
 
-Turn on remote access in Settings → Remote, then scan the pairing QR code with an iPhone or paste the pairing link into Settings → Remote on another Mac.
+Turn on remote access in Settings → Remote, then scan the pairing QR code with an iPhone, paste the pairing link into Settings → Remote on another Mac, or pass it to `atrium pair` on another computer.
 
-## Pages and images in chat
+## What Atrium tells agents
 
-Atrium appends the same short instructions to every session it runs (Claude's system prompt, Codex's developer instructions), so they stay in the cached prompt prefix. Agents show images as Markdown pointing at files on the Mac, and pages (charts, diagrams, mockups) as an HTML document in a fenced `atrium-page` block in their reply, which Atrium shows as a page instead of code.
+Atrium appends a short, fixed set of instructions to every session it runs (Claude's system prompt, Codex's developer instructions): showing images as Markdown pointing at files on the Mac, and, with Visualizations on in Settings → Integrations, pages (charts, diagrams, mockups) as an HTML document in a fenced `atrium-page` block, which Atrium shows as a page instead of code. Each chat keeps the instructions it was created with on every resume, relaunch and fork, so it stays in the cached prompt prefix; the switches in Settings → Integrations only change new chats.
 
-## ChatGPT
+## Command line and agents working together
 
-ChatGPT can find, read and start sessions on this Mac through Atrium's MCP server and OpenAI's [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). Nothing is exposed to the internet: while ChatGPT access is on, Atrium runs OpenAI's `tunnel-client` on this Mac, which connects out to OpenAI. Create a tunnel and a restricted runtime key (Tunnels Read + Use) in OpenAI Platform, enter them in Settings → Remote, and add the tunnel in ChatGPT as an app with no authentication; Atrium checks its own token. ChatGPT can't be woken when delegated work finishes, so it checks with `task_status`, and the sessions it starts sit in the collapsed ChatGPT section of the task list. Approvals stay with you in Atrium.
+`atrium` is Atrium's command-line client, built on the same client library as the apps; see [AtriumCLI/README.md](AtriumCLI/README.md). Atrium.app bundles it and puts it on the PATH of every session it runs. With the Orchestrator on in Settings → Integrations, agents use it to start and prompt other Claude and Codex sessions with nothing to pair: a session one starts is listed under it, its result comes back as a message that wakes it, its questions are passed up, and stopping one stops the sessions working for it. Turning the Orchestrator off shuts agents out at once.
+
+Anywhere else, such as ChatGPT's Dot in its own Linux shell, `atrium pair` pairs the client over the relay like any device. It can then start sessions, wait for their turns, answer their questions and approvals, and settle them, and the Mac lists what it starts under its name.
 
 ## Requirements
 

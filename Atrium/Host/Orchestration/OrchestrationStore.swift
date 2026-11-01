@@ -1,69 +1,67 @@
+import AtriumProtocol
 import Foundation
 import Observation
 
-/// ChatGPT's delegated tasks, saved as they change so a restart doesn't lose
-/// a result. Task lists observe the tasks, to list ChatGPT's sessions apart.
+/// Which sessions work for which, which ones a command-line client started,
+/// and the delegated turns still to report back, saved as they change so a
+/// restart loses neither the links nor a result. Task lists observe it to
+/// list sessions under whoever started them.
 @MainActor
 @Observable
 final class OrchestrationStore {
-    private(set) var tasks: [String: DelegatedTask] = [:]
-    /// Tasks still running when Atrium last quit, whose sessions need opening again.
-    @ObservationIgnored var resumedTaskIDs: Set<String> = []
+    /// The session each delegated session works for, by task ID.
+    var parents: [String: String] = [:] { didSet { save() } }
+    /// The command-line device that started each session it started on its own, by task ID.
+    var devices: [String: String] = [:] { didSet { save() } }
+    /// Delegated turns not yet reported back, by the delegated session's task ID.
+    var turns: [String: DelegatedTurn] = [:] { didSet { save() } }
+
     @ObservationIgnored private let file: URL
     @ObservationIgnored private var isSaveScheduled = false
 
-    /// Finished tasks are kept this long for `task_status`.
-    private static let retention: TimeInterval = 7 * 24 * 60 * 60
+    private nonisolated struct Contents: Codable {
+        var parents: [String: String]
+        var devices: [String: String]
+        var turns: [String: DelegatedTurn]
+    }
 
     init(file: URL) {
         self.file = file
-        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DelegatedTask].self, from: data) else { return }
-        tasks = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(Contents.self, from: data) else { return }
+        parents = saved.parents
+        devices = saved.devices
+        turns = saved.turns
     }
 
-    /// Settles what Atrium was doing when it quit. A task that never reached
-    /// its agent fails, since whether it did can't be known; one that did is
-    /// followed again until its turn ends.
-    func recoverAfterLaunch() {
-        for (id, var task) in tasks where !task.state.isFinished {
-            switch task.state {
-            case .starting:
-                task.state = .failed
-                task.result = "Atrium quit while starting this task, so it may not have reached the agent. Check the session before trying again."
-            case .sent:
-                task.state = .running
-                resumedTaskIDs.insert(id)
-            default:
-                resumedTaskIDs.insert(id)
-            }
-            task.updatedAt = .now
-            tasks[id] = task
-        }
-        let expiry = Date.now.addingTimeInterval(-Self.retention)
-        tasks = tasks.filter { !($0.value.state.isFinished && $0.value.updatedAt < expiry) }
-        save()
-    }
-
-    func update(_ task: DelegatedTask) {
-        tasks[task.id] = task
-        save()
-    }
-
-    /// Writes once the current change is through, however many tasks it touched.
+    /// Writes once the current change is through, however much it touched.
     private func save() {
         guard !isSaveScheduled else { return }
         isSaveScheduled = true
         Task {
             isSaveScheduled = false
-            write()
+            guard let data = try? JSONEncoder().encode(Contents(parents: parents, devices: devices, turns: turns)) else { return }
+            try? data.write(to: file, options: .atomic)
         }
     }
+}
 
-    private func write() {
-        guard let data = try? JSONEncoder().encode(tasks.values.sorted { $0.createdAt < $1.createdAt }) else { return }
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
-                                                 attributes: [.posixPermissions: 0o700])
-        try? data.write(to: file, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path(percentEncoded: false))
+/// One turn a session took on for another: from the prompt Atrium relayed to
+/// it until its result reaches the session that asked.
+nonisolated struct DelegatedTurn: Codable, Sendable {
+    enum State: String, Codable, Sendable {
+        /// The prompt reached the agent; its turn hasn't been seen yet.
+        case sent
+        /// The agent is on it, or waiting on work it started for it.
+        case running
+        /// Done, with its result waiting for the session that asked to be free.
+        case finished
     }
+
+    var state: State = .sent
+    /// How the turn ended, once it has.
+    var outcome: AgentThreadStatus?
+    /// The agent's final reply, once the turn ended.
+    var result: String?
+    /// Questions already passed on to the session that asked, by interaction ID.
+    var askedIDs: Set<String> = []
 }

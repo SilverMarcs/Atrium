@@ -118,7 +118,6 @@ final class AgentBridgeConnection {
         guard !closed else { return }
         let reason = switch reply.status {
         case 200: "OK"
-        case 202: "Accepted"
         default: "Error"
         }
         var head = "HTTP/1.1 \(reply.status) \(reason)\r\n"

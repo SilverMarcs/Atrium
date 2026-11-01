@@ -29,7 +29,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var interactions: [AgentInteraction] = []
     /// The checkout the agent works in, when it's in a Git repository.
     public var checkout: TaskCheckout? = nil
-    /// Set when another session or ChatGPT started this one.
+    /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
     public var origin: WireTaskOrigin? = nil
 
     public init(

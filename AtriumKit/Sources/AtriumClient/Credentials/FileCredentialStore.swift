@@ -1,8 +1,8 @@
 import AtriumProtocol
 import Foundation
 
-/// Credentials in one JSON file that only its user can read, for clients with
-/// no keychain to use, such as the command-line client on a server. The file
+/// The command-line client's credentials, in one JSON file that only its user
+/// can read, so it works the same with no keychain, as on a server. The file
 /// holds device tokens, so it is created in a folder only its owner can open.
 ///
 /// Every change reads the file again first, so several processes sharing it
@@ -28,7 +28,7 @@ public final class FileCredentialStore: CredentialStore {
         if let contents = try Self.read(url) {
             self.contents = contents
         } else {
-            contents = Contents(device: ClientDevice(id: UUID(), name: deviceName))
+            contents = Contents(device: ClientDevice(id: UUID(), name: deviceName, kind: .commandLine))
             try write()
         }
     }

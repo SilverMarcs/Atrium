@@ -10,6 +10,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     ]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
+    private let instructions: ChatInstructions
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
@@ -60,7 +61,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var titleResponses: [String: CodexTitleResponse] = [:]
     private var titleModel: String?
 
-    init() {
+    init(instructions: ChatInstructions) {
+        self.instructions = instructions
         socket.onMessage = { [weak self] in self?.receive($0) }
         socket.onClose = { [weak self] in self?.disconnect(error: $0) }
     }
@@ -121,7 +123,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let pending = pendingSettings[thread.sessionID] ?? [:]
         var params: [String: Any] = [
             "threadId": thread.sessionID, "ephemeral": true, "excludeTurns": true,
-            "developerInstructions": developerInstructions + "\n\n" + CodexSideChat.developerInstructions
+            "developerInstructions": developerInstructions(instructions.blocks(for: thread.id)) + "\n\n" + CodexSideChat.developerInstructions
         ]
         if let model = pending["model"] ?? thread.model { params["model"] = model }
         if let effort = pending["effort"] ?? thread.reasoningEffort { params["config"] = ["model_reasoning_effort": effort] }
@@ -288,15 +290,22 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     /// What Codex tells a thread's agent as developer instructions: the
-    /// user's own, then Atrium's. Codex takes them when it starts or resumes a
-    /// thread, so threads it already has loaded keep theirs.
-    private var developerInstructions: String {
-        [userDeveloperInstructions, AgentInstructions.text].compactMap(\.self).joined(separator: "\n\n")
+    /// user's own, then Atrium's, with the chat's blocks. Codex takes them
+    /// when it starts or resumes a thread, so threads it already has loaded keep theirs.
+    private func developerInstructions(_ blocks: Set<AgentInstructions.Block>) -> String {
+        [userDeveloperInstructions, AgentInstructions.text(blocks)].compactMap(\.self).joined(separator: "\n\n")
     }
 
-    private func startThread(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+    /// Config every thread Atrium runs gets: the bundled `atrium` client first on its commands' PATH.
+    private static var threadConfig: [String: Any] {
+        ["shell_environment_policy.set.PATH": IntegrationProcess.agentPath]
+    }
+
+    /// Starts or forks a thread with a chat's instruction blocks, which it keeps from then on.
+    private func startThread(_ method: String, params: [String: Any], blocks: Set<AgentInstructions.Block>) async throws -> [String: Any] {
         var params = params
-        params["developerInstructions"] = developerInstructions
+        params["developerInstructions"] = developerInstructions(blocks)
+        params["config"] = (params["config"] as? [String: Any] ?? [:]).merging(Self.threadConfig) { $1 }
         let data = try await request(method, params: params)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               result["thread"] is [String: Any] else {
@@ -312,10 +321,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if let effort = settings?.reasoningEffort { config["model_reasoning_effort"] = effort }
         var params: [String: Any] = ["cwd": directory, "config": config]
         if let model = settings?.model { params["model"] = model }
-        let result = try await startThread("thread/start", params: params)
+        let blocks = instructions.forNewChat
+        let result = try await startThread("thread/start", params: params, blocks: blocks)
         guard let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
+        instructions.record(blocks, for: thread.id)
         if let settings, let model = settings.model {
             pendingSettings[thread.sessionID] = ["model": model]
             pendingSettings[thread.sessionID]?["effort"] = settings.reasoningEffort
@@ -351,11 +362,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
-        let result = try await startThread("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true])
+        let blocks = instructions.blocks(for: thread.id)
+        let result = try await startThread("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true], blocks: blocks)
         guard let row = result["thread"] as? [String: Any], var fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
             throw IntegrationError(message: "Codex did not return a forked thread.")
         }
+        instructions.record(blocks, for: fork.id)
         // Codex copies only a name the thread was given, leaving an unnamed one's fork untitled until its next prompt.
         // The fork exists either way, so a name Codex refuses doesn't fail it.
         if (try? await request("thread/name/set", params: ["threadId": fork.sessionID, "name": thread.forkTitle])) != nil {
@@ -396,7 +409,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
             _ = try await self.request("thread/resume", params: [
-                "threadId": thread.sessionID, "excludeTurns": true, "developerInstructions": self.developerInstructions
+                "threadId": thread.sessionID, "excludeTurns": true,
+                "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id)), "config": Self.threadConfig
             ])
             let rows = try await self.turns(of: thread.sessionID)
             self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)

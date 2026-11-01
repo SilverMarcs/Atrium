@@ -18,6 +18,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var backgroundListTask: Task<[ClaudeBackgroundSession], Error>?
     private let daemon: ClaudeDaemonClient
     private let bridge: AgentBridgeServer
+    private let instructions: ChatInstructions
     /// The settings file written for the bridge endpoint it points at.
     private var launchSettings: (endpoint: AgentBridgeServer.Endpoint, file: URL)?
     private var live: [String: ClaudeLiveTranscript] = [:]
@@ -48,8 +49,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Side chats by their session ID, while they last.
     private var sideChats: [String: ClaudeSideChat] = [:]
 
-    init(bridge: AgentBridgeServer, configDirectory: URL? = nil) {
+    init(bridge: AgentBridgeServer, instructions: ChatInstructions, configDirectory: URL? = nil) {
         self.bridge = bridge
+        self.instructions = instructions
         let configured = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"]
             .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         let directory = configDirectory ?? configured
@@ -122,7 +124,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// the prompt Claude has cached for it.
     private func sideQuestionOptions(about sessionID: String, model: String?) -> [String] {
         let launch = backgroundIDs[sessionID].flatMap { try? daemon.launchOptions(jobID: $0) } ?? []
-        var options = ["--append-system-prompt", AgentInstructions.text]
+        var options = ["--append-system-prompt", instructions.text(for: Self.taskID(sessionID))]
         if let model = model ?? launch.firstIndex(of: "--model").flatMap({ launch.indices.contains($0 + 1) ? launch[$0 + 1] : nil }) {
             options += ["--model", model]
         }
@@ -132,6 +134,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     // MARK: - Subagents
 
     private static let sessionsWithSubagents = 40
+
+    private static func taskID(_ sessionID: String) -> String { "\(AgentProvider.claude.rawValue):\(sessionID)" }
 
     /// A subagent's session ID: its session's, then its agent ID.
     private static func subagentSessionID(_ parentID: String, agentID: String) -> String { "\(parentID):\(agentID)" }
@@ -241,7 +245,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let existing = sessions.first(where: { $0.kind == "background" && $0.sessionID == thread.sessionID && $0.isRunning }) {
             session = existing
         } else {
-            session = try await startBackgroundSession(directory: thread.directory, resuming: thread.sessionID)
+            session = try await startBackgroundSession(directory: thread.directory, instructions: instructions.text(for: thread.id), resuming: thread.sessionID)
         }
         guard let id = session.id else { throw IntegrationError(message: "Claude did not provide a background identifier.") }
         backgroundIDs[thread.sessionID] = id
@@ -460,10 +464,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         // Claude saves the name as the thread's title once it's saved, and lists it as the job's name until then.
-        let session = try await startBackgroundSession(directory: directory, name: title, settings: settings)
+        let blocks = instructions.forNewChat
+        let session = try await startBackgroundSession(directory: directory, instructions: AgentInstructions.text(blocks), name: title, settings: settings)
         guard var thread = session.thread else {
             throw IntegrationError(message: "Claude did not provide a session identifier.")
         }
+        instructions.record(blocks, for: thread.id)
         thread.title = title ?? "New Claude thread"
         thread.status = .idle
         if let model = settings?.model {
@@ -481,10 +487,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Invalid Claude session identifier.")
         }
         // Claude saves the name as the fork's title once it's saved, and lists it as the job's name until then.
-        let session = try await startBackgroundSession(directory: thread.directory, resuming: thread.sessionID, forking: true, name: thread.forkTitle)
+        let blocks = instructions.blocks(for: thread.id)
+        let session = try await startBackgroundSession(directory: thread.directory, instructions: AgentInstructions.text(blocks),
+                                                       resuming: thread.sessionID, forking: true, name: thread.forkTitle)
         guard let fork = session.thread else {
             throw IntegrationError(message: "Claude did not provide a forked session identifier.")
         }
+        instructions.record(blocks, for: fork.id)
         forkSources[fork.sessionID] = thread.sessionID
         return fork
     }
@@ -543,7 +552,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return sideChat
     }
 
-    private func startBackgroundSession(directory: String, resuming sessionID: String? = nil, forking: Bool = false, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
+    /// Starts a background job with the chat's instructions, which a job that
+    /// already ran the session keeps from its own launch.
+    private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, forking: Bool = false, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settingsFile = try await settingsForBridge()
@@ -555,7 +566,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // even if those options equal its old ones. Preserve the job's options.
         var arguments = ["--bg"]
         if !existingBackground {
-            arguments += ["--settings", settingsFile.path, "--append-system-prompt", AgentInstructions.text]
+            arguments += ["--settings", settingsFile.path, "--append-system-prompt", instructions]
         }
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
@@ -907,7 +918,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
         let settings = try bridge.writePrivateFile([
             "hooks": hooks,
-            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"]
+            // The bundled `atrium` client comes first on its commands' PATH.
+            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1", "PATH": IntegrationProcess.agentPath]
         ], named: "settings.json")
         launchSettings = (endpoint, settings)
         return settings

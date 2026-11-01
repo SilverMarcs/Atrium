@@ -10,8 +10,11 @@ import SystemConfiguration
 /// requests come in, events go out for the topics each client follows. The
 /// Mac's UI connects in process; with remote access on, other devices connect
 /// through the relay end-to-end encrypted, authenticated against paired
-/// devices. Feeds behind each topic run only while someone follows it. When a
-/// task finishes or needs input, alerts follow the device currently in use.
+/// devices. While the Orchestrator is on, the agents this Mac runs connect with
+/// their `atrium` command-line client through a socket only this user can open,
+/// as one built-in device. Feeds behind each topic run only while someone
+/// follows it. When a task finishes or needs input, alerts follow the device
+/// currently in use.
 @MainActor
 @Observable
 final class HostServer {
@@ -73,14 +76,15 @@ final class HostServer {
     @ObservationIgnored private let sessions: TaskSessionController
     @ObservationIgnored private let orchestrator: Orchestrator
     @ObservationIgnored private let media: MediaService
-    /// ChatGPT's access to Atrium's tools through OpenAI's tunnel client.
-    @ObservationIgnored let chatGPTAccess: ChatGPTAccess
+    /// What Settings → Integrations turns on, which stays with this Mac's host.
+    @ObservationIgnored let integrationSettings = IntegrationSettings()
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
     @ObservationIgnored private var latestTasks: WireTasksSnapshot?
     @ObservationIgnored private var listener: RelayListener?
     @ObservationIgnored private let localListener = LocalListener()
+    @ObservationIgnored private let agentsListener = LocalAgentsListener()
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
 
     private static let remoteAccessKey = "companion.enabled"
@@ -95,15 +99,13 @@ final class HostServer {
     init() {
         workspaces = WorkspaceStore()
         let bridge = AgentBridgeServer()
-        integrations = AgentIntegrationStore(adapters: [CodexAgentAdapter(), ClaudeAgentAdapter(bridge: bridge)])
+        let instructions = ChatInstructions(settings: integrationSettings)
+        integrations = AgentIntegrationStore(adapters: [
+            CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions)
+        ])
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
-        orchestrator = Orchestrator(integrations: integrations, sessions: sessions, workspaces: workspaces, directory: bridge.storage)
+        orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)
         media = MediaService(integrations: integrations)
-        let credential = ChatGPTCredential(directory: bridge.storage)
-        bridge.toolServer = AtriumToolServer(credential: credential, tools: OrchestrationTools(
-            orchestrator: orchestrator, integrations: integrations, sessions: sessions, workspaces: workspaces
-        ))
-        chatGPTAccess = ChatGPTAccess(bridge: bridge, credential: credential)
         tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator)
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
@@ -116,6 +118,9 @@ final class HostServer {
         integrations.onThreadRemoved = { [orchestrator] id in orchestrator.sessionRemoved(id) }
         Task { await integrations.refresh() }
         if isRemoteAccessEnabled { startRemoteAccess() }
+        agentsListener.onChannel = { [weak self] channel in self?.accept(channel, as: .localAgents) }
+        integrationSettings.onOrchestratorChange = { [weak self] in self?.setAgentsAllowed($0) }
+        setAgentsAllowed(integrationSettings.isOrchestratorEnabled)
     }
 
     // MARK: - Connections
@@ -144,7 +149,17 @@ final class HostServer {
         }
     }
 
-    private func accept(_ channel: any HostChannel) {
+    /// Lets the agents this Mac runs in, or shuts them out at once.
+    private func setAgentsAllowed(_ isAllowed: Bool) {
+        guard !isAllowed else { return agentsListener.start() }
+        agentsListener.stop()
+        for connection in connections.values where connection.isLocalAgent { connection.close() }
+    }
+
+    /// Takes a client's connection: one that authenticates as a paired
+    /// device, or one of the agents on this Mac, which the socket's
+    /// permissions already let in.
+    private func accept(_ channel: any HostChannel, as device: ClientDevice? = nil) {
         // The connection owns its channel; the channel only refers back weakly.
         let connection = ServerConnection(isLocal: false, send: { event in
             guard let data = try? HostCodec.encode(ServerFrame.event(event)) else { return }
@@ -169,6 +184,7 @@ final class HostServer {
             self.disconnect(connection)
         }
         channel.start()
+        if let device { return authenticate(connection, as: device) }
         Task { [weak self, weak connection] in
             try? await Task.sleep(for: Self.authenticationTimeout)
             guard let connection, !connection.isAuthenticated, self != nil else { return }
@@ -210,7 +226,7 @@ final class HostServer {
             guard let paired = pairing.authenticate(token: token, deviceID: deviceID) else {
                 return .failed(message: "This device is no longer paired with \(Self.hostName). Pair it again from Atrium Settings there.")
             }
-            authenticate(connection, as: ClientDevice(id: paired.id, name: paired.name))
+            authenticate(connection, as: ClientDevice(id: paired.id, name: paired.name, kind: paired.kind ?? .app))
             return .done
         default:
             guard connection.isAuthenticated else { return .failed(message: "Pair with this host first.") }
@@ -229,6 +245,10 @@ final class HostServer {
         switch request {
         case .pair, .authenticate:
             return .done
+        case .caller(let candidates):
+            guard connection.isLocalAgent else { return .done }
+            connection.caller = await orchestrator.caller(among: candidates)
+            return connection.caller.map { .task(id: $0) } ?? .done
         case .unsupported:
             return .unsupported
         case .activity(let activity):
@@ -279,9 +299,17 @@ final class HostServer {
             if case .rewind = action { feeds[.transcript(taskID: id)]?.refresh() }
             return reply
         case .compose(let provider, let workspaceID, let settings):
-            return await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)
+            let reply = await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)
+            if case .task(let id) = reply, let device = connection.device, device.kind == .commandLine {
+                orchestrator.started(id, by: device, caller: connection.caller)
+            }
+            return reply
         case .prompt(let taskID, let text, let images):
-            let reply = await tasks.prompt(text, images: images, toTask: taskID)
+            let reply = if let caller = connection.caller {
+                await orchestrator.delegate(text, images: images, to: taskID, from: caller, using: tasks)
+            } else {
+                await tasks.prompt(text, images: images, toTask: taskID)
+            }
             publishTasks(.tasks(tasksFeed.snapshot()))
             feeds[.transcript(taskID: taskID)]?.refresh()
             return reply
@@ -290,7 +318,7 @@ final class HostServer {
                 return .failed(message: "This task no longer exists.")
             }
             do {
-                // Its subagents stop with it.
+                // Everything working for it stops with it.
                 try await orchestrator.stop(thread)
                 return .done
             } catch {
@@ -445,7 +473,7 @@ final class HostServer {
         localListener.stop()
         if let awakeActivity { ProcessInfo.processInfo.endActivity(awakeActivity) }
         awakeActivity = nil
-        for connection in connections.values where !connection.isLocal {
+        for connection in connections.values where !connection.isLocal && !connection.isLocalAgent {
             NotificationRouting.shared.remove(connectionID: connection.id)
             connection.close()
             connections[connection.id] = nil
@@ -455,9 +483,10 @@ final class HostServer {
         status = .stopped
     }
 
-    /// What a phone is alerted about, by the same rule as the Mac: subagents
-    /// alert as the session they're listed under, and they and ChatGPT's
-    /// sessions only when they need an answer. Side chats never alert.
+    /// What a phone is alerted about, by the same rule as the Mac: sessions
+    /// working for another alert as the session they're listed under, and they
+    /// and sessions a command-line client started only when they need an
+    /// answer. Side chats never alert.
     private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
         guard task.origin != nil else { return task }
         guard task.status == .waiting, !task.isSideChat else { return nil }

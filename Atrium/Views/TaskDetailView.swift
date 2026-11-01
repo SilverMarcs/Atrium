@@ -47,9 +47,9 @@ struct TaskDetailView: View {
     private var subtitle: String {
         if task.isSideChat { return task.title }
         if let parent = item.parent {
-            return "Subagent of \(parent.provider.name) · \(parent.title)"
+            return "\(task.isSubagent ? "Subagent" : "Working for") \(parent.provider.name) · \(parent.title)"
         }
-        if task.origin == .chatGPT { return "Started by ChatGPT" }
+        if let device = task.origin?.deviceName { return "Started by \(device)" }
         let directory = project?.workspace?.directory ?? task.directory
         return item.host.isLocal ? directory : "\(item.host.name) \(directory)"
     }

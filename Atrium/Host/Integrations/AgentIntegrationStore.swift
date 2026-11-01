@@ -725,6 +725,15 @@ final class AgentIntegrationStore {
         return launch
     }
 
+    /// A thread by task ID, asking its provider for one that isn't listed,
+    /// such as a subagent whose session's turns Atrium hasn't read yet.
+    func lookUpThread(_ id: String) async -> AgentThread? {
+        if let thread = threads.first(where: { $0.id == id }) { return thread }
+        let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let provider = AgentProvider(rawValue: parts[0]), enabled.contains(provider) else { return nil }
+        return try? await adapters[provider]?.readThread(parts[1])
+    }
+
     func capabilities(of provider: AgentProvider) -> AgentCapabilities {
         adapters[provider]?.capabilities ?? []
     }
@@ -745,8 +754,8 @@ final class AgentIntegrationStore {
     }
 
     /// The conversation as apps show it. Prompts another agent wrote show as
-    /// relayed, holding only what was relayed: tasks Atrium relayed for ChatGPT,
-    /// and every prompt a subagent took from its agent. Pages written in replies
+    /// relayed, holding only what was relayed: work and results Atrium relayed
+    /// between sessions, and every prompt a subagent took from its agent. Pages written in replies
     /// show as pages. Reading a transcript records the media it shows, for
     /// clients to fetch. A chat forked from the other provider's shows that
     /// chat's conversation ahead of its own.

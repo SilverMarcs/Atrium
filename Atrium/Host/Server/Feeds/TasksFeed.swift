@@ -50,11 +50,10 @@ final class TasksFeed: TopicFeed {
     /// The latest state, reading through any change not yet published.
     func snapshot() -> WireTasksSnapshot {
         invalidateProjectsIfNeeded()
-        let chatGPTSessions = orchestrator.chatGPTSessionIDs()
-        let withWorkingSubagents = orchestrator.sessionsWithWorkingSubagents()
+        let withWorkingDescendants = orchestrator.sessionsWithWorkingDescendants()
         return WireTasksSnapshot(
             tasks: integrations.visibleThreads(matching: "").map {
-                wireTask($0, isChatGPTs: chatGPTSessions.contains($0.id), hasWorkingSubagents: withWorkingSubagents.contains($0.id))
+                wireTask($0, hasWorkingDescendants: withWorkingDescendants.contains($0.id))
             },
             workspaces: workspaces.workspaces.map(wireWorkspace),
             providers: integrations.providers.map { provider in
@@ -71,10 +70,10 @@ final class TasksFeed: TopicFeed {
         )
     }
 
-    private func wireTask(_ thread: AgentThread, isChatGPTs: Bool, hasWorkingSubagents: Bool) -> WireTask {
+    private func wireTask(_ thread: AgentThread, hasWorkingDescendants: Bool) -> WireTask {
         var menu = sessions.menuState(for: thread)
-        // Stopping a session stops its subagents, so it can be stopped while only they work.
-        if hasWorkingSubagents { menu.allowed.insert(.interrupt) }
+        // Stopping a session stops everything working for it, so it can be stopped while only they work.
+        if hasWorkingDescendants { menu.allowed.insert(.interrupt) }
         let project = project(for: thread)
         return WireTask(
             id: thread.id,
@@ -97,7 +96,7 @@ final class TasksFeed: TopicFeed {
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: project.checkout,
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
-                ?? (isChatGPTs ? .chatGPT : nil)
+                ?? orchestrator.origin(of: thread)
         )
     }
 

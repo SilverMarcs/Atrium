@@ -49,7 +49,7 @@ final class Pairing {
         let token = Self.randomToken()
         devices.removeAll { $0.id == device.id }
         devices.append(PairedDevice(
-            id: device.id, name: device.name, tokenHash: Self.hash(token), pairedAt: .now, lastConnectedAt: .now
+            id: device.id, name: device.name, kind: device.kind, tokenHash: Self.hash(token), pairedAt: .now, lastConnectedAt: .now
         ))
         save()
         return token

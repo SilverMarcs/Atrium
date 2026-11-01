@@ -11,7 +11,8 @@ struct TaskListView: View {
     @State private var taskToRename: HostTask?
     @State private var isSettledExpanded = false
     @State private var isSnoozedExpanded = false
-    @State private var isChatGPTExpanded = false
+    /// The command-line clients whose sessions are shown, by name.
+    @State private var expandedDevices: Set<String> = []
 
     private var hosts: HostDirectory { app.hosts }
 
@@ -39,7 +40,7 @@ struct TaskListView: View {
     var body: some View {
         let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.isSnoozed })
 
-        let chatGPTTasks = hosts.chatGPTTasks.filter(matchesSearch)
+        let deviceTasks = hosts.deviceTasks.map { ($0.device, $0.tasks.filter(matchesSearch)) }.filter { !$0.1.isEmpty }
 
         // A subagent on screen isn't listed, so no row is selected and choosing its session's row goes back.
         List(selection: Bindable(app).selection) {
@@ -54,16 +55,19 @@ struct TaskListView: View {
                     rows(sections.settled)
                 }
             }
-            if !chatGPTTasks.isEmpty {
-                Section("ChatGPT", isExpanded: Binding(get: { isSearching || isChatGPTExpanded }, set: { isChatGPTExpanded = $0 }).animation()) {
-                    rows(chatGPTTasks)
+            ForEach(deviceTasks, id: \.0) { device, tasks in
+                Section(device, isExpanded: Binding(
+                    get: { isSearching || expandedDevices.contains(device) },
+                    set: { if $0 { expandedDevices.insert(device) } else { expandedDevices.remove(device) } }
+                ).animation()) {
+                    rows(tasks)
                 }
             }
         }
         .listStyle(.sidebar)
-        .animation(.default, value: sections.ids + chatGPTTasks.map(\.id))
+        .animation(.default, value: sections.ids + deviceTasks.flatMap(\.1).map(\.id))
         .environment(\.sidebarRowSize, .medium)
-        .overlay { placeholder(isEmpty: tasks.isEmpty && chatGPTTasks.isEmpty) }
+        .overlay { placeholder(isEmpty: tasks.isEmpty && deviceTasks.isEmpty) }
         .toolbar {
             if hosts.hosts.count > 1 {
                 ToolbarItem {

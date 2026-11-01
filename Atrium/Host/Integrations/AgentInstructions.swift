@@ -1,17 +1,33 @@
 import Foundation
 
-/// What Atrium tells every agent it runs about showing images and pages in
-/// its chats. Claude appends it to its system prompt and Codex takes it as
-/// developer instructions. It's the same for every session and launch, so it
-/// stays in the cached prefix of every request.
+/// What Atrium tells the agents it runs: Claude appends it to its system
+/// prompt and Codex takes it as developer instructions. It's built from fixed
+/// blocks, and which ones a chat gets is settled when the chat is created and
+/// kept for every launch after, so its cached prompt prefix never changes.
 nonisolated enum AgentInstructions {
-    static let text = """
+    /// A block Settings → Integrations can leave out of new chats. Showing
+    /// images is always there.
+    enum Block: String, Codable, Sendable {
+        /// Showing HTML pages, such as charts and diagrams.
+        case pages
+        /// Handing work to other sessions with the `atrium` command.
+        case orchestrator
+    }
+
+    static func text(_ blocks: Set<Block>) -> String {
+        [base, blocks.contains(.pages) ? pages : nil, blocks.contains(.orchestrator) ? orchestrator : nil]
+            .compactMap(\.self).joined(separator: "\n\n")
+    }
+
+    private static let base = """
         # Atrium
 
         Atrium shows this chat to the user in its own app, on Mac, iPad and iPhone.
 
         To show an image, such as a screenshot, plot or generated picture, put it in your reply as Markdown: `![short caption](/absolute/path.png)`. It loads from this Mac on every device whenever the chat is viewed, so give each image its own file name and leave it in place: overwriting or deleting the file changes or breaks earlier messages.
+        """
 
+    private static let pages = """
         Most answers need no page. Show an HTML page only when a visual makes the answer clearer than text or an image would, such as data with a trend or comparison, or when the user asks to see something here (a diagram, mockup or report). A plain table or list belongs in Markdown, not a page. Never start a server or open a browser to show one. Show visuals here rather than as a claude.ai Artifact or any other hosted page; make one of those only when the user explicitly asks for it. A text description or a bare file path does not show it. When the user wants an image file to post or send elsewhere, write a `.png` instead.
 
         ## Pages
@@ -32,4 +48,55 @@ nonisolated enum AgentInstructions {
         Style: font weights 400 and 500 only. No custom font sizes; use .small for secondary text and 12px for SVG labels. Add no summary cards, filters or titles the user didn't need, and at most one short heading. Use series colors only on chart marks; keep values, labels and axes in --foreground or --muted-foreground. Keep gridlines thin and neutral, with no outlines on bars. Label values directly; add a legend only for two or more series.
         Theme: Atrium sets these CSS variables on :root for light and dark mode. Use them, not fixed colors: --foreground, --muted-foreground, --background, --card, --muted, --border, --popover, --primary (Atrium's green, for selected states and the first series) with --primary-foreground, --accent (a soft green wash for highlights) with --accent-foreground, --success, --warning, --destructive, --viz-series-1 to --viz-series-6, --font-sans, --font-mono, --radius.
         """
+
+    private static let orchestrator = """
+        ## Other agents
+
+        You can hand work to other Claude and Codex sessions on this Mac with the `atrium` command; `atrium help` explains it. Start or prompt a session, then end your turn: Atrium sends you its result, and any question it asks, as a new message. Delegate only when it helps, to a few sessions at most, and never hand on work that was handed to you.
+        """
+}
+
+/// The instruction blocks each chat Atrium runs was created with, by task ID.
+/// Chats from before blocks were recorded have the base and pages, as they
+/// always did. Forks and side chats share their chat's, so they reuse its
+/// cached prompt too.
+@MainActor
+final class ChatInstructions {
+    private let settings: IntegrationSettings
+    private let file: URL
+    private var blocks: [String: Set<AgentInstructions.Block>]
+
+    init(settings: IntegrationSettings, file: URL = HostStorage.directory.appending(path: "chat-instructions.json")) {
+        self.settings = settings
+        self.file = file
+        blocks = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([String: Set<AgentInstructions.Block>].self, from: $0) } ?? [:]
+    }
+
+    /// Reads what chats were created with, as a connection that only reads does.
+    convenience init() {
+        self.init(settings: IntegrationSettings())
+    }
+
+    /// The blocks a chat created now gets: those Settings turns on.
+    var forNewChat: Set<AgentInstructions.Block> {
+        var blocks: Set<AgentInstructions.Block> = []
+        if settings.isVisualizationsEnabled { blocks.insert(.pages) }
+        if settings.isOrchestratorEnabled { blocks.insert(.orchestrator) }
+        return blocks
+    }
+
+    func blocks(for id: String) -> Set<AgentInstructions.Block> {
+        blocks[id] ?? [.pages]
+    }
+
+    func text(for id: String) -> String {
+        AgentInstructions.text(blocks(for: id))
+    }
+
+    func record(_ blocks: Set<AgentInstructions.Block>, for id: String) {
+        guard self.blocks[id] != blocks else { return }
+        self.blocks[id] = blocks
+        guard let data = try? JSONEncoder().encode(self.blocks) else { return }
+        try? data.write(to: file, options: .atomic)
+    }
 }

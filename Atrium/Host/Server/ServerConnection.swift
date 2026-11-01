@@ -20,7 +20,12 @@ final class ServerConnection {
     private let send: (HostEvent) -> Void
     private let closeChannel: () -> Void
 
+    /// The session the client runs in, for an agent's command-line client on this Mac.
+    var caller: String?
+
     var isAuthenticated: Bool { isLocal || device != nil }
+    /// One of the agents this Mac runs, through its command-line client.
+    var isLocalAgent: Bool { device?.id == ClientDevice.localAgents.id }
 
     init(isLocal: Bool, send: @escaping (HostEvent) -> Void, close: @escaping () -> Void = {}) {
         self.isLocal = isLocal

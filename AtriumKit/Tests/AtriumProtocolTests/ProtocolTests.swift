@@ -84,7 +84,7 @@ struct ProtocolTests {
             TranscriptMessage(id: "r", role: .user, blocks: [], relay: TranscriptRelay(kind: .results, senders: [.init(name: "Codex · audit")])),
             TranscriptMessage(id: "b", role: .assistant, blocks: [.text("Done.", id: "b.0")]),
             TranscriptMessage(id: "t", role: .user, blocks: [.text("Do this", id: "t")],
-                              relay: TranscriptRelay(kind: .task, senders: [.init(name: "Claude · Parent")], taskID: "1"))
+                              relay: TranscriptRelay(kind: .task, senders: [.init(name: "Claude · Parent")]))
         ]
         let folded = messages.foldingReports()
         #expect(folded.map(\.id) == ["r", "t"])

@@ -13,7 +13,8 @@ struct TasksScreen: View {
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
     @State private var isSettledExpanded = false
-    @State private var isChatGPTExpanded = false
+    /// The command-line clients whose sessions are shown, by name.
+    @State private var expandedDevices: Set<String> = []
     @State private var showingProjects = false
     @State private var taskToRename: HostTask?
     @State private var taskToDelete: HostTask?
@@ -25,7 +26,7 @@ struct TasksScreen: View {
             TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.workspace?.name, item.host.name)
         }
         let tasks = hosts.listedTasks.filter(matches)
-        let chatGPTTasks = hosts.chatGPTTasks.filter(matches)
+        let deviceTasks = hosts.deviceTasks.map { ($0.device, $0.tasks.filter(matches)) }.filter { !$0.1.isEmpty }
         let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.snoozedUntil != nil })
         let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
 
@@ -44,12 +45,17 @@ struct TasksScreen: View {
                 collapsibleSection("Settled", tasks: sections.settled, isExpanded: $isSettledExpanded, isSearching: isSearching)
             }
             if filter == .all {
-                collapsibleSection("ChatGPT", tasks: chatGPTTasks, isExpanded: $isChatGPTExpanded, isSearching: isSearching)
+                ForEach(deviceTasks, id: \.0) { device, tasks in
+                    collapsibleSection(device, tasks: tasks, isExpanded: Binding(
+                        get: { expandedDevices.contains(device) },
+                        set: { if $0 { expandedDevices.insert(device) } else { expandedDevices.remove(device) } }
+                    ), isSearching: isSearching)
+                }
             }
         }
         .contentMargins(.top, isPhone ? 10 : 0)
         .listStyle(.sidebar)
-        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id), chatGPTTasks.map(\.id)])
+        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id), deviceTasks.flatMap(\.1).map(\.id)])
         .animation(.default, value: filter)
         .refreshable {
             await withDiscardingTaskGroup { group in
@@ -99,7 +105,7 @@ struct TasksScreen: View {
         }
         .overlay {
             TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching,
-                             isEmpty: visibleTasksAreEmpty(sections) && (filter != .all || chatGPTTasks.isEmpty))
+                             isEmpty: visibleTasksAreEmpty(sections) && (filter != .all || deviceTasks.isEmpty))
         }
         .sheet(isPresented: $showingProjects) {
             ProjectsSheet(hosts: hosts)

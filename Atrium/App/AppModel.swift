@@ -11,9 +11,9 @@ import SwiftUI
 @Observable
 final class AppModel {
     let hosts: HostDirectory
-    /// Whether ChatGPT may reach this Mac's tools, which stays with this Mac's
-    /// host; nothing else of the host is reachable here.
-    let chatGPTAccess: ChatGPTAccess
+    /// What Settings → Integrations turns on for this Mac's agents, which
+    /// stays with this Mac's host; nothing else of the host is reachable here.
+    let integrationSettings: IntegrationSettings
     /// The task the window shows, on whichever host it lives.
     var selection: TaskRef?
     var showingProjects = false
@@ -29,7 +29,7 @@ final class AppModel {
 
     init() {
         let server = HostServer()
-        chatGPTAccess = server.chatGPTAccess
+        integrationSettings = server.integrationSettings
         let localHost = HostClient(localID: server.hello.hostID, name: HostServer.hostName) {
             LoopbackConnection(server: server)
         }
