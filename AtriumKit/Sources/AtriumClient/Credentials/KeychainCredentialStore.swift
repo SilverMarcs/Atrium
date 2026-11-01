@@ -34,6 +34,9 @@ public final class KeychainCredentialStore: CredentialStore {
     }
 
     public func token(for host: PairedHost) -> String? {
+        #if DEBUG
+        return defaults.string(forKey: debugTokenKey(for: host))
+        #endif
         var query = keychainQuery(for: host)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -44,6 +47,11 @@ public final class KeychainCredentialStore: CredentialStore {
     }
 
     public func save(_ host: PairedHost, token: String) {
+        #if DEBUG
+        defaults.set(token, forKey: debugTokenKey(for: host))
+        store(pairedHosts.adding(host))
+        return
+        #endif
         SecItemDelete(keychainQuery(for: host) as CFDictionary)
         var item = keychainQuery(for: host)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -57,7 +65,11 @@ public final class KeychainCredentialStore: CredentialStore {
     }
 
     public func forget(_ host: PairedHost) {
+        #if DEBUG
+        defaults.removeObject(forKey: debugTokenKey(for: host))
+        #else
         SecItemDelete(keychainQuery(for: host) as CFDictionary)
+        #endif
         store(pairedHosts.filter { $0.id != host.id })
     }
 
@@ -66,6 +78,12 @@ public final class KeychainCredentialStore: CredentialStore {
             defaults.set(data, forKey: Self.pairedHostsKey)
         }
     }
+
+    #if DEBUG
+    /// Development builds keep tokens in their own defaults: each build is
+    /// signed differently, so the Keychain would ask to share its items every time.
+    private func debugTokenKey(for host: PairedHost) -> String { "debug.deviceToken.\(host.id)" }
+    #endif
 
     private func keychainQuery(for host: PairedHost) -> [String: Any] {
         [

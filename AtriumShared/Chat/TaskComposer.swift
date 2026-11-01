@@ -116,7 +116,7 @@ final class TaskComposer {
     @discardableResult
     func submit(
         to item: HostTask,
-        animator: PromptSendAnimator,
+        animator: any PromptSendAnimating,
         from sourceFrame: CGRect? = nil
     ) -> Bool {
         guard !isSubmittingDictation else { return false }
@@ -134,7 +134,7 @@ final class TaskComposer {
         return sendDraft(to: item, animator: animator, from: sourceFrame)
     }
 
-    private func sendDraft(to item: HostTask, animator: PromptSendAnimator, from sourceFrame: CGRect?) -> Bool {
+    private func sendDraft(to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> Bool {
         if let edit = messageEdit {
             Task {
                 _ = await edit.submit { text, images in
@@ -159,7 +159,7 @@ final class TaskComposer {
         return true
     }
 
-    private func send(_ text: String, images: [Data], to item: HostTask, animator: PromptSendAnimator, from sourceFrame: CGRect?) -> UUID {
+    private func send(_ text: String, images: [Data], to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> UUID {
         let animationSource = sourceFrame ?? animator.sourceFrame?()
         let promptID = item.host.sendPrompt(text, images: images, to: item.task.id)
         animator.begin(promptID, text: text, from: animationSource)

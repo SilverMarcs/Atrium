@@ -48,6 +48,14 @@ final class TimelineAnchorSpace {
     /// Records the size the timeline shows its content in. A new width, such
     /// as on rotation, starts afresh.
     func noteViewport(_ size: CGSize) {
+        #if os(macOS)
+        // No keyboard takes from a Mac's viewport: it's whatever the window and
+        // composer leave, and the turn follows it.
+        viewportWidth = size.width
+        viewportHeight = size.height
+        setRestingHeight(size.height)
+        return
+        #endif
         viewportHeight = size.height
         if size.width != viewportWidth {
             viewportWidth = size.width

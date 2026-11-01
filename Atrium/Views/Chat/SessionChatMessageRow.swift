@@ -4,27 +4,42 @@ import AtriumProtocol
 import SwiftUI
 
 /// Desktop message geometry from the original chat detail, using normalized transcripts.
-struct SessionChatMessageRow: View {
+///
+/// Takes only values and compares them, so an update of the timeline (a send,
+/// a status change, a streamed reply) updates just the rows whose message
+/// changed. What a row does goes through `PromptActions` in the environment.
+struct SessionChatMessageRow: View, Equatable {
   let message: TranscriptMessage
   let isStreaming: Bool
-  var edit: (() -> Void)?
-  var editEnabled = true
-  var pendingPrompt: PendingPrompt?
-  var retry: () -> Void = {}
+  /// A prompt in the transcript the agent can rewind to; pending ones can't be edited yet.
+  let canEdit: Bool
+  let pendingPrompt: PendingPrompt?
+  @Environment(\.promptActions) private var actions
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.isStreaming == rhs.isStreaming && lhs.canEdit == rhs.canEdit
+      && lhs.pendingPrompt == rhs.pendingPrompt && lhs.message == rhs.message
+  }
 
   var body: some View {
     switch message.role {
     case .user:
-      if let pendingPrompt {
-        PendingPromptRow(
-          prompt: pendingPrompt, retry: retry, sendFlight: { $0.flight(forTimelineID: message.id) })
-      } else {
+      // A prompt sent from here keeps its pending row's ID once confirmed, so
+      // the same bubble shows it throughout and only it can fly in.
+      VStack(alignment: .trailing, spacing: 6) {
         UserMessageView(
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
-          images: message.images ?? [],
+          images: pendingPrompt?.images ?? message.images ?? [],
           isFromAgent: message.relay != nil,
-          edit: edit, editEnabled: editEnabled,
-          sendFlight: { $0.flight(forTimelineID: message.id) })
+          edit: canEdit ? PromptEdit(isEnabled: actions.isEditEnabled, perform: { [message] in actions.edit(message) }) : nil,
+          flightRowID: message.id.hasPrefix("pending-") ? message.id : nil)
+        if let pendingPrompt, pendingPrompt.state == .failed {
+          if let error = pendingPrompt.failureMessage { Text(error).font(.caption).foregroundStyle(.red) }
+          Button("Retry", systemImage: "arrow.clockwise") { actions.retry(pendingPrompt.id) }
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .tint(.red)
+        }
       }
     case .assistant:
       VStack(alignment: .leading, spacing: 8) {
@@ -36,4 +51,19 @@ struct SessionChatMessageRow: View {
       .padding(.trailing, 30)
     }
   }
+}
+
+/// What the timeline's prompt bubbles do. Every value compares equal, so the
+/// new one the timeline builds on each update doesn't update its rows; the
+/// closures reach live state through the references they hold.
+struct PromptActions: Equatable {
+  var isEditEnabled: @MainActor () -> Bool = { false }
+  var edit: @MainActor (TranscriptMessage) -> Void = { _ in }
+  var retry: @MainActor (UUID) -> Void = { _ in }
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+extension EnvironmentValues {
+  @Entry var promptActions = PromptActions()
 }

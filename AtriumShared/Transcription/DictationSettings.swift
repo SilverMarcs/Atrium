@@ -15,6 +15,10 @@ final class DictationSettings {
     ]
 
     init() {
+        #if DEBUG
+        apiKey = UserDefaults.standard.string(forKey: Self.debugKey) ?? ""
+        return
+        #endif
         var lookup = query
         lookup[kSecReturnData as String] = true
         var result: CFTypeRef?
@@ -24,8 +28,20 @@ final class DictationSettings {
         }
     }
 
+    #if DEBUG
+    /// Development builds keep the key in their own defaults: each build is
+    /// signed differently, so the Keychain would ask to share its item every time.
+    private static let debugKey = "debug.dictationAPIKey"
+    #endif
+
     func save(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        UserDefaults.standard.set(key.isEmpty ? nil : key, forKey: Self.debugKey)
+        apiKey = key
+        error = nil
+        return
+        #endif
         let status: OSStatus
         if key.isEmpty {
             let deletion = SecItemDelete(query as CFDictionary)

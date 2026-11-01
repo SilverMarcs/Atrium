@@ -1,3 +1,4 @@
+import AppKit
 import AtriumProtocol
 import Foundation
 import Observation
@@ -37,6 +38,10 @@ final class AgentIntegrationStore {
     /// What chats forked from the other provider's took from them.
     @ObservationIgnored private let inherited = InheritedConversations()
     @ObservationIgnored private var viewedThreadID: String?
+    @ObservationIgnored private var pendingSave: Task<Void, Never>?
+    @ObservationIgnored private var needsActivitySave = false
+    @ObservationIgnored private var needsRetainedThreadsSave = false
+    @ObservationIgnored private var terminationObserver: (any NSObjectProtocol)?
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let adapters: [AgentProvider: any AgentProviderAdapter]
@@ -521,14 +526,48 @@ final class AgentIntegrationStore {
         return result
     }
 
+    /// Saving encodes every thread's activity, and a working agent changes it
+    /// several times a second, on the main thread the chat animates on. Writes
+    /// within a second are saved together, and on quit.
     private func saveActivity() {
-        if let data = try? JSONEncoder().encode(activity) {
-            defaults.set(data, forKey: "integration.threadActivity")
-        }
-        saveRetainedThreads()
+        needsActivitySave = true
+        scheduleSave()
     }
 
     private func saveRetainedThreads() {
+        needsRetainedThreadsSave = true
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        if pendingSave == nil {
+            pendingSave = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                self?.flushSaves()
+            }
+        }
+        if terminationObserver == nil {
+            terminationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.flushSaves() }
+            }
+        }
+    }
+
+    func flushSaves() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        if needsActivitySave, let data = try? JSONEncoder().encode(activity) {
+            defaults.set(data, forKey: "integration.threadActivity")
+        }
+        if needsActivitySave || needsRetainedThreadsSave { writeRetainedThreads() }
+        needsActivitySave = false
+        needsRetainedThreadsSave = false
+    }
+
+    private func writeRetainedThreads() {
         let retained = providers.flatMap { provider in
             let sorted = threads.filter { $0.provider == provider }.sorted(by: AgentThread.newestFirst)
             return Array(sorted.filter { settledThreadIDs.contains($0.id) }.prefix(25)) + sorted.filter { snoozedUntil[$0.id] != nil }

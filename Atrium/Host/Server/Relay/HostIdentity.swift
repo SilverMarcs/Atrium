@@ -32,7 +32,17 @@ enum HostIdentity {
         Data(SHA256.hash(data: relaySecret)).prefix(16).base64URLEncodedString()
     }
 
+    #if DEBUG
+    /// Development builds keep their key in their own defaults: each build is
+    /// signed differently, so the Keychain would ask to share its item every
+    /// time. A development build is a host of its own.
+    private static let debugKey = "debug.relayIdentity"
+    #endif
+
     private static func loadKey() -> Curve25519.KeyAgreement.PrivateKey? {
+        #if DEBUG
+        return UserDefaults.standard.data(forKey: debugKey).flatMap { try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: $0) }
+        #endif
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -47,6 +57,10 @@ enum HostIdentity {
 
     private static func createKey() -> Curve25519.KeyAgreement.PrivateKey {
         let key = Curve25519.KeyAgreement.PrivateKey()
+        #if DEBUG
+        UserDefaults.standard.set(key.rawRepresentation, forKey: debugKey)
+        return key
+        #endif
         let item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

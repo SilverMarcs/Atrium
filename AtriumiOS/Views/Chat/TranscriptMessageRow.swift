@@ -5,8 +5,7 @@ import SwiftUI
 struct TranscriptMessageRow: View {
     let message: TranscriptMessage
     let isStreaming: Bool
-    var edit: (() -> Void)?
-    var editEnabled = true
+    var edit: PromptEdit?
 
     var body: some View {
         switch message.role {
@@ -15,7 +14,7 @@ struct TranscriptMessageRow: View {
                 text: message.blocks.compactMap(\.text).joined(separator: "\n"),
                 images: message.images ?? [],
                 isFromAgent: message.relay != nil,
-                edit: edit, editEnabled: editEnabled,
+                edit: edit,
                 sendFlight: { [id = message.id] in $0.flight(forConfirmed: id) }
             )
         case .assistant:

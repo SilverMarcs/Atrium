@@ -88,17 +88,23 @@ final class UnixJSONConnection {
                         self.fail(IntegrationError(message: "Claude sent an oversized background event."))
                         return
                     }
-                    while let end = self.buffer.firstIndex(of: 10) {
-                        let line = Data(self.buffer[..<end])
-                        self.buffer = Data(self.buffer[self.buffer.index(after: end)...])
+                    // Lines are cut from the buffer once per read, not each copied back
+                    // into a new buffer, which was quadratic in a burst of output.
+                    var start = self.buffer.startIndex
+                    while let end = self.buffer[start...].firstIndex(of: 10) {
+                        let line = Data(self.buffer[start..<end])
+                        start = self.buffer.index(after: end)
                         self.receivedFirstLine = true
                         if let response = self.response {
                             self.response = nil
                             response.resume(returning: line)
                         }
                         self.onMessage?(line)
-                        if self.rawAfterFirstLine { self.buffer.removeAll(); break }
+                        // A handler can close the connection, which empties the buffer.
+                        guard self.connection === connection else { return }
+                        if self.rawAfterFirstLine { start = self.buffer.endIndex; break }
                     }
+                    self.buffer.removeSubrange(..<start)
                 }
                 if let error { self.fail(error) }
                 else if complete { self.fail(IntegrationError(message: "Claude's background connection closed.")) }

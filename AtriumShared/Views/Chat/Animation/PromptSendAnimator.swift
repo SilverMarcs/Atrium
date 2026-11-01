@@ -2,11 +2,21 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
+/// Flies a just-sent prompt's bubble in from the composer: the iPhone and
+/// iPad timeline's `PromptSendAnimator`, the Mac's `PromptFlights`.
+@MainActor
+protocol PromptSendAnimating: AnyObject {
+    /// Where the composer's field is, read at submission before clearing the
+    /// draft can shrink it.
+    var sourceFrame: (() -> CGRect?)? { get }
+    func begin(_ promptID: PendingPrompt.ID, text: String, from frame: CGRect?)
+}
+
 /// Flies just-sent prompt bubbles in from the composer. Owns only short-lived
 /// presentation state; sending never waits for animation.
 @MainActor
 @Observable
-final class PromptSendAnimator {
+final class PromptSendAnimator: PromptSendAnimating {
     private(set) var flights: [PromptSendFlight] = []
 
     // Read at submission, before clearing the draft can shrink the composer.

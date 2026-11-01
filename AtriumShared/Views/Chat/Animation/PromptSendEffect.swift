@@ -8,11 +8,20 @@ struct PromptSendEffect: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(PromptSendAnimator.self) private var animator
 
-    /// Finds this bubble's flight, if it was just sent.
-    let flight: (PromptSendAnimator) -> PromptSendFlight?
+    /// Finds this bubble's flight, if it was just sent. Nil for a bubble that
+    /// can't have one, which then never observes the animator.
+    let flight: ((PromptSendAnimator) -> PromptSendFlight?)?
 
     func body(content: Content) -> some View {
-        let flight = reduceMotion ? nil : flight(animator)
+        if let flight {
+            flying(content, flight: reduceMotion ? nil : flight(animator))
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private func flying(_ content: Content, flight: PromptSendFlight?) -> some View {
         let source = flight?.sourceFrame
         let startedAt = flight?.startedAt
         TimelineView(.animation(paused: flight == nil)) { context in

@@ -6,11 +6,12 @@ import Observation
 @MainActor
 @Observable
 public final class ConversationStore {
-  public internal(set) var transcripts: [String: [TranscriptMessage]] = [:]
-  public internal(set) var pendingPrompts: [String: [PendingPrompt]] = [:]
-  public internal(set) var tasksAwaitingAgent: [String: UUID] = [:]
+  // Per task, so a chat only updates for its own task's changes.
+  public let transcripts = KeyedState<[TranscriptMessage]>()
+  public let pendingPrompts = KeyedState<[PendingPrompt]>()
+  public let tasksAwaitingAgent = KeyedState<UUID>()
   @ObservationIgnored private var deliveries: [UUID: Task<Void, Never>] = [:]
-  private var confirmedRowIDs: [String: [String: String]] = [:]
+  private let confirmedRowIDs = KeyedState<[String: String]>()
   private let acknowledgementTimeout: Duration
 
   init(acknowledgementTimeout: Duration = .seconds(20)) {
@@ -109,7 +110,7 @@ public final class ConversationStore {
     if let previous, previous != status, status != .idle {
       tasksAwaitingAgent[taskID] = nil
     }
-    if status != .processing {
+    if status != .processing, pendingPrompts[taskID]?.contains(where: { $0.isOverdue && $0.state == .sent }) == true {
       pendingPrompts[taskID]?.removeAll { $0.isOverdue && $0.state == .sent }
     }
   }
@@ -139,11 +140,17 @@ public final class ConversationStore {
       confirmations.append(PromptConfirmation(promptID: prompt.id, messageID: message.id))
       confirmedRowIDs[taskID, default: [:]][message.id] = prompt.timelineID
     }
-    let confirmed = Set(confirmations.map(\.promptID))
-    pendingPrompts[taskID]?.removeAll { confirmed.contains($0.id) }
+    // Each write updates the chat showing this task, so only write what changed.
+    if !confirmations.isEmpty {
+      let confirmed = Set(confirmations.map(\.promptID))
+      pendingPrompts[taskID]?.removeAll { confirmed.contains($0.id) }
+    }
     if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
-    let currentIDs = Set(messages.map(\.id))
-    confirmedRowIDs[taskID] = confirmedRowIDs[taskID]?.filter { currentIDs.contains($0.key) }
+    if let rowIDs = confirmedRowIDs[taskID] {
+      let currentIDs = Set(messages.map(\.id))
+      let kept = rowIDs.filter { currentIDs.contains($0.key) }
+      if kept.count != rowIDs.count { confirmedRowIDs[taskID] = kept }
+    }
     return confirmations
   }
 
@@ -165,10 +172,10 @@ public final class ConversationStore {
   func reset() {
     for task in deliveries.values { task.cancel() }
     deliveries = [:]
-    transcripts = [:]
-    pendingPrompts = [:]
-    tasksAwaitingAgent = [:]
-    confirmedRowIDs = [:]
+    transcripts.removeAll()
+    pendingPrompts.removeAll()
+    tasksAwaitingAgent.removeAll()
+    confirmedRowIDs.removeAll()
   }
 
   func remove(_ taskID: String) {

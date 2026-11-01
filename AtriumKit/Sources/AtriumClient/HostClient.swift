@@ -50,14 +50,17 @@ public final class HostClient: Identifiable {
     /// The latest failed action, shown as an alert.
     public var actionError: String?
 
-    private var hostTasks: WireTasksSnapshot?
-    private var taskUpdates: [OptimisticTaskUpdate] = []
+    @ObservationIgnored private var hostTasks: WireTasksSnapshot? { didSet { applyTaskUpdates() } }
+    @ObservationIgnored private var taskUpdates: [OptimisticTaskUpdate] = [] { didSet { applyTaskUpdates() } }
     /// The host's tasks, projects and agents, with actions this client sent
-    /// shown before the host confirms them.
-    public var tasks: WireTasksSnapshot? {
-        guard var snapshot = hostTasks else { return nil }
+    /// shown before the host confirms them. Kept rather than worked out on
+    /// each read: lists, toolbars and every task lookup read it many times a second.
+    public private(set) var tasks: WireTasksSnapshot?
+
+    private func applyTaskUpdates() {
+        guard var snapshot = hostTasks else { tasks = nil; return }
         for update in taskUpdates { update.apply(to: &snapshot) }
-        return snapshot
+        tasks = snapshot
     }
     public private(set) var gitStatuses: [GitScope: [GitRepositoryStatus]] = [:]
     public private(set) var commands: [UUID: [WireCommand]] = [:]

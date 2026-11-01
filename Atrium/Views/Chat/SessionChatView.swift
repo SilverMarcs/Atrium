@@ -8,11 +8,18 @@ struct SessionChatView: View {
   let project: Project?
   @Environment(AppModel.self) private var app
   @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
-  @State private var isPinned = true
-  @State private var isReaderScrolling = false
+  @State private var pin = TimelinePin()
+  @State private var anchorSpace = TimelineAnchorSpace()
+  @State private var turnFill = TurnFill()
   @State private var scrollPolicy = ConversationScrollPolicy()
-  @State private var sendAnimator = PromptSendAnimator()
+  @State private var flights = PromptFlights()
+  @State private var links = ChatLinkOpener()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private static let bottomID = "bottom"
+  /// Space below the newest message, so it reads as the end of the timeline
+  /// rather than running into the composer.
+  private static let bottomGap = ChatMessageSpacing.standard * 3
 
   private var host: HostClient { item.host }
   private var task: WireTask { item.task }
@@ -27,6 +34,13 @@ struct SessionChatView: View {
       messages: conversation.displayMessages(for: task.id), pendingPrompts: prompts, status: task.status)
     let rows = conversation.rows(for: task.id, turns: turns)
     let footerStatus = conversation.footerStatus(for: task.id, status: item.progressStatus)
+    let newestPromptID = rows.last { $0.message.role == .user }?.id
+    // A prompt sent from here starts the latest turn, held at the top of the
+    // timeline. A host can give the held prompt a new ID, as Claude does once
+    // it saves the turn; the prompt that starts the latest turn stays held instead.
+    let anchorID = anchorSpace.anchorID.flatMap { id in
+      rows.contains { $0.id == id } ? id : rows.last { $0.message.role == .user && !$0.message.isSteer }?.id
+    }
     ScrollViewReader { proxy in
       ScrollView {
         // Bottom-aligns short chats; the `.alignment` scroll anchor would stretch the toolbar down to the first row.
@@ -38,13 +52,14 @@ struct SessionChatView: View {
               SessionChatMessageRow(
                 message: row.message,
                 isStreaming: turns.liveIDs.contains(row.id),
-                edit: row.pendingPrompt == nil && row.message.editTarget != nil
-                    ? { composer.beginEditing(row.message, in: item) } : nil,
-                editEnabled: task.actions.contains(.editMessage) && prompts.isEmpty && composer.messageEdit?.isSubmitting != true,
-                pendingPrompt: row.pendingPrompt,
-                retry: { if let prompt = row.pendingPrompt { host.retryPrompt(prompt.id, in: task.id) } }
+                canEdit: row.pendingPrompt == nil && row.message.editTarget != nil,
+                pendingPrompt: row.pendingPrompt
               )
+              .equatable()
               .padding(.top, ChatMessageSpacing.before(row.message.role, after: index > 0 ? rows[index - 1].message.role : nil))
+              .background {
+                if row.id == anchorID { TurnTopReporter(fill: turnFill) }
+              }
               .transition(.identity)
             }
             TaskChatStatusFooter(status: footerStatus)
@@ -60,42 +75,66 @@ struct SessionChatView: View {
               Button("Retry") { host.reload(.transcript(taskID: task.id)) }
                 .padding(.top, ChatMessageSpacing.standard)
             }
-            Color.clear.frame(height: 32).padding(.top, ChatMessageSpacing.standard).id("bottom")
+            TurnFiller(fill: turnFill, anchorSpace: anchorSpace, isHolding: anchorID != nil, bottomGap: Self.bottomGap)
+            // The end is a row of the lazy stack, so scrolling to it lays out
+            // the rows above it from the end.
+            Color.clear
+              .frame(height: Self.bottomGap)
+              .id(Self.bottomID)
+              .accessibilityHidden(true)
           }
+          .coordinateSpace(.named(TurnFill.coordinateSpace))
+          .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
+          .background { TimelineScrollViewFinder(flights: flights) }
           .padding(.horizontal, 16)
-          .padding(.vertical, 4)
+          .padding(.top, 4)
           .frame(maxWidth: SessionChatLayout.maximumWidth)
           .frame(maxWidth: .infinity)
         }
       }
       // Pages and images agents show in replies load from the task's host.
       .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
+      .environment(\.promptActions, promptActions(composer))
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
+      .environment(flights)
       .scrollEdgeEffectHidden(true, for: .bottom)
       .scrollEdgeEffectHidden(false, for: .top)
       .scrollEdgeEffectStyle(.soft, for: .top)
       .defaultScrollAnchor(.bottom, for: .initialOffset)
-      .showsSendFlightsUnclipped()
+      // Only the reader scrolling decides whether the timeline stays pinned.
+      // Checking the position as content grows would unpin it whenever growth
+      // lands mid-scroll.
       .onScrollPhaseChange { _, phase, context in
         switch phase {
         case .tracking, .interacting:
-          isReaderScrolling = true
-        case .idle where isReaderScrolling:
-          isReaderScrolling = false
-          isPinned =
-            context.geometry.contentOffset.y + context.geometry.containerSize.height
-            >= context.geometry.contentSize.height - 40
+          pin.isReaderScrolling = true
+        case .idle where pin.isReaderScrolling:
+          pin.isReaderScrolling = false
+          pin.isPinned = context.geometry.isAtBottom
         default:
           break
         }
       }
+      .onScrollGeometryChange(for: CGSize.self, of: \.containerSize) { _, size in
+        anchorSpace.noteViewport(size)
+      }
+      // Content growing below a pinned timeline (a streaming reply, the
+      // working indicator) carries it along; content shrinking under it, as a
+      // finished reply folds or the lazy stack measures rows it had
+      // estimated, puts it straight back at the end. A reply below a prompt
+      // held at the top grows into the space under it instead, and once it
+      // outgrows that the reader reads down from the prompt.
       .onScrollGeometryChange(for: CGSize.self) { geometry in
         CGSize(width: geometry.containerSize.height, height: geometry.contentSize.height)
       } action: { old, new in
-        guard composer.messageEdit == nil, isPinned, !isReaderScrolling,
-          new.height > old.height || new.width < old.width
-        else { return }
-        scrollToBottom(proxy, animated: scrollPolicy.animatesGrowth)
+        guard composer.messageEdit == nil, new != old, pin.isPinned, !pin.isReaderScrolling, anchorID == nil else { return }
+        let grew = new.height > old.height || new.width < old.width
+        scrollToLatest(proxy, holding: nil, animated: grew && scrollPolicy.animatesGrowth && !flights.isSending)
+      }
+      // The jump that makes room for a sent prompt slides on the render server.
+      .onScrollGeometryChange(for: CGFloat.self, of: \.contentOffset.y) { old, new in
+        guard !pin.isReaderScrolling else { return }
+        flights.noteScroll(by: new - old)
       }
       .overlay {
         if transcript == nil, rows.isEmpty, transcriptError == nil {
@@ -129,13 +168,15 @@ struct SessionChatView: View {
               actions: task.actions,
               send: { send(composer) },
               interrupt: { host.interrupt(task.id) },
-              noteSourceFrame: { frame in sendAnimator.sourceFrame = { frame } }
+              noteSourceFrame: { frame in flights.sourceFrame = { frame } }
             )
           }
         }
         .frame(maxWidth: SessionChatLayout.maximumWidth)
         .frame(maxWidth: .infinity)
       }
+      // Another task, or a transcript arriving for the first time, opens at
+      // its newest message, pinned.
       .onChange(
         of: TranscriptTracker(
           taskID: task.id,
@@ -144,29 +185,67 @@ struct SessionChatView: View {
           lastID: rows.last?.id
         ), initial: true
       ) { old, new in
-        if scrollPolicy.observe(from: old, to: new) {
-          scrollToBottom(proxy, animated: false)
-        } else if new.lastID != old.lastID, new.lastID?.hasPrefix("pending-") == true {
-          // A prompt sent from here follows the conversation down, even when
-          // the reader had scrolled up or an edit shortened it.
-          scrollPolicy.noteSend()
-          isPinned = true
+        guard composer.messageEdit == nil else { return }
+        // A draft's first prompt carries on in the task the host creates for it.
+        if host.drafts[old.taskID]?.taskID == new.taskID, anchorSpace.anchorID == nil {
+          anchorSpace.anchorID = rows.last { $0.message.role == .user && $0.id.hasPrefix("pending-") }?.id
         }
+        let continuesConversation = old.taskID == new.taskID || TaskDraft.isDraftID(old.taskID)
+        let preservesTurn = continuesConversation && anchorSpace.anchorID.map {
+          conversation.containsTimelineID($0, in: task.id)
+        } == true
+        if scrollPolicy.observe(from: old, to: new, preservingTurn: preservesTurn) {
+          pin = TimelinePin()
+          anchorSpace.reset()
+          turnFill.reset()
+          scrollToLatest(proxy, holding: nil, animated: false)
+          return
+        }
+        // Scroll when a new message arrives. A shrinking transcript keeps the
+        // reader where they are.
+        guard new.lastID != old.lastID, new.count >= old.count else { return }
+        // A prompt sent from here is held at the top, and each prompt after
+        // it takes its place there, even when the reader had scrolled up.
+        let sentFromHere = new.lastID?.hasPrefix("pending-") == true
+        if new.lastID == newestPromptID, sentFromHere || anchorSpace.anchorID != nil {
+          scrollPolicy.noteSend()
+          anchorSpace.anchorID = newestPromptID
+          turnFill.reset()
+          scrollToLatest(proxy, holding: newestPromptID, animated: !flights.isSending)
+          return
+        }
+        guard old.lastID != nil else { return }
+        // A reply arriving below a prompt held at the top leaves the prompt
+        // there for the reader to read down from.
+        guard anchorID == nil else { return }
+        scrollToLatest(proxy, holding: nil)
       }
       .onChange(of: composer.messageEdit?.id) { _, id in
         guard id != nil, let messageID = composer.messageEdit?.messageID else { return }
-        isPinned = false
+        pin.isPinned = false
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
           proxy.scrollTo(messageID, anchor: .center)
         }
       }
+      .onChange(of: composer.editedPromptID) { _, id in
+        guard let id else { return }
+        // Replacing an older turn shrinks the transcript, so it can't use the
+        // new-row check above to hold its prompt.
+        scrollPolicy.noteSend()
+        let rowID = "pending-" + id.uuidString
+        anchorSpace.anchorID = rowID
+        turnFill.reset()
+        scrollToLatest(proxy, holding: rowID, animated: !flights.isSending)
+      }
+      .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }
+      .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
       .task(id: task.id) {
         // A draft has no conversation on the host until its first prompt creates it.
         guard !TaskDraft.isDraftID(task.id) else { return }
         await host.follow(.transcript(taskID: task.id))
       }
       .onDisappear {
-        sendAnimator.cancelAll()
+        flights.cancelAll()
         app.hosts.releaseComposer(for: item.id)
       }
     }
@@ -183,37 +262,75 @@ struct SessionChatView: View {
     .font(.system(size: chatFontSize))
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
-    .environment(sendAnimator)
-    .environment(\.openURL, OpenURLAction { url in
-      // Links to files in the project open in its editor, and on this Mac files
-      // elsewhere show in Finder; anything else goes to the system.
-      guard let project, url.isFileURL || url.scheme == nil else { return .systemAction }
-      let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
-      Task {
-        if await !project.openLink(link), project.isLocal {
-          FileService.openOutsideProject(link, relativeTo: project.root.path)
-        }
-      }
-      return .handled
-    })
+    // One action for the chat's lifetime: a new one on every update would
+    // update every reply's Markdown view.
+    .environment(\.openURL, links.action)
+    .onChange(of: project?.id, initial: true) { links.project = project }
+  }
+
+  /// Reads the task's state when a bubble's menu asks, rather than handing
+  /// every row values that change with each send.
+  private func promptActions(_ composer: TaskComposer) -> PromptActions {
+    PromptActions(
+      isEditEnabled: { [host, taskID = task.id] in
+        host.task(taskID)?.actions.contains(.editMessage) == true
+          && host.conversations.pendingPrompts[taskID]?.isEmpty != false
+          && composer.messageEdit?.isSubmitting != true
+      },
+      edit: { [host, taskID = task.id] message in
+        guard let task = host.displayedTask(taskID) else { return }
+        composer.beginEditing(message, in: HostTask(host: host, task: task))
+      },
+      retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) }
+    )
   }
 
   /// Sends with nothing else animating; the sent bubble flies in on its own.
   private func send(_ composer: TaskComposer) {
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
+    flights.prepareSend()
     withTransaction(transaction) {
-      composer.submit(to: item, animator: sendAnimator)
+      if !composer.submit(to: item, animator: flights) { flights.cancelSend() }
     }
   }
 
-  private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+  /// Scrolls to the newest message: to `holding`, a prompt held at the top
+  /// of the timeline, or else to the end. A sent prompt's scroll jumps, and
+  /// its copy and the content slide on the render server instead.
+  private func scrollToLatest(_ proxy: ScrollViewProxy, holding promptID: String?, animated: Bool = true) {
+    pin.isPinned = true
     let animates = animated && !reduceMotion
     var transaction = Transaction(animation: animates ? .easeOut(duration: 0.25) : nil)
     transaction.disablesAnimations = !animates
     withTransaction(transaction) {
-      proxy.scrollTo("bottom", anchor: .bottom)
+      if let promptID {
+        proxy.scrollTo(promptID, anchor: .top)
+      } else {
+        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+      }
     }
   }
+}
 
+/// Opens links in replies: files in the project in its editor, files elsewhere
+/// on this Mac in Finder, and anything else with the system.
+@MainActor
+final class ChatLinkOpener {
+  var project: Project?
+
+  private(set) lazy var action = OpenURLAction { [weak self] url in
+    self?.open(url) ?? .systemAction
+  }
+
+  private func open(_ url: URL) -> OpenURLAction.Result {
+    guard let project, url.isFileURL || url.scheme == nil else { return .systemAction }
+    let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
+    Task {
+      if await !project.openLink(link), project.isLocal {
+        FileService.openOutsideProject(link, relativeTo: project.root.path)
+      }
+    }
+    return .handled
+  }
 }

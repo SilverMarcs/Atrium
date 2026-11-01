@@ -1,3 +1,4 @@
+#if os(iOS)
 import AtriumClient
 import SwiftUI
 
@@ -5,7 +6,7 @@ import SwiftUI
 struct PendingPromptRow: View {
     let prompt: PendingPrompt
     let retry: () -> Void
-    var sendFlight: (PromptSendAnimator) -> PromptSendFlight? = { _ in nil }
+    var sendFlight: ((PromptSendAnimator) -> PromptSendFlight?)?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -20,3 +21,4 @@ struct PendingPromptRow: View {
         }
     }
 }
+#endif
