@@ -50,6 +50,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var forkSources: [String: String] = [:]
     /// Side chats by their session ID, while they last.
     private var sideChats: [String: ClaudeSideChat] = [:]
+    /// Each model's context window as Claude reported it, and the models whose window was asked for.
+    private var contextWindows: [String: Int] = [:]
+    private var askedContextWindows: Set<String> = []
 
     init(bridge: AgentBridgeServer, instructions: ChatInstructions, configDirectory: URL? = nil) {
         self.bridge = bridge
@@ -406,7 +409,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     /// As Claude counts it for a session in the thread's folder with its model,
     /// which the SDK's context usage request reports without starting one.
+    /// Each model's is asked once.
     func contextWindow(for thread: AgentThread) async -> Int? {
+        if let window = thread.model.flatMap({ contextWindows[$0] }) { return window }
         let requests = [
             #"{"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}}"#,
             #"{"type":"control_request","request_id":"context","request":{"subtype":"get_context_usage"}}"#
@@ -415,11 +420,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard let output = try? await IntegrationProcess.run("claude", arguments: [
             "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"
         ] + model, directory: thread.directory, input: Data(requests.map { $0 + "\n" }.joined().utf8), timeout: .seconds(30)) else { return nil }
-        return output.split(separator: UInt8(ascii: "\n")).lazy.compactMap { line -> Int? in
+        let window = output.split(separator: UInt8(ascii: "\n")).lazy.compactMap { line -> Int? in
             guard let event = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
                   let response = event["response"] as? [String: Any], response["request_id"] as? String == "context" else { return nil }
             return (response["response"] as? [String: Any])?["maxTokens"] as? Int
         }.first
+        if let model = thread.model, let window { contextWindows[model] = window }
+        return window
     }
 
     /// Whether the account's organization allows fast mode, as Claude last checked.
@@ -982,7 +989,21 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             if let applied = override.applied(to: thread) { thread = applied }
             else { settingsOverrides[thread.sessionID] = nil }
         }
+        if let model = thread.model, thread.contextUsage != nil {
+            thread.contextUsage?.window = contextWindows[model]
+            if thread.contextUsage?.window == nil { requestContextWindow(for: thread) }
+        }
         return thread
+    }
+
+    /// Asks Claude once for the window of the model a thread runs, and lists
+    /// the threads again when it answers.
+    private func requestContextWindow(for thread: AgentThread) {
+        guard let model = thread.model, askedContextWindows.insert(model).inserted else { return }
+        Task {
+            guard await contextWindow(for: thread) != nil else { return }
+            onEvent?(.listInvalidated)
+        }
     }
 
 }

@@ -16,6 +16,9 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     let model: String?
     let reasoningEffort: String?
     let isFastMode: Bool?
+    /// How full the conversation keeps Claude's context, as of the newest
+    /// reply; unknown once it's compacted, until the next reply.
+    let contextTokens: Int?
 
     /// `earlierCustomTitle` is the latest rename recorded anywhere in the transcript, which can be outside both windows.
     static func parse(head: String, tail: String, renamedTitle: String?, earlierCustomTitle: String?) -> Self? {
@@ -39,19 +42,30 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             lastActivity: lastActivity(in: tail),
             model: reply?.model,
             reasoningEffort: reply?.effort,
-            isFastMode: reply?.speed.map { $0 == "fast" }
+            isFastMode: reply?.speed.map { $0 == "fast" },
+            contextTokens: reply?.contextTokens
         )
     }
 
-    /// The model, reasoning effort and speed of the newest reply. API errors are
-    /// recorded as replies from a placeholder model.
-    private static func latestReply(in tail: String) -> (model: String, effort: String?, speed: String?)? {
-        for line in tail.split(separator: "\n").reversed() where line.contains("\"model\"") {
-            guard let record = object(line), record["type"] as? String == "assistant",
-                  let message = record["message"] as? [String: Any],
+    /// The model, reasoning effort and speed of the newest reply, and the
+    /// tokens its request took in unless the conversation was compacted since:
+    /// all of its input, cached or not, as Claude's `/context` counts it. API
+    /// errors are recorded as replies from a placeholder model.
+    private static func latestReply(in tail: String) -> (model: String, effort: String?, speed: String?, contextTokens: Int?)? {
+        var isCompacted = false
+        for line in tail.split(separator: "\n").reversed() where line.contains("\"model\"") || line.contains("compact_boundary") {
+            guard let record = object(line) else { continue }
+            if record["type"] as? String == "system", record["subtype"] as? String == "compact_boundary" {
+                isCompacted = true
+                continue
+            }
+            guard record["type"] as? String == "assistant", let message = record["message"] as? [String: Any],
                   let model = message["model"] as? String, !model.hasPrefix("<") else { continue }
             let usage = message["usage"] as? [String: Any]
-            return (model, record["effort"] as? String, usage?["speed"] as? String)
+            let contextTokens = usage.map { usage in
+                ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].reduce(0) { $0 + (usage[$1] as? Int ?? 0) }
+            }
+            return (model, record["effort"] as? String, usage?["speed"] as? String, isCompacted ? nil : contextTokens)
         }
         return nil
     }

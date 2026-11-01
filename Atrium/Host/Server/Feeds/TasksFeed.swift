@@ -93,6 +93,7 @@ final class TasksFeed: TopicFeed {
             model: thread.model,
             reasoningEffort: thread.reasoningEffort,
             isFastMode: thread.isFastMode,
+            contextUsedPercent: thread.contextUsage?.usedPercent,
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: project.checkout,
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)

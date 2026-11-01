@@ -402,6 +402,7 @@ actor ClaudeSessionHistory {
     private func thread(_ file: File, metadata: ClaudeSessionMetadata) -> AgentThread {
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
                     updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: metadata.hasProviderTitle, projectDirectory: metadata.projectDirectory,
-                    model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode)
+                    model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode,
+                    contextUsage: metadata.contextTokens.map { AgentContextUsage(tokens: $0) })
     }
 }

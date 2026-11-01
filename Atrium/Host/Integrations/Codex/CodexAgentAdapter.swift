@@ -60,6 +60,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     private var titleTasks: [String: Task<Void, Never>] = [:]
     private var titleResponses: [String: CodexTitleResponse] = [:]
     private var titleModel: String?
+    /// How full each thread keeps its model's context, from Codex's latest
+    /// token count, which it sends after each turn and on resume.
+    private var contextUsages: [String: AgentContextUsage] = [:]
 
     init(instructions: ChatInstructions) {
         self.instructions = instructions
@@ -749,7 +752,14 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 response.receive(method, params: params)
                 return
             }
+            if method == "thread/tokenUsage/updated" {
+                guard let usage = Self.contextUsage(params["tokenUsage"] as? [String: Any]), contextUsages[id] != usage else { return }
+                contextUsages[id] = usage
+                onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(contextUsage: usage)))
+                return
+            }
             if method == "thread/reverted" {
+                contextUsages[id] = nil
                 conversations[id] = nil
                 refreshAsyncQuestions(sessionID: id)
                 activeTurnIDs[id] = nil
@@ -1060,7 +1070,17 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if let fastTier = thread.model.flatMap({ fastServiceTiers[$0] }) {
             thread.isFastMode = (serviceTiers[thread.sessionID] ?? defaultServiceTier) == fastTier
         }
+        thread.contextUsage = contextUsages[thread.sessionID]
         return thread
+    }
+
+    /// As Codex's interface counts it: the latest request's tokens against the
+    /// window, both without the share every conversation starts with.
+    private static func contextUsage(_ usage: [String: Any]?) -> AgentContextUsage? {
+        let baseline = 12_000
+        guard let window = usage?["modelContextWindow"] as? Int, window > baseline,
+              let tokens = (usage?["last"] as? [String: Any])?["totalTokens"] as? Int else { return nil }
+        return AgentContextUsage(tokens: max(0, tokens - baseline), window: window - baseline)
     }
 
     private static func thread(_ row: [String: Any]) -> AgentThread? {

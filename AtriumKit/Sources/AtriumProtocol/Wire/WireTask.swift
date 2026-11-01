@@ -26,6 +26,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var reasoningEffort: String?
     /// Whether the agent runs in fast mode, when its provider has one and it's known.
     public var isFastMode: Bool?
+    /// How much of its model's context the conversation uses, in percent, when its provider says.
+    public var contextUsedPercent: Int?
     public var interactions: [AgentInteraction] = []
     /// The checkout the agent works in, when it's in a Git repository.
     public var checkout: TaskCheckout? = nil
@@ -50,6 +52,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         model: String? = nil,
         reasoningEffort: String? = nil,
         isFastMode: Bool? = nil,
+        contextUsedPercent: Int? = nil,
         interactions: [AgentInteraction] = [],
         checkout: TaskCheckout? = nil,
         origin: WireTaskOrigin? = nil
@@ -71,6 +74,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.model = model
         self.reasoningEffort = reasoningEffort
         self.isFastMode = isFastMode
+        self.contextUsedPercent = contextUsedPercent
         self.interactions = interactions
         self.checkout = checkout
         self.origin = origin

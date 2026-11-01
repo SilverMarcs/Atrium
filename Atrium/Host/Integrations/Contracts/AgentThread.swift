@@ -28,6 +28,8 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     /// For a side chat, the session whose conversation it asks about. Atrium
     /// shows it under that session until a new one replaces it.
     var sideChatParentSessionID: String?
+    /// How full the conversation keeps the model's context, as the provider last counted it.
+    var contextUsage: AgentContextUsage?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }

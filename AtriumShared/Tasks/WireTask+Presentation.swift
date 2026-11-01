@@ -17,7 +17,8 @@ extension WireTask {
             model: model,
             reasoningEffort: reasoningEffort,
             isFastMode: isFastMode == true,
-            canSelectModel: actions.contains(.selectModel)
+            canSelectModel: actions.contains(.selectModel),
+            contextUsedPercent: contextUsedPercent
         )
     }
 

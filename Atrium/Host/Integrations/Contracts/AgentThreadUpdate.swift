@@ -6,6 +6,7 @@ struct AgentThreadUpdate: Sendable {
     var readState: AgentReadState?
     var title: String?
     var updatedAt: Date?
+    var contextUsage: AgentContextUsage?
     var startsNewTurn = false
 
     func applying(to source: AgentThread) -> AgentThread {
@@ -17,6 +18,7 @@ struct AgentThreadUpdate: Sendable {
             thread.hasProviderTitle = true
         }
         if let updatedAt { thread.updatedAt = updatedAt }
+        if let contextUsage { thread.contextUsage = contextUsage }
         return thread
     }
 }
