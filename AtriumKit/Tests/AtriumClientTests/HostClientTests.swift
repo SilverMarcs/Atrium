@@ -253,17 +253,35 @@ final class FakeConnection: HostConnection {
 }
 
 struct OptimisticTaskUpdateTests {
-    @Test func aPendingPromptKeepsTheComposerButLocksTheMenus() throws {
+    /// A prompt can wait seconds for its reply, and the chat's toolbar and menus stay put meanwhile.
+    @Test func aPendingPromptKeepsTheTasksActions() throws {
+        let actions: TaskActions = [.prompt, .attachImages, .settle, .rename, .delete, .selectModel, .sideChat, .openTerminal, .fork]
         var snapshot = WireTasksSnapshot(tasks: [
             WireTask(
                 id: "task", title: "", provider: .claude, status: .idle, projectName: "", path: "", directory: "",
                 updatedAt: .distantPast, hasUnreadResult: false, isSettled: true, supportsDeletion: true,
-                actions: [.prompt, .attachImages, .settle, .rename, .delete]
+                actions: actions
             )
         ], workspaces: [], providers: [])
         let update = try #require(OptimisticTaskUpdate(.prompt(taskID: "task", text: "Hi", images: [])))
         update.apply(to: &snapshot)
-        #expect(snapshot.tasks[0].actions == [.prompt, .attachImages])
+        #expect(snapshot.tasks[0].actions == actions)
         #expect(!snapshot.tasks[0].isSettled)
+    }
+
+    @Test func aPendingModelChangeKeepsTheTasksActions() throws {
+        let actions: TaskActions = [.prompt, .selectModel, .sideChat, .openTerminal]
+        var snapshot = WireTasksSnapshot(tasks: [
+            WireTask(
+                id: "task", title: "", provider: .codex, status: .idle, projectName: "", path: "", directory: "",
+                updatedAt: .distantPast, hasUnreadResult: false, isSettled: false, supportsDeletion: true,
+                actions: actions
+            )
+        ], workspaces: [], providers: [])
+        let update = try #require(OptimisticTaskUpdate(.task(id: "task", action: .selectModel(id: "gpt-6", reasoningEffort: "high"))))
+        update.apply(to: &snapshot)
+        #expect(snapshot.tasks[0].actions == actions)
+        #expect(snapshot.tasks[0].model == "gpt-6")
+        #expect(snapshot.tasks[0].reasoningEffort == "high")
     }
 }
