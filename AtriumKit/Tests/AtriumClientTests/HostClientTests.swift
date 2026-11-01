@@ -29,14 +29,17 @@ struct HostClientTests {
         #expect(host.draftTask(nextDraftID)?.model == "standard")
         #expect(host.drafts[nextDraftID]?.settings == nil)
 
+        host.updateDraft(draftID) { $0.checkout = .newWorktree }
+
         connection.reply = .task(id: "created")
         host.sendPrompt("Hello", to: draftID)
         // Creation and the first prompt are separate requests, in that order.
         try await connection.waitForRequests(requestsBeforeSelection + 2)
         let creation = try #require(connection.requests.first { if case .compose = $0.request { true } else { false } })
-        guard case .compose(let actualProvider, _, let settings) = creation.request else { return }
+        guard case .compose(let actualProvider, _, let settings, let checkout) = creation.request else { return }
         #expect(actualProvider == provider)
         #expect(settings == TaskStartSettings(model: "advanced", reasoningEffort: "high", isFastMode: true))
+        #expect(checkout == .newWorktree)
         #expect(host.drafts[draftID]?.taskID == "created")
         guard case .prompt(let taskID, let text, _) = connection.requests.last?.request else {
             Issue.record("Expected the first prompt after creation"); return

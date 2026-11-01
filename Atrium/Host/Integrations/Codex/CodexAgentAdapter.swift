@@ -317,15 +317,26 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return result
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?, inNewWorktree: Bool) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
         var config: [String: Any] = [:]
         if let effort = settings?.reasoningEffort { config["model_reasoning_effort"] = effort }
-        var params: [String: Any] = ["cwd": directory, "config": config]
+        let worktree = inNewWorktree ? try await Self.newWorktree(of: directory) : nil
+        var params: [String: Any] = ["cwd": worktree?.path ?? directory, "config": config]
         if let model = settings?.model { params["model"] = model }
         let blocks = instructions.forNewChat
-        let result = try await startThread("thread/start", params: params, blocks: blocks)
+        let result: [String: Any]
+        do {
+            result = try await startThread("thread/start", params: params, blocks: blocks)
+        } catch {
+            if let worktree, (try? await GitRepository.shared.deleteWorktree(
+                at: worktree, in: URL(filePath: directory, directoryHint: .isDirectory)
+            )) != nil {
+                try? FileManager.default.removeItem(at: worktree.deletingLastPathComponent())
+            }
+            throw error
+        }
         guard let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
@@ -346,6 +357,28 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         conversations[thread.sessionID] = CodexLiveConversation(turns: [])
         desiredConversations[thread.sessionID] = thread
         return thread
+    }
+
+    /// A new worktree where Codex's own `--worktree` makes one, which its app
+    /// server can't: in `worktrees/<four hex digits>/<repository>` of Codex's
+    /// home, detached at the commit the repository has checked out.
+    private static func newWorktree(of directory: String) async throws -> URL {
+        let repository = URL(filePath: directory, directoryHint: .isDirectory)
+        let home = IntegrationProcess.environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
+            ?? URL.homeDirectory.appending(path: ".codex")
+        var bucket: URL
+        repeat {
+            bucket = home.appending(path: "worktrees/\(UUID().uuidString.prefix(4).lowercased())", directoryHint: .isDirectory)
+        } while FileManager.default.fileExists(atPath: bucket.path)
+        try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+        let worktree = bucket.appending(path: repository.lastPathComponent, directoryHint: .isDirectory)
+        do {
+            try await GitRepository.shared.addDetachedWorktree(at: worktree, from: repository)
+        } catch {
+            try? FileManager.default.removeItem(at: bucket)
+            throw error
+        }
+        return worktree
     }
 
     /// As Codex reports it to turns: the model's window from its catalog, or

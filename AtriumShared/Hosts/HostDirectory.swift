@@ -249,6 +249,8 @@ final class HostDirectory {
         let current = newChat
         if let current, current.hostID == host.id {
             host.updateDraft(current.taskID) { draft in
+                // A checkout belongs to the project's own repository.
+                if draft.workspaceID != workspace.workspaceID { draft.checkout = nil }
                 draft.workspaceID = workspace.workspaceID
                 if let provider {
                     draft.provider = provider

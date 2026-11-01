@@ -11,6 +11,9 @@ public nonisolated struct TaskDraft: Identifiable, Equatable, Sendable {
     /// The agent the host creates the task with.
     public var provider: AgentProvider
     public var settings: TaskStartSettings?
+    /// Where in the project's repository the task works, or nil for the
+    /// project folder as it is.
+    public var checkout: TaskStartCheckout?
     /// The order it sorts in while it stands in for its task.
     public let createdAt = Date.now
     /// The host is creating the task for the first prompt.

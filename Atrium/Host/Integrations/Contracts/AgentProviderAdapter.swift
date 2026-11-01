@@ -21,8 +21,11 @@ protocol AgentProviderAdapter: AnyObject {
     /// adapter lists, prompts and interrupts like a thread until `endSideChat` or the provider ends it.
     func startSideChat(of thread: AgentThread) async throws -> AgentThread
     func endSideChat(_ thread: AgentThread) async
-    /// A new thread, named `title` when one is given.
-    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread
+    /// A new thread, named `title` when one is given. In a new worktree, it
+    /// works in a linked worktree of the repository whose main checkout
+    /// `directory` is, from its checked-out commit, created and named the way
+    /// the provider's own agent does.
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?, inNewWorktree: Bool) async throws -> AgentThread
     /// The tokens the model a thread runs can take in at once, as its provider
     /// works it out, or nil when the provider doesn't say.
     func contextWindow(for thread: AgentThread) async -> Int?

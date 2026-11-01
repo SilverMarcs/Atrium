@@ -18,7 +18,7 @@ extension HostClient {
         drafts[id].flatMap { !$0.isCreating && $0.taskID == nil ? $0 : nil }
     }
 
-    /// Changes a draft's project, agent or settings until its first prompt is sent.
+    /// Changes a draft's project, agent, settings or checkout until its first prompt is sent.
     public func updateDraft(_ id: String, _ update: (inout TaskDraft) -> Void) {
         guard var draft = unsentDraft(id) else { return }
         update(&draft)
@@ -130,7 +130,8 @@ extension HostClient {
         Task {
             do {
                 let taskID = try await createTask(
-                    provider: draft.provider, workspaceID: draft.workspaceID, settings: draft.settings, key: draft.key
+                    provider: draft.provider, workspaceID: draft.workspaceID, settings: draft.settings,
+                    checkout: draft.checkout, key: draft.key
                 )
                 didCreateTask(taskID, from: draft.id)
             } catch {
@@ -173,5 +174,18 @@ extension HostClient {
             drafts[id] = nil
             conversations.transcripts[id] = nil
         }
+    }
+
+    /// The repository a new task in a project can start in a new worktree or
+    /// branch of, as the project folder has it checked out: the project's only
+    /// one, whose main checkout the folder is. Nil until the host has sent the
+    /// folder's status, which `.git(GitScope(workspaceID:))` follows.
+    public func startingRepository(in workspaceID: UUID) -> GitRepositoryStatus? {
+        guard let workspace = workspace(workspaceID),
+              let repositories = gitStatuses[GitScope(workspaceID: workspaceID)], repositories.count == 1,
+              let repository = repositories.first, !repository.isLinkedWorktree,
+              repository.repositoryRootURL.filePath == URL(filePath: workspace.path, directoryHint: .isDirectory).filePath
+        else { return nil }
+        return repository
     }
 }

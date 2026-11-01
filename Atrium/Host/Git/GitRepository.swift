@@ -482,6 +482,12 @@ actor GitRepository {
         try await self.executor.execute(GitRemoveWorktreeCommand(worktreeURL: worktree.path, force: force), at: repositoryRootURL)
     }
 
+    /// Checks out the commit `repositoryRootURL` has checked out in a new
+    /// linked worktree at `worktreeURL`, detached from any branch.
+    func addDetachedWorktree(at worktreeURL: URL, from repositoryRootURL: URL) async throws {
+        try await self.executor.execute(GitAddDetachedWorktreeCommand(worktreeURL: worktreeURL), at: repositoryRootURL)
+    }
+
     func deleteWorktree(at worktreeURL: URL, in repositoryRootURL: URL, force: Bool = false) async throws {
         let worktrees = try await self.worktrees(at: repositoryRootURL)
         let worktree = try removableWorktree(at: worktreeURL, from: worktrees)
@@ -944,6 +950,13 @@ private struct GitSwitchCommand: GitCommand {
 private struct GitCreateBranchCommand: GitCommand {
     let name: String
     var arguments: [String] { ["switch", "-c", name, "--no-track"] }
+    func parse(output: String) throws { }
+}
+
+private struct GitAddDetachedWorktreeCommand: GitCommand {
+    let worktreeURL: URL
+    /// The path is absolute, so it can't be read as an option.
+    var arguments: [String] { ["worktree", "add", "--detach", worktreeURL.path, "HEAD"] }
     func parse(output: String) throws { }
 }
 

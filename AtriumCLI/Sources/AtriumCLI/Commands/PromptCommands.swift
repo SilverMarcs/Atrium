@@ -21,7 +21,7 @@ private let promptFlags: Set<String> = ["wait", "follow"]
 let promptCommands: [Command] = [
     Command(
         name: "start",
-        usage: "start --project P [--provider codex|claude] [--model M] [--effort E] [--fast | --no-fast] [PROMPT]",
+        usage: "start --project P [--provider codex|claude] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [PROMPT]",
         summary: "Start a session in a project with its first prompt.",
         details: """
               --project P   The project, by ID, name or folder (`atrium projects`).
@@ -29,10 +29,13 @@ let promptCommands: [Command] = [
               --model M     A model, as `atrium models` lists them. Defaults to the agent's own.
               --effort E    The model's reasoning effort.
               --fast        Turn fast mode on, or off with --no-fast, where the model has it.
+              --worktree    Work in a new worktree the agent creates and names, from what the project folder has
+                            checked out. The project folder must be a Git repository.
+              --branch B    Work on a new branch B, switched to in the project folder.
             \(promptDetails)
             """,
-        options: promptOptions.union(["project", "provider", "model", "effort"]),
-        flags: promptFlags.union(["fast", "no-fast"])
+        options: promptOptions.union(["project", "provider", "model", "effort", "branch"]),
+        flags: promptFlags.union(["fast", "no-fast", "worktree"])
     ) { arguments in
         try arguments.allowPositionals(1)
         let prompt = try Prompt(arguments)
@@ -43,6 +46,13 @@ let promptCommands: [Command] = [
         }
         let fast = try arguments.toggle("fast")
         let model = arguments.value("model"), effort = arguments.value("effort")
+        let checkout: TaskStartCheckout?
+        switch (arguments.flag("worktree"), arguments.value("branch")) {
+        case (true, .some): throw CLIError(.invalidArgument, "Use either --worktree or --branch.")
+        case (true, nil): checkout = .newWorktree
+        case (false, let branch?): checkout = .newBranch(branch)
+        case (false, nil): checkout = nil
+        }
         let options = try HostOptions(arguments)
         let client = Client()
         let host = try await client.connectForTasks(options)
@@ -56,7 +66,8 @@ let promptCommands: [Command] = [
         // The session and its first prompt each get a key, both from --id, so
         // repeating the command repeats neither.
         let reply = try await client.perform(
-            .compose(provider: provider, workspaceID: workspace.id, settings: settings), on: host, key: prompt.key.derived(1)
+            .compose(provider: provider, workspaceID: workspace.id, settings: settings, checkout: checkout),
+            on: host, key: prompt.key.derived(1)
         )
         guard case .task(let taskID) = reply else { throw CLIError(.unsupported, HostClientError.unexpectedReply.localizedDescription) }
         do {

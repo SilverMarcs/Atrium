@@ -17,6 +17,7 @@ struct NewChatPicker: View {
             }
             NewChatHostPicker(hosts: hosts, host: host)
             NewChatProjectPicker(hosts: hosts, host: host, draft: draft)
+            NewChatCheckoutPicker(host: host, draft: draft)
             NewChatAgentPicker(host: host, draft: draft)
             NewChatModelPicker(host: host, draft: draft)
         }
@@ -32,5 +33,10 @@ struct NewChatPicker: View {
         .padding(.trailing)
         .padding(.bottom)
         #endif
+        // The project folder's own checkout, which the checkout picker reads
+        // whichever worktree the project's pages show.
+        .task(id: GitScope(workspaceID: draft.workspaceID)) {
+            await host.follow(.git(GitScope(workspaceID: draft.workspaceID)))
+        }
     }
 }

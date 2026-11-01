@@ -50,6 +50,25 @@ struct ProjectScopeTests {
         host.stop()
     }
 
+    @Test func newTasksStartInAWorktreeOrBranchOnlyOfAFolderThatIsOneRepository() async throws {
+        let (host, connection, workspaceID) = try await connectedHost(projectPath: "/r")
+        let folder = GitScope(workspaceID: workspaceID)
+        #expect(host.startingRepository(in: workspaceID) == nil)
+        connection.onEvent?(.git(folder, repositories: [repository("/r", branch: "main")]))
+        #expect(host.startingRepository(in: workspaceID)?.branchName == "main")
+        // Seen through a worktree, the folder isn't the checkout a new task starts from.
+        connection.onEvent?(.git(folder, repositories: [repository("/r", worktree: "/wt", branch: "fix")]))
+        #expect(host.startingRepository(in: workspaceID) == nil)
+        connection.onEvent?(.git(folder, repositories: [repository("/r/A"), repository("/r/B")]))
+        #expect(host.startingRepository(in: workspaceID) == nil)
+        host.stop()
+
+        let (inside, insideConnection, insideID) = try await connectedHost(projectPath: "/r/app")
+        insideConnection.onEvent?(.git(GitScope(workspaceID: insideID), repositories: [repository("/r")]))
+        #expect(inside.startingRepository(in: insideID) == nil)
+        inside.stop()
+    }
+
     private func connectedHost(projectPath: String) async throws -> (HostClient, FakeConnection, UUID) {
         let connection = FakeConnection()
         let host = HostClient(localID: "local", name: "Mac") { connection }

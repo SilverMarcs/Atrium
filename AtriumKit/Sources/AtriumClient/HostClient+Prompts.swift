@@ -36,10 +36,11 @@ extension HostClient {
     /// Has the host create a task in one of its projects, ready for its first
     /// prompt. Asking again with the same key returns the same task.
     public func createTask(
-        provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil, key: UUID
+        provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil,
+        checkout: TaskStartCheckout? = nil, key: UUID
     ) async throws -> String {
         guard case .task(let taskID) = try await request(
-            .compose(provider: provider, workspaceID: workspaceID, settings: settings), key: key
+            .compose(provider: provider, workspaceID: workspaceID, settings: settings, checkout: checkout), key: key
         ) else {
             throw HostClientError.unexpectedReply
         }

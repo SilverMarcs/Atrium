@@ -87,7 +87,7 @@ struct TaskService {
         }
     }
 
-    func compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil) async -> HostReply {
+    func compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil, checkout: TaskStartCheckout? = nil) async -> HostReply {
         guard integrations.enabledProviders.contains(provider) else {
             return .failed(message: "That agent isn’t enabled on this host.")
         }
@@ -98,7 +98,7 @@ struct TaskService {
             return .failed(message: "This host is still opening another task.")
         }
         return await reportingErrors {
-            guard let thread = await sessions.compose(provider: provider, workspace: workspace, settings: settings) else {
+            guard let thread = await sessions.compose(provider: provider, workspace: workspace, settings: settings, checkout: checkout) else {
                 return .failed(message: "Couldn’t start a task.")
             }
             return .task(id: thread.id)

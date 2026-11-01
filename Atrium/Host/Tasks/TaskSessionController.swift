@@ -23,14 +23,23 @@ final class TaskSessionController {
     }
 
     /// Creates and opens a task, returning it once its conversation is open.
+    /// A checkout other than the project folder as it is needs the folder to
+    /// be a repository's main checkout.
     @discardableResult
-    func compose(provider: AgentProvider, workspace: Workspace, settings: TaskStartSettings? = nil) async -> AgentThread? {
+    func compose(provider: AgentProvider, workspace: Workspace, settings: TaskStartSettings? = nil,
+                 checkout: TaskStartCheckout? = nil) async -> AgentThread? {
         guard !isOpening, integrations.enabledProviders.contains(provider) else { return nil }
         isOpening = true
         defer { isOpening = false }
         do {
             try validateDirectory(workspace.directory)
-            var thread = try await integrations.createThread(provider: provider, directory: workspace.directory, settings: settings)
+            if checkout != nil { try validateMainCheckout(workspace.url) }
+            if case .newBranch(let name) = checkout {
+                try await GitRepository.shared.createBranch(named: name, at: workspace.url)
+            }
+            var thread = try await integrations.createThread(
+                provider: provider, directory: workspace.directory, settings: settings, inNewWorktree: checkout == .newWorktree
+            )
             try Task.checkCancellation()
             guard canOpen(thread) else { return nil }
             try await integrations.openConversation(thread)
@@ -212,6 +221,13 @@ final class TaskSessionController {
         var isDirectory: ObjCBool = false
         guard directory.hasPrefix("/"), FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw IntegrationError(message: "The project folder is no longer available: \(directory)")
+        }
+    }
+
+    private func validateMainCheckout(_ folder: URL) throws {
+        guard let checkout = GitCheckout(containing: folder), checkout.linkedWorktreeURL == nil,
+              checkout.mainCheckoutURL.filePath == folder.standardizedFileURL.resolvingSymlinksInPath().filePath else {
+            throw IntegrationError(message: "A new worktree or branch needs the project folder to be a Git repository.")
         }
     }
 }

@@ -298,8 +298,8 @@ final class HostServer {
             publishTasks(.tasks(tasksFeed.snapshot()))
             if case .rewind = action { feeds[.transcript(taskID: id)]?.refresh() }
             return reply
-        case .compose(let provider, let workspaceID, let settings):
-            let reply = await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)
+        case .compose(let provider, let workspaceID, let settings, let checkout):
+            let reply = await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings, checkout: checkout)
             if case .task(let id) = reply, let device = connection.device, device.kind == .commandLine {
                 orchestrator.started(id, by: device, caller: connection.caller)
             }

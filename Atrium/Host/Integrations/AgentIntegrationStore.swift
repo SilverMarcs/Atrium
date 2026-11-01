@@ -681,7 +681,7 @@ final class AgentIntegrationStore {
     /// window of the model it runs, with its first prompt.
     private func handOver(_ thread: AgentThread, to adapter: any AgentProviderAdapter) async throws -> AgentThread {
         let messages = try await conversation(of: thread)
-        let fork = try await adapter.createThread(directory: thread.directory, settings: nil, title: thread.forkTitle)
+        let fork = try await adapter.createThread(directory: thread.directory, settings: nil, title: thread.forkTitle, inNewWorktree: false)
         let reported = await adapter.contextWindow(for: fork)
         let window = reported ?? ForkHandoff.assumedContextWindow
         let handoff = ForkHandoff.text(of: messages.map(withPages), from: thread.provider,
@@ -723,7 +723,8 @@ final class AgentIntegrationStore {
         removeDeletedThread(thread.id)
     }
 
-    func createThread(provider: AgentProvider, directory: String, settings: TaskStartSettings? = nil) async throws -> AgentThread {
+    func createThread(provider: AgentProvider, directory: String, settings: TaskStartSettings? = nil,
+                      inNewWorktree: Bool = false) async throws -> AgentThread {
         let adapter = try enabledAdapter(for: provider)
         let generation = generations[provider, default: 0]
         var settings = settings
@@ -734,7 +735,7 @@ final class AgentIntegrationStore {
         if let isFastMode = settings?.isFastMode {
             try validate(.fastMode(isFastMode), provider: provider, model: settings?.model ?? defaultSettings[provider]?.model)
         }
-        let thread = try await adapter.createThread(directory: directory, settings: settings, title: nil)
+        let thread = try await adapter.createThread(directory: directory, settings: settings, title: nil, inNewWorktree: inNewWorktree)
         try Task.checkCancellation()
         guard isCurrent(provider, generation: generation) else { throw CancellationError() }
         return thread

@@ -11,6 +11,21 @@ struct ProtocolTests {
         #expect(try HostCodec.decode(WireProvider.self, from: HostCodec.encode(provider)) == provider)
     }
 
+    @Test func newTasksStartInTheProjectFolderUnlessACheckoutIsChosen() throws {
+        let workspaceID = UUID()
+        let old = try HostCodec.decode(HostRequest.self, from: Data(
+            #"{"compose":{"provider":"claude","workspaceID":"\#(workspaceID.uuidString)"}}"#.utf8
+        ))
+        guard case .compose(.claude, workspaceID, nil, nil) = old else { Issue.record("Expected a plain compose"); return }
+        for checkout in [TaskStartCheckout.newWorktree, .newBranch("feature")] {
+            let request = try HostCodec.decode(HostRequest.self, from: HostCodec.encode(
+                HostRequest.compose(provider: .codex, workspaceID: workspaceID, checkout: checkout)
+            ))
+            guard case .compose(_, _, _, let decoded) = request else { Issue.record("Expected compose"); return }
+            #expect(decoded == checkout)
+        }
+    }
+
     @Test func framesCarryTheirKey() throws {
         let key = UUID()
         let frame = try HostCodec.decode(ClientFrame.self, from: HostCodec.encode(

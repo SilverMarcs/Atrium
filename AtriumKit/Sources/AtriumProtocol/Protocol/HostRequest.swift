@@ -26,7 +26,8 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case image(taskID: String, path: String, maxPixelSize: Int)
     case refreshTasks
     case task(id: String, action: TaskAction)
-    case compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil)
+    /// Creates a task in a project, in its folder as it is unless `checkout` says otherwise.
+    case compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil, checkout: TaskStartCheckout? = nil)
     /// Sends a prompt to the task's agent, with any attached images as JPEG data.
     case prompt(taskID: String, text: String, images: [Data])
     /// Stops the agent's current turn.
