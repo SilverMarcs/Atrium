@@ -202,7 +202,8 @@ final class PromptFlights: PromptSendAnimating {
   }
 
   func cancelAll() {
-    for id in Array(flights.keys) { land(id) }
+    // Called as the timeline goes away, mid-update: nothing to swap in place.
+    for id in Array(flights.keys) { land(id, drawingNow: false) }
   }
 
   private func launch(_ rowID: String) {
@@ -256,18 +257,19 @@ final class PromptFlights: PromptSendAnimating {
     }
   }
 
-  private func land(_ rowID: String) {
+  private func land(_ rowID: String, drawingNow: Bool = true) {
     laidOut[rowID] = nil
     guard let flight = flights.removeValue(forKey: rowID) else { return }
     flight.expiry?.cancel()
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) { _ = hidden.remove(rowID) }
-    // The copy stays until the real bubble has drawn under it.
-    Task { [layer = flight.layer] in
-      try? await Task.sleep(for: .milliseconds(50))
-      Self.without { layer.removeFromSuperlayer() }
-    }
+    // The real bubble and its copy swap in one frame. Shown together, their
+    // translucent tints stack into a flash of brighter colour; with the copy
+    // gone first, the bubble would blink out. Laying out now draws the real
+    // bubble in the same commit that removes the copy.
+    if drawingNow { overlay?.window?.contentView?.layoutSubtreeIfNeeded() }
+    Self.without { flight.layer.removeFromSuperlayer() }
   }
 
   private func render(_ bubble: PromptBubbleCopy, width: CGFloat, in view: NSView) -> (image: CGImage, size: CGSize, scale: CGFloat)? {
