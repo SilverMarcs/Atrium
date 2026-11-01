@@ -2,12 +2,10 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's model, project links and scratch pad in one menu, its side chat,
-/// and its subagents when it includes them.
+/// A task's model, project links, scratch pad, side chat and subagents in one menu.
 struct TaskMoreMenu: View {
     let item: HostTask
     let models: [AgentModel]
-    let includesSubagents: Bool
     @Binding var showingScratchPad: Bool
     @Environment(\.openSubagent) private var openSubagent
     @Environment(\.openSideChat) private var openSideChat
@@ -20,6 +18,12 @@ struct TaskMoreMenu: View {
                         provider: item.task.provider, selection: item.task.modelSelection, models: models
                     ) { action in
                         item.host.send(.task(id: item.task.id, action: action))
+                    }
+                } header: {
+                    if let percent = item.task.contextUsedPercent {
+                        Text("\(percent)% context used")
+                    } else {
+                        Text("Model")
                     }
                 }
             }
@@ -41,7 +45,7 @@ struct TaskMoreMenu: View {
                     SideChatButton(item: item, open: openSideChat)
                 }
             }
-            if includesSubagents, item.hasSubagents {
+            if item.hasSubagents {
                 Section("Subagents") {
                     SubagentButtons(item: item, open: openSubagent)
                 }
@@ -49,7 +53,6 @@ struct TaskMoreMenu: View {
         } label: {
             Label("More", systemImage: "ellipsis")
         }
-        // Only the menu containing subagents counts their ongoing work.
-        .badge(includesSubagents ? item.workingSubagents : 0)
+        .badge(item.workingSubagents)
     }
 }

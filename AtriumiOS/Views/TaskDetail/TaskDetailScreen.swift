@@ -7,7 +7,6 @@ struct TaskDetailScreen: View {
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
-    @Environment(\.openSubagent) private var openSubagent
     @Environment(\.replaceSideChat) private var replaceSideChat
     let ref: TaskRef
     @State private var showingScratchPad = false
@@ -87,25 +86,20 @@ struct TaskDetailScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
-                if !isPhone, let item, item.hasSubagents {
-                    ToolbarItem(placement: .primaryAction) {
-                        SubagentMenu(item: item, open: openSubagent)
-                    }
-                }
                 if task.isSideChat, let item {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarItem(placement: .navigation) {
                         NewSideChatButton(sideChat: item, open: replaceSideChat)
                     }
                 } else if task.workspaceID != nil, let item {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarItem(placement: .navigation) {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
                     }
                 }
-                if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || (isPhone && item.hasSubagents)
+                if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || item.hasSubagents
                     || item.sideChat != nil || task.actions.contains(.sideChat) {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
-                            item: item, models: models, includesSubagents: isPhone,
+                            item: item, models: models,
                             showingScratchPad: $showingScratchPad
                         )
                     }

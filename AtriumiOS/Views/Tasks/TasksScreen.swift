@@ -79,19 +79,14 @@ struct TasksScreen: View {
             Button("Edit Hosts…", systemImage: "pencil", action: onEditHosts)
         }
         .toolbar {
-            // iPad leaves out the filter and projects, and starts chats from the top bar.
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Projects", systemImage: "folder") { showingProjects = true }
+                    .disabled(!hosts.hosts.contains(where: \.isConnected))
+            }
+            // iPad leaves out the filter; new chats start from the detail toolbar.
             if isPhone {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Projects", systemImage: "folder") { showingProjects = true }
-                        .disabled(!hosts.hosts.contains(where: \.isConnected))
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     TaskFilterMenu(filter: $filter)
-                }
-            } else {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
-                        .disabled(!hosts.canStartNewChat)
                 }
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
