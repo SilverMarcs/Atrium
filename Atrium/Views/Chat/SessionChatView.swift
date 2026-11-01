@@ -52,7 +52,7 @@ struct SessionChatView: View {
               SessionChatMessageRow(
                 message: row.message,
                 isStreaming: turns.liveIDs.contains(row.id),
-                canEdit: row.pendingPrompt == nil && row.message.editTarget != nil,
+                isRewindable: row.pendingPrompt == nil && row.message.editTarget != nil,
                 pendingPrompt: row.pendingPrompt
               )
               .equatable()
@@ -282,6 +282,11 @@ struct SessionChatView: View {
       edit: { [host, taskID = task.id] message in
         guard let task = host.displayedTask(taskID) else { return }
         composer.beginEditing(message, in: HostTask(host: host, task: task))
+      },
+      isForkEnabled: { [host, taskID = task.id] in host.task(taskID)?.actions.contains(.fork) == true },
+      fork: { [host, hosts = app.hosts, taskID = task.id] message in
+        guard let task = host.displayedTask(taskID) else { return }
+        hosts.fork(HostTask(host: host, task: task), into: task.provider, before: message)
       },
       retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) }
     )

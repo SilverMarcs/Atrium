@@ -45,9 +45,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private var unsavedTurns: [String: UnsavedTurn] = [:]
     /// Settings sent to each thread as slash commands that its transcript doesn't show yet.
     private var settingsOverrides: [String: ClaudeSettingsOverride] = [:]
-    /// The session each fork was made from, until Claude saves the fork. Claude writes
-    /// a fork's file, with the history it copied, only once the fork gets its first prompt.
-    private var forkSources: [String: String] = [:]
     /// Side chats by their session ID, while they last.
     private var sideChats: [String: ClaudeSideChat] = [:]
     /// Each model's context window as Claude reported it, and the models whose window was asked for.
@@ -207,21 +204,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return try await savedTranscript(thread.sessionID)
     }
 
-    /// Claude writes a session's file with its first prompt, so only a session
-    /// that hasn't had one yet may be missing it. Until then a fork's history
-    /// is the one it was forked from.
+    /// Claude writes a session's file with its first prompt, so only a new
+    /// session that hasn't had one yet may be missing it.
     private func savedTranscript(_ sessionID: String) async throws -> [TranscriptMessage] {
         if let messages = try await history.transcript(sessionID) { return messages }
         guard backgroundSessions[sessionID] != nil else {
             throw IntegrationError(message: "Claude's history for this chat could not be found.")
-        }
-        // Claude can rewind only a saved session, so a fork's copy of its history can't be edited until its first prompt saves it.
-        if let source = forkSources[sessionID] {
-            return (try await history.transcript(source) ?? []).map { message in
-                var message = message
-                message.editTarget = nil
-                return message
-            }
         }
         return []
     }
@@ -294,50 +282,100 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now)))
     }
 
-    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
-        guard UUID(uuidString: messageID) != nil,
-              let messages = try await history.transcript(thread.sessionID),
-              messages.contains(where: { $0.editTarget == messageID }) else {
-            throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
-        }
+    func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
+        _ = try await savedPrompts(of: thread, including: messageID)
+        return try await history.promptImages(thread.sessionID, messageID: messageID)
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {
+        let messages = try await savedPrompts(of: thread, including: messageID)
         let sessions = try await listBackgroundSessions()
         guard !sessions.contains(where: {
             $0.sessionID == thread.sessionID && $0.isRunning && ($0.threadStatus == .processing || $0.threadStatus == .waiting)
         }) else {
             throw IntegrationError(message: "Wait for Claude to finish or stop it before editing a message.")
         }
-        let images = try await history.promptImages(thread.sessionID, messageID: messageID)
         // The daemon's interactive workers do not accept SDK control requests.
         // Release this session's writer, let the CLI persist its own rewind,
         // and let the normal next send resume the same background job.
         try await stopThread(thread)
-        let requests: [[String: Any]] = [
-            ["type": "control_request", "request_id": "initialize", "request": ["subtype": "initialize"]],
-            ["type": "control_request", "request_id": "rewind", "request": [
-                "subtype": "rewind_conversation", "target_message_uuid": messageID,
-                "last_seen_user_message_uuid": messages.last(where: { $0.role == .user })?.id ?? messageID
-            ]]
-        ]
-        var input = Data()
-        for request in requests {
-            input.append(try JSONSerialization.data(withJSONObject: request))
-            input.append(10)
-        }
-        let output = try await IntegrationProcess.run("claude", arguments: [
-            "-p", "--resume", thread.sessionID, "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"
-        ], directory: thread.directory, input: input, timeout: .seconds(60))
-        let response = output.split(separator: 10).compactMap {
-            (try? JSONSerialization.jsonObject(with: Data($0)) as? [String: Any])?["response"] as? [String: Any]
-        }.first { $0["request_id"] as? String == "rewind" }
-        let result = response?["response"] as? [String: Any]
-        guard result?["rewound"] as? Bool == true else {
-            throw IntegrationError(message: response?["error"] as? String ?? result?["reason"] as? String ?? "Claude could not rewind this message.")
-        }
+        try await rewindSavedSession(thread.sessionID, before: messageID,
+                                     lastSeen: messages.last(where: { $0.role == .user })?.id ?? messageID, directory: thread.directory)
         let retained = try await savedTranscript(thread.sessionID)
         live[thread.sessionID] = ClaudeLiveTranscript(history: retained)
         onEvent?(.transcriptChanged(sessionID: thread.sessionID))
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
-        return (retained, images)
+        return retained
+    }
+
+    /// A background job forks only at the end and leaves its fork unsaved until
+    /// its first prompt, so forks are made in print mode, which saves a fork
+    /// once it takes a prompt. A local command saves it without asking the
+    /// model, and rewinding the fork, to the prompt or else to the command,
+    /// removes the command with whatever followed the prompt.
+    func forkThread(_ thread: AgentThread, before messageID: String?) async throws -> AgentThread {
+        guard UUID(uuidString: thread.sessionID) != nil else { throw IntegrationError(message: "Invalid Claude session identifier.") }
+        if let messageID { _ = try await savedPrompts(of: thread, including: messageID) }
+        let commandID = UUID().uuidString.lowercased()
+        let output = try await runPrintMode(thread.sessionID, forking: true, requests: [[
+            "type": "user", "uuid": commandID, "session_id": "", "parent_tool_use_id": NSNull(),
+            "message": ["role": "user", "content": "/context"]
+        ]], directory: thread.directory)
+        guard let forkID = output.lazy.compactMap({ $0["session_id"] as? String }).first(where: { $0 != thread.sessionID }),
+              UUID(uuidString: forkID) != nil else {
+            throw IntegrationError(message: "Claude did not provide a forked session identifier.")
+        }
+        do {
+            try await rewindSavedSession(forkID, before: messageID ?? commandID, lastSeen: commandID, directory: thread.directory)
+            try await history.renameThread(forkID, to: thread.forkTitle, directory: thread.directory)
+            let blocks = instructions.blocks(for: thread.id)
+            let session = try await startBackgroundSession(directory: thread.directory, instructions: AgentInstructions.text(blocks),
+                                                           resuming: forkID, name: thread.forkTitle)
+            guard let fork = session.thread else { throw IntegrationError(message: "Claude did not provide a forked session identifier.") }
+            instructions.record(blocks, for: fork.id)
+            return fork
+        } catch {
+            try? await history.deleteThread(forkID, directory: thread.directory)
+            throw error
+        }
+    }
+
+    /// The saved conversation, which has to hold `messageID` as a prompt Claude can rewind to.
+    private func savedPrompts(of thread: AgentThread, including messageID: String) async throws -> [TranscriptMessage] {
+        guard UUID(uuidString: messageID) != nil,
+              let messages = try await history.transcript(thread.sessionID),
+              messages.contains(where: { $0.editTarget == messageID }) else {
+            throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
+        }
+        return messages
+    }
+
+    /// Rewinds a saved session no job is running to before a prompt, as Claude
+    /// saves it. `lastSeen` is the newest prompt the session holds, which Claude
+    /// checks so it doesn't remove a turn the caller hasn't seen.
+    private func rewindSavedSession(_ sessionID: String, before messageID: String, lastSeen: String, directory: String) async throws {
+        let output = try await runPrintMode(sessionID, requests: [["type": "control_request", "request_id": "rewind", "request": [
+            "subtype": "rewind_conversation", "target_message_uuid": messageID, "last_seen_user_message_uuid": lastSeen
+        ]]], directory: directory)
+        let response = output.compactMap { $0["response"] as? [String: Any] }.first { $0["request_id"] as? String == "rewind" }
+        let result = response?["response"] as? [String: Any]
+        guard result?["rewound"] as? Bool == true else {
+            throw IntegrationError(message: response?["error"] as? String ?? result?["reason"] as? String ?? "Claude could not rewind this message.")
+        }
+    }
+
+    /// Resumes a saved session in print mode for SDK messages and control
+    /// requests, after initializing, and returns what Claude printed.
+    private func runPrintMode(_ sessionID: String, forking: Bool = false, requests: [[String: Any]], directory: String) async throws -> [[String: Any]] {
+        var input = Data()
+        for request in [["type": "control_request", "request_id": "initialize", "request": ["subtype": "initialize"]]] + requests {
+            input.append(try JSONSerialization.data(withJSONObject: request))
+            input.append(10)
+        }
+        let arguments = ["-p", "--resume", sessionID] + (forking ? ["--fork-session"] : [])
+            + ["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
+        let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, input: input, timeout: .seconds(60))
+        return output.split(separator: 10).compactMap { try? JSONSerialization.jsonObject(with: Data($0)) as? [String: Any] }
     }
 
     func interrupt(_ thread: AgentThread) async throws {
@@ -467,7 +505,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         backgroundIDs[thread.sessionID] = nil
         backgroundSessions[thread.sessionID] = nil
         settingsOverrides[thread.sessionID] = nil
-        forkSources[thread.sessionID] = nil
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
@@ -490,22 +527,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             thread = change.applying(to: thread)
         }
         return thread
-    }
-
-    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
-        guard UUID(uuidString: thread.sessionID) != nil else {
-            throw IntegrationError(message: "Invalid Claude session identifier.")
-        }
-        // Claude saves the name as the fork's title once it's saved, and lists it as the job's name until then.
-        let blocks = instructions.blocks(for: thread.id)
-        let session = try await startBackgroundSession(directory: thread.directory, instructions: AgentInstructions.text(blocks),
-                                                       resuming: thread.sessionID, forking: true, name: thread.forkTitle)
-        guard let fork = session.thread else {
-            throw IntegrationError(message: "Claude did not provide a forked session identifier.")
-        }
-        instructions.record(blocks, for: fork.id)
-        forkSources[fork.sessionID] = thread.sessionID
-        return fork
     }
 
     func prepareLaunch(for thread: AgentThread) async throws -> AgentLaunch {
@@ -568,12 +589,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// already ran the session keeps from its own launch.
     /// A new session in a new worktree has Claude create and name the
     /// worktree, under `.claude/worktrees/`, and work there.
-    private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, forking: Bool = false, name: String? = nil, settings startSettings: TaskStartSettings? = nil, inNewWorktree: Bool = false) async throws -> ClaudeBackgroundSession {
+    private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil, inNewWorktree: Bool = false) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
         let settingsFile = try await settingsForBridge()
         let existingBackground: Bool
-        if let sessionID, !forking {
+        if let sessionID {
             existingBackground = try await listBackgroundSessions().contains { $0.kind == "background" && $0.sessionID == sessionID }
         } else { existingBackground = false }
         // Any new options on a saved background job tell Claude to COPY it,
@@ -585,7 +606,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
-        if forking { arguments.append("--fork-session") }
         if inNewWorktree { arguments.append("--worktree") }
         if let name { arguments += ["--name", name] }
         let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, timeout: .seconds(120))
@@ -600,10 +620,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             guard let thread = session.thread else {
                 throw IntegrationError(message: "Claude did not provide its background conversation identifier.")
             }
-            if forking, thread.sessionID == sessionID {
-                throw IntegrationError(message: "Claude did not create an independent forked session.")
-            }
-            guard forking || sessionID == nil || thread.sessionID == sessionID else {
+            guard sessionID == nil || thread.sessionID == sessionID else {
                 throw IntegrationError(message: "This Claude conversation is already open elsewhere. Close that session before opening it here.")
             }
             backgroundIDs[thread.sessionID] = id

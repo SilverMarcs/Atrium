@@ -40,6 +40,7 @@ struct TaskChatView: View {
         let turns = ConversationTurns(messages: messages ?? [], pendingPrompts: pendingPrompts, status: task.status)
         let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
         let editEnabled = task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
+        let forkEnabled = task.actions.contains(.fork)
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -49,7 +50,9 @@ struct TaskChatView: View {
                             TranscriptMessageRow(
                                 message: message, isStreaming: turns.liveIDs.contains(message.id),
                                 edit: message.editTarget != nil
-                                    ? PromptEdit(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil
+                                    ? PromptAction(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil,
+                                fork: message.editTarget != nil
+                                    ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
                             )
                             .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.historyMessages[index - 1].role : nil))
                         }
@@ -76,7 +79,9 @@ struct TaskChatView: View {
                                     TranscriptMessageRow(
                                         message: message, isStreaming: turns.liveIDs.contains(message.id),
                                         edit: message.editTarget != nil
-                                            ? PromptEdit(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil
+                                            ? PromptAction(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil,
+                                        fork: message.editTarget != nil
+                                            ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
                                     )
                                     .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.turnMessages[index - 1].role : nil))
                                 }

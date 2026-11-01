@@ -9,7 +9,8 @@ struct UserMessageView: View {
     let text: String
     var images: [Data] = []
     var isFromAgent = false
-    var edit: PromptEdit?
+    var edit: PromptAction?
+    var fork: PromptAction?
     #if os(macOS)
     /// The timeline row of a prompt sent from here, whose bubble can fly in.
     var flightRowID: String?
@@ -25,7 +26,7 @@ struct UserMessageView: View {
                 HStack {
                     ForEach(images.enumerated(), id: \.offset) { _, data in PromptImageThumbnail(data: data) }
                 }
-                .contextMenu { PromptContextMenu(text: text, edit: edit) }
+                .contextMenu { PromptContextMenu(text: text, edit: edit, fork: fork) }
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             if !text.isEmpty {
@@ -34,7 +35,7 @@ struct UserMessageView: View {
                 #if os(iOS)
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 20))
                 #endif
-                .contextMenu { PromptContextMenu(text: text, edit: edit) }
+                .contextMenu { PromptContextMenu(text: text, edit: edit, fork: fork) }
                 #if os(macOS)
                 .modifier(PromptFlightTarget(rowID: flightRowID))
                 #else
@@ -53,22 +54,27 @@ struct UserMessageView: View {
     }
 }
 
-/// Editing a prompt from its bubble's menu. Whether it's allowed is read
-/// when the menu shows, so a send elsewhere in the chat doesn't update every
-/// bubble that could be edited.
-struct PromptEdit {
+/// Editing a prompt, or forking the chat before it, from its bubble's menu.
+/// Whether it's allowed is read when the menu shows, so a send elsewhere in
+/// the chat doesn't update every bubble that offers it.
+struct PromptAction {
     let isEnabled: @MainActor () -> Bool
     let perform: @MainActor () -> Void
 }
 
 private struct PromptContextMenu: View {
     let text: String
-    let edit: PromptEdit?
+    let edit: PromptAction?
+    let fork: PromptAction?
 
     var body: some View {
         if let edit {
             Button("Edit", systemImage: "pencil", action: edit.perform)
                 .disabled(!edit.isEnabled())
+        }
+        if let fork {
+            Button("Fork from Here", systemImage: "arrow.triangle.branch", action: fork.perform)
+                .disabled(!fork.isEnabled())
         }
         if !text.isEmpty {
             Button("Copy", systemImage: "doc.on.doc") {

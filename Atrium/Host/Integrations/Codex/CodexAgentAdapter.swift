@@ -395,7 +395,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return window * (row["effective_context_window_percent"] as? Int ?? 100) / 100
     }
 
-    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+    /// Codex forks keep their turns' IDs, so a fork before a prompt reverts to before the same turn.
+    func forkThread(_ thread: AgentThread, before messageID: String?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
         let blocks = instructions.blocks(for: thread.id)
@@ -403,6 +404,14 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         guard let row = result["thread"] as? [String: Any], var fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
             throw IntegrationError(message: "Codex did not return a forked thread.")
+        }
+        if let messageID {
+            do {
+                _ = try await request("thread/revert", params: ["threadId": fork.sessionID, "beforeTurnId": messageID])
+            } catch {
+                _ = try? await request("thread/delete", params: ["threadId": fork.sessionID])
+                throw error
+            }
         }
         instructions.record(blocks, for: fork.id)
         // Codex copies only a name the thread was given, leaving an unnamed one's fork untitled until its next prompt.
@@ -511,17 +520,29 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
     }
 
-    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {
         try await openConversation(thread)
         guard try await activeTurnID(of: thread.sessionID) == nil else {
             throw IntegrationError(message: "Wait for Codex to finish or stop it before editing a message.")
         }
+        _ = try await request("thread/revert", params: ["threadId": thread.sessionID, "beforeTurnId": messageID])
+        activeTurnIDs[thread.sessionID] = nil
+        conversations[thread.sessionID] = CodexLiveConversation(turns: try await turns(of: thread.sessionID))
+        refreshAsyncQuestions(sessionID: thread.sessionID)
+        onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+        onEvent?(.threadInvalidated(sessionID: thread.sessionID))
+        return conversations[thread.sessionID]?.messages ?? []
+    }
+
+    /// A prompt's `editTarget` is the turn it starts.
+    func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
+        try await connect()
         let rows = try await turns(of: thread.sessionID)
         guard let turn = rows.first(where: { $0["id"] as? String == messageID }),
               let prompt = (turn["items"] as? [[String: Any]])?.first(where: { $0["type"] as? String == "userMessage" }) else {
             throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
         }
-        let images = try (prompt["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in
+        return try (prompt["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in
             if content["type"] as? String == "localImage", let path = content["path"] as? String {
                 return try Data(contentsOf: URL(filePath: path))
             }
@@ -533,13 +554,6 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             return nil
         }
-        _ = try await request("thread/revert", params: ["threadId": thread.sessionID, "beforeTurnId": messageID])
-        activeTurnIDs[thread.sessionID] = nil
-        conversations[thread.sessionID] = CodexLiveConversation(turns: try await turns(of: thread.sessionID))
-        refreshAsyncQuestions(sessionID: thread.sessionID)
-        onEvent?(.transcriptChanged(sessionID: thread.sessionID))
-        onEvent?(.threadInvalidated(sessionID: thread.sessionID))
-        return (conversations[thread.sessionID]?.messages ?? [], images)
     }
 
     private func generateTitleIfNeeded(for thread: AgentThread, prompt: String) {

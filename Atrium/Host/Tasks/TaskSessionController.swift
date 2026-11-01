@@ -65,19 +65,19 @@ final class TaskSessionController {
         }
     }
 
-    /// Forks a task into a provider and opens the fork, returning it once its conversation is open.
-    @discardableResult
-    func fork(_ thread: AgentThread, into provider: AgentProvider) async -> AgentThread? {
+    /// Forks a task into a provider, whole or before a prompt, and opens the fork. Returns it once its
+    /// conversation is open, with the original images of that prompt.
+    func fork(_ thread: AgentThread, into provider: AgentProvider, before messageID: String?) async -> (fork: AgentThread, images: [Data])? {
         guard !isOpening, integrations.canFork(thread, into: provider) else { return nil }
         isOpening = true
         defer { isOpening = false }
         do {
             try validateDirectory(thread.directory)
-            let fork = try await integrations.forkThread(thread, into: provider)
+            let forked = try await integrations.forkThread(thread, into: provider, before: messageID)
             try Task.checkCancellation()
-            guard canOpen(fork) else { return nil }
-            try await integrations.openConversation(fork)
-            return fork
+            guard canOpen(forked.fork) else { return nil }
+            try await integrations.openConversation(forked.fork)
+            return forked
         } catch is CancellationError {
             return nil
         } catch {

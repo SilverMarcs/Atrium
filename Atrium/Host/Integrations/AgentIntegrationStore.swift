@@ -664,23 +664,44 @@ final class AgentIntegrationStore {
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
 
-    func forkThread(_ thread: AgentThread, into provider: AgentProvider) async throws -> AgentThread {
+    /// Forks the chat into a provider, whole or before a prompt, as its
+    /// `editTarget` names it. Returns the fork and the original images of
+    /// that prompt, to send again.
+    func forkThread(_ thread: AgentThread, into provider: AgentProvider, before messageID: String?) async throws -> (fork: AgentThread, images: [Data]) {
         guard canFork(thread, into: provider) else { throw IntegrationError(message: "This chat cannot be forked right now.") }
         let adapter = try enabledAdapter(for: provider)
         let generation = generations[provider, default: 0]
+        var images: [Data] = []
+        if let messageID { images = try await enabledAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID) }
         let fork = provider == thread.provider
-            ? try await adapter.forkThread(thread)
-            : try await handOver(thread, to: adapter)
+            ? try await adapter.forkThread(thread, before: messageID)
+            : try await handOver(thread, before: messageID, to: adapter)
         guard isCurrent(provider, generation: generation) else { throw CancellationError() }
+        if provider == thread.provider { try await inherit(from: thread, into: fork) }
         registerDraft(fork)
-        return fork
+        return (fork, images)
+    }
+
+    /// A fork of a chat forked from the other provider's shows the
+    /// conversation that chat took, and hands it over again with its first
+    /// prompt when the fork starts before the prompt that carried it.
+    private func inherit(from thread: AgentThread, into fork: AgentThread) async throws {
+        guard var conversation = inherited[thread.id] else { return }
+        conversation.isDelivered = try await !enabledAdapter(for: fork.provider).transcript(for: fork).isEmpty
+        inherited[fork.id] = conversation
     }
 
     /// Starts a chat with the other provider that shows the thread's
-    /// conversation and hands its agent the newest part that fits half the
-    /// window of the model it runs, with its first prompt.
-    private func handOver(_ thread: AgentThread, to adapter: any AgentProviderAdapter) async throws -> AgentThread {
-        let messages = try await conversation(of: thread)
+    /// conversation, up to a prompt when one is given, and hands its agent the
+    /// newest part that fits half the window of the model it runs, with its first prompt.
+    private func handOver(_ thread: AgentThread, before messageID: String?, to adapter: any AgentProviderAdapter) async throws -> AgentThread {
+        var messages = try await conversation(of: thread)
+        if let messageID {
+            guard let end = messages.firstIndex(where: { $0.editTarget == messageID }) else {
+                throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
+            }
+            messages.removeSubrange(end...)
+        }
         let fork = try await adapter.createThread(directory: thread.directory, settings: nil, title: thread.forkTitle, inNewWorktree: false)
         let reported = await adapter.contextWindow(for: fork)
         let window = reported ?? ForkHandoff.assumedContextWindow
@@ -878,11 +899,12 @@ final class AgentIntegrationStore {
             throw IntegrationError(message: "Wait for the agent to finish or stop it before editing a message.")
         }
         defer { rewindingThreadIDs.remove(thread.id) }
-        let rewound = try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
-        let own = rewound.messages.map { relayed($0, in: thread) }
+        let adapter = try enabledAdapter(for: thread.provider)
+        let images = try await adapter.promptImages(of: thread, messageID: messageID)
+        let own = try await adapter.rewind(thread, before: messageID).map { relayed($0, in: thread) }
         // Rewinding a fork's first prompt takes its handoff too, so the next prompt carries it again.
         if own.isEmpty, inherited[thread.id]?.isDelivered == true { inherited[thread.id]?.isDelivered = false }
-        return ((inherited[thread.id]?.messages(before: own) ?? own).map(withPages), rewound.images)
+        return ((inherited[thread.id]?.messages(before: own) ?? own).map(withPages), images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

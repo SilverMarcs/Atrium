@@ -13,7 +13,7 @@ public nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     public static let restore = Self(rawValue: 1 << 1)
     public static let snooze = Self(rawValue: 1 << 2)
     public static let unsnooze = Self(rawValue: 1 << 3)
-    /// The chat can be forked, into any provider the host has enabled.
+    /// The chat can be forked, whole or before one of its prompts, into any provider the host has enabled.
     public static let fork = Self(rawValue: 1 << 4)
     public static let rename = Self(rawValue: 1 << 5)
     public static let markRead = Self(rawValue: 1 << 6)

@@ -42,8 +42,10 @@ struct TaskService {
                 await integrations.markUnread(thread)
             case .rename(let title):
                 await integrations.renameThread(thread, to: title)
-            case .fork(let provider):
-                if let fork = await sessions.fork(thread, into: provider) { return .task(id: fork.id) }
+            case .fork(let provider, let messageID):
+                if let forked = await sessions.fork(thread, into: provider, before: messageID) {
+                    return .forked(taskID: forked.fork.id, images: forked.images)
+                }
             case .startSideChat:
                 if let sideChat = await sessions.startSideChat(of: thread) { return .task(id: sideChat.id) }
             case .delete:

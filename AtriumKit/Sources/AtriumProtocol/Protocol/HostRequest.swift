@@ -60,8 +60,9 @@ public nonisolated enum TaskAction: Codable, Sendable {
     case rename(title: String)
     /// Forks the chat into a new one with a provider: its own, which copies
     /// the conversation itself, or the other, which takes over the
-    /// conversation shown so far. The reply names the fork.
-    case fork(into: AgentProvider)
+    /// conversation shown so far. Given a prompt's `editTarget`, the fork has
+    /// only the conversation before that prompt. The reply names the fork.
+    case fork(into: AgentProvider, before: String? = nil)
     /// Starts a side chat about the conversation so far, replacing the task's
     /// previous one. The reply names it.
     case startSideChat

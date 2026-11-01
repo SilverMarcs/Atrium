@@ -90,7 +90,7 @@ private func taskCommand(
         let actions = try actions(arguments, task)
         for action in actions {
             precondition(action.command == name, "\(name) performs only its own actions")
-            if case .task(let id) = try await client.perform(.task(id: task.id, action: action), on: host) { created = id }
+            if case .forked(let id, _) = try await client.perform(.task(id: task.id, action: action), on: host) { created = id }
         }
         if let created {
             let fork = try await waitUntil(host, timeout: options.connectTimeout) { host.task(created) }

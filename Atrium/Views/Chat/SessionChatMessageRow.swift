@@ -11,13 +11,13 @@ import SwiftUI
 struct SessionChatMessageRow: View, Equatable {
   let message: TranscriptMessage
   let isStreaming: Bool
-  /// A prompt in the transcript the agent can rewind to; pending ones can't be edited yet.
-  let canEdit: Bool
+  /// A prompt in the transcript the agent can rewind or fork at; pending ones can't be yet.
+  let isRewindable: Bool
   let pendingPrompt: PendingPrompt?
   @Environment(\.promptActions) private var actions
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.isStreaming == rhs.isStreaming && lhs.canEdit == rhs.canEdit
+    lhs.isStreaming == rhs.isStreaming && lhs.isRewindable == rhs.isRewindable
       && lhs.pendingPrompt == rhs.pendingPrompt && lhs.message == rhs.message
   }
 
@@ -31,7 +31,8 @@ struct SessionChatMessageRow: View, Equatable {
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: pendingPrompt?.images ?? message.images ?? [],
           isFromAgent: message.relay != nil,
-          edit: canEdit ? PromptEdit(isEnabled: actions.isEditEnabled, perform: { [message] in actions.edit(message) }) : nil,
+          edit: isRewindable ? PromptAction(isEnabled: actions.isEditEnabled, perform: { [message] in actions.edit(message) }) : nil,
+          fork: isRewindable ? PromptAction(isEnabled: actions.isForkEnabled, perform: { [message] in actions.fork(message) }) : nil,
           flightRowID: message.id.hasPrefix("pending-") ? message.id : nil)
         if let pendingPrompt, pendingPrompt.state == .failed {
           if let error = pendingPrompt.failureMessage { Text(error).font(.caption).foregroundStyle(.red) }
@@ -59,6 +60,8 @@ struct SessionChatMessageRow: View, Equatable {
 struct PromptActions: Equatable {
   var isEditEnabled: @MainActor () -> Bool = { false }
   var edit: @MainActor (TranscriptMessage) -> Void = { _ in }
+  var isForkEnabled: @MainActor () -> Bool = { false }
+  var fork: @MainActor (TranscriptMessage) -> Void = { _ in }
   var retry: @MainActor (UUID) -> Void = { _ in }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }

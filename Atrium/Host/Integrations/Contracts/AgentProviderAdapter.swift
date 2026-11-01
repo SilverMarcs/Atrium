@@ -16,7 +16,9 @@ protocol AgentProviderAdapter: AnyObject {
 
     func listThreads() async throws -> [AgentThread]
     func readThread(_ sessionID: String) async throws -> AgentThread?
-    func forkThread(_ thread: AgentThread) async throws -> AgentThread
+    /// Requires `.forkThread`. Forks a thread with its conversation, or only the part before a prompt, as the
+    /// prompt's `editTarget` names it.
+    func forkThread(_ thread: AgentThread, before messageID: String?) async throws -> AgentThread
     /// Requires `.sideChat`. Starts a side chat about a thread's conversation so far, which the
     /// adapter lists, prompts and interrupts like a thread until `endSideChat` or the provider ends it.
     func startSideChat(of thread: AgentThread) async throws -> AgentThread
@@ -41,8 +43,10 @@ protocol AgentProviderAdapter: AnyObject {
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
     /// Images are local files attached to the prompt.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
-    /// Rewinds conversation only and returns original attachments for the replacement prompt.
-    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data])
+    /// Requires `.editMessage`. The original images of a prompt, as its `editTarget` names it, to send again.
+    func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data]
+    /// Requires `.editMessage`. Rewinds conversation only, to before a prompt, and returns what's left.
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage]
     func interrupt(_ thread: AgentThread) async throws
     /// Ends what a thread keeps running after its turn is interrupted, such as
     /// background commands and agents.
@@ -65,7 +69,7 @@ extension AgentProviderAdapter {
         throw IntegrationError(message: "This request must be answered in the terminal.")
     }
 
-    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
+    func forkThread(_ thread: AgentThread, before messageID: String?) async throws -> AgentThread {
         throw IntegrationError(message: "\(provider.name) does not support forking a thread.")
     }
 
@@ -97,7 +101,11 @@ extension AgentProviderAdapter {
         throw IntegrationError(message: "\(provider.name) does not provide conversation history.")
     }
 
-    func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
+    func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
+        throw IntegrationError(message: "\(provider.name) doesn’t support conversation editing.")
+    }
+
+    func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {
         throw IntegrationError(message: "\(provider.name) doesn’t support conversation editing.")
     }
 
