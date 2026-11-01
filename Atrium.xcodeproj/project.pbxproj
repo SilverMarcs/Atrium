@@ -817,7 +817,7 @@
 			repositoryURL = "https://github.com/SilverMarcs/SwiftMediaViewer";
 			requirement = {
 				kind = revision;
-				revision = 58c1345b0cb62498debe5857cae64b8e44d0ed5e;
+				revision = c4fc4fb9da269e854bdd7fb7cdd335e3049100a4;
 			};
 		};
 		0A7C00000000000000000401 /* XCRemoteSwiftPackageReference "swift-sdk" */ = {

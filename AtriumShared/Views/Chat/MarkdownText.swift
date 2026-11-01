@@ -40,8 +40,16 @@ struct MarkdownText: View {
             .transaction { $0.animation = nil }
             #if os(macOS)
             .sheet(item: $viewedImage) { image in
-                SMVImageModal(urls: [image.url], targetSize: Self.viewerPixelSize, namespace: namespace)
-                    .frame(minWidth: 480, idealWidth: 960, minHeight: 320, idealHeight: 640)
+                NavigationStack {
+                    SMVImageModal(urls: [image.url], targetSize: Self.viewerPixelSize, namespace: namespace)
+                        .toolbar {
+                            ToolbarItem(placement: .close) {
+                                Button(role: .close) { viewedImage = nil }
+                            }
+                        }
+                }
+                // As wide as a page, and as tall as the image is at that width.
+                .presentationSizing(.page.fitted(horizontal: false, vertical: true))
             }
             #else
             .fullScreenCover(item: $viewedImage) { image in
