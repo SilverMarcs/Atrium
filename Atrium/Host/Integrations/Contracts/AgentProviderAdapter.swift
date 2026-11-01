@@ -21,7 +21,11 @@ protocol AgentProviderAdapter: AnyObject {
     /// adapter lists, prompts and interrupts like a thread until `endSideChat` or the provider ends it.
     func startSideChat(of thread: AgentThread) async throws -> AgentThread
     func endSideChat(_ thread: AgentThread) async
-    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread
+    /// A new thread, named `title` when one is given.
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread
+    /// The tokens the model a thread runs can take in at once, as its provider
+    /// works it out, or nil when the provider doesn't say.
+    func contextWindow(for thread: AgentThread) async -> Int?
     func prepareLaunch(for thread: AgentThread, intent: AgentLaunchIntent) async throws -> AgentLaunch
     func stopThread(_ thread: AgentThread) async throws
     func renameThread(_ thread: AgentThread, to title: String) async throws
@@ -70,6 +74,8 @@ extension AgentProviderAdapter {
     }
 
     func endSideChat(_ thread: AgentThread) async {}
+
+    func contextWindow(for thread: AgentThread) async -> Int? { nil }
 
     func markRead(_ thread: AgentThread) async throws -> AgentReadState {
         throw IntegrationError(message: "\(provider.name) does not support marking a thread read.")

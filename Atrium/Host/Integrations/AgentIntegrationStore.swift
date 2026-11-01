@@ -1,6 +1,7 @@
 import AtriumProtocol
 import Foundation
 import Observation
+import OSLog
 
 /// Observable UI facade. Shared task state lives here; provider behavior lives in adapters.
 @MainActor
@@ -33,6 +34,8 @@ final class AgentIntegrationStore {
     @ObservationIgnored var transcriptFeeds: [String: TranscriptFeed] = [:]
     /// The pages and images each task's transcript showed, as last read.
     @ObservationIgnored let media = TranscriptMedia()
+    /// What chats forked from the other provider's took from them.
+    @ObservationIgnored private let inherited = InheritedConversations()
     @ObservationIgnored private var viewedThreadID: String?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -205,6 +208,7 @@ final class AgentIntegrationStore {
         }
         onThreadRemoved?(id)
         media.forget(id)
+        inherited[id] = nil
         threads.removeAll { $0.id == id }
         drafts[id] = nil
         activity[id] = nil
@@ -606,19 +610,49 @@ final class AgentIntegrationStore {
         }
     }
 
+    /// Whether the chat can be forked into any enabled provider.
     func canFork(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.forkThread) == true
+        enabledProviders.contains { canFork(thread, into: $0) }
+    }
+
+    /// Whether the chat can be forked into a provider: its own, which copies the
+    /// conversation itself, or the other, which takes over the conversation
+    /// through prompts.
+    func canFork(_ thread: AgentThread, into provider: AgentProvider) -> Bool {
+        let capability: AgentCapabilities = provider == thread.provider ? .forkThread : .prompt
+        return enabled.contains(thread.provider) && enabled.contains(provider)
+            && adapters[provider]?.capabilities.contains(capability) == true
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
 
-    func forkThread(_ thread: AgentThread) async throws -> AgentThread {
-        guard canFork(thread) else { throw IntegrationError(message: "This chat cannot be forked right now.") }
-        let adapter = try enabledAdapter(for: thread.provider)
-        let generation = generations[thread.provider, default: 0]
-        let fork = try await adapter.forkThread(thread)
-        guard isCurrent(thread.provider, generation: generation) else { throw CancellationError() }
+    func forkThread(_ thread: AgentThread, into provider: AgentProvider) async throws -> AgentThread {
+        guard canFork(thread, into: provider) else { throw IntegrationError(message: "This chat cannot be forked right now.") }
+        let adapter = try enabledAdapter(for: provider)
+        let generation = generations[provider, default: 0]
+        let fork = provider == thread.provider
+            ? try await adapter.forkThread(thread)
+            : try await handOver(thread, to: adapter)
+        guard isCurrent(provider, generation: generation) else { throw CancellationError() }
         registerDraft(fork)
+        return fork
+    }
+
+    /// Starts a chat with the other provider that shows the thread's
+    /// conversation and hands its agent the newest part that fits half the
+    /// window of the model it runs, with its first prompt.
+    private func handOver(_ thread: AgentThread, to adapter: any AgentProviderAdapter) async throws -> AgentThread {
+        let messages = try await conversation(of: thread)
+        let fork = try await adapter.createThread(directory: thread.directory, settings: nil, title: thread.forkTitle)
+        let reported = await adapter.contextWindow(for: fork)
+        let window = reported ?? ForkHandoff.assumedContextWindow
+        let handoff = ForkHandoff.text(of: messages.map(withPages), from: thread.provider,
+                                       fittingIn: Int(Double(window) * ForkHandoff.windowShare))
+        Logger(subsystem: "Atrium", category: "Forks").info("""
+            Forked \(thread.id, privacy: .public) into \(fork.id, privacy: .public): a handoff of about \
+            \(ForkHandoff.estimatedTokens(handoff ?? "")) tokens for a \(window)-token window\(reported == nil ? " (assumed)" : "", privacy: .public)
+            """)
+        if !messages.isEmpty { inherited[fork.id] = InheritedConversation(messages: messages, handoff: handoff) }
         return fork
     }
 
@@ -662,7 +696,7 @@ final class AgentIntegrationStore {
         if let isFastMode = settings?.isFastMode {
             try validate(.fastMode(isFastMode), provider: provider, model: settings?.model ?? defaultSettings[provider]?.model)
         }
-        let thread = try await adapter.createThread(directory: directory, settings: settings)
+        let thread = try await adapter.createThread(directory: directory, settings: settings, title: nil)
         try Task.checkCancellation()
         guard isCurrent(provider, generation: generation) else { throw CancellationError() }
         return thread
@@ -716,25 +750,43 @@ final class AgentIntegrationStore {
     /// relayed, holding only what was relayed: tasks Atrium relayed for ChatGPT,
     /// and every prompt a subagent took from its agent. Pages written in replies
     /// show as pages. Reading a transcript records the media it shows, for
-    /// clients to fetch.
+    /// clients to fetch. A chat forked from the other provider's shows that
+    /// chat's conversation ahead of its own.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
-        let messages = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { presented($0, in: thread) }
+        let messages = try await conversation(of: thread).map(withPages)
         media.record(messages, of: thread)
         return messages
     }
 
-    private func presented(_ source: TranscriptMessage, in thread: AgentThread) -> TranscriptMessage {
+    /// The conversation as clients show it, except that pages stay in the
+    /// replies that wrote them, as Atrium keeps it for a fork.
+    private func conversation(of thread: AgentThread) async throws -> [TranscriptMessage] {
+        let own = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
+        return inherited[thread.id]?.messages(before: own) ?? own
+    }
+
+    private func withPages(_ source: TranscriptMessage) -> TranscriptMessage {
+        guard source.role == .assistant else { return source }
         var message = source
-        if source.role == .assistant {
-            message.blocks = source.blocks.flatMap { block in
-                guard case .text(let text, let id) = block else { return [block] }
-                return ChatPages.blocks(inReply: text, id: id)
-            }
-        } else if source.role == .user, let first = source.blocks.first, let text = first.text,
-           let relayed = RelayedMessage.relay(in: source.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
+        message.blocks = source.blocks.flatMap { block in
+            guard case .text(let text, let id) = block else { return [block] }
+            return ChatPages.blocks(inReply: text, id: id)
+        }
+        return message
+    }
+
+    private func relayed(_ source: TranscriptMessage, in thread: AgentThread) -> TranscriptMessage {
+        var message = source
+        // A fork's first prompt carries the conversation the chat shows ahead of it.
+        if message.role == .user, let first = message.blocks.first, first.text != nil,
+           let request = ForkHandoff.request(in: message.blocks.compactMap(\.text).joined(separator: "\n")) {
+            message.blocks = request.isEmpty ? [] : [.text(request, id: first.id)]
+        }
+        if message.role == .user, let first = message.blocks.first, let text = first.text,
+           let relayed = RelayedMessage.relay(in: message.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
             message.blocks = [.text(relayed.body, id: first.id)]
             message.relay = relayed.relay
-        } else if source.role == .user, source.relay == nil, let parent = thread.parentSessionID {
+        } else if message.role == .user, message.relay == nil, let parent = thread.parentSessionID {
             // Only its own agent prompts a subagent, so each of its prompts is that agent's, even a
             // fork's: Claude references its parent's history and Codex lists only the fork's own turns.
             message.relay = TranscriptRelay(kind: .task, senders: [.init(name: thread.provider.name, sessionID: parent)])
@@ -753,7 +805,20 @@ final class AgentIntegrationStore {
         guard !rewindingThreadIDs.contains(thread.id) else {
             throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
         }
-        try await enabledAdapter(for: thread.provider).sendPrompt(text, images: images, to: thread)
+        let adapter = try enabledAdapter(for: thread.provider)
+        // A fork of the other provider's chat hands its agent that chat's conversation with its first prompt.
+        guard var conversation = inherited[thread.id], let handoff = conversation.handoff, !conversation.isDelivered else {
+            return try await adapter.sendPrompt(text, images: images, to: thread)
+        }
+        // Marked first, so that a prompt sent meanwhile doesn't carry it too.
+        conversation.isDelivered = true
+        inherited[thread.id] = conversation
+        do {
+            try await adapter.sendPrompt(ForkHandoff.prompt(text, after: handoff), images: images, to: thread)
+        } catch {
+            inherited[thread.id]?.isDelivered = false
+            throw error
+        }
     }
 
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
@@ -762,7 +827,10 @@ final class AgentIntegrationStore {
         }
         defer { rewindingThreadIDs.remove(thread.id) }
         let rewound = try await enabledAdapter(for: thread.provider).rewind(thread, before: messageID)
-        return (rewound.messages.map { presented($0, in: thread) }, rewound.images)
+        let own = rewound.messages.map { relayed($0, in: thread) }
+        // Rewinding a fork's first prompt takes its handoff too, so the next prompt carries it again.
+        if own.isEmpty, inherited[thread.id]?.isDelivered == true { inherited[thread.id]?.isDelivered = false }
+        return ((inherited[thread.id]?.messages(before: own) ?? own).map(withPages), rewound.images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

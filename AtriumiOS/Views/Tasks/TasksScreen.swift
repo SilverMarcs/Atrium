@@ -127,7 +127,7 @@ struct TasksScreen: View {
             TaskRow(item: item, showsHost: hosts.showsHostNames)
                 .tag(item.id)
                 .contextMenu {
-                    TaskContextMenu(state: item.task.menuState) { perform($0, on: item) }
+                    TaskContextMenu(state: item.menuState) { perform($0, on: item) }
                 }
                 .taskSwipeActions(item.task.menuState) { perform($0, on: item) }
         }

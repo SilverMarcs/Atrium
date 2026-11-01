@@ -52,7 +52,10 @@ public nonisolated enum TaskAction: Codable, Sendable {
     case markRead
     case markUnread
     case rename(title: String)
-    case fork
+    /// Forks the chat into a new one with a provider: its own, which copies
+    /// the conversation itself, or the other, which takes over the
+    /// conversation shown so far. The reply names the fork.
+    case fork(into: AgentProvider)
     /// Starts a side chat about the conversation so far, replacing the task's
     /// previous one. The reply names it.
     case startSideChat

@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import Foundation
 
@@ -31,6 +32,15 @@ extension WireTask {
     }
 }
 
+extension HostTask {
+    /// The task's menu state, offering forks into the host's other enabled providers.
+    var menuState: TaskMenuState {
+        var state = task.menuState
+        state.forkProviders = host.enabledProviders.filter { $0 != task.provider }
+        return state
+    }
+}
+
 extension TaskActions {
     func allows(_ action: TaskMenuAction) -> Bool {
         switch action {
@@ -38,7 +48,7 @@ extension TaskActions {
         case .restore: contains(.restore)
         case .snooze: contains(.snooze)
         case .unsnooze: contains(.unsnooze)
-        case .fork: contains(.fork)
+        case .fork, .forkInto: contains(.fork)
         case .rename: contains(.rename)
         case .markRead: contains(.markRead)
         case .markUnread: contains(.markUnread)

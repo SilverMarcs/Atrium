@@ -62,15 +62,15 @@ final class TaskSessionController {
         }
     }
 
-    /// Forks a task and opens the fork, returning it once its terminal is launching.
+    /// Forks a task into a provider and opens the fork, returning it once its terminal is launching.
     @discardableResult
-    func fork(_ thread: AgentThread) async -> AgentThread? {
-        guard !isOpening, integrations.canFork(thread) else { return nil }
+    func fork(_ thread: AgentThread, into provider: AgentProvider) async -> AgentThread? {
+        guard !isOpening, integrations.canFork(thread, into: provider) else { return nil }
         isOpening = true
         defer { isOpening = false }
         do {
             try validateDirectory(thread.directory)
-            let fork = try await integrations.forkThread(thread)
+            let fork = try await integrations.forkThread(thread, into: provider)
             try Task.checkCancellation()
             guard canOpen(fork) else { return nil }
             let launch = try await integrations.prepareLaunch(for: fork)

@@ -8,6 +8,8 @@ nonisolated struct TaskMenuState: Hashable, Sendable {
     var hasUnreadResult: Bool
     var supportsDeletion: Bool
     var allowed: TaskActions
+    /// The other providers a fork can take the chat to, as its host enables them.
+    var forkProviders: [AgentProvider] = []
 
     var settleAction: TaskMenuAction { isSettled ? .restore : .settle }
     /// A settled task can't be snoozed, but one that is snoozed can always wake.

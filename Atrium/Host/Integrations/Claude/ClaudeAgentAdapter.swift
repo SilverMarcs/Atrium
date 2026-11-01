@@ -398,6 +398,24 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         return options.filter { $0.value != "default" }.map { $0.model(allowingFastMode: allowsFastMode) }
     }
 
+    /// As Claude counts it for a session in the thread's folder with its model,
+    /// which the SDK's context usage request reports without starting one.
+    func contextWindow(for thread: AgentThread) async -> Int? {
+        let requests = [
+            #"{"type":"control_request","request_id":"initialize","request":{"subtype":"initialize"}}"#,
+            #"{"type":"control_request","request_id":"context","request":{"subtype":"get_context_usage"}}"#
+        ]
+        let model = thread.model.map { ["--model", $0] } ?? []
+        guard let output = try? await IntegrationProcess.run("claude", arguments: [
+            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"
+        ] + model, directory: thread.directory, input: Data(requests.map { $0 + "\n" }.joined().utf8), timeout: .seconds(30)) else { return nil }
+        return output.split(separator: UInt8(ascii: "\n")).lazy.compactMap { line -> Int? in
+            guard let event = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  let response = event["response"] as? [String: Any], response["request_id"] as? String == "context" else { return nil }
+            return (response["response"] as? [String: Any])?["maxTokens"] as? Int
+        }.first
+    }
+
     /// Whether the account's organization allows fast mode, as Claude last checked.
     nonisolated private static func organizationAllowsFastMode(configFile: URL) -> Bool {
         guard let data = try? Data(contentsOf: configFile),
@@ -438,12 +456,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
-        let session = try await startBackgroundSession(directory: directory, settings: settings)
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
+        // Claude saves the name as the thread's title once it's saved, and lists it as the job's name until then.
+        let session = try await startBackgroundSession(directory: directory, name: title, settings: settings)
         guard var thread = session.thread else {
             throw IntegrationError(message: "Claude did not provide a session identifier.")
         }
-        thread.title = "New Claude thread"
+        thread.title = title ?? "New Claude thread"
         thread.status = .idle
         if let model = settings?.model {
             let change = AgentSettingsChange.model(model, reasoningEffort: settings?.reasoningEffort)

@@ -305,7 +305,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return result
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
         var config: [String: Any] = [:]
@@ -324,9 +324,28 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         thread.model = settings?.model ?? result["model"] as? String ?? thread.model
         thread.reasoningEffort = settings?.reasoningEffort ?? result["reasoningEffort"] as? String ?? thread.reasoningEffort
+        // The thread exists either way, so a name Codex refuses doesn't fail it.
+        if let title, (try? await request("thread/name/set", params: ["threadId": thread.sessionID, "name": title])) != nil {
+            thread.title = title
+            thread.hasProviderTitle = true
+        }
         conversations[thread.sessionID] = CodexLiveConversation(turns: [])
         desiredConversations[thread.sessionID] = thread
         return thread
+    }
+
+    /// As Codex reports it to turns: the model's window from its catalog, or
+    /// the one configured, less the share Codex keeps in reserve.
+    func contextWindow(for thread: AgentThread) async -> Int? {
+        guard let model = thread.model,
+              let data = try? await IntegrationProcess.run("codex", arguments: ["debug", "models"], timeout: .seconds(30)),
+              let catalog = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let row = (catalog["models"] as? [[String: Any]])?.first(where: { $0["slug"] as? String == model }) else { return nil }
+        let config = try? await request("config/read", params: ["cwd": thread.directory], disconnectOnTimeout: false)
+        let configured = config.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            .flatMap { ($0["config"] as? [String: Any])?["model_context_window"] as? Int }
+        guard let window = configured ?? row["context_window"] as? Int else { return nil }
+        return window * (row["effective_context_window_percent"] as? Int ?? 100) / 100
     }
 
     func forkThread(_ thread: AgentThread) async throws -> AgentThread {
@@ -420,8 +439,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         conversations[thread.sessionID]?.resolveQuestions(questionIDs)
         refreshAsyncQuestions(sessionID: thread.sessionID)
-        // A relayed task is titled by what it asks, not by Atrium's framing.
-        let request = RelayedMessage.relay(in: text)?.body ?? text
+        // A relayed task or a fork is titled by what it asks, not by Atrium's framing.
+        let typed = ForkHandoff.request(in: text) ?? text
+        let request = RelayedMessage.relay(in: typed)?.body ?? typed
         generateTitleIfNeeded(for: thread, prompt: request.isEmpty ? "Discuss an attached image" : request)
     }
 

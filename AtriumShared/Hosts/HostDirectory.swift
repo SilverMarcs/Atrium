@@ -185,16 +185,24 @@ final class HostDirectory {
         case .markRead: request = .markRead
         case .markUnread: request = .markUnread
         case .fork:
-            Task {
-                if case .task(let id) = await host.perform(.task(id: item.task.id, action: .fork)) {
-                    open(TaskRef(hostID: host.id, taskID: id))
-                }
-            }
+            fork(item, into: item.task.provider)
+            return
+        case .forkInto(let provider):
+            fork(item, into: provider)
             return
         case .rename, .delete:
             return
         }
         host.send(.task(id: item.task.id, action: request))
+    }
+
+    private func fork(_ item: HostTask, into provider: AgentProvider) {
+        let host = item.host
+        Task {
+            if case .task(let id) = await host.perform(.task(id: item.task.id, action: .fork(into: provider))) {
+                open(TaskRef(hostID: host.id, taskID: id))
+            }
+        }
     }
 
     // MARK: - New chat

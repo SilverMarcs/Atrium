@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// One task action as a button, worded and tinted the same in both apps.
@@ -20,7 +21,7 @@ struct TaskActionButton: View {
         case .snooze: .indigo
         case .markRead, .markUnread: .blue
         case .delete: .red
-        case .restore, .unsnooze, .fork, .rename: nil
+        case .restore, .unsnooze, .fork, .forkInto, .rename: nil
         }
     }
 }
@@ -33,6 +34,7 @@ extension TaskMenuAction {
         case .snooze: "Snooze for a Day"
         case .unsnooze: "Unsnooze Thread"
         case .fork: "Fork Chat"
+        case .forkInto(let provider): "Fork in \(provider.name)"
         case .rename: "Rename Chat"
         case .markRead: "Mark as Read"
         case .markUnread: "Mark as Unread"
@@ -46,7 +48,7 @@ extension TaskMenuAction {
         case .restore: "arrow.uturn.backward"
         case .snooze: "moon.zzz"
         case .unsnooze: "bell"
-        case .fork: "arrow.triangle.branch"
+        case .fork, .forkInto: "arrow.triangle.branch"
         case .rename: "pencil"
         case .markRead: "envelope.open"
         case .markUnread: "envelope.badge"
