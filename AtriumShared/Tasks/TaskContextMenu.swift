@@ -18,6 +18,9 @@ struct TaskContextMenu: View {
         ForEach(state.forkProviders) { provider in
             TaskActionButton(action: .forkInto(provider), state: state, perform: perform)
         }
+
+        Divider()
+
         TaskActionButton(action: .rename, state: state, perform: perform)
         TaskActionButton(action: state.readAction, state: state, perform: perform)
 
