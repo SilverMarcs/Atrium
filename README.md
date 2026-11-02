@@ -3,6 +3,8 @@
 A native macOS workspace for Codex and Claude tasks, built with SwiftUI.
 Work across projects with native chat, a command runner, an editor, and a Git inspector.
 
+[Download for macOS](https://github.com/SilverMarcs/Atrium/releases/latest) · [Get the iOS app](https://apps.apple.com/app/id6765783787)
+
 <img width="1587" height="1103" alt="Screenshot 2026-10-24 at 12 02 11 PM" src="https://github.com/user-attachments/assets/9b29ada6-0e59-4e28-be14-bacceb16ab31" />
 <img width="1587" height="1103" alt="Screenshot 2026-10-24 at 12 02 27 PM" src="https://github.com/user-attachments/assets/f88a530c-90c6-4442-9fb0-5422793b146c" />
 
