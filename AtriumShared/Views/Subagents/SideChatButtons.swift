@@ -28,7 +28,7 @@ struct NewSideChatButton: View {
     @State private var isConfirming = false
 
     var body: some View {
-        Button("New Side Chat", systemImage: "square.and.pencil") { isConfirming = true }
+        Button("New Side Chat", systemImage: "plus.bubble") { isConfirming = true }
             .disabled(sideChat.parent?.actions.contains(.sideChat) != true)
             .alert("Start a New Side Chat?", isPresented: $isConfirming) {
                 Button("New Side Chat") {
