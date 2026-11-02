@@ -99,7 +99,10 @@ struct TasksScreen: View {
             }
         }
         .overlay {
-            TasksPlaceholder(isLoaded: hosts.hasLoadedTasks, isSearching: isSearching,
+            TasksPlaceholder(isLoaded: hosts.hasLoadedTasks,
+                             connectingHostIDs: hosts.unconnectedHostIDsWithoutTasks,
+                             isRefreshing: hosts.isRefreshingTasks,
+                             isSearching: isSearching,
                              isEmpty: visibleTasksAreEmpty(sections) && (filter != .all || deviceTasks.isEmpty))
         }
         .sheet(isPresented: $showingProjects) {

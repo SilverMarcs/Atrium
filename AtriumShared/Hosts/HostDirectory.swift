@@ -129,6 +129,17 @@ final class HostDirectory {
         visibleHosts.allSatisfy { $0.tasks != nil || !$0.isConnected }
     }
 
+    /// Visible hosts that haven't sent their tasks because they aren't
+    /// connected yet, by ID.
+    var unconnectedHostIDsWithoutTasks: [String] {
+        visibleHosts.filter { $0.tasks == nil && !$0.isConnected }.map(\.id)
+    }
+
+    /// Whether a visible host is still loading its threads.
+    var isRefreshingTasks: Bool {
+        visibleHosts.contains { $0.tasks?.isRefreshing == true }
+    }
+
     /// The host's task, or what a draft shows until the host lists it.
     func task(_ ref: TaskRef) -> HostTask? {
         guard let host = host(ref.hostID), let task = host.displayedTask(ref.taskID) else { return nil }
