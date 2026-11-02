@@ -204,15 +204,35 @@ actor ClaudeSessionHistory {
         guard let lines = try transcriptLines(id) else { return [] }
         var foundPrompt = false
         var images: [Data] = []
+        var referencedFiles: [URL] = []
+        var embeddedFiles: [String: Data] = [:]
         for line in lines {
             guard let record = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if ClaudeTranscript.startsTurn(line) {
                 if foundPrompt { break }
                 foundPrompt = record["uuid"] as? String == messageID
+                if foundPrompt {
+                    let content = (record["message"] as? [String: Any])?["content"]
+                        ?? (record["attachment"] as? [String: Any])?["prompt"]
+                    referencedFiles = PromptAttachments.references(in: ClaudeTranscript.prompt(content)?.text ?? "").files
+                }
             }
-            if foundPrompt { images += ClaudeTranscript.imageData(in: record) }
+            if foundPrompt {
+                let embedded = ClaudeTranscript.imageData(in: record)
+                if let filename = (record["attachment"] as? [String: Any])?["filename"] as? String,
+                   let file = referencedFiles.first(where: { $0.path == filename || $0.lastPathComponent == filename }),
+                   let data = embedded.first {
+                    embeddedFiles[file.path] = data
+                } else {
+                    images += embedded
+                }
+            }
         }
-        return images
+        // Prefer Claude's embedded originals, falling back to the referenced
+        // files in send order when it embedded only some or none of them.
+        guard images.isEmpty, !referencedFiles.isEmpty else { return images }
+        do { return try referencedFiles.map { try embeddedFiles[$0.path] ?? Data(contentsOf: $0) } }
+        catch { throw IntegrationError(message: "An attached image is no longer available. Attach it again to edit this message.") }
     }
 
     private func transcriptLines(_ id: String) throws -> [Data]? {

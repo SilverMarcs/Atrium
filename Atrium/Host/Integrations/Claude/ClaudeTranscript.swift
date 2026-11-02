@@ -35,6 +35,7 @@ nonisolated enum ClaudeTranscript {
     /// transcript is all sidechain records, which a session's leaves out.
     static func messages(fromLines lines: some Sequence<Data>, sidechain: Bool = false) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
+        var referencedPreviews: [String: [String: Data]] = [:]
         var assistant: TranscriptMessage?
         func flushAssistant() {
             if let assistant, !assistant.blocks.isEmpty { messages.append(assistant) }
@@ -47,7 +48,7 @@ nonisolated enum ClaudeTranscript {
             case "user":
                 let images = imageData(in: record).compactMap { TranscriptImage.thumbnail($0) }
                 let typed = prompt(message?["content"]).map { isCoordinatorMessage(record) ? (text: coordinatorText($0.text), relay: $0.relay) : $0 }
-                let text = typed?.text ?? ""
+                let text = images.isEmpty ? typed?.text ?? "" : PromptAttachments.references(in: typed?.text ?? "").text
                 guard !text.isEmpty || !images.isEmpty else { continue }
                 flushAssistant()
                 messages.append(TranscriptMessage(id: uuid, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: uuid)], images: images.isEmpty ? nil : images,
@@ -58,6 +59,15 @@ nonisolated enum ClaudeTranscript {
                    let file = content["file"] as? [String: Any], let encoded = file["base64"] as? String,
                    encoded.utf8.count <= 28 * 1024 * 1024, let data = Data(base64Encoded: encoded),
                    let preview = TranscriptImage.thumbnail(data), let user = messages.lastIndex(where: { $0.role == .user }) {
+                    if let filename = attachment["filename"] as? String,
+                       let file = PromptAttachments.references(in: messages[user].blocks.first?.text ?? "").files.first(where: {
+                           $0.path == filename || $0.lastPathComponent == filename
+                       }) {
+                        // Keep owned references until the whole prompt is assembled,
+                        // so embedded and file-backed images retain their send order.
+                        referencedPreviews[messages[user].id, default: [:]][file.path] = preview
+                        continue
+                    }
                     messages[user].images = (messages[user].images ?? []) + [preview]
                     if let filename = attachment["filename"] as? String {
                         messages[user].blocks = messages[user].blocks.compactMap { block in
@@ -86,11 +96,35 @@ nonisolated enum ClaudeTranscript {
             }
         }
         flushAssistant()
+        messages = messages.map { restoringAttachments(in: $0, embeddedPreviews: referencedPreviews[$0.id] ?? [:]) }
         let prompts = messages.indices.filter { index in
             messages[index].role == .user && startsTurn((messages[index].blocks.first?.text ?? "", messages[index].relay))
         }
         guard prompts.count > turnLimit else { return messages }
         return Array(messages[prompts[prompts.count - turnLimit]...])
+    }
+
+    /// Claude may leave Atrium's image references as plain text and read the
+    /// files with a tool. Restore those prompts without relying on a separate
+    /// provider attachment record, in saved history and live hook messages alike.
+    static func restoringAttachments(in message: TranscriptMessage, embeddedPreviews: [String: Data] = [:]) -> TranscriptMessage {
+        guard message.role == .user, message.relay == nil,
+              case .text(let text, let id) = message.blocks.first else { return message }
+        let attachments = PromptAttachments.references(in: text)
+        guard !attachments.files.isEmpty else { return message }
+        var restored = message
+        var images = message.images ?? []
+        var unavailable = false
+        for file in attachments.files {
+            if let image = embeddedPreviews[file.path] ?? TranscriptImage.thumbnail(at: file) { images.append(image) }
+            else { unavailable = true }
+        }
+        let displayText = ([unavailable ? String(localized: "[Image unavailable]") : "", attachments.text])
+            .filter { !$0.isEmpty }.joined(separator: "\n")
+        restored.blocks.removeFirst()
+        if !displayText.isEmpty { restored.blocks.insert(.text(displayText, id: id), at: 0) }
+        restored.images = images.isEmpty ? nil : images
+        return restored
     }
 
     /// Whether the line is a prompt, which starts a turn. Most lines are agent

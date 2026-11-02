@@ -261,7 +261,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard try await hasHooks(jobID: id) else {
             throw IntegrationError(message: "This background session was started outside Atrium without chat hooks. Open Terminal to continue it.")
         }
-        let references = images.map { "@\"" + $0.path.replacing("\\", with: "\\\\").replacing("\"", with: "\\\"") + "\"" }
+        let references = images.map { PromptAttachments.reference(to: $0) }
         let prompt = (references + (text.isEmpty ? [] : [text])).joined(separator: "\n")
         let outgoingPrompt = ClaudeOutgoingPrompt(wireText: prompt, displayText: text, images: images.compactMap { TranscriptImage.thumbnail(at: $0) })
         let isSteering = withStatus(thread).status == .processing
