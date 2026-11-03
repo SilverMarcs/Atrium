@@ -156,6 +156,8 @@ struct FileTreeView: View {
         switch action {
         case .open(let entry):
             project.editor.openFile(entry.url)
+        case .openInDefaultApp(let entry):
+            NSWorkspace.shared.open(entry.url)
         case .revealInFinder(let entry):
             NSWorkspace.shared.activateFileViewerSelecting([entry.url])
         case .rename(let entry):
@@ -176,6 +178,7 @@ struct FileTreeView: View {
 
 enum FileTreeAction {
     case open(FileEntry)
+    case openInDefaultApp(FileEntry)
     case revealInFinder(FileEntry)
     case rename(FileEntry)
     case commitRename(FileEntry, String)
@@ -317,6 +320,9 @@ private struct FileTreeContextMenu: View {
     var body: some View {
         if !entry.isDirectory {
             Button("Open File", systemImage: "doc") { perform(.open(entry)) }
+            if isLocal {
+                Button("Open in Default App", systemImage: "arrow.up.right") { perform(.openInDefaultApp(entry)) }
+            }
         }
         // Files on another host can be read but not changed from here.
         if isLocal {
