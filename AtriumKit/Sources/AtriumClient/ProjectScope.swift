@@ -53,6 +53,19 @@ public final class ProjectScope {
         selectedRepository.flatMap { isNested($0) ? $0 : nil }
     }
 
+    /// Whether the project folder is a choice of its own beside its
+    /// repositories: it holds several without being one itself.
+    public var offersProjectFolder: Bool {
+        guard let repositories, repositories.count > 1 else { return false }
+        return !repositories.contains(where: holdsFolder)
+    }
+
+    /// Whether the project folder is picked over its repositories, so Files
+    /// and Search show all of it. Source Control still shows `status`.
+    public var showsProjectFolder: Bool {
+        offersProjectFolder && selectedRepository == nil
+    }
+
     /// The repository Source Control shows: the one picked, else the one
     /// holding the project folder, else the first.
     public var status: GitRepositoryStatus? {

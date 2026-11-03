@@ -4,9 +4,12 @@ import SwiftUI
 
 /// Picks the project's repository when it has several, at the foot of Source
 /// Control, Files and Search alike. Files and Search show the one picked on
-/// its own when it's inside the project folder.
+/// its own when it's inside the project folder. There, a project folder that
+/// only holds repositories comes first, showing all of it.
 struct InspectorRepositoryPicker: View {
     let project: Project
+    /// Whether the whole project folder is a choice, for Files and Search.
+    var includesProjectFolder = false
 
     var body: some View {
         let scope = project.scope
@@ -18,10 +21,19 @@ struct InspectorRepositoryPicker: View {
         }
         let mainRepositories = repositories.filter { !submodules.contains($0) }
 
+        let includesProjectFolder = includesProjectFolder && scope.offersProjectFolder
+
         Picker(selection: Binding(
-            get: { scope.status?.mainRepositoryURL },
+            get: { includesProjectFolder && scope.showsProjectFolder ? nil : scope.status?.mainRepositoryURL },
             set: { scope.selectedRepository = $0 }
         )) {
+            if includesProjectFolder {
+                Label(project.workspace?.name ?? "Project", systemImage: "folder")
+                    .tag(URL?.none)
+
+                Divider()
+            }
+
             ForEach(mainRepositories, id: \.mainRepositoryURL) { repository in
                 RepositoryLabel(repository: repository)
                     .tag(Optional(repository.mainRepositoryURL))

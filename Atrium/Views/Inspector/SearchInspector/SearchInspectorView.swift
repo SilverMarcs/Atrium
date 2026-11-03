@@ -70,7 +70,7 @@ struct SearchInspectorView: View {
         }
         .safeAreaBar(edge: .bottom) {
             if (project.scope.repositories?.count ?? 0) > 1 {
-                InspectorRepositoryPicker(project: project)
+                InspectorRepositoryPicker(project: project, includesProjectFolder: true)
                     .padding()
             }
         }
