@@ -35,23 +35,11 @@ struct TaskDetailView: View {
                     ScratchPadSheet(host: item.host, workspaceID: workspaceID)
                 }
             }
-            .navigationTitle(String(title.prefix(50)))
-            .navigationSubtitle(subtitle)
+            .navigationTitle(app.hosts.navigationTitle(for: item))
+            .modifier(ConnectionStatusSubtitle(
+                hosts: [item.host],
+                subtitle: app.hosts.navigationSubtitle(for: item)
+            ))
             .focusedSceneValue(\.editorPanel, project?.editor)
-    }
-
-    /// A side chat is titled by the session it asks about.
-    private var title: String {
-        task.isSideChat ? item.parent?.title ?? task.title : task.title
-    }
-
-    private var subtitle: String {
-        if task.isSideChat { return task.title }
-        if let parent = item.parent {
-            return "\(task.isSubagent ? "Subagent" : "Working for") \(parent.provider.name) · \(parent.title)"
-        }
-        if let device = task.origin?.deviceName { return "Started by \(device)" }
-        let directory = project?.workspace?.directory ?? task.directory
-        return item.host.isLocal ? directory : "\(item.host.name) \(directory)"
     }
 }

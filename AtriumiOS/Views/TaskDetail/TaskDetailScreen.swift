@@ -92,7 +92,7 @@ struct TaskDetailScreen: View {
                     }
                 } else if task.workspaceID != nil, let item {
                     ToolbarItem(placement: .navigation) {
-                        Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat(matching: item) }
+                        Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat() }
                     }
                 }
                 if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || item.hasSubagents
@@ -189,18 +189,8 @@ struct TaskDetailScreen: View {
         }
     }
 
-    /// A side chat is titled by the session it asks about.
-    private var title: String {
-        guard let task else { return "Task" }
-        return task.isSideChat ? item?.parent?.title ?? task.title : task.title
-    }
-
-    private var subtitle: String {
-        guard let task else { return "" }
-        if task.isSideChat { return task.title }
-        return hosts.showsHostNames || hosts.filter != nil && hosts.hosts.count > 1
-            ? "\(task.projectName) · \(host?.name ?? "")" : task.projectName
-    }
+    private var title: String { item.map(hosts.navigationTitle) ?? "Task" }
+    private var subtitle: String { item.map(hosts.navigationSubtitle) ?? "" }
 
     private func sendDraft(from sourceFrame: CGRect?) -> Bool {
         guard let item else { return false }

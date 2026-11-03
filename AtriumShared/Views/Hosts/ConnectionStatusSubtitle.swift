@@ -13,6 +13,13 @@ struct ConnectionStatusSubtitle: ViewModifier {
 
     private var offline: [HostClient] { hosts.filter { !$0.isConnected } }
 
+    /// iOS lists retry when pulled down; the Mac keeps reconnecting on its own.
+    #if os(iOS)
+    private static let retryHint = " · Pull to retry"
+    #else
+    private static let retryHint = ""
+    #endif
+
     func body(content: Content) -> some View {
         content
             .navigationSubtitle((showsStatus ? notice : nil) ?? subtitle)
@@ -24,9 +31,8 @@ struct ConnectionStatusSubtitle: ViewModifier {
                 notice = "Reconnecting…"
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
-                notice = offline.count == 1
-                    ? "Can’t reach \(offline[0].name) · Pull to retry"
-                    : "Can’t reach \(offline.count) hosts · Pull to retry"
+                let unreachable = offline.count == 1 ? offline[0].name : "\(offline.count) hosts"
+                notice = "Can’t reach \(unreachable)\(Self.retryHint)"
             }
     }
 }

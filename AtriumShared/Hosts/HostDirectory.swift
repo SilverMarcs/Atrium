@@ -39,7 +39,7 @@ final class HostDirectory {
     private var linkError: String?
     @ObservationIgnored private var isActive = false
     /// The last task shown, whose draft closes once another task is shown
-    /// unless it's the new chat.
+    /// unless it's the new chat, and which the next new chat starts like.
     @ObservationIgnored private var lastShownTask: TaskRef?
     /// The draft last opened as the new chat, sent or not.
     private var newChatRef: TaskRef?
@@ -249,22 +249,42 @@ final class HostDirectory {
         return ref
     }
 
-    /// Opens the new chat, starting one in the project this device last
-    /// started a task in if none is unsent.
+    /// Opens the new chat like the chat on screen, or the last one shown:
+    /// on its host, in its project, with its agent, model, effort and fast
+    /// mode. Every new chat button and ⌘N open it this way.
     func openNewChat() {
         guard let ref = prepareNewChat() else { return }
         open(ref)
     }
 
-    /// Prepares the detail column's default draft without navigating away
-    /// from the task list when the split view is collapsed.
+    /// Prepares the new chat as `openNewChat()` does, without navigating, for
+    /// a detail column with nothing in it. With no chat shown yet, or one
+    /// whose host or agent can't start another, it's the unsent new chat as
+    /// it is, else one in the project this device last started a task in.
     @discardableResult
     func prepareNewChat() -> TaskRef? {
+        if let item = lastShownTask.flatMap(task), let ref = prepareNewChat(matching: item) { return ref }
         if let newChat { return newChat }
         let lastHost = UserDefaults.standard.string(forKey: HostClient.newTaskHostKey)
         guard let host = newChatHosts.first(where: { $0.id == lastHost }) ?? newChatHosts.first,
               let workspaceID = host.defaultWorkspaceID else { return nil }
         return prepareNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID))
+    }
+
+    /// The new chat like a task, as far as its host still offers what it
+    /// runs, or nil when its host or agent can't start another. The new chat
+    /// itself stays as it is.
+    private func prepareNewChat(matching item: HostTask) -> TaskRef? {
+        let host = item.host
+        let task = item.task
+        if let newChat, newChat.hostID == host.id, newChat.taskID == task.id { return newChat }
+        guard host.canStartTask, host.enabledProviders.contains(task.provider),
+              let workspaceID = task.workspaceID, host.workspace(workspaceID) != nil else { return nil }
+        return prepareNewChat(
+            in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID),
+            provider: task.provider,
+            settings: Self.startSettings(matching: task, models: host.models(for: task.provider))
+        )
     }
 
     /// Opens the new chat in a project on any host, moving an unsent one
@@ -301,13 +321,14 @@ final class HostDirectory {
         return ref
     }
 
-    /// Opens the new chat in a task's project with its agent's own defaults.
-    func openNewChat(matching item: HostTask) {
-        guard let workspaceID = item.task.workspaceID else { return }
-        let task = item.task
-        openNewChat(
-            in: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-            provider: task.provider
+    /// A task's model, effort and fast mode as a new task starts with them,
+    /// or nil for its agent's defaults when the model is no longer offered.
+    static func startSettings(matching task: WireTask, models: [AgentModel]) -> TaskStartSettings? {
+        guard let model = models.model(running: task.model) else { return nil }
+        return TaskStartSettings(
+            model: model.id,
+            reasoningEffort: task.reasoningEffort.flatMap { model.reasoningEfforts.contains($0) ? $0 : nil },
+            isFastMode: model.supportsFastMode && task.isFastMode == true
         )
     }
 
