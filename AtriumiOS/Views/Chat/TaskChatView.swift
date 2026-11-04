@@ -257,7 +257,7 @@ struct TaskChatView: View {
                 } else if messages == nil {
                     ProgressView()
                         .controlSize(.large)
-                } else if messages?.isEmpty == true, pendingPrompts.isEmpty {
+                } else if messages?.isEmpty == true, pendingPrompts.isEmpty, host.drafts[task.id] == nil {
                     ContentUnavailableView("No Messages Yet", systemImage: "bubble.left", description: Text("Send a prompt to start."))
                 }
             }

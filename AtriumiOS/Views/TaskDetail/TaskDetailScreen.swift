@@ -49,11 +49,7 @@ struct TaskDetailScreen: View {
         let composer = composer
         Group {
             if let item {
-                if let draft = newChatDraft {
-                    NewChatPlaceholder(provider: draft.provider)
-                } else {
-                    TaskChatView(item: item)
-                }
+                TaskChatView(item: item)
             } else if host?.tasks == nil || host?.isConnected != true {
                 ProgressView()
                     .controlSize(.large)

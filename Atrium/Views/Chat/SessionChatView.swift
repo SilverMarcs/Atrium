@@ -141,19 +141,6 @@ struct SessionChatView: View {
       .overlay {
         if transcript == nil, rows.isEmpty, transcriptError == nil {
           ProgressView()
-        } else if transcript?.isEmpty == true, prompts.isEmpty {
-          let draft = host.drafts[task.id]
-          if draft == nil || !host.enabledProviders.isEmpty {
-            let provider = draft?.provider ?? task.provider
-            Image(provider.symbolName)
-              .resizable()
-              .scaledToFit()
-              .frame(width: 109, height: 109)
-              .foregroundStyle(.tertiary)
-              .contentTransition(.symbolEffect(.replace))
-              .accessibilityLabel(provider.name)
-              .allowsHitTesting(false)
-          }
         }
       }
       .safeAreaBar(edge: .bottom) {
