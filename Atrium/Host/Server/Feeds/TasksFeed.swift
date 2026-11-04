@@ -80,7 +80,8 @@ final class TasksFeed: TopicFeed {
             title: thread.title,
             provider: thread.provider,
             status: thread.status,
-            projectName: thread.projectName,
+            // A task in a linked worktree is named for its project, not the worktree's folder.
+            projectName: project.id.flatMap { id in workspaces.workspaces.first { $0.id == id }?.name } ?? thread.projectName,
             path: thread.directory,
             directory: abbreviated(thread.directory),
             workspaceID: project.id,

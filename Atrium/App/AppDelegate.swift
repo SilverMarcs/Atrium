@@ -68,20 +68,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(request)
     }
 
-    static func sendThreadNotification(_ thread: AgentThread, projectIconURL: URL? = nil) {
+    /// Alerts about a task under its project's name, which a task relocated
+    /// into a linked worktree keeps, rather than the worktree folder's.
+    static func sendThreadNotification(_ thread: AgentThread, workspace: Workspace?) {
         guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
+        let projectName = workspace?.name ?? thread.projectName
         let content = UNMutableNotificationContent()
-        content.title = thread.projectName
+        content.title = projectName
         content.subtitle = thread.title
         content.body = thread.status == .waiting ? "Needs your input" : "Done"
         content.sound = .default
         content.userInfo = ["threadID": thread.id]
-        let icon = ProjectNotificationIcon.pngData(at: projectIconURL)
+        let icon = ProjectNotificationIcon.pngData(at: workspace?.customIconURL)
         Task { @MainActor in
             let notification: UNNotificationContent
             if let icon,
                let updated = try? await ProjectNotificationContent.updating(
-                content: content, title: thread.projectName, imageData: icon, conversationID: thread.id
+                content: content, title: projectName, imageData: icon, conversationID: thread.id
                ) {
                 notification = updated
             } else {

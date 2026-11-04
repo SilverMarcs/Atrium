@@ -18,7 +18,7 @@ final class TaskSessionController {
             integrations?.threads.first(where: { $0.id == id })?.isMainTask == true
         }
         integrations.onAttention = { [weak workspaces] thread in
-            AppDelegate.sendThreadNotification(thread, projectIconURL: workspaces?.workspace(for: thread)?.customIconURL)
+            AppDelegate.sendThreadNotification(thread, workspace: workspaces?.workspace(for: thread))
         }
     }
 
