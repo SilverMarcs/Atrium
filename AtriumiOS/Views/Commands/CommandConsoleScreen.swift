@@ -27,7 +27,7 @@ struct CommandConsoleScreen: View {
                 }
             }
             .navigationTitle(command?.title ?? "Command")
-            .navigationSubtitle(subtitle)
+            .navigationSubtitle(command?.status ?? "")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if let command {
@@ -46,10 +46,6 @@ struct CommandConsoleScreen: View {
             }
             .task(id: console.workspaceID) { await console.host.follow(.commands(workspaceID: console.workspaceID)) }
             .task(id: console.topic) { await console.host.follow(console.topic) }
-    }
-
-    private var subtitle: String {
-        [command?.directory.map(console.host.displayPath), command?.status].compactMap(\.self).joined(separator: " · ")
     }
 }
 
