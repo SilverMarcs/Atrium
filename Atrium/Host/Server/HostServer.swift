@@ -326,7 +326,10 @@ final class HostServer {
             }
         case .addWorkspace(let path):
             guard connection.isLocal else { return .hostOnly }
-            return WorkspaceService(workspaces: workspaces).add(path: path)
+            let reply = WorkspaceService(workspaces: workspaces).add(path: path)
+            // Clients list the project before the reply, so they open it.
+            publishTasks(.tasks(tasksFeed.snapshot()))
+            return reply
         case .workspace(let id, let action):
             guard let workspace = workspace(id) else { return .missingProject }
             return WorkspaceService(workspaces: workspaces).perform(action, on: workspace, isLocal: connection.isLocal)

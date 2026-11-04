@@ -1,6 +1,7 @@
 import AtriumClient
 import AtriumProtocol
 import SwiftUI
+import UniformTypeIdentifiers
 #if os(iOS)
 import UIKit
 #else
@@ -10,6 +11,7 @@ import AppKit
 /// Shows the project's custom icon, falling back to its type logo or a folder.
 struct NewChatProjectPicker: View {
     @State private var customIcons: [String: Image] = [:]
+    @State private var showingFolderImporter = false
     let hosts: HostDirectory
     let host: HostClient
     let draft: TaskDraft
@@ -20,6 +22,11 @@ struct NewChatProjectPicker: View {
 
     var body: some View {
         Menu {
+            // Folders are added as projects on their own Mac, as in Projects.
+            if host.isLocal {
+                Button("Add Folder…", systemImage: "folder.badge.plus") { showingFolderImporter = true }
+                Divider()
+            }
             Picker("Project", selection: Binding(
                 get: { draft.workspaceID },
                 set: { hosts.openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: $0)) }
@@ -53,6 +60,10 @@ struct NewChatProjectPicker: View {
             }
         }
         .menuOrder(.fixed)
+        .fileImporter(isPresented: $showingFolderImporter, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            Task { await hosts.openNewChat(inFolder: url, on: host) }
+        }
         .accessibilityLabel("Project")
         .accessibilityValue(projectName)
         .task(id: [host.id] + workspaces.compactMap(\.customIconKey)) {

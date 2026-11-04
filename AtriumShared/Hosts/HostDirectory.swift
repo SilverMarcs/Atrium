@@ -295,6 +295,13 @@ final class HostDirectory {
         open(ref)
     }
 
+    /// Adds a folder on this Mac as one of its projects, or finds the project
+    /// it already is, and moves the new chat there.
+    func openNewChat(inFolder url: URL, on host: HostClient) async {
+        guard case .workspace(let id) = await host.perform(.addWorkspace(path: url.path(percentEncoded: false))) else { return }
+        openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: id))
+    }
+
     private func prepareNewChat(in workspace: WorkspaceRef, provider: AgentProvider? = nil, settings: TaskStartSettings? = nil) -> TaskRef? {
         guard let host = host(workspace.hostID) else { return nil }
         let current = newChat
