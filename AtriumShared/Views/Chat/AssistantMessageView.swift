@@ -23,7 +23,7 @@ struct AssistantMessageView: View {
             }
             ForEach(reply.pages) { block in
                 if let page = block.page {
-                    ChatPageView(page: page, isEarlierVersion: earlierPageIDs.contains(block.id))
+                    ChatPageView(page: page, id: block.id, isEarlierVersion: earlierPageIDs.contains(block.id))
                 }
             }
             // The shown notes read as one document, so they select together.

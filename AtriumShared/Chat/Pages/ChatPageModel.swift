@@ -50,8 +50,16 @@ final class ChatPageModel {
             return
         }
         self.html = html
-        webPage.load(html: ChatPageFiles.resolvingFileURLs(in: html), baseURL: files.baseURL)
+        webPage.load(html: Self.standardsMode(ChatPageFiles.resolvingFileURLs(in: html)), baseURL: files.baseURL)
         phase = .loaded
+    }
+
+    /// A page without a doctype lays out in quirks mode, where it's at least as
+    /// tall as the view showing it. It would then report that view's height
+    /// rather than its own, including while it's kept loaded off screen.
+    private static func standardsMode(_ html: String) -> String {
+        let start = html.trimmingPrefix(while: \.isWhitespace).prefix(9)
+        return start.lowercased() == "<!doctype" ? html : "<!doctype html>\n" + html
     }
 
     #if os(macOS)

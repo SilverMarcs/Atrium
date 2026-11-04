@@ -7,6 +7,8 @@ import SwiftUI
 /// shown in full. While the agent is still writing it, a placeholder stands in.
 struct ChatPageView: View {
     let page: TranscriptPage
+    /// The block that shows the page.
+    let id: String
     var isEarlierVersion = false
 
     var body: some View {
@@ -19,10 +21,10 @@ struct ChatPageView: View {
             if UIDevice.current.userInterfaceIdiom == .phone {
                 ChatPageButton(page: page)
             } else {
-                ChatPageFrame(page: page)
+                ChatPageFrame(page: page, id: id)
             }
             #else
-            ChatPageFrame(page: page)
+            ChatPageFrame(page: page, id: id)
             #endif
         }
     }

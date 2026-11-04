@@ -4,15 +4,16 @@ import WebKit
 
 /// A page an agent showed, inline at the reply's width and as tall as its
 /// content, so the timeline scrolls past it rather than into it. It loads
-/// only while on screen; a page taller than the frame allows scrolls inside.
+/// when it comes on screen and stays loaded while it's among the pages seen
+/// last; a page taller than the frame allows scrolls inside.
 struct ChatPageFrame: View {
     let page: TranscriptPage
+    /// The block that shows the page.
+    let id: String
     @Environment(\.chatMedia) private var media
     @Environment(\.openURL) private var openURL
-    @State private var model: ChatPageModel?
+    @Environment(LoadedChatPages.self) private var pages
     @State private var isVisible = false
-    /// The height the page last measured, kept while it's unloaded off screen.
-    @State private var measuredHeight: CGFloat?
     @State private var isExpanded = false
     @State private var isHovering = false
     /// The format just saved, shown with a checkmark for a moment.
@@ -24,8 +25,10 @@ struct ChatPageFrame: View {
     private static let minimumHeight: CGFloat = 80
     private static let maximumHeight: CGFloat = 2000
 
+    private var model: ChatPageModel? { pages.model(for: id) }
+
     var body: some View {
-        let contentHeight = model?.contentHeight ?? measuredHeight
+        let contentHeight = pages.height(for: id)
         let fits = (contentHeight ?? 0) <= Self.maximumHeight
         ZStack(alignment: .topTrailing) {
             if let model, model.phase == .loaded {
@@ -69,16 +72,7 @@ struct ChatPageFrame: View {
         .onHover { isHovering = $0 }
         .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
         .task(id: isVisible) {
-            if isVisible {
-                guard model == nil else { return }
-                let model = ChatPageModel(media: media, openURL: openURL)
-                self.model = model
-                await model.load(page)
-            } else if let model {
-                // Web content is heavy; a reply's pages can be many screens up.
-                measuredHeight = model.contentHeight ?? measuredHeight
-                self.model = nil
-            }
+            if isVisible { await pages.show(page, id: id, media: media, openURL: openURL) }
         }
         .sheet(isPresented: $isExpanded) {
             ChatPageSheet(page: page)

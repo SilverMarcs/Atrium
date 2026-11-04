@@ -14,6 +14,8 @@ struct SessionChatView: View {
   @State private var scrollPolicy = ConversationScrollPolicy()
   @State private var flights = PromptFlights()
   @State private var links = ChatLinkOpener()
+  /// The pages the task's agents showed, which the timeline keeps loaded as it scrolls.
+  @State private var pages = LoadedChatPages()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let bottomID = "bottom"
@@ -96,6 +98,7 @@ struct SessionChatView: View {
       }
       // Pages and images agents show in replies load from the task's host.
       .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
+      .environment(pages)
       .environment(\.promptActions, promptActions(composer))
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
       .environment(flights)
