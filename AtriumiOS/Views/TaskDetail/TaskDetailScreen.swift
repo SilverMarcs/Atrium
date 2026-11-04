@@ -8,6 +8,8 @@ struct TaskDetailScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
     @Environment(\.replaceSideChat) private var replaceSideChat
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let ref: TaskRef
     @State private var showingScratchPad = false
     /// Shared by every task the screen shows, so the composer's field
@@ -38,6 +40,12 @@ struct TaskDetailScreen: View {
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
+    /// Whether the screen is in view. A collapsed split view, as on iPhone,
+    /// keeps the detail column's screen while the task list shows, and stops
+    /// presenting it as soon as going back starts, before it disappears, so a
+    /// new chat created meanwhile doesn't open over the list.
+    private var isOnScreen: Bool { horizontalSizeClass != .compact || isPresented }
+
     private var newChatDraft: TaskDraft? {
         guard let item,
               item.host.conversations.transcripts[item.task.id]?.isEmpty == true,
@@ -62,7 +70,7 @@ struct TaskDetailScreen: View {
             }
         }
         .onAppear {
-            hosts.setVisibleTask(resolvedRef)
+            if isOnScreen { hosts.setVisibleTask(resolvedRef) }
             host?.onPendingPromptShown = { [sendAnimator] promptID, messageID in
                 sendAnimator.confirm(promptID, as: messageID)
             }
@@ -72,6 +80,13 @@ struct TaskDetailScreen: View {
             host?.onPendingPromptShown = nil
             sendAnimator.cancelAll()
             hosts.releaseComposer(for: resolvedRef)
+        }
+        .onChange(of: isOnScreen) { _, isOnScreen in
+            if isOnScreen {
+                hosts.setVisibleTask(resolvedRef)
+            } else if hosts.visibleTask == resolvedRef {
+                hosts.setVisibleTask(nil)
+            }
         }
         .navigationTitle(title)
         .modifier(ConnectionStatusSubtitle(
@@ -163,7 +178,9 @@ struct TaskDetailScreen: View {
         // leaves keeps its draft for when it opens again. A new task opened
         // from the screen's draft carries on with the draft's composer.
         .onChange(of: resolvedRef) { oldRef, newRef in
-            hosts.setVisibleTask(newRef)
+            // Only a screen in view shows its new task; one kept behind the
+            // task list leaves it to be shown when it's opened.
+            if hosts.visibleTask == oldRef { hosts.setVisibleTask(newRef) }
             guard oldRef.hostID != newRef.hostID || host?.drafts[oldRef.taskID]?.taskID != newRef.taskID else { return }
             let previous = hosts.composer(for: oldRef)
             previous.dictation.cancel()
@@ -177,9 +194,9 @@ struct TaskDetailScreen: View {
             await host?.follow(.transcript(taskID: resolvedRef.taskID))
         }
         .followsProjectScope(of: item)
-        .task(id: task) {
+        .task(id: isOnScreen ? task : nil) {
             // Viewing a finished task reads it, as selecting it does on the host.
-            if let task, task.hasUnreadResult {
+            if isOnScreen, let task, task.hasUnreadResult {
                 host?.send(.task(id: task.id, action: .viewed))
             }
         }
