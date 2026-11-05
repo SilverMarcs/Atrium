@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Replaces the search icon, hides the clear button, and keeps body text and
-/// typing suggestions suitable for composing messages.
+/// typing suggestions suitable for composing messages, or monospaced body text
+/// without corrections for typing commands.
 /// UIKit refreshes the search field during toolbar and focus transitions, so
 /// enforce its styling synchronously instead of waiting for a SwiftUI update.
 final class ComposerSearchFieldStyle: UIView {
@@ -9,9 +10,13 @@ final class ComposerSearchFieldStyle: UIView {
     private let trailingSpacer = UIView(frame: .zero)
     private var observations: [NSKeyValueObservation] = []
     private var isApplyingStyle = false
+    private let isMonospaced: Bool
+    private let autocorrectionType: UITextAutocorrectionType
 
-    init(textField: UISearchTextField) {
+    init(textField: UISearchTextField, isMonospaced: Bool = false, autocorrects: Bool = true) {
         self.textField = textField
+        self.isMonospaced = isMonospaced
+        autocorrectionType = autocorrects ? .yes : .no
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         trailingSpacer.isUserInteractionEnabled = false
@@ -44,7 +49,8 @@ final class ComposerSearchFieldStyle: UIView {
 
     private func applyStyle() {
         guard !isApplyingStyle, let textField else { return }
-        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: textField.traitCollection)
+        let bodyFont = UIFont.preferredFont(forTextStyle: .body, compatibleWith: textField.traitCollection)
+        let font = isMonospaced ? UIFont.monospacedSystemFont(ofSize: bodyFont.pointSize, weight: .regular) : bodyFont
         isApplyingStyle = true
         defer { isApplyingStyle = false }
         if textField.clearButtonMode != .never {
@@ -60,9 +66,9 @@ final class ComposerSearchFieldStyle: UIView {
             textField.rightViewMode = .always
         }
         // SwiftUI's toolbar search field is a separate clone and can restore
-        // the search default of `.no` after the environment is applied.
-        if textField.autocorrectionType != .yes {
-            textField.autocorrectionType = .yes
+        // the search default after the environment is applied.
+        if textField.autocorrectionType != autocorrectionType {
+            textField.autocorrectionType = autocorrectionType
             if textField.isFirstResponder {
                 textField.reloadInputViews()
             }
