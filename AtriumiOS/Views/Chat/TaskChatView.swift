@@ -41,7 +41,7 @@ struct TaskChatView: View {
         }
         let turns = ConversationTurns(messages: messages ?? [], pendingPrompts: pendingPrompts, status: task.status)
         let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
-        let editEnabled = task.actions.contains(.editMessage) && pendingPrompts.isEmpty && composer.messageEdit?.isSubmitting != true
+        let editEnabled = task.actions.contains(.editMessage) && pendingPrompts.isEmpty
         let forkEnabled = task.actions.contains(.fork)
 
         ScrollViewReader { proxy in
@@ -52,7 +52,7 @@ struct TaskChatView: View {
                             TranscriptMessageRow(
                                 message: message, isStreaming: turns.liveIDs.contains(message.id),
                                 edit: message.editTarget != nil
-                                    ? PromptAction(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil,
+                                    ? PromptAction(isEnabled: { editEnabled && composer.canBeginEditing(message.id) }, perform: { composer.beginEditing(message, in: item) }) : nil,
                                 fork: message.editTarget != nil
                                     ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
                             )
@@ -81,7 +81,7 @@ struct TaskChatView: View {
                                     TranscriptMessageRow(
                                         message: message, isStreaming: turns.liveIDs.contains(message.id),
                                         edit: message.editTarget != nil
-                                            ? PromptAction(isEnabled: { editEnabled }, perform: { composer.beginEditing(message, in: item) }) : nil,
+                                            ? PromptAction(isEnabled: { editEnabled && composer.canBeginEditing(message.id) }, perform: { composer.beginEditing(message, in: item) }) : nil,
                                         fork: message.editTarget != nil
                                             ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
                                     )

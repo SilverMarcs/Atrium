@@ -47,8 +47,14 @@ final class TaskComposer {
     static let maxImages = 10
     #endif
 
+    /// Not while an edit is saving, and not the message already being edited,
+    /// which would throw away its draft.
+    func canBeginEditing(_ messageID: String) -> Bool {
+        messageEdit?.isSubmitting != true && messageEdit?.messageID != messageID
+    }
+
     func beginEditing(_ message: TranscriptMessage, in item: HostTask) {
-        guard messageEdit?.isSubmitting != true,
+        guard canBeginEditing(message.id),
               let edit = ConversationMessageEdit(message: message, item: item) else { return }
         dictation.cancel()
         messageEdit = edit

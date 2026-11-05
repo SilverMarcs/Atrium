@@ -7,6 +7,7 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
+    @FocusedValue(\.latestPromptEdit) private var latestPromptEdit
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
@@ -171,6 +172,14 @@ struct AppCommands: Commands {
             }
 
             CommandGroup(after: .textEditing) {
+                Button("Edit Last Message", systemImage: "pencil") {
+                    latestPromptEdit?.perform()
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(latestPromptEdit == nil)
+
+                Divider()
+
                 Button("Find…") {
                     let item = NSMenuItem()
                     item.tag = Int(NSFindPanelAction.showFindPanel.rawValue)

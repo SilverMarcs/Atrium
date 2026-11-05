@@ -30,6 +30,7 @@ struct SessionChatView: View {
 
   var body: some View {
     let composer = app.hosts.composer(for: item.id)
+    let actions = promptActions(composer)
     let transcript = conversation.transcripts[task.id]
     let prompts = conversation.pendingPrompts[task.id] ?? []
     let turns = ConversationTurns(
@@ -99,7 +100,7 @@ struct SessionChatView: View {
       // Pages and images agents show in replies load from the task's host.
       .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
       .environment(pages)
-      .environment(\.promptActions, promptActions(composer))
+      .environment(\.promptActions, actions)
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
       .environment(flights)
       .scrollEdgeEffectHidden(true, for: .bottom)
@@ -251,6 +252,7 @@ struct SessionChatView: View {
       openTerminal: host.isLocal && task.actions.contains(.openTerminal)
         ? { host.send(.task(id: task.id, action: .openTerminal)) } : nil
     ))
+    .focusedSceneValue(\.latestPromptEdit, latestPromptEdit(rows: rows, actions: actions))
     .font(.system(size: chatFontSize))
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
@@ -264,10 +266,10 @@ struct SessionChatView: View {
   /// every row values that change with each send.
   private func promptActions(_ composer: TaskComposer) -> PromptActions {
     PromptActions(
-      isEditEnabled: { [host, taskID = task.id] in
+      isEditEnabled: { [host, taskID = task.id] messageID in
         host.task(taskID)?.actions.contains(.editMessage) == true
           && host.conversations.pendingPrompts[taskID]?.isEmpty != false
-          && composer.messageEdit?.isSubmitting != true
+          && composer.canBeginEditing(messageID)
       },
       edit: { [host, taskID = task.id] message in
         guard let task = host.displayedTask(taskID) else { return }
@@ -280,6 +282,14 @@ struct SessionChatView: View {
       },
       retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) }
     )
+  }
+
+  /// The newest prompt's bubble Edit action, offered when its menu would offer it.
+  private func latestPromptEdit(rows: [ConversationRow], actions: PromptActions) -> LatestPromptEdit? {
+    guard let row = rows.last(where: { $0.message.role == .user }),
+          row.pendingPrompt == nil, row.message.editTarget != nil,
+          actions.isEditEnabled(row.id) else { return nil }
+    return LatestPromptEdit(messageID: row.id) { [message = row.message] in actions.edit(message) }
   }
 
   /// Sends with nothing else animating; the sent bubble flies in on its own.

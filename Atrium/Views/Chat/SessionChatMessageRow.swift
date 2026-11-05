@@ -32,7 +32,7 @@ struct SessionChatMessageRow: View, Equatable {
           images: pendingPrompt?.images ?? message.images ?? [],
           messageID: pendingPrompt == nil ? message.id : nil,
           isFromAgent: message.relay != nil,
-          edit: isRewindable ? PromptAction(isEnabled: actions.isEditEnabled, perform: { [message] in actions.edit(message) }) : nil,
+          edit: isRewindable ? PromptAction(isEnabled: { [message] in actions.isEditEnabled(message.id) }, perform: { [message] in actions.edit(message) }) : nil,
           fork: isRewindable ? PromptAction(isEnabled: actions.isForkEnabled, perform: { [message] in actions.fork(message) }) : nil,
           flightRowID: message.id.hasPrefix("pending-") ? message.id : nil)
         if let pendingPrompt, pendingPrompt.state == .failed {
@@ -59,13 +59,23 @@ struct SessionChatMessageRow: View, Equatable {
 /// new one the timeline builds on each update doesn't update its rows; the
 /// closures reach live state through the references they hold.
 struct PromptActions: Equatable {
-  var isEditEnabled: @MainActor () -> Bool = { false }
+  var isEditEnabled: @MainActor (_ messageID: String) -> Bool = { _ in false }
   var edit: @MainActor (TranscriptMessage) -> Void = { _ in }
   var isForkEnabled: @MainActor () -> Bool = { false }
   var fork: @MainActor (TranscriptMessage) -> Void = { _ in }
   var retry: @MainActor (UUID) -> Void = { _ in }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
+/// The menu bar's Edit Last Message: the newest prompt bubble's Edit action.
+/// Compares by the prompt, so the chat's updates leave the menu alone until a
+/// different prompt becomes the latest.
+struct LatestPromptEdit: Equatable {
+  let messageID: String
+  let perform: @MainActor () -> Void
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.messageID == rhs.messageID }
 }
 
 extension EnvironmentValues {
