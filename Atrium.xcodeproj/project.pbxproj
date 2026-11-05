@@ -920,8 +920,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SilverMarcs/SwiftMarkdownView";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.4.0;
+				branch = main;
+				kind = branch;
 			};
 		};
 		0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */ = {
