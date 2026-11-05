@@ -894,6 +894,18 @@ final class AgentIntegrationStore {
         }
     }
 
+    /// An image attached to a prompt as it was sent, by the prompt's message ID
+    /// and the image's place among its images. A fork keeps only the previews
+    /// of the prompts it inherited from the other provider.
+    func promptImage(_ index: Int, of messageID: String, in thread: AgentThread) async -> Data? {
+        let images = if let inherited = inherited[thread.id]?.messages.first(where: { $0.id == messageID }) {
+            inherited.images ?? []
+        } else {
+            (try? await enabledAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID)) ?? []
+        }
+        return images.indices.contains(index) ? images[index] : nil
+    }
+
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> (messages: [TranscriptMessage], images: [Data]) {
         guard thread.status != .processing, thread.status != .waiting, rewindingThreadIDs.insert(thread.id).inserted else {
             throw IntegrationError(message: "Wait for the agent to finish or stop it before editing a message.")

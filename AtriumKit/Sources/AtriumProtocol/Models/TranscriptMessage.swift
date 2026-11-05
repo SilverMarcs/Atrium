@@ -12,7 +12,8 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
     public var role: Role
     /// In the order the agent produced them, so text and tool runs interleave correctly.
     public var blocks: [TranscriptBlock]
-    /// Small previews, rather than full image payloads, for local and companion history.
+    /// Small previews, rather than full image payloads, for local and companion
+    /// history. `HostRequest.promptImage` fetches each one as it was sent.
     public var images: [Data]? = nil
     /// Provider-native rewind boundary. Nil for messages that cannot be edited independently.
     public var editTarget: String? = nil

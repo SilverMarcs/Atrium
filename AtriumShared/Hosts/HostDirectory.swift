@@ -58,10 +58,14 @@ final class HostDirectory {
         connections.delegate = self
         // Image views that load by URL reach a host's images through its connection.
         SMVImageSources.register(scheme: HostImageURL.scheme) { [weak self] url, maxPixelSize in
-            guard let image = HostImageURL(url), let host = await self?.host(image.hostID),
-                  let data = await host.image(taskID: image.taskID, path: image.path, maxPixelSize: maxPixelSize) else {
-                throw URLError(.fileDoesNotExist)
+            guard let image = HostImageURL(url), let host = await self?.host(image.hostID) else { throw URLError(.fileDoesNotExist) }
+            let data = switch image.image {
+            case .file(let path):
+                await host.image(taskID: image.taskID, path: path, maxPixelSize: maxPixelSize)
+            case .prompt(let messageID, let index):
+                await host.promptImage(taskID: image.taskID, messageID: messageID, index: index, maxPixelSize: maxPixelSize)
             }
+            guard let data else { throw URLError(.fileDoesNotExist) }
             return data
         }
     }

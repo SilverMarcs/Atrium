@@ -21,6 +21,11 @@ nonisolated struct ChatMedia: Equatable, Sendable {
         await host.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize)
     }
 
+    /// An image on the host as a URL, for views that load images by URL.
+    @MainActor func url(of image: HostImageURL.Image) -> URL? {
+        HostImageURL(hostID: host.id, taskID: taskID, image: image).url
+    }
+
     static func == (lhs: ChatMedia, rhs: ChatMedia) -> Bool {
         lhs.host === rhs.host && lhs.taskID == rhs.taskID && lhs.directory == rhs.directory
     }
@@ -32,7 +37,7 @@ extension MediaSource {
     @MainActor func url(in media: ChatMedia?) -> URL? {
         switch self {
         case .web(let url): url
-        case .host(let path): media.flatMap { HostImageURL(hostID: $0.host.id, taskID: $0.taskID, path: path).url }
+        case .host(let path): media?.url(of: .file(path: path))
         }
     }
 

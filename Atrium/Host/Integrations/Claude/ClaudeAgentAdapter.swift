@@ -282,9 +282,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now)))
     }
 
+    /// A prompt's message ID is also its `editTarget`. Rewinding and forking
+    /// check the prompt is still saved, so this doesn't.
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
-        _ = try await savedPrompts(of: thread, including: messageID)
-        return try await history.promptImages(thread.sessionID, messageID: messageID)
+        try await history.promptImages(thread.sessionID, messageID: messageID)
     }
 
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {

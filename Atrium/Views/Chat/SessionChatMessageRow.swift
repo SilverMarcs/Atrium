@@ -30,6 +30,7 @@ struct SessionChatMessageRow: View, Equatable {
         UserMessageView(
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: pendingPrompt?.images ?? message.images ?? [],
+          messageID: pendingPrompt == nil ? message.id : nil,
           isFromAgent: message.relay != nil,
           edit: isRewindable ? PromptAction(isEnabled: actions.isEditEnabled, perform: { [message] in actions.edit(message) }) : nil,
           fork: isRewindable ? PromptAction(isEnabled: actions.isForkEnabled, perform: { [message] in actions.fork(message) }) : nil,

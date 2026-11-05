@@ -534,12 +534,14 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return conversations[thread.sessionID]?.messages ?? []
     }
 
-    /// A prompt's `editTarget` is the turn it starts.
+    /// A prompt's message ID is its item's, and its `editTarget` the turn it starts.
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
         try await connect()
-        let rows = try await turns(of: thread.sessionID)
-        guard let turn = rows.first(where: { $0["id"] as? String == messageID }),
-              let prompt = (turn["items"] as? [[String: Any]])?.first(where: { $0["type"] as? String == "userMessage" }) else {
+        let prompt = try await turns(of: thread.sessionID).lazy.compactMap { turn -> [String: Any]? in
+            let prompts = (turn["items"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "userMessage" }
+            return turn["id"] as? String == messageID ? prompts.first : prompts.first { $0["id"] as? String == messageID }
+        }.first
+        guard let prompt else {
             throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
         }
         return try (prompt["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in

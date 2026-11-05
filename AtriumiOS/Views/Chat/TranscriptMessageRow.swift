@@ -14,6 +14,7 @@ struct TranscriptMessageRow: View {
             UserMessageView(
                 text: message.blocks.compactMap(\.text).joined(separator: "\n"),
                 images: message.images ?? [],
+                messageID: message.id,
                 isFromAgent: message.relay != nil,
                 edit: edit,
                 fork: fork,

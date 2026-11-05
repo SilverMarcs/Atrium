@@ -2,9 +2,10 @@ import Foundation
 import Synchronization
 import SwiftMediaViewer
 
-/// A prompt's attached images, lent to SwiftMediaViewer as URLs in Atrium's
-/// own scheme. They already sit in memory with their message, so nothing is
-/// written anywhere: the viewer can load them for as long as the loan lives.
+/// The images a prompt on its way sends, lent to SwiftMediaViewer as URLs in
+/// Atrium's own scheme until its host has them. They already sit in memory with
+/// the prompt, so nothing is written anywhere: the viewer can load them for as
+/// long as the loan lives.
 nonisolated final class PromptImageLoan: Sendable {
     static let scheme = "atrium-prompt-image"
 

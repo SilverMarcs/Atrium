@@ -8,6 +8,10 @@ import AppKit
 struct UserMessageView: View {
     let text: String
     var images: [Data] = []
+    /// The prompt in its task's transcript, whose images open as they were
+    /// sent from its host, rather than as the previews the transcript carries.
+    /// Nil for a prompt still on its way, whose images are the ones it sends.
+    var messageID: String?
     var isFromAgent = false
     var edit: PromptAction?
     var fork: PromptAction?
@@ -19,8 +23,9 @@ struct UserMessageView: View {
     /// have one (nil) skips the effect and never observes flights.
     var sendFlight: ((PromptSendAnimator) -> PromptSendFlight?)?
     #endif
+    @Environment(\.chatMedia) private var media
     @State private var viewedImages: ViewedImages?
-    /// Names this prompt's images for the viewer, which zooms out of their thumbnails.
+    /// Names a sending prompt's images for the viewer, which zooms out of their thumbnails.
     @State private var imagesID = UUID()
     @Namespace private var namespace
 
@@ -28,10 +33,12 @@ struct UserMessageView: View {
         VStack(alignment: .trailing, spacing: 6) {
             if !images.isEmpty {
                 HStack {
-                    let urls = PromptImageLoan.urls(id: imagesID, count: images.count)
+                    let originals = originalURLs
+                    let urls = originals ?? PromptImageLoan.urls(id: imagesID, count: images.count)
                     ForEach(images.enumerated(), id: \.offset) { index, data in
                         Button {
-                            viewedImages = ViewedImages(prompt: images, id: imagesID, startIndex: index)
+                            viewedImages = originals.map { ViewedImages(urls: $0, startIndex: index) }
+                                ?? ViewedImages(prompt: images, id: imagesID, startIndex: index)
                         } label: {
                             PromptImageThumbnail(data: data)
                         }
@@ -69,6 +76,13 @@ struct UserMessageView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .textSelection(.enabled)
         .imageViewer($viewedImages, namespace: namespace)
+    }
+
+    /// The images as the host has them, for a prompt in its task's transcript.
+    private var originalURLs: [URL]? {
+        guard let messageID, let media else { return nil }
+        let urls = images.indices.compactMap { media.url(of: .prompt(messageID: messageID, index: $0)) }
+        return urls.count == images.count ? urls : nil
     }
 }
 

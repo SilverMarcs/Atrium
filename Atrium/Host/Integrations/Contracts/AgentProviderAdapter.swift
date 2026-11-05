@@ -43,7 +43,8 @@ protocol AgentProviderAdapter: AnyObject {
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
     /// Images are local files attached to the prompt.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
-    /// Requires `.editMessage`. The original images of a prompt, as its `editTarget` names it, to send again.
+    /// The original images of a prompt, to show or send again, as its message
+    /// ID or `editTarget` names it.
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data]
     /// Requires `.editMessage`. Rewinds conversation only, to before a prompt, and returns what's left.
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage]
@@ -102,7 +103,7 @@ extension AgentProviderAdapter {
     }
 
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
-        throw IntegrationError(message: "\(provider.name) doesn’t support conversation editing.")
+        throw IntegrationError(message: "\(provider.name) doesn’t keep the images prompts attached.")
     }
 
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {

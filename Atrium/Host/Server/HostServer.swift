@@ -300,6 +300,8 @@ final class HostServer {
             return await media.page(key, inTask: taskID)
         case .image(let taskID, let path, let maxPixelSize):
             return await media.image(path, maxPixelSize: maxPixelSize, inTask: taskID)
+        case .promptImage(let taskID, let messageID, let index, let maxPixelSize):
+            return await media.promptImage(index, of: messageID, maxPixelSize: maxPixelSize, inTask: taskID)
         case .refreshTasks:
             await integrations.refresh()
             return .done

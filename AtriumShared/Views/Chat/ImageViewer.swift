@@ -5,7 +5,7 @@ import SwiftMediaViewer
 struct ViewedImages: Identifiable {
     let urls: [URL]
     var startIndex = 0
-    /// Keeps a prompt's images loadable while they're open.
+    /// Keeps a sending prompt's images loadable while they're open.
     var loan: PromptImageLoan?
     let id = UUID()
 
@@ -14,7 +14,7 @@ struct ViewedImages: Identifiable {
         self.startIndex = startIndex
     }
 
-    /// A prompt's attached images, which live only in memory, lent under `id`.
+    /// The images a prompt on its way sends, which live only in memory, lent under `id`.
     init(prompt images: [Data], id: UUID, startIndex: Int) {
         let loan = PromptImageLoan(images, id: id)
         self.init(urls: loan.urls, startIndex: startIndex)

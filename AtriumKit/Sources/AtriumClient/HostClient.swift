@@ -566,6 +566,16 @@ public final class HostClient: Identifiable {
         }
     }
 
+    /// An image attached to a prompt in a task's transcript as it was sent,
+    /// scaled to fit `maxPixelSize`, or nil if the host can't provide it.
+    public func promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int) async -> Data? {
+        await media.value(for: "prompt-image/\(taskID)/\(maxPixelSize)/\(messageID)/\(index)") { [weak self] in
+            let request = HostRequest.promptImage(taskID: taskID, messageID: messageID, index: index, maxPixelSize: maxPixelSize)
+            guard case .image(let data) = await self?.fetchMedia(request) else { return nil }
+            return data
+        }
+    }
+
     /// A chat asks for its media as soon as it shows, which can be while its
     /// host is still connecting or while a direct connection takes over from
     /// the relay, so a request that couldn't reach the host waits to try once more.

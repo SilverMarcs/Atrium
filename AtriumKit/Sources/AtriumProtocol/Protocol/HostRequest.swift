@@ -32,6 +32,11 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// wrote: absolute, `~/`, or relative to the task's directory. Images wider
     /// or taller than `maxPixelSize` come back scaled down to fit it.
     case image(taskID: String, path: String, maxPixelSize: Int)
+    /// Fetches an image attached to a prompt in a task's transcript as it was
+    /// sent, rather than the preview the transcript carries, by the prompt's
+    /// message ID and the image's place among its images. Images wider or
+    /// taller than `maxPixelSize` come back scaled down to fit it.
+    case promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int)
     case refreshTasks
     case task(id: String, action: TaskAction)
     /// Creates a task in a project, in its folder as it is unless `checkout` says otherwise.

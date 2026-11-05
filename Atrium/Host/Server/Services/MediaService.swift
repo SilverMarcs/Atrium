@@ -1,8 +1,9 @@
 import AtriumProtocol
 import Foundation
 
-/// Serves the pages and images agents show in a task's chat. Pages come from
-/// memory and images from disk, as they are now; nothing is copied.
+/// Serves the pages and images agents show in a task's chat, and the images
+/// its prompts attached. Pages come from memory, images from disk and prompts'
+/// images from their agent's conversation, as they are now; nothing is copied.
 ///
 /// A client may fetch only what the task's transcript shows. What isn't known
 /// yet, as after Atrium restarts while a client still shows the chat, is looked
@@ -38,6 +39,17 @@ final class MediaService {
             return .failed(message: "That image isn’t part of this chat.")
         }
         guard let data = await TranscriptImage.display(at: URL(filePath: file), maxPixelSize: maxPixelSize) else {
+            return .failed(message: "That image is no longer available.")
+        }
+        return .image(data: data)
+    }
+
+    func promptImage(_ index: Int, of messageID: String, maxPixelSize: Int, inTask taskID: String) async -> HostReply {
+        guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
+            return .failed(message: "This task no longer exists.")
+        }
+        guard let original = await integrations.promptImage(index, of: messageID, in: thread),
+              let data = await TranscriptImage.display(original, maxPixelSize: maxPixelSize) else {
             return .failed(message: "That image is no longer available.")
         }
         return .image(data: data)

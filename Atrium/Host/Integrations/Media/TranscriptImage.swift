@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Images in chats: thumbnails of what a prompt attached, and the files agents
-/// show, read from disk each time a client asks.
+/// show and prompts' originals, read each time a client asks.
 nonisolated enum TranscriptImage {
     /// The file extensions agents' tools show as images.
     static let fileExtensions: Set = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "tiff", "tif", "bmp"]
@@ -16,8 +16,7 @@ nonisolated enum TranscriptImage {
     private static let clientTypes = Set([UTType.png, .jpeg, .gif, .heic, .webP].map(\.identifier))
 
     static func thumbnail(at url: URL) -> Data? {
-        guard url.isFileURL, let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return thumbnail(source)
+        source(at: url).flatMap(thumbnail)
     }
 
     static func thumbnail(_ data: Data) -> Data? {
@@ -28,7 +27,7 @@ nonisolated enum TranscriptImage {
     /// Whether the file is an image clients can be sent.
     @concurrent
     static func isImage(at url: URL) async -> Bool {
-        image(at: url) != nil
+        source(at: url).flatMap(properties) != nil
     }
 
     /// The image file for a client to show, no larger than `maxPixelSize` on
@@ -36,27 +35,42 @@ nonisolated enum TranscriptImage {
     /// or else a scaled copy. Nil for a file that isn't an image or is too large.
     @concurrent
     static func display(at url: URL, maxPixelSize: Int) async -> Data? {
-        guard let (source, type, size) = image(at: url) else { return nil }
+        guard let source = source(at: url) else { return nil }
+        let bytes = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        return display(source, bytes: bytes, maxPixelSize: maxPixelSize) { try? Data(contentsOf: url) }
+    }
+
+    /// The image for a client to show, as `display(at:maxPixelSize:)` makes it from a file.
+    @concurrent
+    static func display(_ data: Data, maxPixelSize: Int) async -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return display(source, bytes: data.count, maxPixelSize: maxPixelSize) { data }
+    }
+
+    /// `original` when it fits, at `bytes` long, in a format clients show, or else a scaled copy.
+    private static func display(_ source: CGImageSource, bytes: Int?, maxPixelSize: Int, original: () -> Data?) -> Data? {
+        guard let (type, size) = properties(of: source) else { return nil }
         let limit = min(max(maxPixelSize, displaySizes.lowerBound), displaySizes.upperBound)
         let maximumBytes = Int(HostProtocol.maxPreviewImageBytes)
-        if size <= limit, clientTypes.contains(type),
-           let bytes = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, bytes <= maximumBytes {
-            return try? Data(contentsOf: url)
-        }
+        if size <= limit, clientTypes.contains(type), let bytes, bytes <= maximumBytes { return original() }
         guard let image = scaled(source, to: min(size, limit)) else { return nil }
         let isOpaque = [.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
         guard let data = encode(image, as: isOpaque ? .jpeg : .png, quality: 0.85), data.count <= maximumBytes else { return nil }
         return data
     }
 
-    /// The file's image source, type and longer side in pixels, if it holds an image.
-    private static func image(at url: URL) -> (CGImageSource, String, Int)? {
-        guard url.isFileURL, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              CGImageSourceGetCount(source) > 0, let type = CGImageSourceGetType(source) as String?,
+    private static func source(at url: URL) -> CGImageSource? {
+        guard url.isFileURL else { return nil }
+        return CGImageSourceCreateWithURL(url as CFURL, nil)
+    }
+
+    /// The image's type and longer side in pixels, if the source holds one.
+    private static func properties(of source: CGImageSource) -> (String, Int)? {
+        guard CGImageSourceGetCount(source) > 0, let type = CGImageSourceGetType(source) as String?,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int, width > 0, height > 0 else { return nil }
-        return (source, type, max(width, height))
+        return (type, max(width, height))
     }
 
     private static func thumbnail(_ source: CGImageSource) -> Data? {
