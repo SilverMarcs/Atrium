@@ -235,8 +235,10 @@ final class Orchestrator {
     /// The text after the turn's last tool calls: the agent's answer rather
     /// than its narration along the way.
     private static func finalReply(_ messages: [TranscriptMessage]) -> String? {
-        // Another agent's report ends a step, like a tool call.
-        let blocks = messages.foldingReports().filter { $0.role == .assistant }.flatMap(\.blocks)
+        // Another agent's report ends a step, like a tool call, unless the
+        // agent wrote nothing after it.
+        var blocks = messages.foldingReports().filter { $0.role == .assistant }.flatMap(\.blocks)
+        while blocks.last?.reporter != nil { blocks.removeLast() }
         let lastTools = blocks.lastIndex { $0.toolCount > 0 || $0.reporter != nil }
         let tail = blocks[(lastTools.map { $0 + 1 } ?? 0)...].compactMap(\.text)
         let text = (tail.isEmpty ? blocks.compactMap(\.text).suffix(1) : ArraySlice(tail)).joined(separator: "\n\n")
