@@ -4,7 +4,7 @@ struct BottomSheetView: View {
     let project: Project
     @Environment(\.colorScheme) var colorScheme
     @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
-    @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
+    @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     private var panel: EditorPanel { project.editor }
 
@@ -18,7 +18,7 @@ struct BottomSheetView: View {
         .allowsHitTesting(panel.isOpen)
         .accessibilityHidden(!panel.isOpen)
         .background(colorScheme == .dark ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.bar))
-        .environment(\.editorFontSize, CGFloat(editorFontSize))
+        .environment(\.editorFontSize, EditorFontSize.matching(chat: chatFontSize))
         .environment(project.editor)
     }
 

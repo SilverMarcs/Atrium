@@ -1,14 +1,13 @@
 import SwiftUI
 
+/// The editor and diffs follow the chat's font size, one point smaller.
 enum EditorFontSize {
-    static let key = "editorFontSize"
-    static let `default`: Double = 12
-    static let min: Double = 9
-    static let max: Double = 24
+    static func matching(chat size: Double) -> CGFloat { CGFloat(size - 1) }
+    static let `default` = matching(chat: ChatFontSize.default)
 }
 
 extension EnvironmentValues {
-    @Entry var editorFontSize: CGFloat = CGFloat(EditorFontSize.default)
+    @Entry var editorFontSize: CGFloat = EditorFontSize.default
     @Entry var fileTreeAction: (FileTreeAction) -> Void = { _ in }
 }
 

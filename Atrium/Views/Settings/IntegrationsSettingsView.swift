@@ -11,14 +11,14 @@ struct IntegrationsSettingsView: View {
             Section {
                 Toggle(isOn: $settings.isOrchestratorEnabled) {
                     Text("Orchestrator")
-                    Text("Agents can start and prompt other Claude and Codex sessions with the bundled `atrium` command, and get their results back.")
+                    Text("Agents can delegate and monitor tasks to other Claude or Codex sessions.")
                 }
                 Toggle(isOn: $settings.isVisualizationsEnabled) {
                     Text("Visualizations")
                     Text("Agents can show charts, diagrams and mockups in the conversation.")
                 }
             } footer: {
-                Text("New chats get the instructions that are on when they start. Turning the Orchestrator off also stops every session’s `atrium` commands at once.")
+                Text("New chats get the instructions that are on when they start.")
             }
         }
         .formStyle(.grouped)

@@ -32,7 +32,7 @@ struct CommandOutputTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.openLink = openLink
-        context.coordinator.show(output, font: .monospacedSystemFont(ofSize: fontSize, weight: .regular))
+        context.coordinator.show(output, font: .monospacedSystemFont(ofSize: fontSize, weight: .light))
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }

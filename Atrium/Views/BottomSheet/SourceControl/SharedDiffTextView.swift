@@ -37,7 +37,7 @@ struct SharedDiffTextLayout {
 
 final class SharedDiffTextView: NSTextView {
     private var lineData: [SharedDiffLine] = []
-    private var layoutStyle: SharedDiffTextLayout = .popover(wrapsLines: false, fontSize: CGFloat(EditorFontSize.default))
+    private var layoutStyle: SharedDiffTextLayout = .popover(wrapsLines: false, fontSize: EditorFontSize.default)
 
     func configure(lines: [SharedDiffLine], fileExtension: String, layout: SharedDiffTextLayout, width: CGFloat) {
         lineData = lines

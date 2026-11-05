@@ -83,11 +83,8 @@ private struct CommandConsoleHeader: View {
         .padding(.vertical, 5)
     }
 
-    /// Where the latest run started and how it's going.
-    private var subtitle: String? {
-        let parts = [command.directory.map(project.host.displayPath), command.status].compactMap(\.self)
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
+    /// How the latest run is going, as iOS shows it.
+    private var subtitle: String? { command.status }
 }
 
 /// Types a reply into the running command, or runs a one-off script while it's
@@ -102,17 +99,26 @@ private struct CommandInputBar: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: command.isRunning ? "arrowshape.turn.up.left" : "chevron.right")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
                 .contentTransition(.symbolEffect(.replace))
-            TextField(command.isRunning ? "Reply" : "Run in \(console.host.displayPath(console.directory))", text: $console.draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: fontSize, design: .monospaced))
-                .focused($isFocused)
-                .onSubmit {
-                    console.submit()
-                    isFocused = true
+            ZStack(alignment: .leading) {
+                if console.draft.isEmpty {
+                    Text(command.isRunning ? "Reply" : "Run in \(console.host.displayPath(console.directory))")
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
                 }
-                .onKeyPress(phases: .down, action: handle)
+                TextField("", text: $console.draft)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .focused($isFocused)
+                    .onSubmit {
+                        console.submit()
+                        isFocused = true
+                    }
+                    .onKeyPress(phases: .down, action: handle)
+            }
+            .font(.system(size: fontSize, weight: .light, design: .monospaced))
             if command.isRunning {
                 CommandKeysMenu { console.perform(.key($0)) }
                     .labelStyle(.iconOnly)

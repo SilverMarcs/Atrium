@@ -8,7 +8,6 @@ struct AppCommands: Commands {
     @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
-    @AppStorage(EditorFontSize.key) private var editorFontSize: Double = EditorFontSize.default
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     /// Whether the focused window is the main Atrium window.
@@ -49,7 +48,6 @@ struct AppCommands: Commands {
             CommandGroup(replacing: .toolbar) {
                 Button {
                     chatFontSize = min(chatFontSize + ChatFontSize.step, ChatFontSize.max)
-                    editorFontSize = min(editorFontSize + 0.5, EditorFontSize.max)
                 } label: {
                     Label("Zoom In", systemImage: "plus.magnifyingglass")
                 }
@@ -57,7 +55,6 @@ struct AppCommands: Commands {
 
                 Button {
                     chatFontSize = max(chatFontSize - ChatFontSize.step, ChatFontSize.min)
-                    editorFontSize = max(editorFontSize - 0.5, EditorFontSize.min)
                 } label: {
                     Label("Zoom Out", systemImage: "minus.magnifyingglass")
                 }
@@ -65,7 +62,6 @@ struct AppCommands: Commands {
 
                 Button {
                     chatFontSize = ChatFontSize.default
-                    editorFontSize = EditorFontSize.default
                 } label: {
                     Label("Actual Size", systemImage: "1.magnifyingglass")
                 }
