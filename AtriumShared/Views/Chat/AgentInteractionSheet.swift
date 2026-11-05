@@ -68,9 +68,22 @@ struct AgentInteractionSheet: View {
                             #endif
                         }
                         if draft.question.isSecret {
-                            SecureField("Your answer", text: $draft.text)
+                            SecureField("Your answer", text: $draft.text, prompt: Text("Your answer"))
+                                #if os(macOS)
+                                .labelsHidden()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                #endif
                         } else {
-                            TextField(draft.question.options.isEmpty ? "Your answer" : "Another answer", text: $draft.text, axis: .vertical)
+                            TextField(
+                                draft.question.options.isEmpty ? "Your answer" : "Another answer",
+                                text: $draft.text,
+                                prompt: Text(draft.question.options.isEmpty ? "Your answer" : "Another answer"),
+                                axis: .vertical
+                            )
+                                #if os(macOS)
+                                .labelsHidden()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                #endif
                                 .onChange(of: draft.text) {
                                     if !draft.question.allowsMultiple, !draft.text.isEmpty { draft.selections.removeAll() }
                                 }
