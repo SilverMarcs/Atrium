@@ -18,8 +18,6 @@ struct GeneralSettingsView: View {
                             .frame(width: 25, alignment: .trailing)
                     }
                 }
-            } footer: {
-                Text("Used for chats and the composer. The editor and diffs use one point smaller.")
             }
 
             Section {

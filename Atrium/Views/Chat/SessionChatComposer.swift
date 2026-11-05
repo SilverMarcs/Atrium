@@ -14,7 +14,6 @@ struct SessionChatComposer: View {
   @Environment(AppModel.self) private var app
   @FocusState private var isFocused: Bool
   @AppStorage("enterToSendChat") private var enterToSendChat = false
-  @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
   private var prompt: String { composer.draft }
   private var images: [ComposerImage] { composer.images }
@@ -71,7 +70,6 @@ struct SessionChatComposer: View {
                 .onKeyPress(.return, action: handleReturnKey)
                 .disabled(edit?.isSubmitting == true)
             }
-            .font(.system(size: chatFontSize))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .padding(6)
