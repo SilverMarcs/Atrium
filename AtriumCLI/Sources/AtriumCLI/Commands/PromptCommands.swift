@@ -12,7 +12,8 @@ private let promptDetails = """
       --timeout S   With --wait or --follow, stop waiting after S seconds, exiting with status 6.
 
     Without --wait or --follow it returns once the agent has the prompt: {"id", "sessionID", "session"}. \
-    Agents on the Mac don't wait: Atrium sends them the result as a new message.
+    Agents on the Mac don't wait for sessions there: Atrium sends them the result as a new message. For a session \
+    on another Mac, they wait or read it later.
     """
 
 private let promptOptions: Set<String> = ["image", "id", "timeout"]

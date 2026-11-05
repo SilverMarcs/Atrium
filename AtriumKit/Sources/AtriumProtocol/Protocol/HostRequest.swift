@@ -10,6 +10,14 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// prompts are linked to it, and their results go back to it. Other
     /// clients' are ignored.
     case caller(taskIDs: [String])
+    /// Pairs the command-line client on the same Mac as this paired app, the
+    /// `atrium` bundled in it, so the agents that Mac runs reach this host too.
+    /// The app vouches for it in place of a pairing link. Replies `.paired`.
+    case pairCommandLine(ClientDevice)
+    /// Every host this Mac's app is paired with, each paired for `device`,
+    /// the command-line client asking, except those in `known`, which it
+    /// already is. Only the agents on the Mac itself may ask.
+    case sharedHosts(device: ClientDevice, known: [String])
     /// Whether this client is in the foreground and which task it shows.
     case activity(ClientActivity)
     /// Where the host sends this phone's task alerts. Sent after each authentication.

@@ -46,6 +46,20 @@ final class Pairing {
             return nil
         }
         regenerateSecret()
+        return admit(device)
+    }
+
+    /// Pairs the command-line client a paired Mac app vouches for, the one
+    /// bundled in it, with no secret. It may replace an earlier pairing of
+    /// that client, never an app's.
+    func pair(commandLine device: ClientDevice) -> String? {
+        guard device.kind == .commandLine,
+              devices.allSatisfy({ $0.id != device.id || $0.kind == .commandLine }) else { return nil }
+        return admit(device)
+    }
+
+    /// Issues a device its token, replacing any earlier pairing of it.
+    private func admit(_ device: ClientDevice) -> String {
         let token = Self.randomToken()
         devices.removeAll { $0.id == device.id }
         devices.append(PairedDevice(

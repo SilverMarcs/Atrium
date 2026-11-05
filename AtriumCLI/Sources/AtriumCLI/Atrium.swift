@@ -57,8 +57,9 @@ enum Atrium {
             atrium drives the Claude and Codex sessions on an Atrium host: a Mac running Atrium.
 
             On that Mac, agents Atrium runs have the atrium bundled in Atrium.app on their PATH; it reaches its own Mac \
-            with nothing to set up, while the Orchestrator is on in Atrium Settings → Integrations. Anywhere else, pair \
-            once with `atrium pair <link>`, using a link from Atrium Settings → Remote on the Mac.
+            with nothing to set up, while the Orchestrator is on in Atrium Settings → Integrations, and every other Mac \
+            that Atrium is paired with, by name with --host (`atrium hosts`). Anywhere else, pair once with \
+            `atrium pair <link>`, using a link from Atrium Settings → Remote on the Mac.
 
             Every command prints one JSON document on standard output, or one JSON object per line for streams. A \
             failure prints {"error": {"code", "message"}} and exits with: 1 the host declined or nothing matched \
@@ -76,7 +77,8 @@ enum Atrium {
             Then end your turn. Atrium sends you the session's final reply as a new message once it's done, along \
             with any question it asks you, which you answer with `atrium respond`. Sessions you start or prompt are \
             listed under yours, and stopping yours stops them. Keep to a few sessions at once, and don't hand on work \
-            that was handed to you.
+            that was handed to you. A session on another Mac (--host) can't message you back: add --wait, with a \
+            --timeout, or check on it later with `atrium read`.
 
             Commands:
             \(list.joined(separator: "\n"))

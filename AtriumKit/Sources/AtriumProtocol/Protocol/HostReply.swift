@@ -6,6 +6,8 @@ public nonisolated enum HostReply: Codable, Sendable {
     case rewound(messages: [TranscriptMessage], images: [Data])
     case failed(message: String)
     case paired(token: String)
+    /// The hosts a Mac's app paired its command-line client with.
+    case sharedHosts([SharedHost])
     /// The task a compose or side chat created, or the session a caller runs in.
     case task(id: String)
     /// The task a fork created, with the original images of the prompt it

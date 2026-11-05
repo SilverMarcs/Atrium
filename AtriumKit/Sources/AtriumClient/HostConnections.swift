@@ -161,6 +161,23 @@ public final class HostConnections {
         delegate?.hostWasForgotten(host)
     }
 
+    /// Pairs `device`, the command-line client bundled in this Mac app, with
+    /// every connected host this app is paired with, except those in `known`,
+    /// vouching for it in place of a pairing link. A host that's offline or
+    /// too old to vouch to is left out until a later ask.
+    public func share(with device: ClientDevice, except known: Set<String>) async -> [SharedHost] {
+        var shared: [SharedHost] = []
+        for host in remoteHosts where host.isConnected && !known.contains(host.id) {
+            guard let paired = host.pairedHost,
+                  case .paired(let token)? = try? await host.request(.pairCommandLine(device)) else { continue }
+            shared.append(SharedHost(
+                hostID: paired.hostID, publicKey: paired.publicKey, hostName: paired.hostName,
+                customName: paired.customName, token: token
+            ))
+        }
+        return shared
+    }
+
     /// Names a paired host on this device only; nil goes back to the host's own.
     public func rename(_ host: HostClient, to name: String?) {
         if let paired = host.pairedHost { credentials.rename(paired, to: name) }

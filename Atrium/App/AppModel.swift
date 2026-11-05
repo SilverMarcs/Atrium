@@ -33,7 +33,12 @@ final class AppModel {
         let localHost = HostClient(localID: server.hello.hostID, name: HostServer.hostName) {
             LoopbackConnection(server: server)
         }
-        hosts = HostDirectory(localHost: localHost)
+        let hosts = HostDirectory(localHost: localHost)
+        self.hosts = hosts
+        // The agents this Mac runs reach every host this app is paired with.
+        server.shareHosts = { [weak hosts] device, known in
+            await hosts?.connections.share(with: device, except: known) ?? []
+        }
         hosts.start()
         Self.shared = self
     }

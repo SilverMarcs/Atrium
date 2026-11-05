@@ -46,23 +46,31 @@ let hostCommands: [Command] = [
     },
     Command(
         name: "hosts", usage: "hosts",
-        summary: "List the hosts this device is paired with.",
-        details: #"Prints {"device", "hosts", "local"}: local is whether this atrium reaches its own Mac's host."#,
+        summary: "List the hosts this device reaches.",
+        details: """
+            Prints {"device", "hosts", "local"}. The atrium bundled in Atrium lists its own Mac first, as `local`, \
+            then every Mac that Atrium is paired with, which it reaches with nothing to set up, as local says. \
+            Elsewhere, hosts are the ones paired with `atrium pair`.
+            """,
         flags: ["pretty", "verbose"], connects: false
     ) { arguments in
         try arguments.allowPositionals(0)
         let client = Client()
         let store = try client.credentials()
-        Output.write(HostsResult(
-            device: store.device,
-            hosts: try client.pairedConnections().hosts.map(HostJSON.init),
-            local: LocalHost.socket != nil
-        ))
+        await client.adoptAppHosts(timeout: .seconds(30))
+        var hosts = try client.pairedConnections().hosts.map(HostJSON.init)
+        if LocalHost.socket != nil {
+            hosts.insert(HostJSON(id: "local", name: LocalHost.name, hostName: LocalHost.name), at: 0)
+        }
+        Output.write(HostsResult(device: store.device, hosts: hosts, local: LocalHost.socket != nil))
     },
     Command(
         name: "forget", usage: "forget [--host H]",
         summary: "Forget a paired host and delete this device's token for it.",
-        details: "The Mac keeps listing this device until it's removed in Atrium Settings → Remote there.",
+        details: """
+            The Mac keeps listing this device until it's removed in Atrium Settings → Remote there. A Mac the \
+            Atrium app here is paired with comes back the next time a command needs it.
+            """,
         options: ["host"], flags: ["pretty", "verbose"], connects: false
     ) { arguments in
         try arguments.allowPositionals(0)
@@ -85,7 +93,7 @@ let hostCommands: [Command] = [
         try arguments.allowPositionals(0)
         let options = try HostOptions(arguments)
         let client = Client()
-        let host = try client.host(options.host)
+        let host = try await client.host(options.host, timeout: options.connectTimeout)
         try await client.connect(host, timeout: options.connectTimeout)
         Output.write(StatusResult(
             host: HostJSON(host), connected: host.isConnected, protocolVersion: host.hello?.protocolVersion,
@@ -124,5 +132,11 @@ struct HostJSON: Encodable {
         id = host.hello?.hostID ?? host.id
         name = host.name
         hostName = host.defaultName
+    }
+
+    init(id: String, name: String, hostName: String) {
+        self.id = id
+        self.name = name
+        self.hostName = hostName
     }
 }

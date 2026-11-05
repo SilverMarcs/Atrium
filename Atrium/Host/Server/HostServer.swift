@@ -86,6 +86,9 @@ final class HostServer {
     @ObservationIgnored private let localListener = LocalListener()
     @ObservationIgnored private let agentsListener = LocalAgentsListener()
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
+    /// Pairs this Mac's command-line client with the hosts its app is paired
+    /// with, for the agents here to reach them; see `HostRequest.sharedHosts`.
+    @ObservationIgnored var shareHosts: ((ClientDevice, Set<String>) async -> [SharedHost])?
 
     private static let remoteAccessKey = "companion.enabled"
     /// Unauthenticated connections are dropped after this long.
@@ -249,6 +252,16 @@ final class HostServer {
             guard connection.isLocalAgent else { return .done }
             connection.caller = await orchestrator.caller(among: candidates)
             return connection.caller.map { .task(id: $0) } ?? .done
+        case .pairCommandLine(let device):
+            // Only a paired Mac app vouches for the client bundled in it.
+            guard !connection.isLocal, !connection.isLocalAgent, connection.device?.kind == .app,
+                  let token = pairing.pair(commandLine: device) else {
+                return .failed(message: "Only a paired Atrium app can pair its command-line client.")
+            }
+            return .paired(token: token)
+        case .sharedHosts(let device, let known):
+            guard connection.isLocalAgent else { return .hostOnly }
+            return .sharedHosts(await shareHosts?(device, Set(known)) ?? [])
         case .unsupported:
             return .unsupported
         case .activity(let activity):

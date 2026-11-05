@@ -52,7 +52,7 @@ final class Client {
 
     /// The host a command means: the one named, else this Mac's own when the
     /// client is bundled in Atrium, else the only paired one.
-    func host(_ selector: String?) throws -> HostClient {
+    func host(_ selector: String?, timeout: Duration) async throws -> HostClient {
         #if os(macOS)
         if let local = LocalHost.socket, selector == nil || selector == "local" {
             return .localAgents(socket: local, name: LocalHost.name)
@@ -61,8 +61,15 @@ final class Client {
         if selector == "local" {
             throw CLIError(.invalidArgument, "Only the atrium bundled in Atrium.app reaches its own Mac. This one reaches paired hosts.")
         }
+        await adoptAppHosts(timeout: timeout)
         let hosts = try pairedConnections().hosts
         guard !hosts.isEmpty else {
+            if LocalHost.socket != nil {
+                throw CLIError(.notPaired, """
+                    Atrium on this Mac isn’t connected to another Mac right now. Every Mac it’s paired with and \
+                    connected to is reachable here; pair one in Atrium Settings → Remote.
+                    """)
+            }
             throw CLIError(.notPaired, "This device isn’t paired with a host. Run `atrium pair <link>` with a link from Atrium Settings → Remote on the Mac.")
         }
         guard let selector else {
@@ -75,7 +82,32 @@ final class Client {
         if matches.count == 1 { return matches[0] }
         let prefixed = hosts.filter { $0.id.hasPrefix(selector) }
         if prefixed.count == 1 { return prefixed[0] }
-        throw CLIError(matches.count + prefixed.count > 1 ? .ambiguous : .notFound, "No single paired host matches “\(selector)”.")
+        let hint = LocalHost.socket == nil ? "" : " Another Mac shows up here while Atrium on this Mac is connected to it, with Atrium up to date on both."
+        throw CLIError(matches.count + prefixed.count > 1 ? .ambiguous : .notFound, "No single paired host matches “\(selector)”." + hint)
+    }
+
+    /// Pairs this client with every host the Atrium app it's bundled in is
+    /// paired with and it isn't yet, with the app vouching for it, so agents on
+    /// this Mac reach those hosts with nothing to set up. They're saved as if
+    /// paired from a link. Does nothing when the app can't be reached: the
+    /// hosts paired before still work.
+    func adoptAppHosts(timeout: Duration) async {
+        #if os(macOS)
+        guard let socket = LocalHost.socket, (try? LocalHost.checkReachable()) != nil,
+              let store = try? credentials() else { return }
+        let app = HostClient.localAgents(socket: socket, name: LocalHost.name)
+        app.start()
+        defer { app.stop() }
+        guard (try? await waitUntil(app, timeout: timeout, { app.isConnected ? true : nil })) == true,
+              case .sharedHosts(let shared)? = try? await deadline(timeout, {
+                  try await app.request(.sharedHosts(device: store.device, known: store.pairedHosts.map(\.id)))
+              }) else { return }
+        for host in shared {
+            try? store.save(PairedHost(shared: host), token: host.token)
+        }
+        // Built again with the hosts just saved.
+        if !shared.isEmpty { connections = nil }
+        #endif
     }
 
     /// Connects to a host, waiting while the relay holds the connection for a
@@ -114,7 +146,7 @@ final class Client {
 
     /// Connects and waits for the host's sessions, which it sends on every connection.
     func connectForTasks(_ options: HostOptions) async throws -> HostClient {
-        let host = try host(options.host)
+        let host = try await host(options.host, timeout: options.connectTimeout)
         try await connect(host, timeout: options.connectTimeout)
         _ = try await waitUntil(host, timeout: options.connectTimeout) { host.tasks }
         guard host.tasks != nil else { throw CLIError(.unreachable, "\(host.name) didn’t send its sessions.") }

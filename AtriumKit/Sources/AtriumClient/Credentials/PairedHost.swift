@@ -18,4 +18,12 @@ public nonisolated struct PairedHost: Codable, Hashable, Identifiable, Sendable 
         publicKey = link.publicKey
         hostName = link.hostName
     }
+
+    /// A host the Mac app this client is bundled in shared with it, under the name it has there.
+    public init(shared host: SharedHost) {
+        hostID = host.hostID
+        publicKey = host.publicKey
+        hostName = host.hostName
+        customName = host.customName
+    }
 }
