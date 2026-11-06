@@ -24,16 +24,19 @@ struct ProjectsSheet: View {
             List {
                 if let host {
                     ForEach(workspaces) { workspace in
-                        ProjectRow(workspace: workspace, host: host)
-                            .contextMenu {
-                                ProjectMenu(workspace: workspace, host: host) {
-                                    name = workspace.name
-                                    renaming = workspace
-                                } chooseIcon: {
-                                    iconWorkspace = workspace
-                                    showingIconImporter = true
-                                }
+                        ProjectNewChatButton(workspace: workspace, host: host) {
+                            hosts.openNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspace.id))
+                            dismiss()
+                        }
+                        .contextMenu {
+                            ProjectMenu(workspace: workspace, host: host) {
+                                name = workspace.name
+                                renaming = workspace
+                            } chooseIcon: {
+                                iconWorkspace = workspace
+                                showingIconImporter = true
                             }
+                        }
                     }
                     .onMove { source, destination in
                         guard let index = source.first else { return }
@@ -127,6 +130,37 @@ struct ProjectsSheet: View {
 
     private func send(_ action: WorkspaceAction, to workspace: WireWorkspace) {
         host?.send(.workspace(id: workspace.id, action: action))
+    }
+}
+
+/// A project row that starts a new chat in the project, except while the
+/// list is being edited on iPhone and iPad.
+private struct ProjectNewChatButton: View {
+    let workspace: WireWorkspace
+    let host: HostClient
+    let action: () -> Void
+    #if os(iOS)
+    @Environment(\.editMode) private var editMode
+    #endif
+
+    var body: some View {
+        Button {
+            #if os(iOS)
+            // Rows are only reordered while editing.
+            guard editMode?.wrappedValue.isEditing != true else { return }
+            #endif
+            action()
+        } label: {
+            ProjectRow(workspace: workspace, host: host)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+        }
+        #if os(macOS)
+        .buttonStyle(.plain)
+        #endif
+        .disabled(!host.canStartTask)
+        .accessibilityHint("Starts a new chat in this project.")
     }
 }
 
