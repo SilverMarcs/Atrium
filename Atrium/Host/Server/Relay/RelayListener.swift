@@ -1,5 +1,6 @@
 import AtriumProtocol
 import Foundation
+import Network
 
 /// Accepts clients through the Atrium relay. The host keeps one control
 /// connection open to the relay; for each client that arrives, it opens a data
@@ -26,16 +27,26 @@ final class RelayListener {
     private var keepAlive: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var retryDelay: Duration = .seconds(1)
+    private var pathMonitor: NWPathMonitor?
     private var isStopped = true
 
     func start() {
         guard isStopped else { return }
         isStopped = false
         connect()
+        let pathMonitor = NWPathMonitor()
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            MainActor.assumeIsolated { self?.networkIsBack() }
+        }
+        pathMonitor.start(queue: .main)
+        self.pathMonitor = pathMonitor
     }
 
     func stop() {
         isStopped = true
+        pathMonitor?.cancel()
+        pathMonitor = nil
         reconnect?.cancel()
         keepAlive?.cancel()
         control?.onClose = nil
@@ -93,8 +104,7 @@ final class RelayListener {
         [("Authorization", "Bearer \(HostIdentity.relaySecret.base64URLEncodedString())")]
     }
 
-    /// A ping every half minute keeps the relay connection from idling out and
-    /// surfaces a dead network as a closed connection.
+    /// A ping every half minute keeps the relay connection from idling out.
     private func startKeepAlive() {
         keepAlive?.cancel()
         keepAlive = Task { [weak self] in
@@ -119,5 +129,14 @@ final class RelayListener {
             guard let self, !Task.isCancelled, !self.isStopped else { return }
             self.connect()
         }
+    }
+
+    /// Reconnects straight away, rather than after however long the retries
+    /// have backed off to while there was no network.
+    private func networkIsBack() {
+        guard control == nil, !isStopped else { return }
+        reconnect?.cancel()
+        retryDelay = .seconds(1)
+        connect()
     }
 }

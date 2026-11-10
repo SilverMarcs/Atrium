@@ -76,9 +76,12 @@ public final class HostConnections {
 
     #if canImport(Network)
     private func networkChanged(_ hasNetwork: Bool, interfaces: Set<String>) {
-        // Joining or leaving a network, such as Wi-Fi alongside cellular, can
-        // bring a host nearby without the network going away.
-        if let previous = self.interfaces, previous != interfaces { localNetwork.restart() }
+        // Joining or leaving a network, such as another Wi-Fi network or Wi-Fi
+        // alongside cellular, can bring a host nearby, even one that was
+        // nearby before the network changed and moved to the relay.
+        if let previous = self.interfaces, previous != interfaces || hasNetwork != self.hasNetwork {
+            localNetwork.restart()
+        }
         self.interfaces = interfaces
         guard hasNetwork != self.hasNetwork else { return }
         self.hasNetwork = hasNetwork

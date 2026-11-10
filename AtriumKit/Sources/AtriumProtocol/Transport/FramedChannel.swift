@@ -25,12 +25,17 @@ public final class FramedChannel: HostChannel {
 
     /// Dials a host found on the local network.
     public convenience init(endpoint: NWEndpoint) {
-        self.init(connection: NWConnection(to: endpoint, using: .tcp), readyTimeout: .seconds(5))
+        self.init(connection: NWConnection(to: endpoint, using: .hostConnection()), readyTimeout: .seconds(5))
     }
 
     public func start() {
         connection.stateUpdateHandler = { [weak self] state in
             MainActor.assumeIsolated { self?.handle(state) }
+        }
+        // A TCP connection can't follow its device onto another network.
+        connection.viabilityUpdateHandler = { [weak self] isViable in
+            guard !isViable else { return }
+            MainActor.assumeIsolated { self?.finish("Connection lost") }
         }
         connection.start(queue: .main)
         if let readyTimeout {
@@ -109,6 +114,7 @@ public final class FramedChannel: HostChannel {
         isClosed = true
         timeout?.cancel()
         connection.stateUpdateHandler = nil
+        connection.viabilityUpdateHandler = nil
         connection.cancel()
         let onClose = onClose
         onReady = nil

@@ -12,7 +12,7 @@ final class LocalListener {
     private var listener: NWListener?
 
     func start(name: String) {
-        guard listener == nil, let listener = try? NWListener(using: .tcp) else { return }
+        guard listener == nil, let listener = try? NWListener(using: .hostConnection()) else { return }
         let record = NWTXTRecord([HostProtocol.localHostIDKey: HostIdentity.hostID])
         listener.service = NWListener.Service(name: name, type: HostProtocol.localServiceType, txtRecord: record)
         listener.newConnectionHandler = { [weak self] connection in

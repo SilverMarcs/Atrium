@@ -25,9 +25,9 @@ public final class WebSocketChannel: HostChannel {
         self.init(connection: NWConnection(to: .url(url), using: parameters))
     }
 
-    /// TCP, or TLS for `wss`, with a WebSocket application protocol.
+    /// A host connection's TCP, or TLS for `wss`, with a WebSocket application protocol.
     public static func parameters(secure: Bool = false, headers: [(name: String, value: String)] = []) -> NWParameters {
-        let parameters: NWParameters = secure ? .tls : .tcp
+        let parameters = NWParameters.hostConnection(secure: secure)
         let webSocket = NWProtocolWebSocket.Options()
         webSocket.autoReplyPing = true
         webSocket.maximumMessageSize = HostProtocol.maxMessageBytes
@@ -39,6 +39,11 @@ public final class WebSocketChannel: HostChannel {
     public func start() {
         connection.stateUpdateHandler = { [weak self] state in
             MainActor.assumeIsolated { self?.handle(state) }
+        }
+        // A TCP connection can't follow its device onto another network.
+        connection.viabilityUpdateHandler = { [weak self] isViable in
+            guard !isViable else { return }
+            MainActor.assumeIsolated { self?.finish("Connection lost") }
         }
         connection.start(queue: .main)
         receive()
@@ -106,6 +111,7 @@ public final class WebSocketChannel: HostChannel {
         guard !isClosed else { return }
         isClosed = true
         connection.stateUpdateHandler = nil
+        connection.viabilityUpdateHandler = nil
         connection.cancel()
         let onClose = onClose
         onReady = nil
