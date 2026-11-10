@@ -26,6 +26,13 @@ final class Client {
     /// The session this command runs in, when an agent on this Mac runs it
     /// and the host found which one.
     private(set) var caller: String?
+    /// Whether to find the session this command runs in. Off for work that
+    /// stands on its own, so the host links nothing to that session.
+    private let resolvesCaller: Bool
+
+    init(resolvesCaller: Bool = true) {
+        self.resolvesCaller = resolvesCaller
+    }
 
     /// The device's credentials, read or created when a command first needs them.
     func credentials(deviceName: String? = nil) throws -> FileCredentialStore {
@@ -138,7 +145,7 @@ final class Client {
             if host.isLocal { throw LocalHost.unreachable }
             throw CLIError(.unreachable, lastReason ?? "Couldn’t reach \(host.name) through the relay.")
         }
-        if host.isLocal, !Caller.candidates.isEmpty,
+        if resolvesCaller, host.isLocal, !Caller.candidates.isEmpty,
            case .task(let id)? = try? await host.request(.caller(taskIDs: Caller.candidates)) {
             caller = id
         }

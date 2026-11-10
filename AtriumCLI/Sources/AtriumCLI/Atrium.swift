@@ -80,6 +80,11 @@ enum Atrium {
             that was handed to you. A session on another Mac (--host) can't message you back: add --wait, with a \
             --timeout, or check on it later with `atrium read`.
 
+            Starting a session of its own, when the user asks for one rather than for help with your task:
+              atrium start --standalone --project <project> --provider codex "<the task>"
+            It's listed among the user's sessions as if they'd started it, works for no one, and doesn't report back \
+            to you. Prompt it again with `atrium send --standalone`, or it starts working for you.
+
             Commands:
             \(list.joined(separator: "\n"))
 

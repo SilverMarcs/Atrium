@@ -13,16 +13,16 @@ private let promptDetails = """
 
     Without --wait or --follow it returns once the agent has the prompt: {"id", "sessionID", "session"}. \
     Agents on the Mac don't wait for sessions there: Atrium sends them the result as a new message. For a session \
-    on another Mac, they wait or read it later.
+    on another Mac, or one given --standalone, they wait or read it later.
     """
 
 private let promptOptions: Set<String> = ["image", "id", "timeout"]
-private let promptFlags: Set<String> = ["wait", "follow"]
+private let promptFlags: Set<String> = ["wait", "follow", "standalone"]
 
 let promptCommands: [Command] = [
     Command(
         name: "start",
-        usage: "start --project P [--provider codex|claude] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [PROMPT]",
+        usage: "start --project P [--provider codex|claude] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [--standalone] [PROMPT]",
         summary: "Start a session in a project with its first prompt.",
         details: """
               --project P   The project, by ID, name or folder (`atrium projects`).
@@ -33,10 +33,15 @@ let promptCommands: [Command] = [
               --worktree    Work in a new worktree the agent creates and names, from what the project folder has
                             checked out. The project folder must be a Git repository.
               --branch B    Work on a new branch B, switched to in the project folder.
+              --standalone  Start a session of its own rather than one working for you: it's listed among the
+                            user's sessions as if they'd started it, its result and questions aren't sent to you,
+                            and stopping your session doesn't stop it. Without it, a session an agent on the Mac
+                            starts is listed under that agent's, and one started anywhere else is listed apart,
+                            under the device's name.
             \(promptDetails)
             """,
         options: promptOptions.union(["project", "provider", "model", "effort", "branch"]),
-        flags: promptFlags.union(["fast", "no-fast", "worktree"])
+        flags: promptFlags.union(["fast", "no-fast", "worktree", "standalone"])
     ) { arguments in
         try arguments.allowPositionals(1)
         let prompt = try Prompt(arguments)
@@ -54,8 +59,9 @@ let promptCommands: [Command] = [
         case (false, let branch?): checkout = .newBranch(branch)
         case (false, nil): checkout = nil
         }
+        let standalone = arguments.flag("standalone")
         let options = try HostOptions(arguments)
-        let client = Client()
+        let client = Client(resolvesCaller: !standalone)
         let host = try await client.connectForTasks(options)
         try prompt.checkWaiting(client)
         let workspace = try host.project(projectSelector)
@@ -67,7 +73,10 @@ let promptCommands: [Command] = [
         // The session and its first prompt each get a key, both from --id, so
         // repeating the command repeats neither.
         let reply = try await client.perform(
-            .compose(provider: provider, workspaceID: workspace.id, settings: settings, checkout: checkout),
+            .compose(
+                provider: provider, workspaceID: workspace.id, settings: settings, checkout: checkout,
+                standalone: standalone ? true : nil
+            ),
             on: host, key: prompt.key.derived(1)
         )
         guard case .task(let taskID) = reply else { throw CLIError(.unsupported, HostClientError.unexpectedReply.localizedDescription) }
@@ -81,16 +90,21 @@ let promptCommands: [Command] = [
         client.stop()
     },
     Command(
-        name: "send", usage: "send <session> [PROMPT]",
+        name: "send", usage: "send <session> [--standalone] [PROMPT]",
         summary: "Send a prompt to a session. One sent while its agent works joins the current turn.",
-        details: promptDetails,
-        options: promptOptions, flags: promptFlags
+        details: """
+              --standalone  Send it without handing the session your work, as for one started with --standalone:
+                            it stays where it's listed, and this prompt doesn't make it report to you. Without it, a
+                            session an agent on the Mac prompts works for that agent's from then on.
+            \(promptDetails)
+            """,
+        options: promptOptions, flags: promptFlags.union(["standalone"])
     ) { arguments in
         try arguments.allowPositionals(2)
         let selector = try arguments.required(0, "session")
         let prompt = try Prompt(arguments, at: 1)
         let options = try HostOptions(arguments)
-        let client = Client()
+        let client = Client(resolvesCaller: !arguments.flag("standalone"))
         let host = try await client.connectForTasks(options)
         try prompt.checkWaiting(client)
         let task = try host.session(selector)

@@ -40,7 +40,13 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case refreshTasks
     case task(id: String, action: TaskAction)
     /// Creates a task in a project, in its folder as it is unless `checkout` says otherwise.
-    case compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil, checkout: TaskStartCheckout? = nil)
+    /// A command-line client's task is listed under whoever started it, the
+    /// session it runs in or else its device, unless it's `standalone`: then
+    /// it's listed on its own, as one the user started, and reports to no one.
+    case compose(
+        provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil,
+        checkout: TaskStartCheckout? = nil, standalone: Bool? = nil
+    )
     /// Sends a prompt to the task's agent, with any attached images as JPEG data.
     case prompt(taskID: String, text: String, images: [Data])
     /// Stops the agent's current turn.
