@@ -10,10 +10,10 @@ import Foundation
 /// standalone. Who a turn reports to is settled by each prompt: when an
 /// agent prompts any session, its prompt is relayed, marked as the other
 /// agent's, and that turn reports back to it, wherever the session is listed.
-/// The caller ends its turn instead of waiting. Once the delegated turn is
-/// done, its final reply goes to the caller as a new prompt, once the caller
-/// is free, merged with any other results and questions ready for it.
-/// Questions the delegated agent asks go up the same way.
+/// The caller ends its turn instead of waiting. Once every turn it asked for
+/// is done, their final replies go to it together as a new prompt, once it's
+/// free, so a caller that handed out several pieces of work wakes once for
+/// them. Questions the delegated agents ask go up as soon as they're asked.
 ///
 /// A delegated turn is done once its session is: its turn is over and
 /// nothing it started is still going that would wake it again, such as work
@@ -268,9 +268,9 @@ final class Orchestrator {
 
     // MARK: - Reporting back
 
-    /// Sends every finished result and every new question for a session in
-    /// one prompt, once the session is free. They're marked sent first, so
-    /// none goes twice, and put back if sending fails.
+    /// Sends every new question for a session, and every result once all the
+    /// turns it asked for are done, in one prompt, once the session is free.
+    /// They're marked sent first, so none goes twice, and put back if sending fails.
     private func flush(to requesterID: String) async {
         guard !flushing.contains(requesterID), let requester = self.thread(requesterID), !requester.status.isWorking else { return }
         let asked = store.turns.filter { $0.value.requester == requesterID }.keys.sorted()
@@ -279,12 +279,16 @@ final class Orchestrator {
             for id in asked where store.turns[id]?.state == .finished { store.turns[id] = nil }
             return
         }
+        // Results wait until every turn it asked for is done, so they arrive
+        // in one message; questions go at once, as an agent waits on them.
+        let holdsResults = asked.contains { store.turns[$0]?.state != .finished }
         var sent: [String: DelegatedTurn] = [:]
         var items: [RelayedMessage.Item] = []
         for id in asked {
             guard let turn = store.turns[id], let child = self.thread(id) else { continue }
             let questions = newQuestions(from: id)
             if turn.state == .finished {
+                guard !holdsResults else { continue }
                 var text = turn.result ?? ""
                 if text.count > Self.resultLength {
                     text = String(text.suffix(Self.resultLength)) + "\n\n(Shortened: `atrium read \(id)` has all of it.)"

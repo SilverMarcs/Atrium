@@ -74,8 +74,9 @@ enum Atrium {
               atrium projects
               atrium start --project <project> --provider codex "<the task, with everything it needs to know>"
               atrium send <session> "<a follow-up>"
-            Then end your turn. Atrium sends you the session's final reply as a new message once it's done, along \
-            with any question it asks you, which you answer with `atrium respond`. Sessions you start are listed \
+            Then end your turn. Atrium sends you any question a session asks as a new message, which you answer \
+            with `atrium respond`, and the sessions' final replies together, in one message, once every one you \
+            handed work to is done. Sessions you start are listed \
             under yours, and stopping yours stops them, along with any turn you asked of another session. Prompting \
             a session you didn't start, such as one of the user's, gets you that turn's result and leaves the \
             session where it is. Keep to a few sessions at once, and don't hand on work that was handed to you. A \
