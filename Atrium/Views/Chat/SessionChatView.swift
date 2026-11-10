@@ -89,6 +89,7 @@ struct SessionChatView: View {
               .accessibilityHidden(true)
           }
           .coordinateSpace(.named(TurnFill.coordinateSpace))
+          .modifier(ReplyPrefetch(rows: rows, liveIDs: turns.liveIDs))
           .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
           .background { TimelineScrollViewFinder(flights: flights) }
           .padding(.horizontal, 16)
