@@ -70,7 +70,7 @@ struct FileEditorPanel: View {
 
             // Only this Mac's files have a default app to open them here.
             if project.isLocal {
-                Button("Open in Default App", systemImage: "arrow.up.right") { NSWorkspace.shared.open(fileURL) }
+                Button("Open in Default App", systemImage: "macwindow") { NSWorkspace.shared.open(fileURL) }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                     .help("Open in Default App")

@@ -321,7 +321,7 @@ private struct FileTreeContextMenu: View {
         if !entry.isDirectory {
             Button("Open File", systemImage: "doc") { perform(.open(entry)) }
             if isLocal {
-                Button("Open in Default App", systemImage: "arrow.up.right") { perform(.openInDefaultApp(entry)) }
+                Button("Open in Default App", systemImage: "macwindow") { perform(.openInDefaultApp(entry)) }
             }
         }
         // Files on another host can be read but not changed from here.
