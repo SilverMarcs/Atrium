@@ -2,14 +2,14 @@ import AtriumProtocol
 import Foundation
 import Observation
 
-/// Which sessions work for which, which ones a command-line client started,
+/// Which sessions belong to which, which ones a command-line client started,
 /// and the delegated turns still to report back, saved as they change so a
 /// restart loses neither the links nor a result. Task lists observe it to
 /// list sessions under whoever started them.
 @MainActor
 @Observable
 final class OrchestrationStore {
-    /// The session each delegated session works for, by task ID.
+    /// The session whose agent started each session for its work, by task ID.
     var parents: [String: String] = [:] { didSet { save() } }
     /// The command-line device that started each session it started on its own, by task ID.
     var devices: [String: String] = [:] { didSet { save() } }
@@ -23,6 +23,21 @@ final class OrchestrationStore {
         var parents: [String: String]
         var devices: [String: String]
         var turns: [String: DelegatedTurn]
+
+        init(parents: [String: String], devices: [String: String], turns: [String: DelegatedTurn]) {
+            self.parents = parents
+            self.devices = devices
+            self.turns = turns
+        }
+
+        /// Turns that can't be read, such as ones saved before turns named
+        /// who asked for them, are dropped; the links are kept.
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            parents = try container.decode([String: String].self, forKey: .parents)
+            devices = try container.decode([String: String].self, forKey: .devices)
+            turns = (try? container.decode([String: DelegatedTurn].self, forKey: .turns)) ?? [:]
+        }
     }
 
     init(file: URL) {
@@ -46,7 +61,8 @@ final class OrchestrationStore {
 }
 
 /// One turn a session took on for another: from the prompt Atrium relayed to
-/// it until its result reaches the session that asked.
+/// it until its result reaches the session that asked, wherever the session
+/// that took it on is listed.
 nonisolated struct DelegatedTurn: Codable, Sendable {
     enum State: String, Codable, Sendable {
         /// The prompt reached the agent; its turn hasn't been seen yet.
@@ -57,6 +73,8 @@ nonisolated struct DelegatedTurn: Codable, Sendable {
         case finished
     }
 
+    /// The session that asked for the turn, by task ID, which its result and questions go to.
+    var requester: String
     var state: State = .sent
     /// How the turn ended, once it has.
     var outcome: AgentThreadStatus?

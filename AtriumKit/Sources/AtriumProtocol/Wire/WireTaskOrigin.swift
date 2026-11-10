@@ -6,8 +6,8 @@ public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     /// One of the subagents a session's agent runs itself, by that session's
     /// task ID. It can be read but not prompted: its agent talks to it.
     case subagent(String)
-    /// Handed work by another session through the command-line client, by
-    /// that session's task ID. Its result goes back to that session.
+    /// Started by another session's agent through the command-line client,
+    /// by that session's task ID. It stops with that session.
     case session(String)
     /// Started by a paired command-line client, such as an agent on another
     /// computer, by that device's name. It has no session to list it under.

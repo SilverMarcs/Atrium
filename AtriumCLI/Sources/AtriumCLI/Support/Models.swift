@@ -24,8 +24,8 @@ struct SessionJSON: Encodable, Equatable {
     var actions: [String]
     /// Questions and approvals waiting for an answer.
     var interactions: [InteractionJSON]
-    /// The session this one works for: one that delegated to it, or whose
-    /// agent runs it as a subagent.
+    /// The session this one belongs to: one whose agent started it, or runs
+    /// it as a subagent.
     var parent: String?
     /// Whether it's one of an agent's own subagents, which only that agent talks to.
     var subagent: Bool

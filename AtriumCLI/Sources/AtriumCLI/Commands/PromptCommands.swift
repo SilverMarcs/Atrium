@@ -12,8 +12,8 @@ private let promptDetails = """
       --timeout S   With --wait or --follow, stop waiting after S seconds, exiting with status 6.
 
     Without --wait or --follow it returns once the agent has the prompt: {"id", "sessionID", "session"}. \
-    Agents on the Mac don't wait for sessions there: Atrium sends them the result as a new message. For a session \
-    on another Mac, or one given --standalone, they wait or read it later.
+    Agents on the Mac don't wait for sessions there: Atrium sends them the result as a new message. They wait, or \
+    read it later, only for a session on another Mac or one they start with --standalone.
     """
 
 private let promptOptions: Set<String> = ["image", "id", "timeout"]
@@ -33,8 +33,8 @@ let promptCommands: [Command] = [
               --worktree    Work in a new worktree the agent creates and names, from what the project folder has
                             checked out. The project folder must be a Git repository.
               --branch B    Work on a new branch B, switched to in the project folder.
-              --standalone  Start a session of its own rather than one working for you: it's listed among the
-                            user's sessions as if they'd started it, its result and questions aren't sent to you,
+              --standalone  Start a session of its own rather than one that belongs to you: it's listed among the
+                            user's sessions as if they'd started it, the first prompt's result isn't sent to you,
                             and stopping your session doesn't stop it. Without it, a session an agent on the Mac
                             starts is listed under that agent's, and one started anywhere else is listed apart,
                             under the device's name.
@@ -90,21 +90,22 @@ let promptCommands: [Command] = [
         client.stop()
     },
     Command(
-        name: "send", usage: "send <session> [--standalone] [PROMPT]",
+        name: "send", usage: "send <session> [PROMPT]",
         summary: "Send a prompt to a session. One sent while its agent works joins the current turn.",
         details: """
-              --standalone  Send it without handing the session your work, as for one started with --standalone:
-                            it stays where it's listed, and this prompt doesn't make it report to you. Without it, a
-                            session an agent on the Mac prompts works for that agent's from then on.
+            The session stays where it's listed. Sent by an agent on the Mac, the turn's result and questions go \
+            back to that agent; a session already on a turn another agent asked for refuses until its result has \
+            gone back.
+
             \(promptDetails)
             """,
-        options: promptOptions, flags: promptFlags.union(["standalone"])
+        options: promptOptions, flags: promptFlags
     ) { arguments in
         try arguments.allowPositionals(2)
         let selector = try arguments.required(0, "session")
         let prompt = try Prompt(arguments, at: 1)
         let options = try HostOptions(arguments)
-        let client = Client(resolvesCaller: !arguments.flag("standalone"))
+        let client = Client()
         let host = try await client.connectForTasks(options)
         try prompt.checkWaiting(client)
         let task = try host.session(selector)
@@ -114,7 +115,7 @@ let promptCommands: [Command] = [
     Command(
         name: "interrupt", usage: "interrupt <session>",
         summary: "Stop a session's turn, and every session working for it.",
-        details: #"Prints {"session": {...}}. Sessions it started or prompted stop too, and their results aren't sent."#
+        details: #"Prints {"session": {...}}. Sessions it started stop too, and so do turns it asked of other sessions, which stay where they're listed. No result goes back to anything stopped."#
     ) { arguments in
         try arguments.allowPositionals(1)
         let selector = try arguments.required(0, "session")

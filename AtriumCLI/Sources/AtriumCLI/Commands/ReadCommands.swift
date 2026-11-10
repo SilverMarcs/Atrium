@@ -12,7 +12,7 @@ let readCommands: [Command] = [
             Prints {"sessions": [...]}. Each has id, title, provider, status (processing, waiting, done, idle, \
             failed, stopped or offline), project, directory, updatedAt, unread, settled, snoozedUntil, model, \
             reasoningEffort, fastMode, actions (the commands it takes now), interactions (questions and approvals \
-            waiting for an answer), parent (the session it works for), subagent (an agent's own subagent, which \
+            waiting for an answer), parent (the session it belongs to), subagent (an agent's own subagent, which \
             only that agent talks to) and startedBy (the command-line client that started it).
 
               --project P   Only sessions in this project.

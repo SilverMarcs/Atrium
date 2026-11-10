@@ -75,15 +75,17 @@ enum Atrium {
               atrium start --project <project> --provider codex "<the task, with everything it needs to know>"
               atrium send <session> "<a follow-up>"
             Then end your turn. Atrium sends you the session's final reply as a new message once it's done, along \
-            with any question it asks you, which you answer with `atrium respond`. Sessions you start or prompt are \
-            listed under yours, and stopping yours stops them. Keep to a few sessions at once, and don't hand on work \
-            that was handed to you. A session on another Mac (--host) can't message you back: add --wait, with a \
-            --timeout, or check on it later with `atrium read`.
+            with any question it asks you, which you answer with `atrium respond`. Sessions you start are listed \
+            under yours, and stopping yours stops them, along with any turn you asked of another session. Prompting \
+            a session you didn't start, such as one of the user's, gets you that turn's result and leaves the \
+            session where it is. Keep to a few sessions at once, and don't hand on work that was handed to you. A \
+            session on another Mac (--host) can't message you back: add --wait, with a --timeout, or check on it \
+            later with `atrium read`.
 
             Starting a session of its own, when the user asks for one rather than for help with your task:
               atrium start --standalone --project <project> --provider codex "<the task>"
-            It's listed among the user's sessions as if they'd started it, works for no one, and doesn't report back \
-            to you. Prompt it again with `atrium send --standalone`, or it starts working for you.
+            It's listed among the user's sessions as if they'd started it, belongs to no one, and its first turn \
+            doesn't report back to you. Prompting it later with `atrium send` gets you that turn's result.
 
             Commands:
             \(list.joined(separator: "\n"))

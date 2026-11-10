@@ -4,19 +4,23 @@ import Foundation
 /// Lets sessions hand work to each other through the command-line client, and
 /// brings each one's result back to the session that asked.
 ///
-/// When an agent on this Mac starts or prompts another session with `atrium`,
-/// that session is linked under the agent's and its prompt is relayed, marked
-/// as the other agent's. The caller ends its turn instead of waiting. Once the
-/// delegated session is done, its final reply goes to the caller as a new
-/// prompt, once the caller is free, merged with any other results and
-/// questions ready for it. Questions the delegated agent asks go up the same way.
+/// Two links are kept apart. Who a session belongs to is settled when it's
+/// started: one an agent on this Mac starts with `atrium` is listed under the
+/// agent's session, alerts as it and stops with it, unless it's started
+/// standalone. Who a turn reports to is settled by each prompt: when an
+/// agent prompts any session, its prompt is relayed, marked as the other
+/// agent's, and that turn reports back to it, wherever the session is listed.
+/// The caller ends its turn instead of waiting. Once the delegated turn is
+/// done, its final reply goes to the caller as a new prompt, once the caller
+/// is free, merged with any other results and questions ready for it.
+/// Questions the delegated agent asks go up the same way.
 ///
 /// A delegated turn is done once its session is: its turn is over and
 /// nothing it started is still going that would wake it again, such as work
 /// it handed on in turn or a subagent of its own.
 ///
-/// Stopping a session stops everything working for it, and nothing stopped
-/// reports back.
+/// Stopping a session stops every session that belongs to it, and nothing
+/// reports back to anything stopped.
 @MainActor
 final class Orchestrator {
     /// How long a session must stay done for its turn to end. An agent can
@@ -52,7 +56,7 @@ final class Orchestrator {
         return store.devices[thread.id].map(WireTaskOrigin.device)
     }
 
-    /// The session a thread works for: one that delegated to it, or whose agent runs it.
+    /// The session a thread belongs to: one whose agent started it, or runs it.
     private func parentID(of thread: AgentThread) -> String? {
         store.parents[thread.id] ?? thread.parentID
     }
@@ -77,10 +81,10 @@ final class Orchestrator {
     /// Sessions with work still going below them, which a stop would end.
     func sessionsWithWorkingDescendants() -> Set<String> {
         var ids: Set<String> = []
-        for thread in integrations.threads where thread.status.isWorking {
-            var current = thread
-            while let id = parentID(of: current), ids.insert(id).inserted, let parent = self.thread(id) {
-                current = parent
+        var pending = integrations.threads.filter(\.status.isWorking).map(\.id)
+        while let id = pending.popLast() {
+            for above in stoppers(of: id) where ids.insert(above).inserted {
+                pending.append(above)
             }
         }
         return ids
@@ -101,22 +105,29 @@ final class Orchestrator {
     }
 
     /// Lists a session a command-line client started under who started it:
-    /// the session it runs in, else the device.
+    /// the session it runs in, else the device. It belongs to no one this
+    /// sets: a standalone session is listed as the user's.
     func started(_ id: String, by device: ClientDevice, caller: String?) {
         if let caller { store.parents[id] = caller } else { store.devices[id] = device.name }
     }
 
-    /// Relays a prompt from the caller's agent to a session, which works for
-    /// the caller from then on and reports its result back to it.
+    /// Relays a prompt from the caller's agent to a session, whose turn then
+    /// reports back to the caller. Where the session is listed stays as it was.
     func delegate(_ text: String, images: [Data], to id: String, from callerID: String, using tasks: TaskService) async -> HostReply {
         guard self.thread(id) != nil, let caller = self.thread(callerID) else { return .failed(message: "That session no longer exists.") }
-        guard id != callerID, !ancestors(of: caller).contains(id) else {
+        guard id != callerID, !requesters(of: callerID).contains(id) else {
             return .failed(message: "That session handed you this work. End your turn with your result instead: Atrium sends it back.")
         }
-        store.parents[id] = callerID
         // A prompt joins a turn still under way; a finished one not yet sent back is superseded by the next.
+        // Another session's turn is left to finish and reach it first.
         let previous = store.turns[id]
-        if previous == nil || previous?.state == .finished { store.turns[id] = DelegatedTurn() }
+        if let previous, previous.requester != callerID {
+            return .failed(message: """
+                That session is still on a turn another session asked for. Try again once its result has gone back, \
+                or read it with `atrium read`.
+                """)
+        }
+        if previous == nil || previous?.state == .finished { store.turns[id] = DelegatedTurn(requester: callerID) }
         prompted.insert(id)
         let reply = await tasks.prompt(RelayedMessage.task(text, from: name(of: caller)), images: images, toTask: id)
         if case .failed = reply {
@@ -129,12 +140,14 @@ final class Orchestrator {
         return reply
     }
 
-    private func ancestors(of thread: AgentThread) -> [String] {
+    /// The sessions waiting on a session's turn under way, nearest first: the
+    /// one that asked for it, the one that asked for that one's, and so on.
+    private func requesters(of id: String) -> [String] {
         var ids: [String] = []
-        var current = thread
-        while let id = parentID(of: current), !ids.contains(id), let parent = self.thread(id) {
-            ids.append(id)
-            current = parent
+        var current = id
+        while let turn = store.turns[current], turn.state != .finished, turn.requester != id, !ids.contains(turn.requester) {
+            ids.append(turn.requester)
+            current = turn.requester
         }
         return ids
     }
@@ -162,7 +175,9 @@ final class Orchestrator {
         store.devices[id] = nil
         for (child, parent) in store.parents where parent == id {
             store.parents[child] = nil
-            store.turns[child] = nil
+        }
+        for (other, turn) in store.turns where turn.requester == id {
+            store.turns[other] = nil
         }
     }
 
@@ -186,8 +201,8 @@ final class Orchestrator {
             if let thread = self.thread(id), isDone(thread) { Task { await complete(id) } }
         }
         let ready = store.turns.filter { $0.value.state == .finished || !newQuestions(from: $0.key).isEmpty }
-        for parentID in Set(ready.keys.compactMap { store.parents[$0] }) {
-            Task { await flush(to: parentID) }
+        for requester in Set(ready.values.map(\.requester)) {
+            Task { await flush(to: requester) }
         }
     }
 
@@ -196,7 +211,7 @@ final class Orchestrator {
     /// it, or a subagent of its own.
     private func isDone(_ thread: AgentThread) -> Bool {
         guard Self.outcome(of: thread.status) != nil, !prompted.contains(thread.id) else { return false }
-        let awaitsWork = store.turns.keys.contains { store.parents[$0] == thread.id }
+        let awaitsWork = store.turns.values.contains { $0.requester == thread.id }
         let hasWorkingSubagents = integrations.threads.contains { $0.parentID == thread.id && $0.status.isWorking }
         return !awaitsWork && !hasWorkingSubagents
     }
@@ -256,17 +271,17 @@ final class Orchestrator {
     /// Sends every finished result and every new question for a session in
     /// one prompt, once the session is free. They're marked sent first, so
     /// none goes twice, and put back if sending fails.
-    private func flush(to parentID: String) async {
-        guard !flushing.contains(parentID), let parent = self.thread(parentID), !parent.status.isWorking else { return }
-        let children = store.turns.keys.filter { store.parents[$0] == parentID }.sorted()
+    private func flush(to requesterID: String) async {
+        guard !flushing.contains(requesterID), let requester = self.thread(requesterID), !requester.status.isWorking else { return }
+        let asked = store.turns.filter { $0.value.requester == requesterID }.keys.sorted()
         // A settled session is done with: its results aren't sent.
-        if integrations.settledThreadIDs.contains(parentID) {
-            for id in children where store.turns[id]?.state == .finished { store.turns[id] = nil }
+        if integrations.settledThreadIDs.contains(requesterID) {
+            for id in asked where store.turns[id]?.state == .finished { store.turns[id] = nil }
             return
         }
         var sent: [String: DelegatedTurn] = [:]
         var items: [RelayedMessage.Item] = []
-        for id in children {
+        for id in asked {
             guard let turn = store.turns[id], let child = self.thread(id) else { continue }
             let questions = newQuestions(from: id)
             if turn.state == .finished {
@@ -282,16 +297,20 @@ final class Orchestrator {
             if turn.state == .finished { store.turns[id] = nil } else { store.turns[id]?.askedIDs.formUnion(questions.map(\.id)) }
         }
         guard !items.isEmpty else { return }
-        flushing.insert(parentID)
-        defer { flushing.remove(parentID) }
-        prompted.insert(parentID)
+        flushing.insert(requesterID)
+        defer { flushing.remove(requesterID) }
+        prompted.insert(requesterID)
         do {
-            try await integrations.sendPrompt(RelayedMessage.results(items), to: parent)
-            integrations.resurface(parent)
-            if let latest = self.thread(parentID) { observe(latest) }
+            try await integrations.sendPrompt(RelayedMessage.results(items), to: requester)
+            integrations.resurface(requester)
+            if let latest = self.thread(requesterID) { observe(latest) }
         } catch {
-            prompted.remove(parentID)
-            for (id, turn) in sent where store.parents[id] == parentID { store.turns[id] = turn }
+            prompted.remove(requesterID)
+            // Put back unless the session or the requester went meanwhile, or another turn took its place.
+            for (id, turn) in sent where self.thread(id) != nil && self.thread(requesterID) != nil
+                && (store.turns[id].map { $0.requester == requesterID } ?? true) {
+                store.turns[id] = turn
+            }
         }
     }
 
@@ -299,20 +318,37 @@ final class Orchestrator {
 
     /// Stops a session's turn and everything working for it, at every level,
     /// as the stop button does, with what they left running in the
-    /// background. Nothing stopped reports back, so a stop never wakes anyone.
+    /// background: the sessions that belong to it, and the turns they asked
+    /// of other sessions, which stay where they're listed. Nothing reports
+    /// back to anything stopped, so a stop never wakes anyone.
     func stop(_ thread: AgentThread) async throws {
         // The session stops first: one that can't carries on as it was.
         if thread.status.isWorking { try await integrations.interrupt(thread) }
         store.turns[thread.id] = nil
+        var stopped: Set<String> = [thread.id]
         for below in descendants(of: thread.id) {
+            stopped.insert(below.id)
             let wasDelegated = store.turns.removeValue(forKey: below.id) != nil
             guard below.status.isWorking || wasDelegated else { continue }
             if below.status.isWorking { try? await integrations.interrupt(below) }
             try? await integrations.endBackgroundWork(below)
         }
+        for (id, turn) in store.turns where stopped.contains(turn.requester) {
+            store.turns[id] = nil
+            if turn.state != .finished, let asked = self.thread(id) { try? await stop(asked) }
+        }
     }
 
-    /// Every session working for one, at any depth: those it delegated to and its agent's own subagents.
+    /// The sessions whose stop stops this one: the one it belongs to, and
+    /// the one its turn under way is for.
+    private func stoppers(of id: String) -> [String] {
+        var ids: [String] = []
+        if let thread = self.thread(id), let parent = parentID(of: thread) { ids.append(parent) }
+        if let turn = store.turns[id], turn.state != .finished { ids.append(turn.requester) }
+        return ids
+    }
+
+    /// Every session belonging to one, at any depth: those its agent started and its agent's own subagents.
     private func descendants(of id: String) -> [AgentThread] {
         var found: [AgentThread] = []
         var pending = [id]

@@ -7,8 +7,8 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// The agent sessions a command-line client on the host itself may be
     /// running in, as task IDs from its environment, nearest first. The host
     /// takes the first that's working as the caller: sessions the client
-    /// prompts are linked to it, and their results go back to it. Other
-    /// clients' are ignored.
+    /// starts are listed under it, and the turns it prompts report back to
+    /// it. Other clients' are ignored.
     case caller(taskIDs: [String])
     /// Pairs the command-line client on the same Mac as this paired app, the
     /// `atrium` bundled in it, so the agents that Mac runs reach this host too.
