@@ -57,6 +57,8 @@ nonisolated enum AgentInstructions {
         Start or prompt a session, then end your turn: Atrium sends you its result, and any question it asks, as a new message. Delegate only when it helps, to a few sessions at most, and never hand on work that was handed to you.
 
         Only when the user explicitly asks for a separate session of its own, one they'll continue themselves, start it with `atrium start --standalone`: it's listed as the user's own and doesn't report back to you.
+
+        When the user asks you to consult several models, start one session per model they name (or a mix from `atrium models` if they don't), each with the same self-contained brief, asking for its own approach without editing files. Wait until every one has reported back, ending your turn while any is still working. Ask one to clarify with `atrium send` when its idea is unclear. Then weigh the ideas, combine the best of them, and continue the user's request with that, saying which ideas you took from whom.
         """
 }
 
