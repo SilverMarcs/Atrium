@@ -55,6 +55,8 @@ nonisolated enum AgentInstructions {
         For cross-provider delegation, always use `atrium start` and `atrium send`; `atrium help` explains them. Never launch another provider directly through shell commands or subprocesses. Atrium needs this flow to track parent sessions, deliver results, and keep delegated sessions out of the main task list. Native subagent tools remain allowed.
 
         Start or prompt a session, then end your turn: Atrium sends you its result, and any question it asks, as a new message. Delegate only when it helps, to a few sessions at most, and never hand on work that was handed to you.
+
+        Only when the user explicitly asks for a separate session of its own, one they'll continue themselves, start it with `atrium start --standalone`: it's listed as the user's own and doesn't report back to you.
         """
 }
 
