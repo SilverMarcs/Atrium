@@ -96,7 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SilverMarcs/SwiftMediaViewer",
       "state" : {
-        "revision" : "c4fc4fb9da269e854bdd7fb7cdd335e3049100a4"
+        "branch" : "main",
+        "revision" : "5df9b6d8491a9001bca8c312ff9603920f86ec1d"
       }
     }
   ],
