@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Scrolls to the message being edited, or the newest message, when the composer gains focus.
+/// `scrollToLatest` decides whether the timeline is near enough its end to go there.
 ///
 /// Focus is observed here rather than in `TaskChatView.body`, so a focus
 /// change re-evaluates only this modifier. Interactive keyboard dismissal ends

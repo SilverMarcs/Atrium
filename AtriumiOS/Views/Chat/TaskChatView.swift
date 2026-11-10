@@ -120,7 +120,8 @@ struct TaskChatView: View {
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
                 .followsComposerOnKeyboard { [host, anchorSpace, composer, taskID = task.id] in
-                    composer.messageEdit != nil || host.conversations.pendingPrompts[taskID]?.isEmpty == false || anchorSpace.isHolding
+                    pin.isPinned && composer.messageEdit == nil
+                        && host.conversations.pendingPrompts[taskID]?.isEmpty != false && !anchorSpace.isHolding
                 }
             }
             // The container is what shows between the bars and keyboard. The
@@ -149,6 +150,9 @@ struct TaskChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
+                // A reader who scrolled back through the conversation, or is
+                // still scrolling, stays where they are.
+                guard pin.isPinned, !pin.isReaderScrolling else { return }
                 scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
             } scrollToEditingMessage: { id in
                 scrollToEditingMessage(id, with: proxy)
