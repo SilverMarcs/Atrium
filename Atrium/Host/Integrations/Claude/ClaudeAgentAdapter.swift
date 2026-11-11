@@ -50,6 +50,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Each model's context window as Claude reported it, and the models whose window was asked for.
     private var contextWindows: [String: Int] = [:]
     private var askedContextWindows: Set<String> = []
+    /// Chats without hooks that were sent a prompt mid-turn, connected once the turn ends.
+    private var awaitingHooks: [String: AgentThread] = [:]
+    private var hookConnections: [String: Task<Bool, Never>] = [:]
 
     init(bridge: AgentBridgeServer, instructions: ChatInstructions, configDirectory: URL? = nil) {
         self.bridge = bridge
@@ -190,6 +193,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                     guard UUID(uuidString: id) != nil else { continue }
                     self.onEvent?(.threadInvalidated(sessionID: id))
                     if self.unsavedTurns[id] != nil { await self.loadSavedTurn(id) }
+                    if self.awaitingHooks[id] != nil { self.onEvent?(.transcriptChanged(sessionID: id)) }
                 }
             }
         })
@@ -258,14 +262,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { throw IntegrationError(message: "Claude is not connected.") }
-        guard try await hasHooks(jobID: id) else {
-            throw IntegrationError(message: "This background session was started outside Atrium without chat hooks. Open Terminal to continue it.")
-        }
+        // A chat without hooks still takes the prompt; its turn shows from history once saved.
+        let hasHooks = try await hasHooks(jobID: id) ? true : await connectHooks(to: thread, jobID: id)
         let references = images.map { PromptAttachments.reference(to: $0) }
         let prompt = (references + (text.isEmpty ? [] : [text])).joined(separator: "\n")
         let outgoingPrompt = ClaudeOutgoingPrompt(wireText: prompt, displayText: text, images: images.compactMap { TranscriptImage.thumbnail(at: $0) })
         let isSteering = withStatus(thread).status == .processing
-        outgoing[thread.sessionID, default: []].append(outgoingPrompt)
+        if hasHooks { outgoing[thread.sessionID, default: []].append(outgoingPrompt) }
         // Never retry an acknowledged write: a failed acknowledgement can still mean
         // Claude queued the prompt. Let the user decide whether to resend.
         do { try await daemon.reply(prompt, jobID: id) }
@@ -273,6 +276,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             outgoing[thread.sessionID]?.removeAll { $0.id == outgoingPrompt.id }
             throw error
         }
+        if !hasHooks { awaitingHooks[thread.sessionID] = thread }
         // Claude holds a prompt sent mid-turn until its running tools finish. Steer with it now;
         // if that fails, the prompt is still queued and arrives when they do.
         if isSteering {
@@ -696,6 +700,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             guard let sessionID = session.sessionID, let id = session.id else { continue }
             backgroundIDs[sessionID] = id
             let previous = backgroundSessions.updateValue(session, forKey: sessionID)
+            // Only a turn seen ending, as a listing can predate the turn a prompt just started.
+            if previous?.threadStatus == .processing, session.threadStatus != .processing, session.threadStatus != .waiting,
+               let thread = awaitingHooks.removeValue(forKey: sessionID) {
+                Task { _ = await connectHooks(to: thread, jobID: id) }
+            }
             guard previous != session else { continue }
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: session.threadStatus)))
             onEvent?(.threadInvalidated(sessionID: sessionID))
@@ -970,6 +979,43 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let settings = try await settingsForBridge().path
         let options = try daemon.launchOptions(jobID: jobID)
         return zip(options, options.dropFirst()).contains { $0 == "--settings" && $1 == settings }
+    }
+
+    /// A job started outside Atrium has none of its hooks. Claude restarts a job
+    /// with the options it saved for it, in the same conversation, so adding
+    /// Atrium's to them and restarting the job connects it. Restarting ends a
+    /// running turn, so a busy job isn't connected until its turn ends.
+    private func connectHooks(to thread: AgentThread, jobID: String) async -> Bool {
+        if let connecting = hookConnections[thread.sessionID] { return await connecting.value }
+        let connecting = Task {
+            do { return try await restartWithHooks(thread, jobID: jobID) }
+            catch {
+                Logger(subsystem: "Atrium", category: "Claude").error("Connecting hooks failed: \(error.localizedDescription)")
+                return false
+            }
+        }
+        hookConnections[thread.sessionID] = connecting
+        defer { hookConnections[thread.sessionID] = nil }
+        return await connecting.value
+    }
+
+    private func restartWithHooks(_ thread: AgentThread, jobID: String) async throws -> Bool {
+        guard let session = backgroundSessions[thread.sessionID],
+              session.threadStatus != .processing, session.threadStatus != .waiting else { return false }
+        var options = try daemon.launchOptions(jobID: jobID) + ["--settings", try await settingsForBridge().path]
+        if !options.contains("--append-system-prompt") {
+            options += ["--append-system-prompt", instructions.text(for: thread.id)]
+        }
+        try daemon.setLaunchOptions(options, jobID: jobID)
+        _ = try await IntegrationProcess.run("claude", arguments: ["respawn", jobID])
+        if let pid = session.pid { try await AgentProcessExit.wait(for: pid) }
+        let restarted = try await runningSession(jobID: jobID)
+        backgroundSessions[thread.sessionID] = restarted
+        guard try await hasHooks(jobID: jobID) else { return false }
+        liveStatuses[thread.sessionID] = restarted.threadStatus
+        _ = try await liveTranscript(thread.sessionID)
+        onEvent?(.transcriptChanged(sessionID: thread.sessionID))
+        return true
     }
 
     /// The settings that send Claude's hooks to Atrium, pointing at the

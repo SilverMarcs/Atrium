@@ -42,6 +42,17 @@ final class ClaudeDaemonClient {
         return (try JSONSerialization.jsonObject(with: state) as? [String: Any])?["respawnFlags"] as? [String] ?? []
     }
 
+    /// Changes the options Claude restarts a job with, which `claude respawn` applies.
+    func setLaunchOptions(_ options: [String], jobID: String) throws {
+        try validate(jobID: jobID)
+        let file = directory.appending(path: "jobs/\(jobID)/state.json")
+        guard var state = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any] else {
+            throw IntegrationError(message: "Claude's record of this background session could not be read.")
+        }
+        state["respawnFlags"] = options
+        try JSONSerialization.data(withJSONObject: state).write(to: file, options: .atomic)
+    }
+
     func reply(_ text: String, jobID: String) async throws {
         let connection = UnixJSONConnection()
         defer { connection.close() }
