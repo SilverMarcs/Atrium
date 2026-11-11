@@ -15,14 +15,6 @@ struct ComposerAttachmentPickers: ViewModifier {
                     ComposerAttachmentStrip(composer: composer)
                 }
             }
-            .alert(
-                "Couldn’t Paste Attachment",
-                isPresented: Binding(get: { composer.pasteError != nil }, set: { if !$0 { composer.pasteError = nil } })
-            ) {
-                Button("OK") { composer.pasteError = nil }
-            } message: {
-                Text(composer.pasteError ?? "")
-            }
             .photosPicker(
                 isPresented: $composer.isPickingPhotos,
                 selection: $selection,
@@ -32,7 +24,7 @@ struct ComposerAttachmentPickers: ViewModifier {
             .onChange(of: selection) { _, items in
                 guard !items.isEmpty else { return }
                 selection = []
-                Task { await attach(items) }
+                Task { await composer.attach(items) }
             }
             .fullScreenCover(isPresented: $composer.isTakingPhoto) {
                 CameraPicker { data in
@@ -40,14 +32,6 @@ struct ComposerAttachmentPickers: ViewModifier {
                 }
                 .ignoresSafeArea()
             }
-    }
-
-    private func attach(_ items: [PhotosPickerItem]) async {
-        var sources: [Data] = []
-        for item in items {
-            if let data = try? await item.loadTransferable(type: Data.self) { sources.append(data) }
-        }
-        await composer.attach(sources)
     }
 }
 

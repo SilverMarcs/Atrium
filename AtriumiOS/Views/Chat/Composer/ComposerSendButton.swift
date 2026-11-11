@@ -11,7 +11,7 @@ struct ComposerSendButton: View {
 
     var body: some View {
         Group {
-            if let item, item.task.actions.contains(.interrupt), !composer.hasContent, !composer.dictation.isActive, !composer.isSubmittingDictation {
+            if let item, composer.offersStop(for: item.task.actions) {
                 Button(role: .destructive) {
                     item.host.interrupt(item.task.id)
                 } label: {
@@ -55,7 +55,5 @@ struct ComposerSendButton: View {
 
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
 
-    private var isSendDisabled: Bool {
-        item == nil || composer.isSubmittingDictation || (composer.messageEdit != nil && composer.messageEdit?.canSubmit != true) || (!composer.hasContent && !composer.dictation.isActive)
-    }
+    private var isSendDisabled: Bool { item == nil || !composer.canSend }
 }

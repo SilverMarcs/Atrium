@@ -2,13 +2,11 @@ import AppKit
 import SwiftUI
 
 struct SessionChatPasteHandler: ViewModifier {
-  @Binding var prompt: String
-  @Binding var images: [ComposerImage]
+  let composer: TaskComposer
   let isFocused: Bool
   @Environment(AppModel.self) private var app
   @State private var eventMonitor: Any?
   @State private var hostingView = NSView()
-  @State private var importError: String?
 
   func body(content: Content) -> some View {
     content
@@ -17,14 +15,6 @@ struct SessionChatPasteHandler: ViewModifier {
       .onDisappear(perform: removeMonitor)
       .onChange(of: isFocused) { installMonitor() }
       .onChange(of: app.selection) { installMonitor() }
-      .alert(
-        "Couldn’t Paste Attachment",
-        isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })
-      ) {
-        Button("OK") { importError = nil }
-      } message: {
-        Text(importError ?? "")
-      }
   }
 
   private func installMonitor() {
@@ -61,7 +51,7 @@ struct SessionChatPasteHandler: ViewModifier {
           if let url = fileURL(from: item) {
             content = try await ComposerPasteContent.load(contentsOf: url)
           } else if let data = item.data(forType: .png) ?? item.data(forType: .tiff) {
-            try ComposerPasteContent.checkImageLimit(images.count, maximum: TaskComposer.maxImages)
+            try composer.checkImageSlot()
             content = try await ComposerPasteContent.load(imageData: data)
           } else {
             continue
@@ -69,16 +59,15 @@ struct SessionChatPasteHandler: ViewModifier {
           switch content {
           case .text(let text):
             if app.selection == threadID,
-              let editor, editor.window?.firstResponder === editor, editor.string == prompt {
+              let editor, editor.window?.firstResponder === editor, editor.string == composer.draft {
               editor.insertText(text, replacementRange: editor.selectedRange())
             } else {
-              prompt += text
+              composer.draft += text
             }
           case .image(let image):
-            try ComposerPasteContent.checkImageLimit(images.count, maximum: TaskComposer.maxImages)
-            images.append(image)
+            try composer.attachPastedImage(image)
           }
-        } catch { importError = error.localizedDescription }
+        } catch { composer.attachmentError = error.localizedDescription }
       }
     }
     return true

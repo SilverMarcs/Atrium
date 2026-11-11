@@ -127,7 +127,7 @@ struct TaskDetailScreen: View {
                 }
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    ComposerDictationButton()
+                    ComposerDictationButton(composer: composer)
                 }
                 if dictationSettings.isEnabled, task?.actions.contains(.interrupt) == true {
                     ToolbarSpacer(.fixed, placement: .bottomBar)

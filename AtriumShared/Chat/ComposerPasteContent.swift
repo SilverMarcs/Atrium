@@ -11,10 +11,6 @@ nonisolated enum ComposerPasteContent: Sendable {
         return type.conforms(to: .image) || type.conforms(to: .text)
     }
 
-    static func checkImageLimit(_ count: Int, maximum: Int) throws {
-        guard count < maximum else { throw ComposerPasteError.imageLimit(maximum) }
-    }
-
     @concurrent
     static func load(contentsOf url: URL) async throws -> Self {
         let scoped = url.startAccessingSecurityScopedResource()

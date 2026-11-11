@@ -61,7 +61,7 @@ struct TaskInputBar: View {
                             .disabled(composer.messageEdit?.isSubmitting == true)
                             .background(ComposerPasteAnchor(composer: composer))
 
-                        ComposerDictationButton(isInline: true)
+                        ComposerDictationButton(composer: composer, isInline: true)
                             .buttonStyle(.plain)
                     }
                     .glassEffect(in: .rect(cornerRadius: 20))

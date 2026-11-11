@@ -9,7 +9,7 @@ struct ComposerAttachmentStrip: View {
             HStack {
                 ForEach(composer.images) { image in
                     ComposerAttachmentThumbnail(image: image) {
-                        composer.remove(image)
+                        withAnimation { composer.remove(image) }
                     }
                 }
             }

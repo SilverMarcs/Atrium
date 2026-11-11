@@ -16,35 +16,21 @@ struct SessionChatComposer: View {
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
   private var prompt: String { composer.draft }
-  private var images: [ComposerImage] { composer.images }
   private var edit: ConversationMessageEdit? { composer.messageEdit }
-  private var dictation: ComposerDictation { composer.dictation }
-
-  private var canSend: Bool {
-    !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty || edit?.images.isEmpty == false
-  }
-
-  private var showsStop: Bool {
-    actions.contains(.interrupt) && !canSend && !dictation.isActive && !composer.isSubmittingDictation
-  }
-
-  /// A recording counts as content: sending transcribes it first.
-  private var isButtonDisabled: Bool {
-    isSending || composer.isSubmittingDictation || edit?.isSubmitting == true || (edit != nil && edit?.canSubmit != true)
-      || (!showsStop && ((!canSend && !dictation.isActive) || !actions.contains(.prompt)))
-  }
+  private var showsStop: Bool { composer.offersStop(for: actions) }
+  private var isButtonDisabled: Bool { isSending || !(showsStop || composer.canSend) }
 
   var body: some View {
     GlassEffectContainer {
       VStack(spacing: 0) {
         if let edit { ConversationEditContent(edit: edit) }
-        if !images.isEmpty {
-          SessionChatAttachmentStrip(images: $composer.images)
+        if !composer.images.isEmpty {
+          ComposerAttachmentStrip(composer: composer)
         }
 
         HStack(alignment: .bottom) {
           if actions.contains(.attachImages) {
-            SessionChatInputMenu(images: $composer.images)
+            SessionChatInputMenu(composer: composer)
               .offset(y: -1)
           }
 
@@ -75,11 +61,12 @@ struct SessionChatComposer: View {
             .padding(6)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { noteSourceFrame($0) }
 
-            SessionChatDictationButton(composer: composer)
+            ComposerDictationButton(composer: composer, isInline: true)
+              .buttonStyle(.plain)
           }
           .font(.body)
           .glassEffect(in: .rect(cornerRadius: 16))
-          .modifier(SessionChatPasteHandler(prompt: $composer.draft, images: $composer.images, isFocused: isFocused))
+          .modifier(SessionChatPasteHandler(composer: composer, isFocused: isFocused))
 
           Button {
             showsStop ? interrupt() : send()
@@ -154,7 +141,7 @@ struct SessionChatComposer: View {
     guard enterToSendChat, modifiers.intersection([.shift, .option, .command]).isEmpty else {
       return .ignored
     }
-    if (canSend || dictation.isActive) && !isButtonDisabled && actions.contains(.prompt) { send() }
+    if composer.canSend && !isSending { send() }
     return .handled
   }
 }

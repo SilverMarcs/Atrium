@@ -2,13 +2,12 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Attaches images to the prompt from Photos or from files.
 struct SessionChatInputMenu: View {
-  @Binding var images: [ComposerImage]
+  let composer: TaskComposer
   @State private var showPhotosPicker = false
   @State private var showFileImporter = false
   @State private var selectedPhotos: [PhotosPickerItem] = []
-  @State private var selectedFiles: [URL] = []
-  @State private var importError: String?
 
   var body: some View {
     Menu {
@@ -26,64 +25,27 @@ struct SessionChatInputMenu: View {
     .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .fixedSize()
-    .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhotos, matching: .images)
-    .task(id: selectedPhotos) {
-      for item in selectedPhotos {
-        do {
-          try checkImageLimit()
-          guard let data = try await item.loadTransferable(type: Data.self) else {
-            throw IntegrationError(message: "This image could not be read.")
-          }
-          let image = await ComposerImage.prepare(data)
-          try Task.checkCancellation()
-          try appendImage(image)
-        } catch is CancellationError {
-          return
-        } catch { importError = error.localizedDescription }
-      }
+    .disabled(composer.remainingImageSlots == 0)
+    .photosPicker(
+      isPresented: $showPhotosPicker,
+      selection: $selectedPhotos,
+      maxSelectionCount: max(composer.remainingImageSlots, 1),
+      matching: .images
+    )
+    .onChange(of: selectedPhotos) { _, items in
+      guard !items.isEmpty else { return }
       selectedPhotos = []
+      Task { await composer.attach(items) }
     }
     .fileImporter(
       isPresented: $showFileImporter, allowedContentTypes: [.image], allowsMultipleSelection: true
     ) { result in
-      do {
-        selectedFiles = try result.get()
-      } catch { importError = error.localizedDescription }
+      switch result {
+      case .success(let urls):
+        Task { await composer.attach(contentsOf: urls) }
+      case .failure(let error):
+        composer.attachmentError = error.localizedDescription
+      }
     }
-    .task(id: selectedFiles) {
-      do {
-        for url in selectedFiles {
-          try checkImageLimit()
-          let image = try await ComposerImage.prepare(contentsOf: url)
-          try Task.checkCancellation()
-          try appendImage(image)
-        }
-      } catch is CancellationError {
-        return
-      } catch { importError = error.localizedDescription }
-      selectedFiles = []
-    }
-    .alert(
-      "Couldn’t Attach Image",
-      isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })
-    ) {
-      Button("OK") { importError = nil }
-    } message: {
-      Text(importError ?? "")
-    }
-  }
-
-  private func checkImageLimit() throws {
-    guard images.count < TaskComposer.maxImages else {
-      throw IntegrationError(message: "Attach up to \(TaskComposer.maxImages) images at a time.")
-    }
-  }
-
-  private func appendImage(_ image: ComposerImage?) throws {
-    try checkImageLimit()
-    guard let image else {
-      throw IntegrationError(message: "This image could not be read.")
-    }
-    images.append(image)
   }
 }

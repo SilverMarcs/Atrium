@@ -5,12 +5,16 @@ struct ComposerAttachmentThumbnail: View {
     let image: ComposerImage
     let remove: () -> Void
 
+    #if os(macOS)
+    private static let size: CGFloat = 80
+    #else
     private static let size: CGFloat = 64
+    #endif
 
     var body: some View {
         Group {
-            if let uiImage = UIImage(data: image.data) {
-                Image(uiImage: uiImage)
+            if let thumbnail = Image(data: image.data) {
+                thumbnail
                     .resizable()
                     .scaledToFill()
             } else {
@@ -24,6 +28,7 @@ struct ComposerAttachmentThumbnail: View {
                 .labelStyle(.iconOnly)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .black.opacity(0.6))
+                .buttonStyle(.plain)
                 .padding(4)
         }
         .accessibilityElement(children: .contain)

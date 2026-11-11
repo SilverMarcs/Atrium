@@ -1,5 +1,6 @@
 import AtriumClient
 import AtriumProtocol
+import PhotosUI
 import SwiftUI
 
 /// A task's prompt draft with its attached images, its dictation, and any
@@ -31,9 +32,11 @@ final class TaskComposer {
         }
     }
 
+    /// Why an image or item couldn't be attached, until it's been shown.
+    var attachmentError: String?
+
     #if os(iOS)
     @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
-    var pasteError: String?
     var isPickingPhotos = false
     var isTakingPhoto = false
     /// Mirrors the composer's focus, where the timeline observes it to scroll
@@ -83,17 +86,58 @@ final class TaskComposer {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty || messageEdit?.images.isEmpty == false
     }
 
-    /// Attaches images from the photo library or camera, up to `maxImages`.
-    func attach(_ sources: [Data]) async {
-        for source in sources.prefix(remainingImageSlots) {
-            guard let image = await ComposerImage.prepare(source), remainingImageSlots > 0 else { continue }
-            images.append(image)
+    /// Whether Send stands in for Stop: the agent is working and there's
+    /// nothing to send.
+    func offersStop(for actions: TaskActions) -> Bool {
+        actions.contains(.interrupt) && !hasContent && !dictation.isActive && !isSubmittingDictation
+    }
+
+    /// Whether there's something to send, or a recording to transcribe and
+    /// send. An agent that can't take a prompt says why when it's sent.
+    var canSend: Bool {
+        !isSubmittingDictation && messageEdit?.canSubmit != false && (hasContent || dictation.isActive)
+    }
+
+    /// Throws when the draft already has as many images as it can take.
+    func checkImageSlot() throws {
+        guard remainingImageSlots > 0 else { throw ComposerPasteError.imageLimit(Self.maxImages) }
+    }
+
+    /// Attaches images picked from the photo library.
+    func attach(_ items: [PhotosPickerItem]) async {
+        await attachImages(items) { item in
+            guard let data = try await item.loadTransferable(type: Data.self) else { return nil }
+            return await ComposerImage.prepare(data)
         }
     }
 
+    /// Attaches photos taken with the camera.
+    func attach(_ sources: [Data]) async {
+        await attachImages(sources) { await ComposerImage.prepare($0) }
+    }
+
+    /// Attaches image files.
+    func attach(contentsOf urls: [URL]) async {
+        await attachImages(urls) { try await ComposerImage.prepare(contentsOf: $0) }
+    }
+
     func attachPastedImage(_ image: ComposerImage) throws {
-        try ComposerPasteContent.checkImageLimit(images.count + (messageEdit?.images.count ?? 0), maximum: Self.maxImages)
+        try checkImageSlot()
         images.append(image)
+    }
+
+    /// Attaches images up to `maxImages`, stopping at the first that can't be
+    /// and saying why.
+    private func attachImages<Source>(_ sources: [Source], load: (Source) async throws -> ComposerImage?) async {
+        do {
+            for source in sources {
+                try checkImageSlot()
+                guard let image = try await load(source) else { throw ComposerPasteError.unreadableImage }
+                try attachPastedImage(image)
+            }
+        } catch {
+            attachmentError = error.localizedDescription
+        }
     }
 
     /// Adds dropped text to the draft, or a dropped image to its attachments.

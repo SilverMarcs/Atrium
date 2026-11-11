@@ -1,22 +1,23 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Makes the conversation and its composer one attachment drop region.
+/// Makes the conversation and its composer one attachment drop region, and
+/// says why anything dropped, pasted or picked couldn't be attached.
 struct ComposerDropHandler: ViewModifier {
+    let composer: TaskComposer
     var isEnabled = true
     let receive: @MainActor (ComposerPasteContent) throws -> Void
-    @State private var importError: String?
 
     func body(content: Content) -> some View {
         content
             .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: handleDrop)
             .alert("Couldn’t Attach Item", isPresented: Binding(
-                get: { importError != nil },
-                set: { if !$0 { importError = nil } }
+                get: { composer.attachmentError != nil },
+                set: { if !$0 { composer.attachmentError = nil } }
             )) {
-                Button("OK") { importError = nil }
+                Button("OK") { composer.attachmentError = nil }
             } message: {
-                Text(importError ?? "")
+                Text(composer.attachmentError ?? "")
             }
     }
 
@@ -32,7 +33,7 @@ struct ComposerDropHandler: ViewModifier {
                         try receive(attachment)
                     }
                 } catch {
-                    importError = error.localizedDescription
+                    composer.attachmentError = error.localizedDescription
                 }
             }
         }
@@ -45,7 +46,7 @@ extension View {
     /// started over has been submitted or cancelled is discarded.
     func composerDropHandler(_ composer: TaskComposer, isEnabled: Bool = true) -> some View {
         let editing = composer.messageEdit
-        return modifier(ComposerDropHandler(isEnabled: isEnabled && editing?.isSubmitting != true) { content in
+        return modifier(ComposerDropHandler(composer: composer, isEnabled: isEnabled && editing?.isSubmitting != true) { content in
             guard composer.messageEdit === editing, editing?.isSubmitting != true else { return }
             try composer.receive(content)
         })

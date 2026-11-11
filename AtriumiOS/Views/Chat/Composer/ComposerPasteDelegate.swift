@@ -43,7 +43,7 @@ final class ComposerPasteDelegate: NSObject, UITextPasteDelegate {
                     item.setNoResult()
                 }
             } catch {
-                composer?.pasteError = error.localizedDescription
+                composer?.attachmentError = error.localizedDescription
                 item.setNoResult()
             }
         }
