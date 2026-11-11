@@ -152,13 +152,15 @@ private struct ProjectNewChatButton: View {
             action()
         } label: {
             ProjectRow(workspace: workspace, host: host)
-                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
         #if os(macOS)
         .buttonStyle(.plain)
         #endif
+        // List buttons draw their label in the tint, so the row keeps the
+        // regular text colors instead of the accent.
+        .tint(.primary)
         .disabled(!host.canStartTask)
         .accessibilityHint("Starts a new chat in this project.")
     }
