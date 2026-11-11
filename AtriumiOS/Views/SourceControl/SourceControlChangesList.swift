@@ -4,7 +4,6 @@ import SwiftUI
 struct SourceControlChangesList: View {
     let source: SourceControl
     let onCommit: () -> Void
-    let onDiscard: (SourceControlDiscard) -> Void
     @State private var isUnpushedExpanded = true
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
@@ -27,7 +26,7 @@ struct SourceControlChangesList: View {
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Unpushed Commits", systemImage: "arrow.up.circle", isExpanded: $isUnpushedExpanded) {
-                        Button("Push to Remote", systemImage: "arrow.up") { source.send(.push(branch: status.branchName)) }
+                        Button("Push to Remote", systemImage: "arrow.up") { Task { await source.push(status) } }
                     }
                 }
             }
@@ -36,14 +35,14 @@ struct SourceControlChangesList: View {
                 Section {
                     if isStagedExpanded {
                         ForEach(status.stagedFiles) { file in
-                            SourceControlFileRow(source: source, file: file, isStaged: true, onDiscard: nil)
+                            SourceControlFileRow(source: source, status: status, file: file, isStaged: true)
                         }
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Staged Changes", systemImage: "checkmark.circle", isExpanded: $isStagedExpanded) {
                         Button("Commit", systemImage: "checkmark", action: onCommit)
                         Button("Unstage All", systemImage: "tray.and.arrow.up") {
-                            source.send(.unstage(paths: status.stagedFiles.map(\.repositoryRelativePath)))
+                            Task { await source.unstage(status.stagedFiles, in: status) }
                         }
                     }
                 }
@@ -53,18 +52,16 @@ struct SourceControlChangesList: View {
                 Section {
                     if isChangesExpanded {
                         ForEach(status.unstagedFiles) { file in
-                            SourceControlFileRow(source: source, file: file, isStaged: false) {
-                                onDiscard(SourceControlDiscard(files: [file]))
-                            }
+                            SourceControlFileRow(source: source, status: status, file: file, isStaged: false)
                         }
                     }
                 } header: {
                     SourceControlSectionHeader(title: "Changes", systemImage: "circle.dashed", isExpanded: $isChangesExpanded) {
                         Button("Stage All", systemImage: "tray.and.arrow.down") {
-                            source.send(.stage(paths: status.unstagedFiles.map(\.repositoryRelativePath)))
+                            Task { await source.stage(status.unstagedFiles, in: status) }
                         }
                         Button("Discard All", systemImage: "arrow.uturn.backward", role: .destructive) {
-                            onDiscard(SourceControlDiscard(files: nil))
+                            source.prompt = .discard(nil, status)
                         }
                     }
                 }

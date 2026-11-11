@@ -10,11 +10,11 @@ struct SourceControlActionsMenu: View {
     var body: some View {
         let status = source.status
         Menu {
-            Button("Push", systemImage: "arrow.up") { source.send(.push(branch: status?.branchName)) }
+            Button("Push", systemImage: "arrow.up") { run(source.push) }
                 .disabled(status.map { $0.unpushedCommits.isEmpty && $0.hasTrackingBranch } ?? true)
-            Button("Pull", systemImage: "arrow.down") { source.send(.pull) }
+            Button("Pull", systemImage: "arrow.down") { run(source.pull) }
                 .disabled(status?.hasTrackingBranch != true)
-            Button("Fetch", systemImage: "arrow.clockwise") { source.send(.fetch) }
+            Button("Fetch", systemImage: "arrow.clockwise") { run(source.fetch) }
 
             Divider()
 
@@ -26,4 +26,8 @@ struct SourceControlActionsMenu: View {
         .disabled(status == nil)
     }
 
+    private func run(_ operation: @escaping (GitRepositoryStatus) async -> Void) {
+        guard let status = source.status else { return }
+        Task { await operation(status) }
+    }
 }

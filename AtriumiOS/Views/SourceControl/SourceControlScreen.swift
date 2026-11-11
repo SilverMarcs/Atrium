@@ -13,7 +13,6 @@ struct SourceControlScreen: View {
     @State private var showingCommit = false
     @State private var showingNewBranch = false
     @State private var newBranchName = ""
-    @State private var pendingDiscard: SourceControlDiscard?
 
     init(host: HostClient, workspaceID: UUID) {
         _source = State(initialValue: SourceControl(host: host, workspaceID: workspaceID))
@@ -21,11 +20,11 @@ struct SourceControlScreen: View {
 
     var body: some View {
         let status = source.status
-        SourceControlChangesList(source: source, onCommit: { showingCommit = true }) { pendingDiscard = $0 }
+        SourceControlChangesList(source: source) { showingCommit = true }
             .refreshable {
-                if let status { await source.perform(.fetch, in: status.mainRepositoryURL) }
+                if let status { await source.fetch(status) }
             }
-            .projectScopeTitle(host: source.host, workspaceID: source.workspaceID, placeholder: "Source Control") {
+            .projectScopeTitle(source, placeholder: "Source Control") {
                 showingNewBranch = true
             }
             .toolbar {
@@ -47,29 +46,19 @@ struct SourceControlScreen: View {
             } message: {
                 Text("Create a branch from “\(status?.branchName ?? "HEAD")”.")
             }
-            .alert(
-                "Discard Changes?",
-                isPresented: Binding(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }),
-                presenting: pendingDiscard
-            ) { discard in
-                Button("Discard", role: .destructive) { source.send(discard.operation) }
-                Button("Cancel", role: .cancel) {}
-            } message: { discard in
-                Text(discard.message)
-            }
     }
 
     private func commit() {
-        let message = commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, source.status?.stagedFiles.isEmpty == false else { return }
-        source.send(.commit(message: message))
+        guard let status = source.status else { return }
+        let message = commitMessage
         commitMessage = ""
+        Task { await source.commit(message: message, in: status) }
     }
 
     private func createBranch() {
-        let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = newBranchName
         newBranchName = ""
-        guard !name.isEmpty else { return }
-        source.send(.createBranch(name))
+        guard let status = source.status else { return }
+        Task { await source.createBranch(named: name, in: status) }
     }
 }

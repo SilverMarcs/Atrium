@@ -12,7 +12,7 @@ struct BranchMenuItem: View {
         Toggle(isOn: Binding(
             get: { status.branchName == branch },
             set: { isSelected in
-                if isSelected { source.selectBranch(branch, in: status) }
+                if isSelected { Task { await source.selectBranch(branch, in: status) } }
             }
         )) {
             Label(branch, systemImage: isWorktree ? "folder" : "arrow.triangle.branch")

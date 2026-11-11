@@ -99,7 +99,7 @@ struct GitStashListSheet: View {
     private func drop(_ entry: GitStashEntry) {
         guard let snapshot else { return }
         Task {
-            await state.model.dropStash(index: entry.index, snapshot: snapshot)
+            await state.model.dropStash(index: entry.index, in: snapshot)
             await load()
         }
     }
@@ -107,7 +107,7 @@ struct GitStashListSheet: View {
     private func apply(_ entry: GitStashEntry) {
         guard let snapshot else { return }
         Task {
-            await state.model.applyStash(index: entry.index, snapshot: snapshot)
+            await state.model.applyStash(index: entry.index, in: snapshot)
         }
     }
 
@@ -136,7 +136,7 @@ struct GitStashListSheet: View {
             return
         }
         isLoading = stashes.isEmpty
-        stashes = await state.model.stashList(snapshot: snapshot)
+        stashes = await state.model.stashList(snapshot)
         isLoading = false
     }
 }

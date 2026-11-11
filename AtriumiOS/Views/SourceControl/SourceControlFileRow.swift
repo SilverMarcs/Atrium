@@ -2,15 +2,15 @@ import AtriumProtocol
 import SwiftUI
 
 /// A changed file: opens its diff, swipes to stage, unstage or discard.
+/// Staged files can't be discarded.
 struct SourceControlFileRow: View {
     let source: SourceControl
+    let status: GitRepositoryStatus
     let file: GitChangedFile
     let isStaged: Bool
-    /// The screen confirms discards; staged rows can't be discarded.
-    let onDiscard: (() -> Void)?
 
     var body: some View {
-        NavigationLink(value: Route.fileDiff(source.workspace, file: file, repository: source.status?.repositoryRootURL ?? file.fileURL, isStaged: isStaged)) {
+        NavigationLink(value: Route.fileDiff(source.workspace, file: file, repository: status.repositoryRootURL, isStaged: isStaged)) {
             Label {
                 Text(file.name)
                     .lineLimit(1)
@@ -26,20 +26,22 @@ struct SourceControlFileRow: View {
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if isStaged {
                 Button("Unstage", systemImage: "tray.and.arrow.up") {
-                    source.send(.unstage(paths: [file.repositoryRelativePath]))
+                    Task { await source.unstage([file], in: status) }
                 }
                 .tint(.orange)
             } else {
                 Button("Stage", systemImage: "tray.and.arrow.down") {
-                    source.send(.stage(paths: [file.repositoryRelativePath]))
+                    Task { await source.stage([file], in: status) }
                 }
                 .tint(.green)
             }
         }
         .swipeActions(edge: .trailing) {
-            if let onDiscard {
-                Button("Discard", systemImage: "arrow.uturn.backward", action: onDiscard)
-                    .tint(.red)
+            if !isStaged {
+                Button("Discard", systemImage: "arrow.uturn.backward") {
+                    source.prompt = .discard([file], status)
+                }
+                .tint(.red)
             }
         }
     }

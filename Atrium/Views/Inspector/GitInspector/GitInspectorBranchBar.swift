@@ -177,12 +177,7 @@ struct GitInspectorBranchBar: View {
             set: { item in
                 switch item {
                 case .branch(let branch):
-                    guard branch != snapshot.branchName else { return }
-                    if let worktree = snapshot.worktrees.first(where: { $0.branch == branch }) {
-                        state.activateWorktree(worktree, in: snapshot)
-                    } else {
-                        state.switchBranch(to: branch, snapshot: snapshot)
-                    }
+                    Task { await state.model.selectBranch(branch, in: snapshot) }
                 case .worktree(let path):
                     guard let worktree = snapshot.worktrees.first(where: { $0.path == path }),
                           !worktree.isCurrent else { return }
@@ -195,7 +190,7 @@ struct GitInspectorBranchBar: View {
     private func openPullRequestPage() {
         guard let snapshot, let branch = snapshot.branchName else { return }
         Task {
-            guard let remoteURLString = await state.model.remoteURL(snapshot: snapshot),
+            guard let remoteURLString = await state.model.remoteURL(snapshot),
                   let url = pullRequestWebURL(remoteURL: remoteURLString, branch: branch) else {
                 state.model.errorMessage = "Could not determine pull request URL from remote."
                 return

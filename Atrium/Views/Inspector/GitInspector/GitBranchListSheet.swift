@@ -107,7 +107,7 @@ struct GitBranchListSheet: View {
             }
         }
         .frame(width: 420, height: 440)
-        .task(id: state.model.snapshots) { await model.load() }
+        .task(id: state.model.repositories) { await model.load() }
         .alert(model.pendingAction?.title ?? "Confirm", isPresented: $model.isConfirming, presenting: model.pendingAction) { action in
             Button(action.buttonTitle, role: action.isDestructive ? .destructive : .confirm) {
                 Task { await model.confirm(action) }

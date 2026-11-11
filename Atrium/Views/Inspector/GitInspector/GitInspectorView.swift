@@ -7,13 +7,13 @@ struct GitInspectorView: View {
     private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     private var hasRepository: Bool {
-        !state.model.snapshots.isEmpty
+        state.model.repositories?.isEmpty == false
     }
 
     var body: some View {
         if hasRepository {
             repositoryView
-        } else if !state.model.hasCompletedInitialScan {
+        } else if state.model.repositories == nil {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -53,7 +53,7 @@ struct GitInspectorView: View {
                     bannerView(banner)
                         .transition(.move(edge: .bottom))
                 }
-                if state.model.snapshots.count > 1 {
+                if (state.model.repositories?.count ?? 0) > 1 {
                     InspectorRepositoryPicker(project: state.project)
                 }
             }
@@ -62,25 +62,9 @@ struct GitInspectorView: View {
         }
         .task(id: snapshot?.branchName) {
             guard let snapshot, snapshot.branchName != nil else { return }
-            await state.model.fetchIfStale(snapshot: snapshot)
+            await state.model.fetchIfStale(snapshot)
         }
-        .alert("Discard Changes?", isPresented: discardAlertBinding) {
-            Button("Discard", role: .confirm) {
-                guard let target = state.discardTarget else { return }
-                state.performDiscard(target)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(discardAlertMessage)
-        }
-        .alert("Stash Changes?", isPresented: stashAlertBinding) {
-            Button("Stash & Switch", role: .confirm) {
-                state.confirmStashAndSwitch()
-            }
-            Button("Cancel", role: .cancel) { state.pendingBranchSwitch = nil }
-        } message: {
-            Text(stashAlertMessage)
-        }
+        .sourceControlAlerts(state.model)
         .alert("Stash All Changes", isPresented: $state.showStashAlert) {
             TextField("Stash name", text: $state.stashMessage)
             Button("Stash") {
@@ -89,32 +73,6 @@ struct GitInspectorView: View {
             Button("Cancel", role: .cancel) { state.stashMessage = "" }
         } message: {
             Text("Stash all staged, unstaged, and untracked changes.")
-        }
-        .alert("Publish Branch?", isPresented: $state.showPushUpstreamAlert) {
-            Button("Publish") {
-                state.pushSetUpstream()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The branch \"\(snapshot?.branchName ?? "")\" does not exist on the remote. This will create a new branch on the remote and push your commits.")
-        }
-        .alert("Branches Diverged", isPresented: $state.showPullRebaseAlert) {
-            Button("Rebase") {
-                state.syncWithRemote()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Your local branch and the remote have both moved forward. Rebase your local commits onto the remote to sync.")
-        }
-        .alert("Cannot Pull Cleanly", isPresented: $state.showPullConflictAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Pulling would create merge conflicts with your uncommitted changes. Your working directory has been left untouched. Commit or stash your changes manually, resolve the conflict, and try again.")
-        }
-        .alert("Source Control", isPresented: errorAlertBinding) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(state.model.errorMessage ?? "")
         }
         .sheet(isPresented: $state.showSyncWithBranchSheet) {
             SyncWithBranchSheet(state: state)
@@ -206,50 +164,6 @@ struct GitInspectorView: View {
         switch banner {
         case .success(let msg):
             if state.model.successMessage == msg { state.model.successMessage = nil }
-        }
-    }
-
-    // MARK: - Alert Bindings
-
-    private var discardAlertBinding: Binding<Bool> {
-        Binding(
-            get: { state.discardTarget != nil },
-            set: { if !$0 { state.discardTarget = nil } }
-        )
-    }
-
-    private var stashAlertBinding: Binding<Bool> {
-        Binding(
-            get: { state.pendingBranchSwitch != nil },
-            set: { if !$0 { state.pendingBranchSwitch = nil } }
-        )
-    }
-
-    private var errorAlertBinding: Binding<Bool> {
-        Binding(
-            get: { state.model.errorMessage != nil },
-            set: { if !$0 { state.model.errorMessage = nil } }
-        )
-    }
-
-    private var stashAlertMessage: String {
-        if let pending = state.pendingBranchSwitch, let snapshot,
-           pending.repositoryRootURL != snapshot.repositoryRootURL {
-            return "The main worktree has uncommitted changes. Stash them (including staged and untracked) before switching it to \"\(pending.branch)\"?"
-        }
-        return "You have uncommitted changes. Stash all changes (including staged and untracked) before switching branches?"
-    }
-
-    private var discardAlertMessage: String {
-        switch state.discardTarget {
-        case .files(let files, _) where files.count == 1:
-            "This will discard changes to \"\(files[0].repositoryRelativePath)\". This cannot be undone."
-        case .files(let files, _):
-            "This will discard changes to \(files.count) files. This cannot be undone."
-        case .all:
-            "This will discard all unstaged changes. This cannot be undone."
-        case .none:
-            ""
         }
     }
 }

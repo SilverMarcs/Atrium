@@ -194,8 +194,6 @@ struct GitInspectorChangesList: View {
         case .commit:
             // Commit is handled by the commit area; ignore from list-side menus.
             break
-        case .push(let snap) where !snap.hasTrackingBranch:
-            state.showPushUpstreamAlert = true
         default:
             state.perform(action)
         }

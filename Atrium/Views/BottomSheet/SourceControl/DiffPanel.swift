@@ -72,8 +72,8 @@ struct DiffBodyView: View {
             switch loader.phase {
             case .idle, .loading:
                 Color.clear
-            case .image(let oldImage, let newImage):
-                ImageDiffView(content: ImageDiffContent(oldImage: oldImage, newImage: newImage), kind: reference.kind)
+            case .image(let old, let new):
+                ImageDiffView(old: old, new: new, kind: reference.kind)
             case .text(let presentation, let file):
                 if presentation.string.isEmpty {
                     ContentUnavailableView {
@@ -93,7 +93,7 @@ struct DiffBodyView: View {
                         reference: reference,
                         hunkTarget: HunkTarget(project: project, repository: reference.repositoryRootURL),
                         scrollAnchor: scrollAnchor,
-                        onReload: { await loader.reloadInPlace(reference, in: project) }
+                        onReload: { await loader.reloadInPlace(reference, from: project.git.model) }
                     )
                 }
             case .message(let text):
@@ -104,76 +104,7 @@ struct DiffBodyView: View {
             }
         }
         .onChange(of: reference, initial: true) { _, newReference in
-            loader.load(newReference, in: project)
+            loader.load(newReference, from: project.git.model)
         }
-    }
-}
-
-// MARK: - Image Diff
-
-private struct ImageDiffContent {
-    var oldImage: NSImage?
-    var newImage: NSImage?
-}
-
-private struct ImageDiffView: View {
-    let content: ImageDiffContent
-    let kind: GitChangeKind
-
-    var body: some View {
-        HStack(spacing: 0) {
-            imageSide(
-                image: content.oldImage,
-                label: "Before",
-                fallback: kind == .added || kind == .untracked ? "New file" : nil
-            )
-            .background(content.oldImage == nil ? Color.clear : Color.red.opacity(0.05))
-
-            Divider()
-
-            imageSide(
-                image: content.newImage,
-                label: "After",
-                fallback: kind == .deleted ? "Deleted" : nil
-            )
-            .background(content.newImage == nil ? Color.clear : Color.green.opacity(0.05))
-        }
-    }
-
-    @ViewBuilder
-    private func imageSide(image: NSImage?, label: String, fallback: String?) -> some View {
-        VStack(spacing: 0) {
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background(.bar)
-
-            Divider()
-
-            if let image {
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let fallback {
-                ContentUnavailableView {
-                    Text(fallback)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ContentUnavailableView {
-                    Text("Not available")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

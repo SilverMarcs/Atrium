@@ -15,11 +15,6 @@ struct GitInspectorCommitArea: View {
         return .commit
     }
 
-    private var needsUpstream: Bool {
-        guard let snapshot else { return false }
-        return !snapshot.hasTrackingBranch && currentAction == .push
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             TextField("Commit message", text: $state.commitMessage, axis: .vertical)
@@ -43,47 +38,15 @@ struct GitInspectorCommitArea: View {
         guard let snapshot else { return }
         switch currentAction {
         case .commit:
-            let message = state.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !message.isEmpty, !snapshot.stagedFiles.isEmpty else { return }
+            let message = state.commitMessage
             Task {
-                await state.model.commit(message: message, snapshot: snapshot)
+                await state.model.commit(message: message, in: snapshot)
                 state.commitMessage = ""
             }
-        case .push, .pull:
-            Task {
-                await state.model.fetch(snapshot: snapshot)
-                guard state.model.errorMessage == nil,
-                      let refreshed = state.currentSnapshot else { return }
-                dispatchSyncAction(snapshot: refreshed)
-            }
-        }
-    }
-
-    private func dispatchSyncAction(snapshot: GitRepositoryStatus) {
-        switch currentAction {
         case .push:
-            if needsUpstream {
-                state.showPushUpstreamAlert = true
-                return
-            }
-            if snapshot.remoteAheadCount > 0 {
-                state.showPullRebaseAlert = true
-                return
-            }
-            guard !snapshot.unpushedCommits.isEmpty else { return }
-            state.perform(.push(snapshot))
+            Task { await state.model.push(snapshot) }
         case .pull:
-            if !snapshot.unpushedCommits.isEmpty {
-                state.showPullRebaseAlert = true
-                return
-            }
-            if snapshot.isDirty {
-                state.pullPreservingChanges()
-                return
-            }
-            Task { await state.model.pull(snapshot: snapshot) }
-        case .commit:
-            return
+            Task { await state.model.pull(snapshot) }
         }
     }
 }

@@ -6,14 +6,15 @@ import SwiftUI
 /// scope shows, its repository under it, and a title menu picking the branch
 /// or worktree and the repository, the same on every page. The menu is left
 /// out when there's nothing to pick, since an empty one still shows as a menu.
+/// It presents what picking a branch asks to confirm, and its errors.
 private struct ProjectScopeTitle: ViewModifier {
     @State private var source: SourceControl
     let placeholder: String
     let title: String?
     let onNewBranch: (() -> Void)?
 
-    init(host: HostClient, workspaceID: UUID, placeholder: String, title: String?, onNewBranch: (() -> Void)?) {
-        _source = State(initialValue: SourceControl(host: host, workspaceID: workspaceID))
+    init(source: SourceControl, placeholder: String, title: String?, onNewBranch: (() -> Void)?) {
+        _source = State(initialValue: source)
         self.placeholder = placeholder
         self.title = title
         self.onNewBranch = onNewBranch
@@ -28,6 +29,7 @@ private struct ProjectScopeTitle: ViewModifier {
             .task(id: source.scope.gitScope) {
                 await source.host.follow(.git(source.scope.gitScope))
             }
+            .sourceControlAlerts(source)
         if title == nil, let status, BranchMenuItems.hasChoices(in: status, repositories: source.repositories) {
             titled.toolbarTitleMenu {
                 BranchMenuItems(source: source, status: status, onNewBranch: onNewBranch)
@@ -44,12 +46,16 @@ extension View {
     ///   - placeholder: The title until the project's status arrives.
     ///   - title: A title of its own in place of the branch and its menu, as a
     ///     subfolder in Files has.
-    ///   - onNewBranch: Asks for a new branch's name, where the page can.
-    func projectScopeTitle(
-        host: HostClient, workspaceID: UUID, placeholder: String, title: String? = nil, onNewBranch: (() -> Void)? = nil
-    ) -> some View {
+    func projectScopeTitle(host: HostClient, workspaceID: UUID, placeholder: String, title: String? = nil) -> some View {
         modifier(ProjectScopeTitle(
-            host: host, workspaceID: workspaceID, placeholder: placeholder, title: title, onNewBranch: onNewBranch
+            source: SourceControl(host: host, workspaceID: workspaceID), placeholder: placeholder, title: title, onNewBranch: nil
         ))
+    }
+
+    /// Titles the page showing `source`, which also presents what it asks to
+    /// confirm and its errors.
+    /// - Parameter onNewBranch: Asks for a new branch's name.
+    func projectScopeTitle(_ source: SourceControl, placeholder: String, onNewBranch: @escaping () -> Void) -> some View {
+        modifier(ProjectScopeTitle(source: source, placeholder: placeholder, title: nil, onNewBranch: onNewBranch))
     }
 }

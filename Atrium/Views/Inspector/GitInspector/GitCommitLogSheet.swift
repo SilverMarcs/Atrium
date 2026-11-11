@@ -102,7 +102,7 @@ struct GitCommitLogSheet: View {
             return
         }
         isLoading = true
-        let result = await state.model.commitLog(snapshot: snapshot)
+        let result = await state.model.commitLog(snapshot)
         entries = result
         isLoading = false
     }
