@@ -68,32 +68,18 @@ struct TaskListView: View {
         .animation(.default, value: sections.ids + deviceTasks.flatMap(\.1).map(\.id))
         .environment(\.sidebarRowSize, .medium)
         .overlay { placeholder(isEmpty: tasks.isEmpty && deviceTasks.isEmpty) }
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
-            if hosts.hosts.count > 1 {
-                ToolbarItem {
-                    Menu("Hosts", systemImage: hosts.filter == nil ? "square.stack.3d.up" : "macbook") {
-                        HostFilterPicker(hosts: hosts)
-                            .pickerStyle(.inline)
-                            .labelsHidden()
-                    }
-                    .help("Show tasks from one host or all of them")
-                }
+            ToolbarItem {
+                SidebarMenu()
             }
-        }
-        .safeAreaBar(edge: .bottom) {
-            HStack {
+            ToolbarSpacer(.flexible)
+            ToolbarItem {
                 Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
+                    .help("New Chat")
                     .disabled(!hosts.canStartNewChat)
-                Spacer()
-                Button("Projects", systemImage: "folder") { app.showingProjects = true }
-                    .labelStyle(.iconOnly)
-                    .help("Manage projects")
-                    .disabled(!hosts.hosts.contains(where: \.isConnected))
             }
-            .buttonStyle(.plain)
-            .padding(13)
         }
-        .sheet(isPresented: Bindable(app).showingProjects) { ProjectsSheet(hosts: hosts) }
         .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
         .alert("Couldn’t Update Thread", isPresented: Binding(
             get: { hosts.actionError != nil && !app.showingProjects && taskToRename == nil },

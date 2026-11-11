@@ -22,6 +22,15 @@ struct ContentView: View {
                 NewChatUnavailableView { app.selection = $0 }
             }
         }
+        .toolbar {
+            // The sidebar's own control goes with it, so a hidden sidebar
+            // leaves the same control at the window's leading edge.
+            if app.sidebarVisibility == .detailOnly {
+                ToolbarItem(placement: .navigation) {
+                    SidebarMenu()
+                }
+            }
+        }
         .inspector(isPresented: $app.showingInspector) {
             if let project = app.selectedProject {
                 InspectorView(project: project)
@@ -62,6 +71,8 @@ struct ContentView: View {
         .focusedSceneValue(\.isMainWindow, true)
         // A pairing link from another host's Settings connects this Mac to it.
         .onOpenURL { url in app.hosts.handle(url) }
+        // Opened from the sidebar menu, which a hidden sidebar takes away.
+        .sheet(isPresented: $app.showingProjects) { ProjectsSheet(hosts: app.hosts) }
         .sheet(isPresented: $showingOnboarding) {
             hasCompletedOnboarding = true
         } content: {
