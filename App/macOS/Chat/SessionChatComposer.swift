@@ -13,6 +13,8 @@ struct SessionChatComposer: View {
   var noteSourceFrame: (CGRect) -> Void = { _ in }
   @Environment(AppModel.self) private var app
   @FocusState private var isFocused: Bool
+  /// The prompt field's leading edge, which attached images line up with.
+  @State private var fieldLeading: CGFloat?
   @AppStorage("enterToSendChat") private var enterToSendChat = false
 
   private var prompt: String { composer.draft }
@@ -25,7 +27,7 @@ struct SessionChatComposer: View {
       VStack(spacing: 0) {
         if let edit { ConversationEditContent(edit: edit) }
         if !composer.images.isEmpty {
-          ComposerAttachmentStrip(composer: composer)
+          ComposerAttachmentStrip(composer: composer, leadingInset: fieldLeading)
         }
 
         HStack(alignment: .bottom) {
@@ -52,6 +54,10 @@ struct SessionChatComposer: View {
                 .frame(maxHeight: 350)
                 .fixedSize(horizontal: false, vertical: true)
                 .scrollContentBackground(.hidden)
+                // No find and replace in the composer: ⌘F while typing a
+                // message shouldn't open a find bar over it.
+                .findDisabled()
+                .replaceDisabled()
                 .focused($isFocused)
                 .onKeyPress(.return, action: handleReturnKey)
                 .disabled(edit?.isSubmitting == true)
@@ -66,6 +72,7 @@ struct SessionChatComposer: View {
           }
           .font(.body)
           .glassEffect(in: .rect(cornerRadius: 16))
+          .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minX } action: { fieldLeading = $0 }
           .modifier(SessionChatPasteHandler(composer: composer, isFocused: isFocused))
 
           Button {
@@ -104,9 +111,11 @@ struct SessionChatComposer: View {
           .modifier(SessionChatSendShortcut(enabled: !showsStop))
         }
         .padding(.horizontal, 10)
-        .padding(.top, 8)
+        // Closer to the images above it than to the edge of the window.
+        .padding(.top, composer.images.isEmpty ? 8 : 3)
         .padding(.bottom, 12)
       }
+      .coordinateSpace(.named(Self.space))
       .fixedSize(horizontal: false, vertical: true)
       .disabled(edit?.isSubmitting == true)
     }
@@ -135,6 +144,8 @@ struct SessionChatComposer: View {
       isFocused = true
     }
   }
+
+  private static let space = "SessionChatComposer"
 
   private func handleReturnKey() -> KeyPress.Result {
     let modifiers = NSApp.currentEvent?.modifierFlags ?? []

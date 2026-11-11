@@ -23,11 +23,7 @@ struct SearchInspectorView: View {
                     withAnimation { binding(for: fileResult.id).wrappedValue.toggle() }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.right")
-                            .imageScale(.small)
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            .accessibilityHidden(true)
+                        DisclosureChevron(isExpanded: isExpanded)
                         FileLabel(name: fileResult.name, icon: FileIcon.image(for: URL(filePath: fileResult.path))) {
                             if let folder = Self.folder(of: fileResult) {
                                 Text(folder)

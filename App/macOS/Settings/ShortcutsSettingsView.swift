@@ -14,6 +14,7 @@ struct ShortcutsSettingsView: View {
                 LabeledContent("Zoom Out", value: "⌘ -")
                 LabeledContent("Actual Size", value: "⌘ 0")
                 LabeledContent("Toggle Editor Panel", value: "⌘ J")
+                LabeledContent("Filter Sidebar", value: "⌥⌘ J")
                 LabeledContent("Show/Hide Hidden Files", value: "⇧⌘ .")
             }
 

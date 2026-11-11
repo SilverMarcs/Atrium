@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var showingOnboarding = false
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         @Bindable var app = app
@@ -15,6 +16,7 @@ struct ContentView: View {
             TaskListView(searchText: searchText)
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 300)
                 .searchable(text: $searchText, placement: .sidebar, prompt: "Filter tasks or projects")
+                .searchFocused($isSearchFocused)
         } detail: {
             if let task = app.selectedTask {
                 TaskDetailView(item: task)
@@ -30,6 +32,15 @@ struct ContentView: View {
                     SidebarMenu()
                 }
             }
+        }
+        .task(id: app.sidebarSearchFocusRequest) {
+            guard app.sidebarSearchFocusRequest > 0 else { return }
+            if app.sidebarVisibility == .detailOnly {
+                withAnimation { app.sidebarVisibility = .automatic }
+                // The field exists once the sidebar has slid in.
+                guard (try? await Task.sleep(for: .milliseconds(250))) != nil else { return }
+            }
+            isSearchFocused = true
         }
         .inspector(isPresented: $app.showingInspector) {
             if let project = app.selectedProject {

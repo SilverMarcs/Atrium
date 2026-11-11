@@ -19,6 +19,8 @@ final class AppModel {
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true
+    /// Bumped to put the cursor in the sidebar's filter field.
+    var sidebarSearchFocusRequest = 0
     /// A running command the user asked to run again, awaiting confirmation.
     var pendingRunReplacement: (project: Project, command: WireCommand)?
 

@@ -15,6 +15,10 @@ struct TaskInputBar: View {
     let submit: (CGRect?) -> Bool
 
     @FocusState private var isFocused: Bool
+    /// The prompt field's leading edge, which attached images line up with.
+    @State private var fieldLeading: CGFloat?
+
+    private static let space = "TaskInputBar"
 
     var body: some View {
         @Bindable var composer = composer
@@ -23,7 +27,7 @@ struct TaskInputBar: View {
             VStack(spacing: 0) {
                 if let edit = composer.messageEdit { ConversationEditContent(edit: edit) }
                 if !composer.images.isEmpty {
-                    ComposerAttachmentStrip(composer: composer)
+                    ComposerAttachmentStrip(composer: composer, leadingInset: fieldLeading)
                 }
 
                 HStack(alignment: .bottom) {
@@ -65,13 +69,16 @@ struct TaskInputBar: View {
                             .buttonStyle(.plain)
                     }
                     .glassEffect(in: .rect(cornerRadius: 20))
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minX } action: { fieldLeading = $0 }
 
                     ComposerSendButton(item: item, send: send)
                 }
                 .padding(.horizontal, 10)
-                .padding(.top, 8)
+                // Closer to the images above it than to whatever sits above them.
+                .padding(.top, composer.images.isEmpty ? 8 : 3)
                 .padding(.bottom, isFocused ? 8 : 0)
             }
+            .coordinateSpace(.named(Self.space))
             .fixedSize(horizontal: false, vertical: true)
         }
         .task(id: composer.messageEdit?.id) {

@@ -130,11 +130,7 @@ struct GitInspectorChangesList: View {
             withAnimation { isExpanded.wrappedValue.toggle() }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "chevron.right")
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
-                    .accessibilityHidden(true)
+                DisclosureChevron(isExpanded: isExpanded.wrappedValue)
                 Label {
                     Text(title)
                 } icon: {

@@ -46,6 +46,15 @@ struct AppCommands: Commands {
                 .disabled(!app.hosts.canStartNewChat)
             }
 
+            CommandGroup(after: .sidebar) {
+                Button {
+                    app.sidebarSearchFocusRequest += 1
+                } label: {
+                    Label("Filter Sidebar", systemImage: "line.3.horizontal.decrease")
+                }
+                .keyboardShortcut("j", modifiers: [.command, .option])
+            }
+
             CommandGroup(replacing: .toolbar) {
                 Button {
                     chatFontSize = min(chatFontSize + ChatFontSize.step, ChatFontSize.max)

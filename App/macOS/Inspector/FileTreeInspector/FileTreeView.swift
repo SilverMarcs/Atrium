@@ -228,12 +228,8 @@ private struct FileTreeRowView: View {
 
     private var content: some View {
         HStack(spacing: 4) {
-            Image(systemName: "chevron.right")
-                .imageScale(.small)
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
+            DisclosureChevron(isExpanded: row.isExpanded)
                 .opacity(row.entry.isDirectory ? 1 : 0)
-                .accessibilityHidden(true)
             FileRow(entry: row.entry, project: project)
         }
         .padding(.leading, CGFloat(row.depth) * indent)
