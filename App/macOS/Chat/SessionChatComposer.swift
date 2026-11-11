@@ -111,8 +111,8 @@ struct SessionChatComposer: View {
           .modifier(SessionChatSendShortcut(enabled: !showsStop))
         }
         .padding(.horizontal, 10)
-        // Closer to the images above it than to the edge of the window.
-        .padding(.top, composer.images.isEmpty ? 8 : 3)
+        // Half the usual gap below attached images.
+        .padding(.top, composer.images.isEmpty ? 8 : 0)
         .padding(.bottom, 12)
       }
       .coordinateSpace(.named(Self.space))

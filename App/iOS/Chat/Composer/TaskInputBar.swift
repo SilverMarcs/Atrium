@@ -74,8 +74,8 @@ struct TaskInputBar: View {
                     ComposerSendButton(item: item, send: send)
                 }
                 .padding(.horizontal, 10)
-                // Closer to the images above it than to whatever sits above them.
-                .padding(.top, composer.images.isEmpty ? 8 : 3)
+                // Half the usual gap below attached images.
+                .padding(.top, composer.images.isEmpty ? 8 : 0)
                 .padding(.bottom, isFocused ? 8 : 0)
             }
             .coordinateSpace(.named(Self.space))

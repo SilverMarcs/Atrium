@@ -25,6 +25,7 @@ struct FileTreeView: View {
                 ForEach(rows) { row in
                     FileTreeRowView(row: row, project: project)
                         .tag(row.id)
+                        .listRowInsets(.vertical, 0)
                         .listRowSeparator(.hidden)
                 }
             }
@@ -233,6 +234,7 @@ private struct FileTreeRowView: View {
             FileRow(entry: row.entry, project: project)
         }
         .padding(.leading, CGFloat(row.depth) * indent)
+        .fillsInspectorRow()
     }
 }
 

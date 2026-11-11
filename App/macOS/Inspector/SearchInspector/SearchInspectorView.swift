@@ -34,11 +34,11 @@ struct SearchInspectorView: View {
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
+                    .fillsInspectorRow()
                 }
                 .buttonStyle(.plain)
                 .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                .listRowInsets(.vertical, 0)
                 .listRowSeparator(.hidden)
 
                 if isExpanded {

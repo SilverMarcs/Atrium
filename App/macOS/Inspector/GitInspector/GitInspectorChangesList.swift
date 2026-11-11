@@ -140,10 +140,10 @@ struct GitInspectorChangesList: View {
                 .font(.subheadline)
                 .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
+            .fillsInspectorRow()
         }
         .buttonStyle(.plain)
+        .listRowInsets(.vertical, 0)
         .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
     }
 
