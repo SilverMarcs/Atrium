@@ -11,3 +11,6 @@ xcuserdata/
 DerivedData/
 .asc/
 Screenshots/
+
+# Machine-local shared runner
+scripts/run.sh
