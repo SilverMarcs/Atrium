@@ -18,6 +18,7 @@ struct TaskChatView: View {
     @State private var pages = LoadedChatPages()
 
     private static let bottomID = "bottom"
+    private static let footerID = "footer"
 
     private var task: WireTask { item.task }
     private var host: HostClient { item.host }
@@ -43,6 +44,10 @@ struct TaskChatView: View {
         let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
         let editEnabled = task.actions.contains(.editMessage) && pendingPrompts.isEmpty
         let forkEnabled = task.actions.contains(.fork)
+        // The last row that shows anything, which a jump to the end is
+        // checked against.
+        let endRowID = footerStatus == .processing || footerStatus == .waiting
+            ? Self.footerID : sections.historyPendingPrompts.last?.timelineID ?? sections.historyMessages.last?.id
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -104,6 +109,7 @@ struct TaskChatView: View {
                         } else {
                             TaskChatStatusFooter(status: footerStatus)
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
+                                .id(Self.footerID)
                         }
                         // The end is a row of the lazy stack, so scrolling to it
                         // lays out the rows above it from the end. Placed after
@@ -241,6 +247,22 @@ struct TaskChatView: View {
                     break
                 }
             }
+            // A jump to the end lands where the lazy stack estimated it, which
+            // can be past rows it then measures shorter, as when a task opens
+            // with its transcript already loaded: SwiftUI pulls the offset in
+            // but lays out none of the rows now in view, leaving the timeline
+            // blank until the reader scrolls. Scrolling to the last row that
+            // shows anything once the jump moves the timeline lays them out;
+            // the end target can't, as the stack already has it where it's
+            // asked to go. SwiftUI can move the offset a few times before the
+            // jump settles. A timeline shorter than the view shows all its rows.
+            .onScrollGeometryChange(for: CGFloat?.self) { geometry in
+                geometry.contentSize.height > geometry.containerSize.height ? geometry.contentOffset.y : nil
+            } action: { _, offset in
+                guard offset != nil, pin.endChecks > 0 else { return }
+                pin.endChecks -= 1
+                settleAtEnd(endRowID, sections: sections, with: proxy)
+            }
             // Content growing below a pinned timeline (a streaming reply, the
             // working indicator) carries it along, retargeting any scroll
             // already on its way. Content shrinking under it, as the lazy stack
@@ -275,6 +297,15 @@ struct TaskChatView: View {
 
     }
 
+    /// Puts a pinned timeline's last row at the end of the view, which lays
+    /// out the rows above it.
+    private func settleAtEnd(_ endRowID: String?, sections: TimelineSections, with proxy: ScrollViewProxy) {
+        guard let endRowID, pin.isPinned, !pin.isReaderScrolling, !sections.hasTurn, composer.messageEdit == nil else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { proxy.scrollTo(endRowID, anchor: .bottom) }
+    }
+
     private func scrollToEditingMessage(_ id: String, with proxy: ScrollViewProxy) {
         pin.isPinned = false
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
@@ -294,6 +325,7 @@ struct TaskChatView: View {
             if holdsPrompt {
                 proxy.scrollTo(TimelineAnchorSpace.turnID, anchor: .top)
             } else {
+                if !shouldAnimate { pin.endChecks = 3 }
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
         }
