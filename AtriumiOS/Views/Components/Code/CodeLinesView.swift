@@ -5,26 +5,18 @@ import SwiftUI
 /// longest line so rows not yet loaded keep the same width, and both columns
 /// load lazily within the enclosing vertical scroll view.
 struct CodeLinesView: View {
-    let lines: [CodeLine]
+    let listing: CodeListing
     /// A line number to mark, as from a search match.
     var markedLine: Int?
-    private let longestLine: String
-    private let widestNumber: String
     @State private var codeWidth: CGFloat = 0
-
-    init(lines: [CodeLine], markedLine: Int? = nil) {
-        self.lines = lines
-        self.markedLine = markedLine
-        longestLine = lines.max { $0.text.utf16.count < $1.text.utf16.count }?.text ?? ""
-        widestNumber = lines.compactMap(\.number).max().map(String.init) ?? ""
-    }
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             LazyVStack(alignment: .trailing, spacing: 0) {
-                ForEach(lines) { line in
+                ForEach(listing.lines) { line in
                     // The widest number, hidden, keeps every row's gutter the same width.
-                    Text(widestNumber)
+                    Text(listing.widestNumber)
                         .hidden()
                         .overlay(alignment: .trailing) {
                             if let number = line.number {
@@ -36,14 +28,16 @@ struct CodeLinesView: View {
                         .padding(.trailing, 4)
                         .padding(.vertical, 1)
                         .background(background(for: line))
-                        .id(line.number ?? -line.id)
+                        // A diff's removed and added lines can share a number,
+                        // and two rows with one ID leave one of them blank.
+                        .id(line.id)
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
             ScrollView(.horizontal) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(lines) { line in
-                        Text(CodeHighlighter.highlight(line.text))
+                    ForEach(listing.lines) { line in
+                        Text(listing.colors?[line.id] ?? AttributedString(line.text))
                             .lineLimit(1)
                             .fixedSize()
                             .padding(.horizontal, 8)
@@ -53,7 +47,7 @@ struct CodeLinesView: View {
                     }
                 }
                 .background(alignment: .topLeading) {
-                    Text(longestLine)
+                    Text(listing.longestLine)
                         .lineLimit(1)
                         .fixedSize()
                         .padding(.horizontal, 8)
@@ -65,6 +59,9 @@ struct CodeLinesView: View {
             .scrollIndicators(.hidden)
         }
         .font(.footnote.monospaced())
+        .task(id: HighlightPass(listing: ObjectIdentifier(listing), colorScheme: colorScheme)) {
+            await listing.highlight(isDark: colorScheme == .dark)
+        }
     }
 
     private func background(for line: CodeLine) -> Color {
@@ -74,4 +71,10 @@ struct CodeLinesView: View {
         case nil: line.number != nil && line.number == markedLine ? .accentColor.opacity(0.15) : .clear
         }
     }
+}
+
+/// Highlights again for a new listing or appearance.
+private struct HighlightPass: Hashable {
+    let listing: ObjectIdentifier
+    let colorScheme: ColorScheme
 }

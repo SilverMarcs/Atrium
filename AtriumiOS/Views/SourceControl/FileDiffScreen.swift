@@ -8,7 +8,7 @@ struct FileDiffScreen: View {
     let file: GitChangedFile
     let repository: URL
     let isStaged: Bool
-    @State private var hunks: [DiffHunk]?
+    @State private var hunks: [(header: String, listing: CodeListing)]?
     @State private var message: String?
 
     var body: some View {
@@ -16,7 +16,7 @@ struct FileDiffScreen: View {
             if let hunks, !hunks.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        ForEach(hunks) { DiffHunkView(hunk: $0) }
+                        ForEach(hunks, id: \.listing.id) { DiffHunkView(header: $0.header, listing: $0.listing) }
                     }
                     .padding(.vertical, 8)
                 }
@@ -30,6 +30,16 @@ struct FileDiffScreen: View {
         }
         .navigationTitle(file.name)
         .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                NavigationLink(value: Route.file(
+                    WorkspaceRef(hostID: host.id, workspaceID: workspaceID),
+                    path: file.fileURL.path(percentEncoded: false)
+                )) {
+                    Label("Open File", systemImage: "arrow.up.forward.square")
+                }
+            }
+        }
         .task(id: file) { await load() }
         .refreshable { await load() }
     }
@@ -47,7 +57,9 @@ struct FileDiffScreen: View {
                 throw HostClientError.unexpectedReply
             }
             let presentation = text.isEmpty ? nil : DiffFilePresentation(raw: text)
-            hunks = presentation?.hunks ?? []
+            hunks = (presentation?.hunks ?? []).map { hunk in
+                (hunk.header, CodeListing(lines: CodeLine.lines(of: hunk), fileName: file.name))
+            }
             message = presentation?.message
         } catch {
             message = error.localizedDescription

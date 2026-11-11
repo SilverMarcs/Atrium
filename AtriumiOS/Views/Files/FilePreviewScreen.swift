@@ -12,6 +12,7 @@ struct FilePreviewScreen: View {
     /// A line to scroll to and mark, as from a search match.
     var line: Int?
     @State private var preview: FilePreview?
+    @State private var listing: CodeListing?
     @State private var error: String?
 
     private var topic: HostTopic { .file(workspaceID: workspaceID, path: path) }
@@ -19,8 +20,10 @@ struct FilePreviewScreen: View {
     var body: some View {
         Group {
             switch preview {
-            case .text(let text):
-                TextPreview(text: text, line: line)
+            case .text:
+                if let listing {
+                    TextPreview(listing: listing, line: line)
+                }
             case .image(let data):
                 if let image = UIImage(data: data) {
                     ScrollView([.horizontal, .vertical]) {
@@ -64,6 +67,9 @@ struct FilePreviewScreen: View {
             guard case .preview(let preview) = try await host.files(.read(path: path), in: workspaceID) else {
                 throw HostClientError.unexpectedReply
             }
+            if case .text(let text) = preview {
+                listing = CodeListing(lines: CodeLine.lines(of: text), fileName: path)
+            }
             self.preview = preview
         } catch {
             self.error = error.localizedDescription
@@ -73,18 +79,19 @@ struct FilePreviewScreen: View {
 
 /// Text with line numbers, scrolled to a line when one is given.
 private struct TextPreview: View {
-    let text: String
+    let listing: CodeListing
     let line: Int?
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                CodeLinesView(lines: CodeLine.lines(of: text), markedLine: line)
+                CodeLinesView(listing: listing, markedLine: line)
                     .padding(.vertical, 8)
                     .textSelection(.enabled)
             }
             .task(id: line) {
-                if let line { proxy.scrollTo(line, anchor: .center) }
+                guard let line, let marked = listing.lines.first(where: { $0.number == line }) else { return }
+                proxy.scrollTo(marked.id, anchor: .center)
             }
         }
     }

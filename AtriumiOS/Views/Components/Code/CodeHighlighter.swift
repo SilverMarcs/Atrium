@@ -1,55 +1,46 @@
-import Foundation
+import Highlightr
 import SwiftUI
+import UIKit
 
-/// Very small regex-based highlighter for the code files and diffs show.
-/// Aimed at Swift first but the patterns are general enough to look
-/// reasonable on JS/Python/Go/etc. — strings, numbers, comments, and a shared
-/// keyword list. Order matters: comments are applied last so they win over
-/// any keyword/string coloring that fell inside them.
-enum CodeHighlighter {
-    private static let keywords: Set<String> = [
-        // Swift
-        "let", "var", "func", "if", "else", "for", "while", "switch", "case",
-        "return", "import", "struct", "class", "enum", "protocol", "extension",
-        "public", "private", "internal", "fileprivate", "static", "final",
-        "override", "init", "self", "Self", "true", "false", "nil", "guard",
-        "do", "try", "catch", "throw", "throws", "rethrows", "async", "await",
-        "where", "in", "is", "as", "break", "continue", "default",
-        "fallthrough", "repeat", "typealias", "associatedtype", "operator",
-        "indirect", "lazy", "weak", "unowned", "mutating", "nonmutating",
-        "convenience", "required", "open", "some", "any", "Any",
-        // Common across other languages
-        "function", "const", "def", "from", "package", "interface", "type",
-        "new", "delete", "void", "null", "undefined", "this", "super",
-        "lambda", "yield", "with", "pass", "raise", "elif", "and", "or", "not"
-    ]
+/// Colours code with Highlightr, the engine and themes the chat's Markdown
+/// code blocks use, so code reads the same everywhere. A pass over a whole
+/// file runs highlight.js and can take a while, so it stays off the main
+/// actor, and Highlightr isn't safe to use from two threads at once.
+actor CodeHighlighter {
+    static let shared = CodeHighlighter()
 
-    /// Compiled once, as every visible line is highlighted on its own.
-    private static let rules: [(NSRegularExpression, Color)] = [
-        ("\\b(" + keywords.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|") + ")\\b", .pink),
-        (#"\b\d+(?:\.\d+)?\b"#, .purple),
-        (#""(?:\\.|[^"\\])*""#, .orange),
-        (#"//.*"#, .secondary),
-        (#"#.*"#, .secondary),
-    ].compactMap { pattern, color in
-        (try? NSRegularExpression(pattern: pattern)).map { ($0, color) }
+    private var highlighters: [Bool: Highlightr] = [:]
+
+    /// Each line's colours, highlighted together so comments and strings that
+    /// span lines are coloured whole; nil when Highlightr can't colour them.
+    func colors(of lines: [String], language: String, isDark: Bool) -> [AttributedString]? {
+        let source = lines.joined(separator: "\n")
+        guard let highlighted = highlighter(isDark: isDark)?.highlight(source, as: language, fastRender: true),
+              highlighted.string == source
+        else { return nil }
+        var location = 0
+        return lines.map { line in
+            let range = NSRange(location: location, length: line.utf16.count)
+            location += range.length + 1
+            return colored(highlighted.attributedSubstring(from: range))
+        }
     }
 
-    static func highlight(_ source: String) -> AttributedString {
-        var attrs = AttributedString(source)
-        let nsRange = NSRange(source.startIndex..<source.endIndex, in: source)
-        for (regex, color) in rules {
-            regex.enumerateMatches(in: source, range: nsRange) { match, _, _ in
-                guard let match,
-                      let swiftRange = Range(match.range, in: source)
-                else { return }
-                let startOffset = source.distance(from: source.startIndex, to: swiftRange.lowerBound)
-                let endOffset = source.distance(from: source.startIndex, to: swiftRange.upperBound)
-                let start = attrs.index(attrs.startIndex, offsetByCharacters: startOffset)
-                let end = attrs.index(attrs.startIndex, offsetByCharacters: endOffset)
-                attrs[start..<end].foregroundColor = color
-            }
+    private func highlighter(isDark: Bool) -> Highlightr? {
+        if let highlighter = highlighters[isDark] { return highlighter }
+        let highlighter = Highlightr()
+        highlighter?.setTheme(to: isDark ? "atom-one-dark" : "atom-one-light")
+        highlighters[isDark] = highlighter
+        return highlighter
+    }
+
+    /// Only the colours carry over; the view sets the font.
+    private func colored(_ line: NSAttributedString) -> AttributedString {
+        var result = AttributedString(line.string)
+        line.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: line.length)) { value, range, _ in
+            guard let color = value as? UIColor, let range = Range(range, in: result) else { return }
+            result[range].foregroundColor = Color(uiColor: color)
         }
-        return attrs
+        return result
     }
 }

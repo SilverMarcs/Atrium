@@ -11,6 +11,7 @@
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 		0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
+		0A7C00000000000000000106 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
 		0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000504 /* SwiftMediaViewer */; };
 		0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000504 /* SwiftMediaViewer */; };
 		0A7C00000000000000000220 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000210 /* NotificationService.swift */; };
@@ -139,6 +140,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
+				0A7C00000000000000000106 /* Highlightr in Frameworks */,
 				0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */,
 				0A7C00000000000000000314 /* AtriumClient in Frameworks */,
 				0A7C00000000000000000315 /* AtriumProtocol in Frameworks */,
@@ -254,6 +256,7 @@
 			name = AtriumiOS;
 			packageProductDependencies = (
 				0A7C00000000000000000103 /* SwiftMarkdownView */,
+				08BEFC312F74722D009C3710 /* Highlightr */,
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
 				0A7C00000000000000000304 /* AtriumClient */,
 				0A7C00000000000000000305 /* AtriumProtocol */,
