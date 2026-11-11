@@ -26,7 +26,7 @@ atrium --version
 `atrium-linux-sha256.txt` in the same release lists their checksums. To build from source instead, with Swift 6.2 or later:
 
 ```sh
-swift build --package-path AtriumCLI -c release
+swift build --package-path Packages/AtriumCLI -c release
 ```
 
 On the Mac, turn on remote access in Atrium Settings → Remote and copy the pairing link. Each link pairs one device and is replaced once used:

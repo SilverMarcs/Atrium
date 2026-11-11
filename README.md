@@ -37,7 +37,7 @@ Atrium appends a short, fixed set of instructions to every session it runs (Clau
 
 ## Command line and agents working together
 
-`atrium` is Atrium's command-line client, built on the same client library as the apps; see [AtriumCLI/README.md](AtriumCLI/README.md). Atrium.app bundles it and puts it on the PATH of every session it runs. With the Orchestrator on in Settings → Integrations, agents use it to start and prompt other Claude and Codex sessions with nothing to pair: a session one starts is listed under it, its result comes back as a message that wakes it, its questions are passed up, and stopping one stops the sessions working for it. Turning the Orchestrator off shuts agents out at once.
+`atrium` is Atrium's command-line client, built on the same client library as the apps; see [Packages/AtriumCLI/README.md](Packages/AtriumCLI/README.md). Atrium.app bundles it and puts it on the PATH of every session it runs. With the Orchestrator on in Settings → Integrations, agents use it to start and prompt other Claude and Codex sessions with nothing to pair: a session one starts is listed under it, its result comes back as a message that wakes it, its questions are passed up, and stopping one stops the sessions working for it. Turning the Orchestrator off shuts agents out at once.
 
 Anywhere else, such as ChatGPT's Dot in its own Linux shell, `atrium pair` pairs the client over the relay like any device. It can then start sessions, wait for their turns, answer their questions and approvals, and settle them, and the Mac lists what it starts under its name.
 
