@@ -14,21 +14,24 @@ struct FileTreeView: View {
 
     var body: some View {
         @Bindable var model = model
+        let rows = model.rows(showsHidden: showHiddenFiles)
         ScrollViewReader { proxy in
             List(selection: $model.selectedID) {
-                if let nodes = model.filteredNodes {
-                    if model.isTruncated {
-                        Text("Showing the first \(HostProtocol.maxFoundFiles) matches.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(nodes) { FilteredFileRow(node: $0, project: project) }
-                } else {
-                    FolderRows(path: rootPath, project: project, showsHidden: showHiddenFiles)
+                if model.hasActiveFilter, model.isTruncated {
+                    Text("Showing the first \(HostProtocol.maxFoundFiles) matches.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(rows) { row in
+                    FileTreeRowView(row: row, project: project)
+                        .tag(row.id)
+                        .listRowSeparator(.hidden)
                 }
             }
             .scrollContentBackground(.hidden)
             .environment(\.fileTreeAction, handle)
+            .onKeyPress(.rightArrow) { setSelectedFolder(expanded: true, in: rows) }
+            .onKeyPress(.leftArrow) { setSelectedFolder(expanded: false, in: rows) }
             .contextMenu(forSelectionType: String.self) { _ in
             } primaryAction: { ids in
                 for id in ids where !isFolder(id) {
@@ -74,9 +77,12 @@ struct FileTreeView: View {
                 revealScrollTask?.cancel()
                 model.follow([])
             }
-            .onChange(of: model.pendingRevealID, initial: true) { _, id in
+            // A revealed file's row appears once the folders above it have loaded.
+            .onChange(of: model.pendingRevealID.flatMap { id in rows.contains { $0.id == id } ? id : nil }, initial: true) { _, id in
                 if let id { scrollToFile(id, using: proxy) }
             }
+            // A file the tree couldn't show when revealed isn't jumped to later.
+            .onChange(of: showHiddenFiles) { model.pendingRevealID = nil }
             .onChange(of: rootPath) {
                 if !model.submittedSearchText.isEmpty { model.find() }
             }
@@ -84,6 +90,7 @@ struct FileTreeView: View {
                 if model.searchText.isEmpty && !model.submittedSearchText.isEmpty { model.clearSearch() }
             }
             .onChange(of: model.hasActiveFilter) { _, isFiltered in
+                model.pendingRevealID = nil
                 if isFiltered {
                     model.savedExpandedIDs = model.savedExpandedIDs ?? model.expandedIDs
                 } else if let saved = model.savedExpandedIDs {
@@ -112,27 +119,38 @@ struct FileTreeView: View {
     }
 
     private func isFolder(_ path: String) -> Bool {
-        model.expandedIDs.contains(path)
-            || model.entries(in: (path as NSString).deletingLastPathComponent)?.first { $0.path == path }?.isDirectory == true
-            || model.entries(in: path) != nil
+        if let row = model.rows(showsHidden: showHiddenFiles).first(where: { $0.id == path }) {
+            return row.entry.isDirectory
+        }
+        return model.entries(in: path) != nil
     }
 
     private func scrollToFile(_ id: String, using proxy: ScrollViewProxy) {
         revealScrollTask?.cancel()
-        var targets = [id]
-        var parent = (id as NSString).deletingLastPathComponent
-        while parent.hasPrefix(rootPath + "/") {
-            targets.append(parent)
-            parent = (parent as NSString).deletingLastPathComponent
-        }
         revealScrollTask = Task {
-            // Collapsed folders create their rows only once expanded and loaded.
-            for target in targets.reversed() {
-                guard (try? await Task.sleep(for: .milliseconds(30))) != nil else { return }
-                proxy.scrollTo(target, anchor: .center)
+            // Let the list create the row before scrolling to it.
+            guard (try? await Task.sleep(for: .milliseconds(30))) != nil else { return }
+            proxy.scrollTo(id, anchor: .center)
+            if model.selectedID == id {
+                model.pendingRevealID = nil
+            } else {
+                model.selectedID = id
             }
-            model.selectedID = id
         }
+    }
+
+    /// Opens or closes the selected folder from the keyboard, as an outline does.
+    private func setSelectedFolder(expanded: Bool, in rows: [FileTreeRow]) -> KeyPress.Result {
+        guard let id = model.selectedID, let row = rows.first(where: { $0.id == id }) else { return .ignored }
+        if row.entry.isDirectory, row.isExpanded != expanded {
+            withAnimation { model[isExpanded: id] = expanded }
+            return .handled
+        }
+        if !expanded, row.depth > 0 {
+            model.selectedID = (id as NSString).deletingLastPathComponent
+            return .handled
+        }
+        return .ignored
     }
 
     private func toggleChangedFilter() {
@@ -187,75 +205,38 @@ enum FileTreeAction {
     case create(in: String, isFolder: Bool)
 }
 
-/// One folder's entries, each folder in it expanding into its own.
-private struct FolderRows: View {
-    let path: String
+/// One row of the tree, indented by its depth. A folder's row opens or
+/// closes it when clicked.
+private struct FileTreeRowView: View {
+    let row: FileTreeRow
     let project: Project
-    let showsHidden: Bool
+    @ScaledMetric(relativeTo: .body) private var indent = 14
 
     var body: some View {
-        @Bindable var model = project.fileTree
-        let entries = (model.entries(in: path) ?? []).filter { showsHidden || !$0.isHidden }
-        ForEach(entries) { entry in
-            if entry.isDirectory {
-                DisclosureGroup(isExpanded: $model[isExpanded: entry.id]) {
-                    if project.fileTree.expandedIDs.contains(entry.id) {
-                        FolderRows(path: entry.path, project: project, showsHidden: showsHidden)
-                    }
-                } label: {
-                    FolderLabel(entry: entry, project: project)
-                }
-                .id(entry.id)
-                .tag(entry.id)
-                .listRowSeparator(.hidden)
-            } else {
-                FileRow(entry: entry, project: project)
-                    .id(entry.id)
-                    .tag(entry.id)
-                    .listRowSeparator(.hidden)
-            }
-        }
-    }
-}
-
-/// A row of the tree a filter shows, with every folder in it already known.
-private struct FilteredFileRow: View {
-    let node: FileNode
-    let project: Project
-
-    var body: some View {
-        @Bindable var model = project.fileTree
-        if let children = node.children {
-            DisclosureGroup(isExpanded: $model[isExpanded: node.id]) {
-                ForEach(children) { FilteredFileRow(node: $0, project: project) }
+        if row.entry.isDirectory {
+            Button {
+                withAnimation { project.fileTree[isExpanded: row.id].toggle() }
             } label: {
-                FolderLabel(entry: node.entry, project: project)
+                content
             }
-            .id(node.id)
-            .tag(node.id)
-            .listRowSeparator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityValue(row.isExpanded ? "Expanded" : "Collapsed")
         } else {
-            FileRow(entry: node.entry, project: project)
-                .id(node.id)
-                .tag(node.id)
-                .listRowSeparator(.hidden)
+            content
         }
     }
-}
 
-/// A folder's row, which expands or collapses it when clicked.
-private struct FolderLabel: View {
-    let entry: FileEntry
-    let project: Project
-
-    var body: some View {
-        @Bindable var model = project.fileTree
-        Button {
-            withAnimation { model[isExpanded: entry.id].toggle() }
-        } label: {
-            FileRow(entry: entry, project: project)
+    private var content: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.right")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(row.isExpanded ? 90 : 0))
+                .opacity(row.entry.isDirectory ? 1 : 0)
+                .accessibilityHidden(true)
+            FileRow(entry: row.entry, project: project)
         }
-        .buttonStyle(.plain)
+        .padding(.leading, CGFloat(row.depth) * indent)
     }
 }
 

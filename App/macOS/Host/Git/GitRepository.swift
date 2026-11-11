@@ -693,7 +693,7 @@ actor GitRepository {
     private func untrackedDiff(_ reference: GitDiffReference) throws -> String {
         let data = try Data(contentsOf: reference.fileURL)
         guard let string = String(data: data, encoding: .utf8) else { return "" }
-        let lines = string.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = string.diffLines
         return """
         diff --git a/\(reference.repositoryRelativePath) b/\(reference.repositoryRelativePath)
         new file mode 100644

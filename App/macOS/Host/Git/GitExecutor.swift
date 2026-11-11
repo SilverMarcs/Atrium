@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 enum GitError: LocalizedError {
     case gitUnavailable
@@ -58,7 +59,22 @@ struct GitExecutor: Sendable {
         )
     }
 
+    /// Runs Git once a slot is free: a project with many folders or
+    /// repositories would otherwise start a process for each at once, running
+    /// the app out of file descriptors.
     private func runBinary(arguments: [String], at directoryURL: URL, stdinData: Data? = nil) async throws -> BinaryExecutionResult {
+        await GitProcessGate.shared.acquire()
+        do {
+            let result = try await launch(arguments: arguments, at: directoryURL, stdinData: stdinData)
+            await GitProcessGate.shared.release()
+            return result
+        } catch {
+            await GitProcessGate.shared.release()
+            throw error
+        }
+    }
+
+    private func launch(arguments: [String], at directoryURL: URL, stdinData: Data?) async throws -> BinaryExecutionResult {
         let process = Process()
         process.executableURL = self.executableURL
         process.arguments = arguments
@@ -90,30 +106,84 @@ struct GitExecutor: Sendable {
             throw GitError.gitUnavailable
         }
 
-        let standardOutputHandle = standardOutputPipe.fileHandleForReading
-        let standardErrorHandle = standardErrorPipe.fileHandleForReading
-        async let standardOutputData = Task.detached(priority: .userInitiated) {
-            standardOutputHandle.readDataToEndOfFile()
-        }.value
-        async let standardErrorData = Task.detached(priority: .userInitiated) {
-            standardErrorHandle.readDataToEndOfFile()
-        }.value
+        // Read without parking threads of the shared pool, which a blocking
+        // read per stream would soon fill, stalling all other async work.
+        async let standardOutputData = Self.readToEnd(standardOutputPipe.fileHandleForReading)
+        async let standardErrorData = Self.readToEnd(standardErrorPipe.fileHandleForReading)
         // Feed stdin after launch while both output streams are being drained.
         async let inputWritten: Void = Task.detached(priority: .userInitiated) {
             if let inputPipe, let stdinData {
-                defer { try? inputPipe.fileHandleForWriting.close() }
-                try inputPipe.fileHandleForWriting.write(contentsOf: stdinData)
+                let handle = inputPipe.fileHandleForWriting
+                defer { try? handle.close() }
+                // Git exiting before it has read everything must fail the
+                // write, not kill the app with SIGPIPE. Its exit status and
+                // stderr then say what went wrong.
+                _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+                try? handle.write(contentsOf: stdinData)
             }
         }.value
 
         var iterator = termination.stream.makeAsyncIterator()
         let status = await iterator.next()
-        try await inputWritten
+        await inputWritten
         return BinaryExecutionResult(
             standardOutput: await standardOutputData,
             standardError: await standardErrorData,
             terminationStatus: status ?? -1
         )
+    }
+}
+
+extension GitExecutor {
+    /// Everything a pipe delivers until its writer closes it.
+    nonisolated static func readToEnd(_ handle: FileHandle) async -> Data {
+        let buffer = ReadBuffer()
+        return await withCheckedContinuation { continuation in
+            // Foundation calls the handler serially; an empty read is the end.
+            handle.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    continuation.resume(returning: buffer.data.withLock { $0 })
+                } else {
+                    buffer.data.withLock { $0.append(chunk) }
+                }
+            }
+        }
+    }
+}
+
+private nonisolated final class ReadBuffer: Sendable {
+    let data = Mutex(Data())
+}
+
+/// Caps how many Git processes run at once.
+actor GitProcessGate {
+    static let shared = GitProcessGate(limit: 16)
+
+    private let limit: Int
+    private var running = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func acquire() async {
+        guard running >= limit else {
+            running += 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    /// Hands the slot to the next waiting process, or frees it.
+    func release() {
+        if waiting.isEmpty {
+            running -= 1
+        } else {
+            waiting.removeFirst().resume()
+        }
     }
 }
 

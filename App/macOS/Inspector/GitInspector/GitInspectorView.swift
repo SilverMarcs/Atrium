@@ -11,13 +11,76 @@ struct GitInspectorView: View {
     }
 
     var body: some View {
-        if hasRepository {
-            repositoryView
-        } else if state.model.repositories == nil {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            initializeView
+        // Sheets and alerts hang off this stable container: the status goes
+        // briefly missing while another checkout's loads, and removing the
+        // view presenting a sheet or alert mid-presentation crashes AppKit.
+        Group {
+            if hasRepository {
+                repositoryView
+            } else if state.model.repositories == nil {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                initializeView
+            }
+        }
+        .sourceControlAlerts(state.model)
+        .alert("Stash All Changes", isPresented: $state.showStashAlert) {
+            TextField("Stash name", text: $state.stashMessage)
+            Button("Stash") {
+                state.confirmStashAll()
+            }
+            Button("Cancel", role: .cancel) { state.stashMessage = "" }
+        } message: {
+            Text("Stash all staged, unstaged, and untracked changes.")
+        }
+        .sheet(isPresented: $state.showSyncWithBranchSheet) {
+            SyncWithBranchSheet(state: state)
+        }
+        .sheet(isPresented: $state.showCommitLogSheet) {
+            GitCommitLogSheet(state: state)
+        }
+        .sheet(isPresented: Binding(
+            get: { state.branchListSnapshot != nil },
+            set: { if !$0 { state.branchListSnapshot = nil } }
+        )) {
+            if let snapshot = state.branchListSnapshot {
+                GitBranchListSheet(snapshot: snapshot, state: state)
+            }
+        }
+        .sheet(isPresented: $state.showStashListSheet) {
+            GitStashListSheet(state: state)
+        }
+        .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
+            Button("Undo", role: .confirm) {
+                state.undoLastCommit()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will undo the last commit and return its changes to your working directory.")
+        }
+        .alert("Rename Commit", isPresented: $state.showRenameCommitAlert) {
+            TextField("Commit message", text: $state.renameCommitMessage)
+            Button("Rename") {
+                state.renameLastCommit()
+            }
+            Button("Cancel", role: .cancel) { state.renameCommitMessage = "" }
+        } message: {
+            Text("Enter a new message for the latest commit.")
+        }
+        .alert("Cannot Apply Stash", isPresented: $state.showStashConflictAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The stash cannot be applied cleanly because it conflicts with your current changes. Commit or discard your changes first, then try again.")
+        }
+        .alert("New Branch", isPresented: $state.showNewBranchSheet) {
+            TextField("Branch name", text: $state.newBranchName)
+            Button("Create") {
+                state.createBranch(named: state.newBranchName)
+            }
+            Button("Cancel", role: .cancel) { state.newBranchName = "" }
+        } message: {
+            Text("Create a new branch from \"\(snapshot?.branchName ?? "HEAD")\"")
         }
     }
 
@@ -63,61 +126,6 @@ struct GitInspectorView: View {
         .task(id: snapshot?.branchName) {
             guard let snapshot, snapshot.branchName != nil else { return }
             await state.model.fetchIfStale(snapshot)
-        }
-        .sourceControlAlerts(state.model)
-        .alert("Stash All Changes", isPresented: $state.showStashAlert) {
-            TextField("Stash name", text: $state.stashMessage)
-            Button("Stash") {
-                state.confirmStashAll()
-            }
-            Button("Cancel", role: .cancel) { state.stashMessage = "" }
-        } message: {
-            Text("Stash all staged, unstaged, and untracked changes.")
-        }
-        .sheet(isPresented: $state.showSyncWithBranchSheet) {
-            SyncWithBranchSheet(state: state)
-        }
-        .sheet(isPresented: $state.showCommitLogSheet) {
-            GitCommitLogSheet(state: state)
-        }
-        .sheet(isPresented: $state.showBranchListSheet) {
-            if let snapshot {
-                GitBranchListSheet(snapshot: snapshot, state: state)
-            }
-        }
-        .sheet(isPresented: $state.showStashListSheet) {
-            GitStashListSheet(state: state)
-        }
-        .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
-            Button("Undo", role: .confirm) {
-                state.undoLastCommit()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will undo the last commit and return its changes to your working directory.")
-        }
-        .alert("Rename Commit", isPresented: $state.showRenameCommitAlert) {
-            TextField("Commit message", text: $state.renameCommitMessage)
-            Button("Rename") {
-                state.renameLastCommit()
-            }
-            Button("Cancel", role: .cancel) { state.renameCommitMessage = "" }
-        } message: {
-            Text("Enter a new message for the latest commit.")
-        }
-        .alert("Cannot Apply Stash", isPresented: $state.showStashConflictAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The stash cannot be applied cleanly because it conflicts with your current changes. Commit or discard your changes first, then try again.")
-        }
-        .alert("New Branch", isPresented: $state.showNewBranchSheet) {
-            TextField("Branch name", text: $state.newBranchName)
-            Button("Create") {
-                state.createBranch(named: state.newBranchName)
-            }
-            Button("Cancel", role: .cancel) { state.newBranchName = "" }
-        } message: {
-            Text("Create a new branch from \"\(snapshot?.branchName ?? "HEAD")\"")
         }
     }
 

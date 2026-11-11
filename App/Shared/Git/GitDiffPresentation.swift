@@ -33,7 +33,7 @@ struct GitDiffPresentation {
     private static func parse(_ raw: String) -> (string: String, lineKinds: [Int: GitDiffLineKind], lineNumbers: [Int: GitDiffLineNumbers], hunkSeparatorLines: Set<Int>) {
         guard !raw.isEmpty else { return ("", [:], [:], []) }
 
-        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = raw.diffLines
         var renderedLines: [String] = []
         var lineKinds: [Int: GitDiffLineKind] = [:]
         var lineNumbers: [Int: GitDiffLineNumbers] = [:]
@@ -49,17 +49,17 @@ struct GitDiffPresentation {
 
             switch line.first {
                 case "+" where !line.hasPrefix("+++"):
-                    renderedLine = String(line.dropFirst())
+                    renderedLine = line.dropFirst().withoutCarriageReturn
                     lineKind = .added
                     displayedLineNumbers = .init(old: nil, new: newLineNumber)
                     self.increment(&newLineNumber)
                 case "-" where !line.hasPrefix("---"):
-                    renderedLine = String(line.dropFirst())
+                    renderedLine = line.dropFirst().withoutCarriageReturn
                     lineKind = .removed
                     displayedLineNumbers = .init(old: oldLineNumber, new: nil)
                     self.increment(&oldLineNumber)
                 case " ":
-                    renderedLine = String(line.dropFirst())
+                    renderedLine = line.dropFirst().withoutCarriageReturn
                     lineKind = nil
                     displayedLineNumbers = .init(old: oldLineNumber, new: newLineNumber)
                     self.increment(&oldLineNumber)
@@ -85,7 +85,7 @@ struct GitDiffPresentation {
                         || line.hasPrefix("\\ No newline at end of file")
                     { continue }
 
-                    renderedLine = line
+                    renderedLine = line.withoutCarriageReturn
                     lineKind = nil
                     displayedLineNumbers = .init(old: oldLineNumber, new: newLineNumber)
             }

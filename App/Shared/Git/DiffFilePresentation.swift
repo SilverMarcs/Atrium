@@ -28,7 +28,7 @@ nonisolated struct DiffFilePresentation {
     private static func parse(_ raw: String, fileHeader: String) -> [DiffHunk] {
         guard !raw.isEmpty else { return [] }
 
-        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = raw.diffLines
         var hunks: [DiffHunk] = []
         var index = 0
 
@@ -57,19 +57,19 @@ nonisolated struct DiffFilePresentation {
                 rawHunkLines.append(l)
 
                 if l.hasPrefix("+") && !l.hasPrefix("+++") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: .added, oldLineNumber: nil, newLineNumber: newLine))
+                    hunkLines.append(DiffHunkLine(content: l.dropFirst().withoutCarriageReturn, kind: .added, oldLineNumber: nil, newLineNumber: newLine))
                     newLine += 1
                 } else if l.hasPrefix("-") && !l.hasPrefix("---") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: .removed, oldLineNumber: oldLine, newLineNumber: nil))
+                    hunkLines.append(DiffHunkLine(content: l.dropFirst().withoutCarriageReturn, kind: .removed, oldLineNumber: oldLine, newLineNumber: nil))
                     oldLine += 1
                 } else if l.hasPrefix(" ") {
-                    hunkLines.append(DiffHunkLine(content: String(l.dropFirst()), kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
+                    hunkLines.append(DiffHunkLine(content: l.dropFirst().withoutCarriageReturn, kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
                     oldLine += 1
                     newLine += 1
                 } else if l.hasPrefix("\\ No newline") {
                     // skip
                 } else {
-                    hunkLines.append(DiffHunkLine(content: l, kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
+                    hunkLines.append(DiffHunkLine(content: l.withoutCarriageReturn, kind: nil, oldLineNumber: oldLine, newLineNumber: newLine))
                 }
 
                 index += 1

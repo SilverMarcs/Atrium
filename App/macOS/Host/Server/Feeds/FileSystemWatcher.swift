@@ -19,14 +19,25 @@ final class FileSystemWatcher {
     ]
 
     private var stream: FSEventStreamRef?
-    private let onChange: ([String]) -> Void
-    private let ignoredSubstrings: [String]
+
+    /// What the stream's callback reads, owned by the stream itself: FSEvents
+    /// calls back on its own queue and may still be running a callback while
+    /// the watcher stops and goes away on the main thread.
+    private final class Handler: Sendable {
+        let onChange: @Sendable ([String]) -> Void
+        let ignoredSubstrings: [String]
+
+        init(onChange: @escaping @Sendable ([String]) -> Void, ignoredSubstrings: [String]) {
+            self.onChange = onChange
+            self.ignoredSubstrings = ignoredSubstrings
+        }
+    }
 
     convenience init(
         url: URL,
         latency: TimeInterval = 1.0,
         ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
-        onChange: @escaping () -> Void
+        onChange: @escaping @Sendable () -> Void
     ) {
         self.init(url: url, latency: latency, ignoredSubstrings: ignoredSubstrings, fileEvents: false,
                   onPathsChanged: { _ in onChange() })
@@ -38,7 +49,7 @@ final class FileSystemWatcher {
         latency: TimeInterval = 1.0,
         ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
         fileEvents: Bool = true,
-        onPathsChanged: @escaping ([String]) -> Void
+        onPathsChanged: @escaping @Sendable ([String]) -> Void
     ) {
         self.init(urls: [url], latency: latency, ignoredSubstrings: ignoredSubstrings, fileEvents: fileEvents,
                   onPathsChanged: onPathsChanged)
@@ -49,28 +60,35 @@ final class FileSystemWatcher {
         latency: TimeInterval = 1.0,
         ignoredSubstrings: [String] = FileSystemWatcher.defaultIgnoredSubstrings,
         fileEvents: Bool = true,
-        onPathsChanged: @escaping ([String]) -> Void
+        onPathsChanged: @escaping @Sendable ([String]) -> Void
     ) {
-        self.onChange = onPathsChanged
-        self.ignoredSubstrings = ignoredSubstrings
-
+        let handler = Handler(onChange: onPathsChanged, ignoredSubstrings: ignoredSubstrings)
+        // The stream retains the handler and releases it only once FSEvents
+        // has finished with it, after any callback in flight.
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            info: Unmanaged.passUnretained(handler).toOpaque(),
+            retain: { info in
+                guard let info else { return nil }
+                _ = Unmanaged<Handler>.fromOpaque(info).retain()
+                return info
+            },
+            release: { info in
+                guard let info else { return }
+                Unmanaged<Handler>.fromOpaque(info).release()
+            },
             copyDescription: nil
         )
 
         let callback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
             guard let info else { return }
-            let watcher = Unmanaged<FileSystemWatcher>.fromOpaque(info).takeUnretainedValue()
+            let handler = Unmanaged<Handler>.fromOpaque(info).takeUnretainedValue()
             let cfArray = unsafeBitCast(eventPaths, to: CFArray.self)
             let paths = (cfArray as? [String]) ?? []
             let changed = paths.filter { path in
-                !watcher.ignoredSubstrings.contains(where: path.contains)
+                !handler.ignoredSubstrings.contains(where: path.contains)
             }
-            if !changed.isEmpty { watcher.onChange(changed) }
+            if !changed.isEmpty { handler.onChange(changed) }
         }
 
         var flags = FSEventStreamCreateFlags(

@@ -92,7 +92,7 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(.background.secondary)
-        .cursor(.resizeUpDown)
+        .pointerStyle(.rowResize)
         .gesture(resizeGesture)
     }
 

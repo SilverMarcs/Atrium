@@ -742,6 +742,9 @@ struct CodeTextEditor: NSViewRepresentable {
         var lastWrapLines: Bool?
         var lastWrapContentWidth: CGFloat?
         var lastIsDark: Bool?
+        /// This editor's own undo history. The window's would outlive the
+        /// text it was recorded against, as files are switched or reloaded.
+        let undoManager = UndoManager()
         private var rehighlightTask: Task<Void, Never>?
         private var highlightTask: Task<Void, Never>?
         private var highlightGeneration: Int = 0
@@ -784,6 +787,15 @@ struct CodeTextEditor: NSViewRepresentable {
 
             let ranges = preserveSelection ? textView.selectedRanges : nil
             let scrollOrigin = preserveScroll ? scrollView?.contentView.bounds.origin : nil
+            // Undoing typing done before the text was replaced from outside
+            // (another file, a reload from disk) would address ranges that no
+            // longer exist: AppKit throws NSRangeException, or edits the wrong text.
+            if storage.string != source {
+                undoManager.removeAllActions()
+                // The next keystroke starts a new undo action rather than
+                // joining the one just discarded.
+                textView.breakUndoCoalescing()
+            }
             storage.setAttributedString(SyntaxHighlighter.plain(source, fontSize: fontSize))
             if let ranges {
                 textView.setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
@@ -804,6 +816,11 @@ struct CodeTextEditor: NSViewRepresentable {
                 )
                 guard !Task.isCancelled, let self, gen == self.highlightGeneration else { return }
                 guard let textView = self.textView, let storage = textView.textStorage else { return }
+                // Typing since the pass began has changed the text: putting the
+                // highlighted original back would drop those edits from the
+                // view while undo still holds them. The keystroke's own
+                // re-highlight colours the new text instead.
+                guard storage.string == attr.string else { return }
                 let preservedRanges = preserveSelection ? textView.selectedRanges : nil
                 let preservedOrigin = preserveScroll ? self.scrollView?.contentView.bounds.origin : nil
                 storage.setAttributedString(attr)
@@ -921,6 +938,10 @@ struct CodeTextEditor: NSViewRepresentable {
             }
         }
 
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            undoManager
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             guard let textBinding = parent.text else { return }
@@ -933,10 +954,16 @@ struct CodeTextEditor: NSViewRepresentable {
             // keeps the guard active for the entire SwiftUI round-trip.
             isEditing = true
             textBinding.wrappedValue = textView.string
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 self?.isEditing = false
             }
 
+            // A highlight pass still running is for text that's now gone,
+            // and so is the place it was going to scroll to once done.
+            highlightTask?.cancel()
+            highlightGeneration &+= 1
+            pendingFindHighlight = nil
+            pendingScrollToTopLine = nil
             rehighlightTask?.cancel()
             rehighlightTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(300))

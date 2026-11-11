@@ -95,29 +95,30 @@ final class EditorTextView: NSTextView {
 
     // MARK: - Bracket Matching
 
-    private static let bracketPairs: [(open: Character, close: Character)] = [
-        ("{", "}"), ("(", ")"), ("[", "]"),
+    private static let bracketPairs: [(open: unichar, close: unichar)] = [
+        (0x7B, 0x7D), (0x28, 0x29), (0x5B, 0x5D), // {} () []
     ]
 
-    /// Returns the indices of the matched bracket pair near the cursor, if any.
+    /// Returns the UTF-16 offsets of the matched bracket pair near the cursor,
+    /// if any, in the same units as the text view's ranges.
     private func matchedBracketIndices() -> (Int, Int)? {
-        let text = string
-        let chars = Array(text.unicodeScalars)
-        guard !chars.isEmpty else { return nil }
+        let text = string as NSString
+        let length = text.length
+        guard length > 0 else { return nil }
         let loc = selectedRange().location
 
         // Check character before cursor and at cursor
         for offset in [loc - 1, loc] {
-            guard offset >= 0 && offset < chars.count else { continue }
-            let c = Character(chars[offset])
+            guard offset >= 0 && offset < length else { continue }
+            let c = text.character(at: offset)
 
             for pair in Self.bracketPairs {
                 if c == pair.open {
-                    if let match = Self.findMatchingClose(in: chars, from: offset, open: pair.open, close: pair.close) {
+                    if let match = Self.findMatchingClose(in: text, from: offset, open: pair.open, close: pair.close) {
                         return (offset, match)
                     }
                 } else if c == pair.close {
-                    if let match = Self.findMatchingOpen(in: chars, from: offset, open: pair.open, close: pair.close) {
+                    if let match = Self.findMatchingOpen(in: text, from: offset, open: pair.open, close: pair.close) {
                         return (match, offset)
                     }
                 }
@@ -126,24 +127,22 @@ final class EditorTextView: NSTextView {
         return nil
     }
 
-    private static func findMatchingClose(in chars: [Unicode.Scalar], from: Int, open: Character, close: Character) -> Int? {
+    private static func findMatchingClose(in text: NSString, from: Int, open: unichar, close: unichar) -> Int? {
         var depth = 1
-        let openScalar = open.unicodeScalars.first!
-        let closeScalar = close.unicodeScalars.first!
-        for i in (from + 1)..<chars.count {
-            if chars[i] == openScalar { depth += 1 }
-            else if chars[i] == closeScalar { depth -= 1; if depth == 0 { return i } }
+        for i in (from + 1)..<text.length {
+            let c = text.character(at: i)
+            if c == open { depth += 1 }
+            else if c == close { depth -= 1; if depth == 0 { return i } }
         }
         return nil
     }
 
-    private static func findMatchingOpen(in chars: [Unicode.Scalar], from: Int, open: Character, close: Character) -> Int? {
+    private static func findMatchingOpen(in text: NSString, from: Int, open: unichar, close: unichar) -> Int? {
         var depth = 1
-        let openScalar = open.unicodeScalars.first!
-        let closeScalar = close.unicodeScalars.first!
         for i in stride(from: from - 1, through: 0, by: -1) {
-            if chars[i] == closeScalar { depth += 1 }
-            else if chars[i] == openScalar { depth -= 1; if depth == 0 { return i } }
+            let c = text.character(at: i)
+            if c == close { depth += 1 }
+            else if c == open { depth -= 1; if depth == 0 { return i } }
         }
         return nil
     }
@@ -284,8 +283,8 @@ final class EditorTextView: NSTextView {
     private func charAt(_ index: Int) -> Character? {
         let text = string as NSString
         guard index >= 0, index < text.length else { return nil }
-        let uni = text.character(at: index)
-        return Character(UnicodeScalar(uni)!)
+        // A whole character: half of an emoji's surrogate pair isn't a scalar.
+        return text.substring(with: text.rangeOfComposedCharacterSequence(at: index)).first
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
@@ -336,7 +335,7 @@ final class EditorTextView: NSTextView {
     override func deleteBackward(_ sender: Any?) {
         let loc = selectedRange().location
         // Delete both characters of an empty auto-close pair
-        if let prev = charAt(loc - 1), let next = charAt(loc),
+        if selectedRange().length == 0, let prev = charAt(loc - 1), let next = charAt(loc),
            let closer = Self.autoClosePairs[prev], closer == next {
             super.deleteBackward(sender)
             deleteForward(sender)
@@ -440,6 +439,9 @@ final class EditorTextView: NSTextView {
     // MARK: - Comment Toggle (Cmd+/)
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // AppKit offers key equivalents to every view in the window, so only
+        // take them while the editor itself has focus.
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "/" {
             toggleComment()
             return true
@@ -877,13 +879,12 @@ final class EditorTextView: NSTextView {
 
         let lineRange = text.lineRange(for: NSRange(location: lineStart, length: 0))
 
-        // Calculate the match range within this line
-        let matchLocation = lineStart + columnRange.lowerBound
-        let matchLength = columnRange.upperBound - columnRange.lowerBound
-        let matchRange = NSRange(
-            location: min(matchLocation, text.length),
-            length: min(matchLength, text.length - min(matchLocation, text.length))
-        )
+        // The match's columns count Characters; the text view's ranges count UTF-16 units.
+        let line = text.substring(with: lineRange)
+        let lower = line.index(line.startIndex, offsetBy: max(columnRange.lowerBound, 0), limitedBy: line.endIndex) ?? line.endIndex
+        let upper = line.index(lower, offsetBy: max(columnRange.count, 0), limitedBy: line.endIndex) ?? line.endIndex
+        let inLine = NSRange(lower..<upper, in: line)
+        let matchRange = NSRange(location: lineRange.location + inLine.location, length: inLine.length)
 
         // Select the match range and scroll to it
         setSelectedRange(matchRange)

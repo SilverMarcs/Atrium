@@ -111,13 +111,17 @@ enum FileService {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return ([], false) }
         var found: [String] = []
-        for relativePath in files(below: root, includingHidden: true) {
-            guard !Task.isCancelled else { break }
-            guard (relativePath as NSString).lastPathComponent.localizedStandardContains(query) else { continue }
-            guard found.count < HostProtocol.maxFoundFiles else { return (found, true) }
+        var isTruncated = false
+        forEachFile(below: root, includingHidden: true) { relativePath, _ in
+            guard (relativePath as NSString).lastPathComponent.localizedStandardContains(query) else { return true }
+            guard found.count < HostProtocol.maxFoundFiles else {
+                isTruncated = true
+                return false
+            }
             found.append(relativePath)
+            return true
         }
-        return (found, false)
+        return (found, isTruncated)
     }
 
     /// Lines containing `query`, case-insensitively, in text files below `root`.
@@ -126,18 +130,21 @@ enum FileService {
         guard !query.isEmpty else { return ([], false) }
         var results: [FileSearchResult] = []
         var matchCount = 0
+        var isTruncated = false
         let rootURL = URL(filePath: root, directoryHint: .isDirectory)
-        for relativePath in files(below: root, includingHidden: false) {
-            guard !Task.isCancelled else { break }
+        forEachFile(below: root, includingHidden: false) { relativePath, size in
             guard results.count < HostProtocol.maxSearchFiles, matchCount < HostProtocol.maxSearchMatches else {
-                return (results, true)
+                isTruncated = true
+                return false
             }
+            // A file too large to open in the editor isn't read whole into memory either.
+            guard size <= HostProtocol.maxPreviewTextBytes, !FileTypes.isKnownBinary(relativePath) else { return true }
             let url = rootURL.appending(path: relativePath)
-            guard !FileTypes.isKnownBinary(relativePath),
-                  let data = try? Data(contentsOf: url), !data.prefix(8192).contains(0),
-                  let content = String(data: data, encoding: .utf8) else { continue }
+            guard let data = try? Data(contentsOf: url), !data.prefix(8192).contains(0),
+                  let content = String(data: data, encoding: .utf8) else { return true }
             var matches: [FileSearchMatch] = []
-            for (index, line) in content.components(separatedBy: .newlines).enumerated() {
+            // Split on each line ending, "\r\n" counting once, as the editor counts lines.
+            for (index, line) in content.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() {
                 guard matchCount + matches.count < HostProtocol.maxSearchMatches else { break }
                 let trimmed = String(line.prefix(500))
                 guard let range = trimmed.range(of: query, options: .caseInsensitive) else { continue }
@@ -145,32 +152,35 @@ enum FileService {
                 let end = trimmed.distance(from: trimmed.startIndex, to: range.upperBound)
                 matches.append(FileSearchMatch(lineNumber: index + 1, line: trimmed, columns: start..<end))
             }
-            guard !matches.isEmpty else { continue }
+            guard !matches.isEmpty else { return true }
             results.append(FileSearchResult(path: url.filePath, relativePath: relativePath, matches: matches))
             matchCount += matches.count
+            return true
         }
-        return (results, false)
+        return (results, isTruncated)
     }
 
-    /// Relative paths of the regular files below `root`, skipping ignored folders.
-    private nonisolated static func files(below root: String, includingHidden: Bool) -> [String] {
+    /// Visits the regular files below `root` with their sizes, as paths
+    /// relative to it, skipping ignored folders, until `visit` returns false
+    /// or the task is cancelled.
+    private nonisolated static func forEachFile(below root: String, includingHidden: Bool, _ visit: (String, Int64) -> Bool) {
         let rootURL = URL(filePath: root, directoryHint: .isDirectory).standardizedFileURL
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey]
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: Array(keys),
             options: includingHidden ? [] : [.skipsHiddenFiles]
-        ) else { return [] }
+        ) else { return }
         let prefix = rootURL.filePath.count + (rootURL.filePath.hasSuffix("/") ? 0 : 1)
-        var files: [String] = []
         for case let url as URL in enumerator {
+            guard !Task.isCancelled else { return }
             if FileEntry.ignoredNames.contains(url.lastPathComponent) {
                 enumerator.skipDescendants()
                 continue
             }
-            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
-            files.append(String(url.standardizedFileURL.filePath.dropFirst(prefix)))
+            guard let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
+            guard visit(String(url.standardizedFileURL.filePath.dropFirst(prefix)), Int64(values.fileSize ?? 0)) else { return }
         }
-        return files
     }
 
     // MARK: - Links

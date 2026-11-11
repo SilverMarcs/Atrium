@@ -74,7 +74,7 @@ enum GutterDiffParser {
 
         var markers: [Int: GutterChangeMarker] = [:]
         var hunks: [GutterDiffHunk] = []
-        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = raw.diffLines
         var index = 0
         var fileHeaderLines: [String] = []
 
@@ -99,9 +99,9 @@ enum GutterDiffParser {
                 let hunkLine = lines[index]
                 rawHunkLines.append(hunkLine)
                 if hunkLine.hasPrefix("-") && !hunkLine.hasPrefix("---") {
-                    removedLines.append(String(hunkLine.dropFirst()))
+                    removedLines.append(hunkLine.dropFirst().withoutCarriageReturn)
                 } else if hunkLine.hasPrefix("+") && !hunkLine.hasPrefix("+++") {
-                    addedLines.append(String(hunkLine.dropFirst()))
+                    addedLines.append(hunkLine.dropFirst().withoutCarriageReturn)
                 }
                 index += 1
             }

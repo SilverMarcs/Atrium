@@ -22,16 +22,23 @@ struct MarkdownPreviewView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         let isDark = colorScheme == .dark
         let html = Self.buildHTML(markdown: markdownText, fontSize: fontSize, isDark: isDark)
+        // Reloading on every SwiftUI update would flash and lose the scroll position.
+        guard html != context.coordinator.loadedHTML else { return }
+        context.coordinator.loadedHTML = html
         webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var loadedHTML: String?
     }
 
     // MARK: - HTML Generation
 
     private static func buildHTML(markdown: String, fontSize: CGFloat, isDark: Bool) -> String {
-        let escapedMarkdown = markdown
-            .replacing("\\", with: "\\\\")
-            .replacing("`", with: "\\`")
-            .replacing("$", with: "\\$")
+        // Base64 keeps any text, `</script>` included, from ending the script early.
+        let encodedMarkdown = Data(markdown.utf8).base64EncodedString()
 
         let textColor = isDark ? "#d4d4d4" : "#1e1e1e"
         let codeBackground = isDark ? "#2d2d2d" : "#f5f5f5"
@@ -153,7 +160,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
                 breaks: true,
                 gfm: true
             });
-            const md = `\(escapedMarkdown)`;
+            const md = new TextDecoder().decode(Uint8Array.from(atob("\(encodedMarkdown)"), c => c.charCodeAt(0)));
             document.getElementById('content').innerHTML = marked.parse(md);
         </script>
         </body>

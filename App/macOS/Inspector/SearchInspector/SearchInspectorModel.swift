@@ -27,22 +27,23 @@ final class SearchInspectorModel {
         guard !query.isEmpty else {
             results = []
             isSearching = false
+            isTruncated = false
             return
         }
         let query = query
         let root = project.filesRoot.filePath
         isSearching = true
         searchTask = Task {
+            defer { if !Task.isCancelled { isSearching = false } }
             do {
-                guard case .matches(let results, let isTruncated) = try await project.files(.search(root: root, query: query)) else { return }
-                guard !Task.isCancelled else { return }
+                guard case .matches(let results, let isTruncated) = try await project.files(.search(root: root, query: query)),
+                      !Task.isCancelled else { return }
                 self.results = results
                 self.isTruncated = isTruncated
             } catch {
                 guard !Task.isCancelled else { return }
                 project.host.actionError = error.localizedDescription
             }
-            isSearching = false
         }
     }
 

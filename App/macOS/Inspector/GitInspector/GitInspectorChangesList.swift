@@ -10,11 +10,33 @@ struct GitInspectorChangesList: View {
     private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
     var body: some View {
+        // Flat rows under each section's header rather than disclosure groups:
+        // SwiftUI's outline list traps when a group's contents change as it
+        // collapses, and Git status changes under it all the time.
         List(selection: $state.selectedFileID) {
             if let snapshot {
                 if !snapshot.unpushedCommits.isEmpty {
-                    DisclosureGroup(isExpanded: $state.unpushedExpanded) {
-                        ForEach(Array(snapshot.unpushedCommits.enumerated()), id: \.element.id) { index, commit in
+                    sectionHeader(
+                        title: "Unpushed Commits",
+                        systemImage: "arrow.up.circle",
+                        isExpanded: $state.unpushedExpanded
+                    )
+                    .contextMenu {
+                        Button { handleAction(.push(snapshot)) } label: {
+                            Label("Push to Remote", systemImage: "arrow.up")
+                        }
+                        Divider()
+                        Button {
+                            state.showUndoLastCommitAlert = true
+                        } label: {
+                            Label("Undo Last Commit", systemImage: "arrow.uturn.backward")
+                        }
+                        .disabled(snapshot.isDirty)
+                    }
+                    .listRowSeparator(.hidden)
+
+                    if state.unpushedExpanded {
+                        ForEach(snapshot.unpushedCommits.enumerated(), id: \.element.id) { index, commit in
                             Label {
                                 Text(commit.message)
                                     .lineLimit(1)
@@ -23,6 +45,7 @@ struct GitInspectorChangesList: View {
                                     .foregroundStyle(.accent)
                             }
                             .font(.subheadline)
+                            .padding(.leading)
                             .contextMenu {
                                 GitCommitContextMenu(
                                     commit: commit,
@@ -47,54 +70,35 @@ struct GitInspectorChangesList: View {
                             }
                             .listRowSeparator(.hidden)
                         }
-                    } label: {
-                        sectionHeader(
-                            title: "Unpushed Commits",
-                            systemImage: "arrow.up.circle",
-                            isExpanded: $state.unpushedExpanded
-                        )
-                        .contextMenu {
-                            Button { handleAction(.push(snapshot)) } label: {
-                                Label("Push to Remote", systemImage: "arrow.up")
-                            }
-                            Divider()
-                            Button {
-                                state.showUndoLastCommitAlert = true
-                            } label: {
-                                Label("Undo Last Commit", systemImage: "arrow.uturn.backward")
-                            }
-                            .disabled(snapshot.isDirty)
-                        }
                     }
-                    .listRowSeparator(.hidden)
                 }
 
                 if !snapshot.stagedFiles.isEmpty {
-                    DisclosureGroup(isExpanded: $state.stagedExpanded) {
-                        fileRows(snapshot.stagedFiles, staged: true, snapshot: snapshot)
-                    } label: {
-                        sectionHeader(
-                            title: "Staged Changes",
-                            systemImage: "checkmark.circle",
-                            isExpanded: $state.stagedExpanded
-                        )
-                        .contextMenu { GitRepoContextMenu(staged: true, snapshot: snapshot, onAction: handleAction) }
-                    }
+                    sectionHeader(
+                        title: "Staged Changes",
+                        systemImage: "checkmark.circle",
+                        isExpanded: $state.stagedExpanded
+                    )
+                    .contextMenu { GitRepoContextMenu(staged: true, snapshot: snapshot, onAction: handleAction) }
                     .listRowSeparator(.hidden)
+
+                    if state.stagedExpanded {
+                        fileRows(snapshot.stagedFiles, staged: true, snapshot: snapshot)
+                    }
                 }
 
                 if !snapshot.unstagedFiles.isEmpty {
-                    DisclosureGroup(isExpanded: $state.unstagedExpanded) {
-                        fileRows(snapshot.unstagedFiles, staged: false, snapshot: snapshot)
-                    } label: {
-                        sectionHeader(
-                            title: "Changes",
-                            systemImage: "circle.dashed",
-                            isExpanded: $state.unstagedExpanded
-                        )
-                        .contextMenu { GitRepoContextMenu(staged: false, snapshot: snapshot, onAction: handleAction) }
-                    }
+                    sectionHeader(
+                        title: "Changes",
+                        systemImage: "circle.dashed",
+                        isExpanded: $state.unstagedExpanded
+                    )
+                    .contextMenu { GitRepoContextMenu(staged: false, snapshot: snapshot, onAction: handleAction) }
                     .listRowSeparator(.hidden)
+
+                    if state.unstagedExpanded {
+                        fileRows(snapshot.unstagedFiles, staged: false, snapshot: snapshot)
+                    }
                 }
             }
         }
@@ -121,23 +125,30 @@ struct GitInspectorChangesList: View {
 
     // MARK: - Section Header
 
-    @ViewBuilder
     private func sectionHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
-        Label {
-            Text(title)
-        } icon: {
-            Image(systemName: systemImage)
-                .foregroundStyle(.accent)
-        }
-        .font(.subheadline)
-        .lineLimit(1)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation {
-                isExpanded.wrappedValue.toggle()
+        Button {
+            withAnimation { isExpanded.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.right")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 90 : 0))
+                    .accessibilityHidden(true)
+                Label {
+                    Text(title)
+                } icon: {
+                    Image(systemName: systemImage)
+                        .foregroundStyle(.accent)
+                }
+                .font(.subheadline)
+                .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
     }
 
     // MARK: - Rows
@@ -164,9 +175,10 @@ struct GitInspectorChangesList: View {
                         .menuIndicator(.hidden)
                     }
             }
-            .tag(row.id)
+            .padding(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .contentShape(.rect)
+            .tag(row.id)
         }
         .listRowSeparator(.hidden)
     }

@@ -91,7 +91,7 @@ enum DiffPopoverPresenter {
                 removedCount: removedCount,
                 stage: hunk.stage,
                 onDiscard: hunkTarget.map { target in
-                    {
+                    { [weak popover] in
                         Task {
                             do {
                                 try await target.apply(hunk.patchText, reverse: true, cached: false)
@@ -99,12 +99,12 @@ enum DiffPopoverPresenter {
                             } catch {
                                 await DiffPopoverPresenter.showError("Discard failed: \(error.localizedDescription)")
                             }
-                            await MainActor.run { popover.performClose(nil) }
+                            await MainActor.run { popover?.performClose(nil) }
                         }
                     }
                 },
                 onUnstage: hunkTarget.map { target in
-                    {
+                    { [weak popover] in
                         Task {
                             do {
                                 try await target.apply(hunk.patchText, reverse: true, cached: true)
@@ -112,12 +112,12 @@ enum DiffPopoverPresenter {
                             } catch {
                                 await DiffPopoverPresenter.showError("Unstage failed: \(error.localizedDescription)")
                             }
-                            await MainActor.run { popover.performClose(nil) }
+                            await MainActor.run { popover?.performClose(nil) }
                         }
                     }
                 },
                 onStage: hunkTarget.map { target in
-                    {
+                    { [weak popover] in
                         Task {
                             do {
                                 try await target.apply(hunk.patchText, reverse: false, cached: true)
@@ -125,7 +125,7 @@ enum DiffPopoverPresenter {
                             } catch {
                                 await DiffPopoverPresenter.showError("Stage failed: \(error.localizedDescription)")
                             }
-                            await MainActor.run { popover.performClose(nil) }
+                            await MainActor.run { popover?.performClose(nil) }
                         }
                     }
                 }

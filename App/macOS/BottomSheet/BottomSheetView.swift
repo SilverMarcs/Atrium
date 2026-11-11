@@ -35,7 +35,7 @@ struct BottomSheetView: View {
                     .fill(.clear)
                     .frame(height: 8)
                     .contentShape(Rectangle())
-                    .cursor(.resizeUpDown)
+                    .pointerStyle(.rowResize)
                     .gesture(resizeGesture)
             }
     }
@@ -77,13 +77,5 @@ struct BottomSheetView: View {
                 dragStartHeight = nil
                 dragStartY = nil
             }
-    }
-}
-
-extension View {
-    func cursor(_ cursor: NSCursor) -> some View {
-        onHover { inside in
-            if inside { cursor.push() } else { NSCursor.pop() }
-        }
     }
 }

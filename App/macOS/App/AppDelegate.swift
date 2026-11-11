@@ -6,6 +6,18 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        Self.raiseOpenFileLimit()
+    }
+
+    /// Lifts launchd's default of 256 open files: the host's connections,
+    /// file watchers and Git processes' pipes together can need more.
+    private static func raiseOpenFileLimit() {
+        var limit = rlimit()
+        guard getrlimit(RLIMIT_NOFILE, &limit) == 0 else { return }
+        let target = min(limit.rlim_max, rlim_t(OPEN_MAX))
+        guard limit.rlim_cur < target else { return }
+        limit.rlim_cur = target
+        setrlimit(RLIMIT_NOFILE, &limit)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

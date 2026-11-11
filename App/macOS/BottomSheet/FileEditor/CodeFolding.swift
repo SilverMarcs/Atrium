@@ -11,13 +11,13 @@ final class FoldingManager {
     private(set) var foldedStartLines: Set<Int> = []
     private var regionsByStartLine: [Int: FoldRegion] = [:]
 
-    /// Line start character indices for fast line number lookup
+    /// Line start UTF-16 offsets, the units of the text view's ranges, for fast line number lookup
     private(set) var lineStarts: [Int] = [0]
 
     func recompute(for text: String) {
         // Build line starts
         lineStarts = [0]
-        for (i, c) in text.unicodeScalars.enumerated() where c == "\n" {
+        for (i, unit) in text.utf16.enumerated() where unit == 0x0A {
             lineStarts.append(i + 1)
         }
 

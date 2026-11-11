@@ -69,7 +69,7 @@ struct GitInspectorBranchBar: View {
             }
 
             Button {
-                state.showBranchListSheet = true
+                state.branchListSnapshot = snapshot
             } label: {
                 Label("Branches…", systemImage: "list.bullet.indent")
             }
@@ -211,17 +211,16 @@ private enum GitContextItem: Hashable {
 
 private func pullRequestWebURL(remoteURL: String, branch: String) -> URL? {
     // Normalize remote URL to https base
-    var base = remoteURL
+    var base = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
     if base.hasPrefix("git@") {
         // git@github.com:owner/repo.git → https://github.com/owner/repo
-        base = base
-            .replacingOccurrences(of: "git@", with: "https://")
-            .replacingOccurrences(of: ":", with: "/", range: base.range(of: ":", range: base.index(base.startIndex, offsetBy: 4)..<base.endIndex))
+        let address = base.dropFirst(4)
+        guard let colon = address.firstIndex(of: ":") else { return nil }
+        base = "https://\(address[..<colon])/\(address[address.index(after: colon)...])"
     }
     if base.hasSuffix(".git") {
         base = String(base.dropLast(4))
     }
-    base = base.trimmingCharacters(in: .whitespacesAndNewlines)
 
     guard let parsed = URL(string: base), let host = parsed.host() else { return nil }
     let pathComponents = parsed.pathComponents.filter { $0 != "/" }

@@ -29,15 +29,20 @@ final class FileEditorLoadModel {
         return false
     }
 
+    /// Bumped by every load, so only the latest one lands.
+    private var generation = 0
+
     func load(_ url: URL, in project: Project) {
         loadTask?.cancel()
+        generation += 1
+        let generation = generation
         phase = .loading
         content = ""
         savedContent = ""
         loadedURL = nil
         loadTask = Task {
             let preview = await Self.preview(of: url, in: project)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == self.generation else { return }
             apply(preview, for: url)
         }
     }
@@ -46,24 +51,30 @@ final class FileEditorLoadModel {
     /// and keeps its scroll position, as after discarding a hunk.
     func reloadInPlace(_ url: URL, in project: Project) async {
         loadTask?.cancel()
-        apply(await Self.preview(of: url, in: project), for: url)
+        generation += 1
+        let generation = generation
+        let preview = await Self.preview(of: url, in: project)
+        guard generation == self.generation else { return }
+        apply(preview, for: url)
     }
 
     /// Picks up a change made on the host unless there are edits to keep.
     func reloadIfUnchanged(_ url: URL, in project: Project) {
-        guard case .text = phase, !hasUnsavedChanges else { return }
+        guard case .text = phase, !hasUnsavedChanges, loadedURL == url else { return }
         loadTask?.cancel()
+        generation += 1
+        let generation = generation
         loadTask = Task {
             let preview = await Self.preview(of: url, in: project)
-            guard !Task.isCancelled, !hasUnsavedChanges else { return }
+            guard !Task.isCancelled, generation == self.generation, !hasUnsavedChanges else { return }
             apply(preview, for: url)
         }
     }
 
-    func save(_ url: URL, in project: Project) async throws {
-        guard case .text = phase else { return }
-        let text = content
+    func save(_ text: String, to url: URL, in project: Project) async throws {
         _ = try await project.files(.write(path: url.filePath, text: text))
+        // Another file may have loaded while this one was being written.
+        guard loadedURL == url, case .text = phase else { return }
         savedContent = text
     }
 

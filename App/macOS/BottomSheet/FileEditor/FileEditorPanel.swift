@@ -83,6 +83,9 @@ struct FileEditorPanel: View {
                 .help("Show in File Tree")
         } content: {
             switch loader.phase {
+            case .text where loader.loadedURL != fileURL:
+                // Still the last file's text, for the frame before this file starts loading.
+                Color.clear
             case .text:
                 if showingPreview && isMarkdownFile {
                     MarkdownPreviewView(markdownText: loader.content, fontSize: editorFontSize)
@@ -186,11 +189,14 @@ struct FileEditorPanel: View {
         }
     }
 
+    /// Saves the text as it is now: the unsaved-changes alert saves and then
+    /// moves on, replacing the text before a later read of it could happen.
     private func save() {
-        guard project.isLocal else { return }
+        guard project.isLocal, case .text = loader.phase, let url = loader.loadedURL else { return }
+        let text = loader.content
         Task {
             do {
-                try await loader.save(fileURL, in: project)
+                try await loader.save(text, to: url, in: project)
             } catch {
                 saveError = error.localizedDescription
             }

@@ -63,6 +63,39 @@ final class FileTreeModel {
         project.host.directories[.directory(workspaceID: project.workspaceID, path: path)]
     }
 
+    /// The rows the tree shows, depth first, each expanded folder's contents
+    /// right after it. One flat list rather than nested disclosure groups:
+    /// SwiftUI's outline list traps when an expanded subtree changes as a
+    /// folder above it collapses, and folders here change all the time.
+    func rows(showsHidden: Bool) -> [FileTreeRow] {
+        var rows: [FileTreeRow] = []
+        var seen: Set<String> = []
+        func append(_ entry: FileEntry, depth: Int) -> Bool {
+            guard seen.insert(entry.id).inserted else { return false }
+            let isExpanded = entry.isDirectory && expandedIDs.contains(entry.id)
+            rows.append(FileTreeRow(entry: entry, depth: depth, isExpanded: isExpanded))
+            return isExpanded
+        }
+        if let nodes = filteredNodes {
+            func appendNodes(_ nodes: [FileNode], depth: Int) {
+                for node in nodes where append(node.entry, depth: depth) {
+                    appendNodes(node.children ?? [], depth: depth + 1)
+                }
+            }
+            appendNodes(nodes, depth: 0)
+        } else {
+            func appendFolder(_ path: String, depth: Int) {
+                for entry in entries(in: path) ?? [] where showsHidden || !entry.isHidden {
+                    if append(entry, depth: depth), entry.path.hasPrefix(path + "/") {
+                        appendFolder(entry.path, depth: depth + 1)
+                    }
+                }
+            }
+            appendFolder(project.filesRoot.filePath, depth: 0)
+        }
+        return rows
+    }
+
     /// The tree a filter shows, or nil while browsing folders.
     var filteredNodes: [FileNode]? {
         guard hasActiveFilter else { return nil }
@@ -183,6 +216,15 @@ final class FileTreeModel {
             return nil
         }
     }
+}
+
+/// A row of the tree: a file or folder, how deep it sits, and whether it's open.
+struct FileTreeRow: Identifiable, Equatable {
+    let entry: FileEntry
+    let depth: Int
+    let isExpanded: Bool
+
+    var id: String { entry.id }
 }
 
 /// A file or folder in a filtered tree; folders hold only what leads to matches.

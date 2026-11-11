@@ -46,10 +46,12 @@ final class SourceControl {
     }
 
     /// Commits the staged changes; a blank message commits nothing.
-    func commit(message: String, in snapshot: GitRepositoryStatus) async {
+    /// Whether it committed.
+    @discardableResult
+    func commit(message: String, in snapshot: GitRepositoryStatus) async -> Bool {
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !snapshot.stagedFiles.isEmpty else { return }
-        await perform(.commit(message: message), in: snapshot, success: "Committed successfully")
+        guard !message.isEmpty, !snapshot.stagedFiles.isEmpty else { return false }
+        return await perform(.commit(message: message), in: snapshot, success: "Committed successfully")
     }
 
     func initializeRepository() async {

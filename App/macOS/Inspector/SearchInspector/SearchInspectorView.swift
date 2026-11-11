@@ -14,47 +14,56 @@ struct SearchInspectorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            // Flat rows rather than disclosure groups: SwiftUI's outline list
+            // traps when a group's contents change as it collapses, and results
+            // are replaced wholesale on every search.
             ForEach(state.results) { fileResult in
-                DisclosureGroup(isExpanded: binding(for: fileResult.id)) {
-                    ForEach(fileResult.matches) { match in
-                        matchRow(match)
-                            .tag(matchID(match, in: fileResult))
-                            .selectionDisabled(false)
-                            .padding(.leading, -15)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if state.selectedID == matchID(match, in: fileResult) {
-                                    open(match, in: fileResult)
-                                } else {
-                                    state.selectedID = matchID(match, in: fileResult)
-                                }
-                            }
-                    }
+                let isExpanded = state.expandedIDs.contains(fileResult.id)
+                Button {
+                    withAnimation { binding(for: fileResult.id).wrappedValue.toggle() }
                 } label: {
-                    FileLabel(name: fileResult.name, icon: FileIcon.image(for: URL(filePath: fileResult.path))) {
-                        if let folder = Self.folder(of: fileResult) {
-                            Text(folder)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .accessibilityHidden(true)
+                        FileLabel(name: fileResult.name, icon: FileIcon.image(for: URL(filePath: fileResult.path))) {
+                            if let folder = Self.folder(of: fileResult) {
+                                Text(folder)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation {
-                            if state.expandedIDs.contains(fileResult.id) {
-                                state.expandedIDs.remove(fileResult.id)
-                            } else {
-                                state.expandedIDs.insert(fileResult.id)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                .listRowSeparator(.hidden)
+
+                if isExpanded {
+                    ForEach(fileResult.matches) { match in
+                        let id = matchID(match, in: fileResult)
+                        matchRow(match)
+                            .padding(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                            .onTapGesture {
+                                if state.selectedID == id {
+                                    open(match, in: fileResult)
+                                } else {
+                                    state.selectedID = id
+                                }
                             }
-                        }
+                            .tag(id)
+                            .listRowSeparator(.hidden)
                     }
                 }
-                .selectionDisabled()
             }
-            .listRowSeparator(.hidden)
         }
         .scrollContentBackground(.hidden)
         .safeAreaBar(edge: .top) {

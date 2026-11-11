@@ -51,8 +51,11 @@ struct SourceControlScreen: View {
     private func commit() {
         guard let status = source.status else { return }
         let message = commitMessage
-        commitMessage = ""
-        Task { await source.commit(message: message, in: status) }
+        Task {
+            // Keep the message when the commit fails, or when it was edited meanwhile.
+            guard await source.commit(message: message, in: status), commitMessage == message else { return }
+            commitMessage = ""
+        }
     }
 
     private func createBranch() {

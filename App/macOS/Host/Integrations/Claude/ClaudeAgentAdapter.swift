@@ -173,7 +173,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard historyWatcher == nil else { return }
         let projects = configDirectory.appending(path: "projects")
         try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-        historyWatcher = FileSystemWatcher(url: projects, latency: 0.3, ignoredSubstrings: [], onPathsChanged: { [weak self] paths in
+        historyWatcher = FileSystemWatcher(url: projects, latency: 0.3, ignoredSubstrings: [], onPathsChanged: { @Sendable [weak self] paths in
             Task { @MainActor [weak self] in
                 guard let self, self.isEnabled else { return }
                 for path in paths {
@@ -648,7 +648,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let (changes, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         let job = "/jobs/\(jobID)/"
         let watcher = FileSystemWatcher(urls: [configDirectory.appending(path: "jobs"), configDirectory.appending(path: "daemon")],
-                                        latency: 0.1, ignoredSubstrings: []) { paths in
+                                        latency: 0.1, ignoredSubstrings: []) { @Sendable paths in
             if paths.contains(where: { $0.contains(job) || $0.hasSuffix("/roster.json") }) { continuation.yield() }
         }
         let deadline = Task {

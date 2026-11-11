@@ -40,7 +40,9 @@ struct GitInspectorCommitArea: View {
         case .commit:
             let message = state.commitMessage
             Task {
-                await state.model.commit(message: message, in: snapshot)
+                // Keep the message when the commit fails, or when it was edited meanwhile.
+                guard await state.model.commit(message: message, in: snapshot),
+                      state.commitMessage == message else { return }
                 state.commitMessage = ""
             }
         case .push:

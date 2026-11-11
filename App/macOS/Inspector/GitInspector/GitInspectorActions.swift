@@ -25,7 +25,9 @@ final class GitInspectorState {
     var showUndoLastCommitAlert = false
     var showSyncWithBranchSheet = false
     var showCommitLogSheet = false
-    var showBranchListSheet = false
+    /// The repository the branch sheet manages while it's shown. Kept as it
+    /// was opened, so the sheet stays put while the status reloads under it.
+    var branchListSnapshot: GitRepositoryStatus?
     var showStashListSheet = false
 
     init(project: Project) {

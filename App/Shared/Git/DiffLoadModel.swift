@@ -18,12 +18,17 @@ final class DiffLoadModel {
     private(set) var phase: Phase = .idle
     private var loadTask: Task<Void, Never>?
 
+    /// Bumped by every load, so only the latest one lands.
+    private var generation = 0
+
     func load(_ reference: GitDiffReference, from source: SourceControl) {
         loadTask?.cancel()
+        generation += 1
+        let generation = generation
         phase = .loading
         loadTask = Task {
             let phase = await Self.phase(of: reference, from: source)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == self.generation else { return }
             self.phase = phase
         }
     }
@@ -32,7 +37,11 @@ final class DiffLoadModel {
     /// applying a hunk so the editor stays mounted and keeps its scroll position.
     func reloadInPlace(_ reference: GitDiffReference, from source: SourceControl) async {
         loadTask?.cancel()
-        phase = await Self.phase(of: reference, from: source)
+        generation += 1
+        let generation = generation
+        let phase = await Self.phase(of: reference, from: source)
+        guard generation == self.generation else { return }
+        self.phase = phase
     }
 
     private static func phase(of reference: GitDiffReference, from source: SourceControl) async -> Phase {
