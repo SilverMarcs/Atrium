@@ -167,6 +167,7 @@ final class TaskComposer {
 
     private func send(_ text: String, images: [Data], to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> UUID {
         let animationSource = sourceFrame ?? animator.sourceFrame?()
+        animator.willSend()
         let promptID = item.host.sendPrompt(text, images: images, to: item.task.id)
         animator.begin(promptID, text: text, from: animationSource)
         return promptID
