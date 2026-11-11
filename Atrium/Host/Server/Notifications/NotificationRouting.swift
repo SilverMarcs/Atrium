@@ -7,7 +7,8 @@ import CoreGraphics
 /// task, and to every device when none is in the foreground.
 ///
 /// Nothing is recorded per event. The Mac's last input is read from the system
-/// when an alert is routed, and a companion counts as used when it comes to the
+/// when an alert is routed, and the Mac counts as in the foreground only while
+/// that input is recent. A companion counts as used when it comes to the
 /// foreground, opens a task, or sends any request.
 @MainActor
 final class NotificationRouting {
@@ -57,12 +58,18 @@ final class NotificationRouting {
         return nil
     }
 
+    /// How long the Mac goes without input before it stops counting as in use,
+    /// so a Mac left unlocked with Atrium in front doesn't keep every alert.
+    private static let macIdleTimeout: Duration = .seconds(5 * 60)
+
     /// When the Mac last had keyboard or pointer input, if Atrium is frontmost
-    /// on an unlocked screen.
+    /// on an unlocked screen and that input was recent.
     private var macUsedAt: Date? {
         guard NSApplication.shared.isActive, !isScreenLocked,
               let anyInput = CGEventType(rawValue: ~0) else { return nil }
-        return .now - CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        guard .seconds(idle) < Self.macIdleTimeout else { return nil }
+        return .now - idle
     }
 
     /// Atrium stays the active app while the screen is locked.
