@@ -1,7 +1,9 @@
 import AtriumProtocol
 import Foundation
 
-/// The small part of a Claude transcript needed by the sidebar, read from bounded head/tail windows.
+/// The small part of a Claude transcript needed by the sidebar, read from
+/// bounded head/tail windows and the newest of the records kept up to date
+/// from every line Claude appends.
 nonisolated struct ClaudeSessionMetadata: Sendable {
     var title: String
     let hasProviderTitle: Bool
@@ -20,41 +22,64 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     /// reply; unknown once it's compacted, until the next reply.
     let contextTokens: Int?
 
-    /// `earlierCustomTitle` is the latest rename recorded anywhere in the transcript, which can be outside both windows.
-    static func parse(head: String, tail: String, renamedTitle: String?, earlierCustomTitle: String?) -> Self? {
+    /// The model, reasoning effort and speed of a reply, and the tokens its
+    /// request took in unless the conversation was compacted since: all of its
+    /// input, cached or not, as Claude's `/context` counts it.
+    struct Reply: Equatable, Sendable {
+        let model: String
+        let effort: String?
+        let speed: String?
+        var contextTokens: Int?
+    }
+
+    /// The newest records of the kinds that can sit anywhere in a transcript.
+    /// Before each reply Claude appends a prompt's attachments and request
+    /// records, often hundreds of kilobytes, which push the ones before them
+    /// out of the tail window, so these are read from every line instead.
+    struct Latest: Equatable, Sendable {
+        var customTitle: String?
+        var firstAITitle: String?
+        var aiTitle: String?
+        var agentName: String?
+        var lastPrompt: String?
+        /// The folder the session last moved into, or back to from a worktree.
+        var worktreeDirectory: String?
+        var activity: Date?
+        var reply: Reply?
+    }
+
+    static func parse(head: String, tail: String, renamedTitle: String?, latest: Latest) -> Self? {
         // Claude has used transcript records for names and, more recently, a separate rename file.
-        let customName = string("customTitle", in: tail, last: true) ?? renamedTitle ?? earlierCustomTitle
-        let name = customName ?? string("aiTitle", in: tail, last: true) ?? string("aiTitle", in: head, last: true)
-        guard let title = name ?? string("lastPrompt", in: tail, last: true).flatMap(promptTitle)
+        let customName = string("customTitle", in: tail, last: true) ?? renamedTitle ?? latest.customTitle
+        let name = customName ?? latest.aiTitle
+        guard let title = name ?? latest.lastPrompt.flatMap(promptTitle)
             ?? string("summary", in: tail, last: true) ?? firstPrompt(in: head) else { return nil }
         // A large first prompt can push its cwd beyond the bounded head window.
         let originalDirectory = string("cwd", in: head)
-        let reply = latestReply(in: tail)
         return Self(
             title: title,
             hasProviderTitle: name != nil,
             isRenamed: customName != nil,
-            agentName: string("agentName", in: tail, last: true) ?? string("agentName", in: head, last: true),
-            directory: worktreeDirectory(in: tail) ?? originalDirectory
-                ?? string("cwd", in: tail, last: true) ?? "",
+            agentName: latest.agentName,
+            directory: latest.worktreeDirectory ?? originalDirectory ?? string("cwd", in: tail, last: true) ?? "",
             projectDirectory: originalDirectory,
             continuedIn: continuation(in: tail),
-            lastActivity: lastActivity(in: tail),
-            model: reply?.model,
-            reasoningEffort: reply?.effort,
-            isFastMode: reply?.speed.map { $0 == "fast" },
-            contextTokens: reply?.contextTokens
+            lastActivity: latest.activity,
+            model: latest.reply?.model,
+            reasoningEffort: latest.reply?.effort,
+            isFastMode: latest.reply?.speed.map { $0 == "fast" },
+            contextTokens: latest.reply?.contextTokens
         )
     }
 
-    /// The model, reasoning effort and speed of the newest reply, and the
-    /// tokens its request took in unless the conversation was compacted since:
-    /// all of its input, cached or not, as Claude's `/context` counts it. API
-    /// errors are recorded as replies from a placeholder model.
-    private static func latestReply(in tail: String) -> (model: String, effort: String?, speed: String?, contextTokens: Int?)? {
+    /// The newest reply among lines appended to a transcript, read newest
+    /// first, or the one before them when they hold none. A compaction among
+    /// them makes its context unknown. API errors are recorded as replies from
+    /// a placeholder model.
+    static func latestReply(after previous: Reply?, appended lines: some Sequence<Data>) -> Reply? {
         var isCompacted = false
-        for line in tail.split(separator: "\n").reversed() where line.contains("\"model\"") || line.contains("compact_boundary") {
-            guard let record = object(line) else { continue }
+        for line in lines where line.range(of: modelKey) != nil || line.range(of: compactBoundary) != nil {
+            guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
             if record["type"] as? String == "system", record["subtype"] as? String == "compact_boundary" {
                 isCompacted = true
                 continue
@@ -65,40 +90,37 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             let contextTokens = usage.map { usage in
                 ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].reduce(0) { $0 + (usage[$1] as? Int ?? 0) }
             }
-            return (model, record["effort"] as? String, usage?["speed"] as? String, isCompacted ? nil : contextTokens)
+            return Reply(model: model, effort: record["effort"] as? String, speed: usage?["speed"] as? String,
+                         contextTokens: isCompacted ? nil : contextTokens)
         }
-        return nil
+        var reply = previous
+        if isCompacted { reply?.contextTokens = nil }
+        return reply
     }
 
-    /// Claude appends bookkeeping records to old transcripts on resume and reconnect,
-    /// so the file's modification date is not when the conversation last changed.
-    private static func lastActivity(in tail: String) -> Date? {
-        for line in tail.split(separator: "\n").reversed() where line.contains("\"timestamp\"") {
-            guard let record = object(line), ["user", "assistant"].contains(record["type"] as? String),
+    private static let modelKey = Data(#""model""#.utf8)
+    private static let compactBoundary = Data("compact_boundary".utf8)
+
+    /// When the conversation last changed, as of the newest prompt or reply
+    /// among lines appended to a transcript, read newest first, or before them
+    /// when they hold none. Claude appends bookkeeping records to old
+    /// transcripts on resume and reconnect, so the file's modification date
+    /// is not when it last changed.
+    static func latestActivity(after previous: Date?, appended lines: some Sequence<Data>) -> Date? {
+        for line in lines where line.range(of: timestampKey) != nil {
+            guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+                  ["user", "assistant"].contains(record["type"] as? String),
                   let timestamp = record["timestamp"] as? String else { continue }
             if let date = try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(timestamp) { return date }
         }
-        return nil
+        return previous
     }
 
-    /// Where the session works after moving into or out of a worktree, whichever
-    /// it did last: Claude records the folder it moved into, and the one leaving
-    /// a worktree restored. Recording a return is not guaranteed, so a later
-    /// exit still wins over an earlier move.
-    private static func worktreeDirectory(in tail: String) -> String? {
-        [field("relocatedCwd", in: tail, last: true), field("restoredCwd", in: tail, last: true)]
-            .compactMap(\.self)
-            .max { $0.location < $1.location }?
-            .value
-    }
+    private static let timestampKey = Data(#""timestamp""#.utf8)
 
-    private static func string(_ key: String, in text: String, last: Bool = false) -> String? {
-        field(key, in: text, last: last)?.value
-    }
-
-    /// Reads a JSON string field even when a large record crosses the edge of a read window.
+    /// Reads a JSON string field, even in a nested record or one a read window cuts off.
     /// Decode the string literal itself so quotes, backslashes and Unicode escapes remain intact.
-    private static func field(_ key: String, in text: String, last: Bool) -> (value: String, location: String.Index)? {
+    static func string(_ key: String, in text: String, last: Bool = false) -> String? {
         var remaining = text.startIndex..<text.endIndex
         while let match = text.range(of: "\"\(key)\"", options: last ? .backwards : [], range: remaining) {
             if last { remaining = remaining.lowerBound..<match.lowerBound }
@@ -115,7 +137,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
                 if character == "\"" {
                     let data = Data(suffix[...index].utf8)
                     if let value = try? JSONDecoder().decode(String.self, from: data),
-                       let value = nonempty(value) { return (value, match.lowerBound) }
+                       let value = nonempty(value) { return value }
                     break
                 }
             }

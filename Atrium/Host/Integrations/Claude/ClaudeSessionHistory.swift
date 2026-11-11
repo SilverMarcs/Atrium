@@ -23,18 +23,17 @@ actor ClaudeSessionHistory {
         let metadata: ClaudeSessionMetadata?
     }
 
-    /// Title records found in the whole lines of a transcript read so far.
-    private struct TitleScan {
+    /// The newest records found in the whole lines of a transcript read so far.
+    private struct RecordScan {
         var scanned = 0
-        var customTitle: String?
-        var firstAITitle: String?
+        var latest = ClaudeSessionMetadata.Latest()
     }
 
     private static let windowSize = 64 * 1024
     private let projects: URL
     private var cache: [URL: Cached] = [:]
     private var locations: [String: URL] = [:]
-    private var titleScans: [URL: TitleScan] = [:]
+    private var recordScans: [URL: RecordScan] = [:]
 
     init(configDirectory: URL? = nil) {
         let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
@@ -70,7 +69,7 @@ actor ClaudeSessionHistory {
         // A fixed 50-entry limit caused larger histories to be reparsed on every refresh.
         let existing = Set(files.map(\.url))
         cache = cache.filter { existing.contains($0.key) }
-        titleScans = titleScans.filter { existing.contains($0.key) }
+        recordScans = recordScans.filter { existing.contains($0.key) }
         locations = locations.filter { seen.contains($0.key) }
         return threads
     }
@@ -114,7 +113,7 @@ actor ClaudeSessionHistory {
         let related = file.url.deletingPathExtension()
         if FileManager.default.fileExists(atPath: related.path) { try FileManager.default.removeItem(at: related) }
         cache[file.url] = nil
-        titleScans[file.url] = nil
+        recordScans[file.url] = nil
         locations[id] = nil
     }
 
@@ -353,63 +352,115 @@ actor ClaudeSessionHistory {
             cache[file.url] = Cached(transcript: file.stamp, rename: renameStamp, metadata: nil)
             return nil
         }
-        let titles = try titleScan(of: file)
+        let latest = try latestRecords(of: file)
         var metadata = ClaudeSessionMetadata.parse(
             head: String(decoding: head, as: UTF8.self), tail: String(decoding: tail, as: UTF8.self),
-            renamedTitle: renamedTitle, earlierCustomTitle: titles.customTitle
+            renamedTitle: renamedTitle, latest: latest
         )
         // Background sessions first record a readable AI title, then replace it with their lowercase agent name.
         // A name someone gave the session is kept, even when Claude also took it as the agent name.
         if let agentName = metadata?.agentName, metadata?.title == agentName, metadata?.isRenamed == false {
-            metadata?.title = titles.firstAITitle.flatMap { $0 == agentName ? nil : $0 } ?? Self.humanized(agentName)
+            metadata?.title = latest.firstAITitle.flatMap { $0 == agentName ? nil : $0 } ?? Self.humanized(agentName)
         }
         cache[file.url] = Cached(transcript: file.stamp, rename: renameStamp, metadata: metadata)
         return metadata
     }
 
-    /// Brings a transcript's title records up to date, reading only what was appended since the last scan.
-    /// A rename or the first AI title can sit anywhere in a long transcript, beyond the head and tail windows.
-    private func titleScan(of file: File) throws -> TitleScan {
-        var scan = titleScans[file.url].flatMap { $0.scanned <= file.stamp.size ? $0 : nil } ?? TitleScan()
-        guard scan.scanned < file.stamp.size else { return scan }
+    /// Brings a transcript's newest records up to date, reading only what was appended since the last scan.
+    /// Each is searched for from the end, so a long transcript's first scan seldom reads all of it.
+    private func latestRecords(of file: File) throws -> ClaudeSessionMetadata.Latest {
+        var scan = recordScans[file.url].flatMap { $0.scanned <= file.stamp.size ? $0 : nil } ?? RecordScan()
+        guard scan.scanned < file.stamp.size else { return scan.latest }
         let data = try Data(contentsOf: file.url, options: .alwaysMapped)
         // Only whole lines are read; a line still being written waits for the next scan.
-        guard scan.scanned < data.count, let end = data[scan.scanned...].lastIndex(of: 10) else { return scan }
+        guard scan.scanned < data.count, let end = data[scan.scanned...].lastIndex(of: 10) else { return scan.latest }
         let range = scan.scanned..<end
-        Self.forEachRecord(ofType: "custom-title", key: "customTitle", in: data, range) { title in
-            scan.customTitle = title
-            return true
+        var latest = scan.latest
+        if latest.firstAITitle == nil {
+            latest.firstAITitle = Self.record(ofType: "ai-title", key: "aiTitle", in: data, range, last: false).map { String($0.prefix(200)) }
         }
-        if scan.firstAITitle == nil {
-            Self.forEachRecord(ofType: "ai-title", key: "aiTitle", in: data, range) { title in
-                scan.firstAITitle = title
-                return false
-            }
+        let title = { (type: String, key: String) in Self.record(ofType: type, key: key, in: data, range, last: true).map { String($0.prefix(200)) } }
+        latest.customTitle = title("custom-title", "customTitle") ?? latest.customTitle
+        latest.aiTitle = title("ai-title", "aiTitle") ?? latest.aiTitle
+        latest.agentName = title("agent-name", "agentName") ?? latest.agentName
+        latest.lastPrompt = Self.record(ofType: "last-prompt", key: "lastPrompt", in: data, range, last: true) ?? latest.lastPrompt
+        // Claude records the folder a session moves into, and within the tool's
+        // result the one leaving a worktree restored; whichever it did last wins.
+        var move: String?
+        Self.forEachLine(containing: #"Cwd":""#, in: data, range, newestFirst: true) { line in
+            let text = String(decoding: data[line], as: UTF8.self)
+            move = ["relocatedCwd", "restoredCwd"]
+                .compactMap { key in text.range(of: "\"\(key)\"", options: .backwards).map { ($0.lowerBound, key) } }
+                .max { $0.0 < $1.0 }
+                .flatMap { ClaudeSessionMetadata.string($0.1, in: text, last: true) }
+            return move == nil
         }
+        latest.worktreeDirectory = move ?? latest.worktreeDirectory
+        latest.activity = ClaudeSessionMetadata.latestActivity(after: latest.activity, appended: Self.linesNewestFirst(in: data, range))
+        latest.reply = ClaudeSessionMetadata.latestReply(after: latest.reply, appended: Self.linesNewestFirst(in: data, range))
+        scan.latest = latest
         scan.scanned = end + 1
-        titleScans[file.url] = scan
-        return scan
+        recordScans[file.url] = scan
+        return latest
     }
 
-    /// Calls `body` with the `key` value of each record of `type` among the lines in `range`, in file order,
-    /// until it returns false. `range` starts a line. Lines are only parsed when they contain the record's type.
-    private static func forEachRecord(ofType type: String, key: String, in data: Data, _ range: Range<Int>, _ body: (String) -> Bool) {
-        let marker = Array(#""type":"\#(type)""#.utf8)
-        data.withUnsafeBytes { buffer in
-            guard let base = buffer.baseAddress else { return }
-            var position = range.lowerBound
-            while position < range.upperBound,
-                  let match = memmem(base + position, range.upperBound - position, marker, marker.count) {
-                let offset = base.distance(to: UnsafeRawPointer(match))
-                let start = buffer[position..<offset].lastIndex(of: 10).map { $0 + 1 } ?? position
-                let end = buffer[offset..<range.upperBound].firstIndex(of: 10) ?? range.upperBound
-                position = end + 1
-                guard let record = (try? JSONSerialization.jsonObject(with: Data(buffer[start..<end]))) as? [String: Any],
-                      record["type"] as? String == type,
-                      let value = (record[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !value.isEmpty else { continue }
-                guard body(String(value.prefix(200))) else { return }
+    /// The lines in `range`, newest first, read lazily so a search can stop early. `range` starts a line.
+    private static func linesNewestFirst(in data: Data, _ range: Range<Int>) -> some Sequence<Data> {
+        sequence(state: range.upperBound) { end -> Data? in
+            guard end > range.lowerBound else { return nil }
+            let start = data[range.lowerBound..<end].lastIndex(of: 10).map { $0 + 1 } ?? range.lowerBound
+            defer { end = start - 1 }
+            return data[start..<end]
+        }
+    }
+
+    /// The `key` value of the first or last record of `type` among the lines in `range`.
+    /// `range` starts a line. Lines are only parsed when they contain the record's type.
+    private static func record(ofType type: String, key: String, in data: Data, _ range: Range<Int>, last: Bool) -> String? {
+        var found: String?
+        forEachLine(containing: #""type":"\#(type)""#, in: data, range, newestFirst: last) { line in
+            guard let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                  record["type"] as? String == type,
+                  let value = (record[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return true }
+            found = value
+            return false
+        }
+        return found
+    }
+
+    /// Calls `body` with each line among those in `range` that contains
+    /// `marker`, in file order or newest first, until it returns false.
+    /// `range` starts a line. Newest first, the range is searched a chunk at a
+    /// time from its end, so finding a recent line doesn't read all of it.
+    private static func forEachLine(containing marker: String, in data: Data, _ range: Range<Int>, newestFirst: Bool,
+                                    _ body: (Range<Int>) -> Bool) {
+        let marker = Array(marker.utf8)
+        let chunk = newestFirst ? 1 << 20 : range.count
+        var upper = range.upperBound
+        var seen = range.upperBound
+        while upper > range.lowerBound {
+            let lower = max(range.lowerBound, upper - chunk)
+            // A match can straddle the chunk's end; lines already passed to `body` are skipped.
+            let window = lower..<min(range.upperBound, upper + marker.count - 1)
+            var lines: [Range<Int>] = []
+            data.withUnsafeBytes { buffer in
+                guard let base = buffer.baseAddress else { return }
+                var position = window.lowerBound
+                while position < window.upperBound,
+                      let match = memmem(base + position, window.upperBound - position, marker, marker.count) {
+                    let offset = base.distance(to: UnsafeRawPointer(match))
+                    let start = buffer[range.lowerBound..<offset].lastIndex(of: 10).map { $0 + 1 } ?? range.lowerBound
+                    let end = buffer[offset..<range.upperBound].firstIndex(of: 10) ?? range.upperBound
+                    position = end + 1
+                    if start < seen { lines.append(start..<end) }
+                }
             }
+            for line in newestFirst ? lines.reversed() : lines {
+                guard body(line) else { return }
+            }
+            seen = lines.first?.lowerBound ?? seen
+            upper = lower
         }
     }
 

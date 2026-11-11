@@ -524,8 +524,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         instructions.record(blocks, for: thread.id)
         thread.title = title ?? "New Claude thread"
         thread.status = .idle
-        if let model = settings?.model {
-            let change = AgentSettingsChange.model(model, reasoningEffort: settings?.reasoningEffort)
+        // Its transcript names the model only with the first reply, so until then it shows the
+        // one chosen, or else the default Claude starts it with, as the new chat did.
+        let reasoningEffort = settings?.reasoningEffort ?? (settings?.model == nil ? defaultSettings?.reasoningEffort : nil)
+        if let model = settings?.model ?? defaultSettings?.model {
+            let change = AgentSettingsChange.model(model, reasoningEffort: reasoningEffort)
             var override = ClaudeSettingsOverride(reportedBy: thread)
             override.append(change)
             settingsOverrides[thread.sessionID] = override
