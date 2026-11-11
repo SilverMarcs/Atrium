@@ -38,6 +38,19 @@ final class PromptFlights: PromptSendAnimating {
   @ObservationIgnored private var laidOut: [String: CGRect] = [:]
   /// When the latest prompt was sent, so the scroll that follows it slides.
   @ObservationIgnored private var sentAt: CFTimeInterval = 0
+  /// The scroll that makes room for a sent prompt, until it lands.
+  @ObservationIgnored private var room: Room?
+  /// Lands the room scroll if the timeline never moves for it.
+  @ObservationIgnored private var roomDeadline: Task<Void, Never>?
+
+  private enum Room {
+    /// Waiting for the timeline to lay out the prompt's row.
+    case waiting(() -> Void)
+    /// Asked for after the update that laid out the row.
+    case asking
+    /// Asked for; the timeline moving next is the scroll landing.
+    case scrolling
+  }
 
   /// Matches the spring the bubble flew with before (response 0.36, damping 0.8).
   static let response: CGFloat = 0.36
@@ -64,17 +77,10 @@ final class PromptFlights: PromptSendAnimating {
   /// jumps and slides on the render server.
   var isSending: Bool { CACurrentMediaTime() - sentAt < 0.5 }
 
-  /// Called before the prompt reaches the timeline, which can lay out its row
-  /// and scroll for it before the composer hands over its text.
-  func prepareSend() {
+  func willSend() {
     laidOut.removeAll()
     sentAt = reduceMotion ? 0 : CACurrentMediaTime()
     snapshot = reduceMotion ? nil : snapshotTimeline()
-  }
-
-  func cancelSend() {
-    sentAt = 0
-    snapshot = nil
   }
 
   func begin(_ promptID: PendingPrompt.ID, text: String, from frame: CGRect?) {
@@ -119,13 +125,52 @@ final class PromptFlights: PromptSendAnimating {
       retarget(flight, by: CGPoint(x: frame.midX - previous.midX, y: frame.midY - previous.midY))
       return
     }
-    guard !flight.isLaunching else { return }
+    // Fly to where the row settles, once the scroll that makes room for it
+    // has landed.
+    guard !flight.isLaunching, room == nil else { return }
     flight.isLaunching = true
-    // The scroll that makes room for the row lands in the same update or the
-    // next; fly to where the row settles.
     Task { [weak self] in
       await Task.yield()
       self?.launch(rowID)
+    }
+  }
+
+  /// Scrolls to make room for a sent prompt once the timeline has laid out
+  /// the prompt's row. SwiftUI puts back a scroll it applies in the update
+  /// that lays the row out, for a few frames, which showed the timeline
+  /// where it was and the prompt low on screen before it jumped up again.
+  /// The copy waits for the scroll, so it flies straight to where the row ends up.
+  func makeRoom(by scroll: @escaping () -> Void) {
+    room = .waiting(scroll)
+    roomDeadline?.cancel()
+    // The timeline may already be where the scroll takes it.
+    roomDeadline = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled, let self else { return }
+      if case .waiting(let scroll) = room { scroll() }
+      roomDidLand()
+    }
+  }
+
+  /// The timeline laid out a change in size, such as a sent prompt's row.
+  func noteLayout() {
+    guard case .waiting(let scroll) = room else { return }
+    room = .asking
+    // Asked for after this update, so it lands in the next.
+    Task { [weak self] in
+      guard let self, case .asking = room else { return }
+      scroll()
+      room = .scrolling
+    }
+  }
+
+  private func roomDidLand() {
+    guard room != nil else { return }
+    room = nil
+    roomDeadline?.cancel()
+    roomDeadline = nil
+    for (rowID, flight) in flights {
+      if let frame = flight.destination { noteDestination(rowID, frame: frame) }
     }
   }
 
@@ -138,6 +183,7 @@ final class PromptFlights: PromptSendAnimating {
   /// gone by the time they'd slide out. A picture of the timeline taken just
   /// before the send covers them, sliding with the content.
   func noteScroll(by delta: CGFloat) {
+    if abs(delta) > 0.5, case .scrolling = room { roomDidLand() }
     guard delta > 0.5, isSending, let scrollView, let layer = scrollView.documentView?.layer else { return }
     let flipped = layer.superlayer?.contentsAreFlipped() ?? true
     layer.add(slide(from: flipped ? delta : -delta), forKey: "promptSlide-\(CACurrentMediaTime())")
@@ -203,6 +249,9 @@ final class PromptFlights: PromptSendAnimating {
 
   func cancelAll() {
     // Called as the timeline goes away, mid-update: nothing to swap in place.
+    room = nil
+    roomDeadline?.cancel()
+    roomDeadline = nil
     for id in Array(flights.keys) { land(id, drawingNow: false) }
   }
 

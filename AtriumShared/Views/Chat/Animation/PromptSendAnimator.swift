@@ -9,7 +9,16 @@ protocol PromptSendAnimating: AnyObject {
     /// Where the composer's field is, read at submission before clearing the
     /// draft can shrink it.
     var sourceFrame: (() -> CGRect?)? { get }
+    /// Called just before the prompt joins the timeline, which can lay out its
+    /// row and scroll for it before `begin`. That can be a while after the
+    /// send was pressed: once dictation still recording has been transcribed,
+    /// or once an edited prompt's turn has been removed.
+    func willSend()
     func begin(_ promptID: PendingPrompt.ID, text: String, from frame: CGRect?)
+}
+
+extension PromptSendAnimating {
+    func willSend() {}
 }
 
 /// Flies just-sent prompt bubbles in from the composer. Owns only short-lived

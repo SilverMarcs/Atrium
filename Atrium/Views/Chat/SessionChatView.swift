@@ -134,6 +134,7 @@ struct SessionChatView: View {
       .onScrollGeometryChange(for: CGSize.self) { geometry in
         CGSize(width: geometry.containerSize.height, height: geometry.contentSize.height)
       } action: { old, new in
+        flights.noteLayout()
         guard composer.messageEdit == nil, new != old, pin.isPinned, !pin.isReaderScrolling, anchorID == nil else { return }
         let grew = new.height > old.height || new.width < old.width
         scrollToLatest(proxy, holding: nil, animated: grew && scrollPolicy.animatesGrowth && !flights.isSending)
@@ -201,11 +202,8 @@ struct SessionChatView: View {
         // A prompt sent from here is held at the top, and each prompt after
         // it takes its place there, even when the reader had scrolled up.
         let sentFromHere = new.lastID?.hasPrefix("pending-") == true
-        if new.lastID == newestPromptID, sentFromHere || anchorSpace.anchorID != nil {
-          scrollPolicy.noteSend()
-          anchorSpace.anchorID = newestPromptID
-          turnFill.reset()
-          scrollToLatest(proxy, holding: newestPromptID, animated: !flights.isSending)
+        if new.lastID == newestPromptID, let newestPromptID, sentFromHere || anchorSpace.anchorID != nil {
+          hold(newestPromptID, proxy)
           return
         }
         guard old.lastID != nil else { return }
@@ -225,11 +223,7 @@ struct SessionChatView: View {
         guard let id else { return }
         // Replacing an older turn shrinks the transcript, so it can't use the
         // new-row check above to hold its prompt.
-        scrollPolicy.noteSend()
-        let rowID = "pending-" + id.uuidString
-        anchorSpace.anchorID = rowID
-        turnFill.reset()
-        scrollToLatest(proxy, holding: rowID, animated: !flights.isSending)
+        hold("pending-" + id.uuidString, proxy)
       }
       .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }
       .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
@@ -297,10 +291,18 @@ struct SessionChatView: View {
   private func send(_ composer: TaskComposer) {
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
-    flights.prepareSend()
-    withTransaction(transaction) {
-      if !composer.submit(to: item, animator: flights) { flights.cancelSend() }
-    }
+    withTransaction(transaction) { composer.submit(to: item, animator: flights) }
+  }
+
+  /// Holds a prompt sent from here at the top of the timeline, as the start
+  /// of the latest turn. A prompt just sent jumps there once the timeline
+  /// has laid out its row, and its copy and the content slide instead.
+  private func hold(_ promptID: String, _ proxy: ScrollViewProxy) {
+    scrollPolicy.noteSend()
+    anchorSpace.anchorID = promptID
+    turnFill.reset()
+    guard flights.isSending else { return scrollToLatest(proxy, holding: promptID) }
+    flights.makeRoom { scrollToLatest(proxy, holding: promptID, animated: false) }
   }
 
   /// Scrolls to the newest message: to `holding`, a prompt held at the top
