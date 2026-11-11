@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OnboardingView: View {
@@ -6,17 +7,17 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 12) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
-                    .padding(.top, 32)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                    .padding(.top, 24)
 
                 VStack(spacing: 4) {
                     Text("Welcome to Atrium")
                         .font(.title)
                         .fontWeight(.semibold)
 
-                    Text("A native workspace for Codex and Claude tasks.")
+                    Text("One place for your Claude Code and Codex chats.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -27,23 +28,23 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 18) {
                 FeatureRow(
                     icon: "sparkles",
-                    title: "Made for Vibe Coding",
-                    description: "Stay in flow while your AI agent works. Review diffs, browse files, and run commands side-by-side without leaving the terminal."
+                    title: "Your Agents, Ready",
+                    description: "Atrium finds Claude Code and Codex on this Mac by itself. Every chat, even ones started in the terminal, shows up in the sidebar."
                 )
                 FeatureRow(
                     icon: "folder.badge.plus",
-                    title: "Tasks and Projects",
-                    description: "Enable Codex or Claude in Settings, then compose a task in an existing project or add a folder."
+                    title: "Start in a Project",
+                    description: "Add a project folder, then start a chat in it. Pick the agent and model for each chat, or start it in a new worktree."
                 )
                 FeatureRow(
                     icon: "sidebar.right",
-                    title: "Built-in Inspector",
-                    description: "Browse files, view Git changes, search your project, and revisit past commands without leaving the app."
+                    title: "See What Changed",
+                    description: "View the project’s files, Git changes, search and commands right beside the chat."
                 )
                 FeatureRow(
-                    icon: "square.and.pencil",
-                    title: "Edit Files Inline",
-                    description: "Tap a file to open it in the editor with syntax highlighting."
+                    icon: "iphone",
+                    title: "Take It With You",
+                    description: "Pair your iPhone or iPad in Settings to follow chats, answer questions and get alerts when an agent needs you."
                 )
             }
             .padding(.horizontal, 36)

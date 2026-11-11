@@ -24,7 +24,8 @@ final class AgentIntegrationStore {
     /// The models each provider's threads can switch to, once listed.
     private(set) var models: [AgentProvider: [AgentModel]] = [:]
     private(set) var defaultSettings: [AgentProvider: TaskStartSettings] = [:]
-    private var enabled: Set<AgentProvider>
+    /// The providers whose command-line client is installed, as last detected.
+    private var available: Set<AgentProvider>
     private var activity: [String: ThreadActivity]
     @ObservationIgnored var onAttention: ((AgentThread) -> Void)?
     /// Every status a thread reports that differs from the last, in order.
@@ -45,7 +46,7 @@ final class AgentIntegrationStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let adapters: [AgentProvider: any AgentProviderAdapter]
-    // Results from a previous enablement must not update a newly enabled connection.
+    // Results from before a provider was last found or lost must not update its new connection.
     @ObservationIgnored private var generations: [AgentProvider: Int] = [:]
     @ObservationIgnored private var revisions: [String: Int] = [:]
     @ObservationIgnored private var metadataRequests: Set<String> = []
@@ -61,11 +62,10 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var modelsRefreshDates: [AgentProvider: Date] = [:]
     @ObservationIgnored private var listingModels: Set<AgentProvider> = []
 
-    var enabledProviders: [AgentProvider] { providers.filter { enabled.contains($0) } }
-    var isEnabled: Bool { !enabled.isEmpty }
+    var availableProviders: [AgentProvider] { providers.filter { available.contains($0) } }
     /// The latest sessions, and the subagents and side chats of those shown, which don't count toward the limit.
     func visibleThreads(matching searchText: String) -> [AgentThread] {
-        let sessions = enabledProviders.flatMap { provider in
+        let sessions = availableProviders.flatMap { provider in
             let matching = threads.filter {
                 $0.provider == provider && !$0.isSubagent && !$0.isSideChat
                     && TaskSearch.matches(searchText, in: $0.title, $0.projectName, $0.directory)
@@ -83,7 +83,9 @@ final class AgentIntegrationStore {
         self.defaults = defaults
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.provider, $0) })
         providers = adapters.map(\.provider)
-        enabled = Set(providers.filter { defaults.bool(forKey: $0.settingsKey) })
+        // The last launch's findings, until this one's detection finishes.
+        available = Set((defaults.stringArray(forKey: Self.availableKey) ?? []).compactMap(AgentProvider.init(rawValue:)))
+            .intersection(providers)
         settledThreadIDs = Set(defaults.stringArray(forKey: "integration.settledThreadIDs") ?? [])
         snoozedUntil = defaults.dictionary(forKey: "integration.snoozedThreads") as? [String: Date] ?? [:]
         activity = defaults.data(forKey: "integration.threadActivity")
@@ -104,24 +106,44 @@ final class AgentIntegrationStore {
         wakeExpiredSnoozes()
     }
 
-    subscript(isEnabled provider: AgentProvider) -> Bool {
-        get { enabled.contains(provider) }
-        set {
-            guard adapters[provider] != nil, newValue != enabled.contains(provider) else { return }
-            if newValue { enabled.insert(provider) }
-            else { enabled.remove(provider) }
-            defaults.set(newValue, forKey: provider.settingsKey)
-            generations[provider, default: 0] += 1
-            errors[provider] = nil
-            models[provider] = nil
-            defaultSettings[provider] = nil
-            modelsRefreshDates[provider] = nil
-            adapters[provider]?.setEnabled(newValue)
-            if !newValue {
-                interactions.removeAll { $0.taskID.hasPrefix(provider.rawValue + ":") }
-                for index in threads.indices where threads[index].provider == provider {
-                    threads[index].status = .unknown
-                }
+    private static let availableKey = "integration.availableProviders"
+
+    /// Finds which providers' command-line clients are installed. An installed
+    /// provider is available everywhere, with nothing to turn on.
+    private func detectInstallations() async {
+        let installed = await withTaskGroup(of: (AgentProvider, Bool?).self) { group in
+            for provider in providers {
+                group.addTask { await (provider, Self.isInstalled(provider)) }
+            }
+            return await group.reduce(into: [AgentProvider: Bool]()) { $0[$1.0] = $1.1 }
+        }
+        for (provider, isInstalled) in installed { setAvailable(isInstalled, provider) }
+    }
+
+    /// Whether the provider's command is on the agents' PATH, or nil when the
+    /// lookup itself failed, which leaves a working provider as it was.
+    private static func isInstalled(_ provider: AgentProvider) async -> Bool? {
+        guard let output = try? await IntegrationProcess.run("/usr/bin/which", arguments: [provider.rawValue], acceptedExitCodes: [0, 1]) else {
+            return nil
+        }
+        return !String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func setAvailable(_ isAvailable: Bool, _ provider: AgentProvider) {
+        guard adapters[provider] != nil, isAvailable != available.contains(provider) else { return }
+        if isAvailable { available.insert(provider) }
+        else { available.remove(provider) }
+        defaults.set(availableProviders.map(\.rawValue), forKey: Self.availableKey)
+        generations[provider, default: 0] += 1
+        errors[provider] = nil
+        models[provider] = nil
+        defaultSettings[provider] = nil
+        modelsRefreshDates[provider] = nil
+        adapters[provider]?.setEnabled(isAvailable)
+        if !isAvailable {
+            interactions.removeAll { $0.taskID.hasPrefix(provider.rawValue + ":") }
+            for index in threads.indices where threads[index].provider == provider {
+                threads[index].status = .unknown
             }
         }
     }
@@ -135,7 +157,7 @@ final class AgentIntegrationStore {
     }
 
     private func canChangeReadState(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
+        available.contains(thread.provider) && !deletingThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
     }
 
     func supportsDeletion(_ thread: AgentThread) -> Bool {
@@ -143,7 +165,7 @@ final class AgentIntegrationStore {
     }
 
     func canRename(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.renameThread) == true
+        available.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.renameThread) == true
             && !deletedThreadIDs.contains(thread.id) && !deletingThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
@@ -179,7 +201,7 @@ final class AgentIntegrationStore {
     }
 
     func canDelete(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && supportsDeletion(thread)
+        available.contains(thread.provider) && supportsDeletion(thread)
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
             && !renamingThreadIDs.contains(thread.id)
     }
@@ -232,13 +254,13 @@ final class AgentIntegrationStore {
     private func receive(_ event: AgentEvent, from provider: AgentProvider) {
         switch event {
         case .interactionRequested(let request):
-            guard enabled.contains(provider), !deletedThreadIDs.contains(request.taskID) else { return }
+            guard available.contains(provider), !deletedThreadIDs.contains(request.taskID) else { return }
             interactions.removeAll { $0.id == request.id }
             interactions.append(request)
         case .interactionResolved(let id):
             interactions.removeAll { $0.id == id }
         case .threadUpdated(let sessionID, let update):
-            guard enabled.contains(provider) else { return }
+            guard available.contains(provider) else { return }
             guard let index = threads.firstIndex(where: { $0.provider == provider && $0.sessionID == sessionID }) else { return }
             let previous = threads[index]
             if update.startsNewTurn {
@@ -256,18 +278,18 @@ final class AgentIntegrationStore {
             }
             saveActivity()
         case .threadInvalidated(let sessionID):
-            guard enabled.contains(provider) else { return }
+            guard available.contains(provider) else { return }
             let id = "\(provider.rawValue):\(sessionID)"
             guard !deletedThreadIDs.contains(id) else { return }
             if threads.contains(where: { $0.id == id }) { requestMetadata(id) }
             else { Task { await refresh(provider: provider) } }
         case .listInvalidated:
-            guard enabled.contains(provider) else { return }
+            guard available.contains(provider) else { return }
             Task { await refresh(provider: provider) }
         case .threadDeleted(let sessionID):
             removeDeletedThread("\(provider.rawValue):\(sessionID)")
         case .transcriptChanged(let sessionID):
-            guard enabled.contains(provider) else { return }
+            guard available.contains(provider) else { return }
             let id = "\(provider.rawValue):\(sessionID)"
             transcriptFeeds[id]?.refresh()
         }
@@ -290,7 +312,7 @@ final class AgentIntegrationStore {
     }
 
     private func refreshMetadata(_ id: String) async {
-        guard !renamingThreadIDs.contains(id), let original = threads.first(where: { $0.id == id }), enabled.contains(original.provider),
+        guard !renamingThreadIDs.contains(id), let original = threads.first(where: { $0.id == id }), available.contains(original.provider),
               let adapter = adapters[original.provider] else { return }
         let generation = generations[original.provider, default: 0]
         let revision = revisions[id, default: 0]
@@ -519,7 +541,7 @@ final class AgentIntegrationStore {
         if let previous,
            previous.status != .unknown, previous.status != result.status,
            result.status == .done || result.status == .waiting,
-           enabled.contains(thread.provider), !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil,
+           available.contains(thread.provider), !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil,
            !deletingThreadIDs.contains(thread.id), !deletedThreadIDs.contains(thread.id) {
             onAttention?(result)
         }
@@ -577,9 +599,15 @@ final class AgentIntegrationStore {
         }
     }
 
+    /// Lists tasks again, and a full refresh first looks again for installed
+    /// providers, so one installed since launch shows up.
     func refresh(provider: AgentProvider? = nil) async {
         wakeExpiredSnoozes()
-        requestedProviders.formUnion(provider.map { [$0] } ?? enabledProviders)
+        if provider == nil {
+            isRefreshing = true
+            await detectInstallations()
+        }
+        requestedProviders.formUnion(provider.map { [$0] } ?? availableProviders)
         if let refreshTask { await refreshTask.value; return }
         isRefreshing = true
         let task = Task {
@@ -600,7 +628,7 @@ final class AgentIntegrationStore {
     }
 
     private func refresh(_ provider: AgentProvider) async {
-        guard enabled.contains(provider), let adapter = adapters[provider] else { return }
+        guard available.contains(provider), let adapter = adapters[provider] else { return }
         let generation = generations[provider, default: 0]
         let initialRevisions = revisions
         do {
@@ -649,16 +677,16 @@ final class AgentIntegrationStore {
         }
     }
 
-    /// Whether the chat can be forked into any enabled provider.
+    /// Whether the chat can be forked into any available provider.
     func canFork(_ thread: AgentThread) -> Bool {
-        enabledProviders.contains { canFork(thread, into: $0) }
+        availableProviders.contains { canFork(thread, into: $0) }
     }
 
     /// Whether the chat can be forked into a provider: its own, which copies the
     /// conversation itself if it can, or the other, which takes over the
     /// conversation through prompts.
     func canFork(_ thread: AgentThread, into provider: AgentProvider) -> Bool {
-        enabled.contains(thread.provider) && enabled.contains(provider)
+        available.contains(thread.provider) && available.contains(provider)
             && (provider != thread.provider || adapters[provider]?.capabilities.contains(.forkThread) == true)
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
@@ -669,10 +697,10 @@ final class AgentIntegrationStore {
     /// that prompt, to send again.
     func forkThread(_ thread: AgentThread, into provider: AgentProvider, before messageID: String?) async throws -> (fork: AgentThread, images: [Data]) {
         guard canFork(thread, into: provider) else { throw IntegrationError(message: "This chat cannot be forked right now.") }
-        let adapter = try enabledAdapter(for: provider)
+        let adapter = try availableAdapter(for: provider)
         let generation = generations[provider, default: 0]
         var images: [Data] = []
-        if let messageID { images = try await enabledAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID) }
+        if let messageID { images = try await availableAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID) }
         let fork = provider == thread.provider
             ? try await adapter.forkThread(thread, before: messageID)
             : try await handOver(thread, before: messageID, to: adapter)
@@ -687,7 +715,7 @@ final class AgentIntegrationStore {
     /// prompt when the fork starts before the prompt that carried it.
     private func inherit(from thread: AgentThread, into fork: AgentThread) async throws {
         guard var conversation = inherited[thread.id] else { return }
-        conversation.isDelivered = try await !enabledAdapter(for: fork.provider).transcript(for: fork).isEmpty
+        conversation.isDelivered = try await !availableAdapter(for: fork.provider).transcript(for: fork).isEmpty
         inherited[fork.id] = conversation
     }
 
@@ -716,7 +744,7 @@ final class AgentIntegrationStore {
     }
 
     func canStartSideChat(_ thread: AgentThread) -> Bool {
-        enabled.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.sideChat) == true
+        available.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.sideChat) == true
             && !thread.isSubagent && !thread.isSideChat
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
     }
@@ -725,7 +753,7 @@ final class AgentIntegrationStore {
     /// thread's previous one, which ends once the new one has started.
     func startSideChat(of thread: AgentThread) async throws -> AgentThread {
         guard canStartSideChat(thread) else { throw IntegrationError(message: "A side chat can’t start here right now.") }
-        let adapter = try enabledAdapter(for: thread.provider)
+        let adapter = try availableAdapter(for: thread.provider)
         let generation = generations[thread.provider, default: 0]
         let sideChat = try await adapter.startSideChat(of: thread)
         guard isCurrent(thread.provider, generation: generation) else {
@@ -746,7 +774,7 @@ final class AgentIntegrationStore {
 
     func createThread(provider: AgentProvider, directory: String, settings: TaskStartSettings? = nil,
                       inNewWorktree: Bool = false) async throws -> AgentThread {
-        let adapter = try enabledAdapter(for: provider)
+        let adapter = try availableAdapter(for: provider)
         let generation = generations[provider, default: 0]
         var settings = settings
         if let model = settings?.model {
@@ -778,7 +806,7 @@ final class AgentIntegrationStore {
     func prepareLaunch(for thread: AgentThread) async throws -> AgentLaunch {
         if let stopTask = stopTasks[thread.id] { await stopTask.value }
         try Task.checkCancellation()
-        let adapter = try enabledAdapter(for: thread.provider)
+        let adapter = try availableAdapter(for: thread.provider)
         let generation = generations[thread.provider, default: 0]
         let launch = try await adapter.prepareLaunch(for: thread)
         try Task.checkCancellation()
@@ -791,7 +819,7 @@ final class AgentIntegrationStore {
     func lookUpThread(_ id: String) async -> AgentThread? {
         if let thread = threads.first(where: { $0.id == id }) { return thread }
         let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let provider = AgentProvider(rawValue: parts[0]), enabled.contains(provider) else { return nil }
+        guard parts.count == 2, let provider = AgentProvider(rawValue: parts[0]), available.contains(provider) else { return nil }
         return try? await adapters[provider]?.readThread(parts[1])
     }
 
@@ -802,7 +830,7 @@ final class AgentIntegrationStore {
     func openConversation(_ thread: AgentThread) async throws {
         if let stopTask = stopTasks[thread.id] { await stopTask.value }
         try Task.checkCancellation()
-        try await enabledAdapter(for: thread.provider).openConversation(thread)
+        try await availableAdapter(for: thread.provider).openConversation(thread)
     }
 
     func respond(to request: AgentInteraction, with decision: AgentDecision) async throws {
@@ -810,7 +838,7 @@ final class AgentIntegrationStore {
               let thread = threads.first(where: { $0.id == request.taskID }) else {
             throw IntegrationError(message: "This request has already been answered or cancelled.")
         }
-        try await enabledAdapter(for: thread.provider).respond(to: request.id, with: decision)
+        try await availableAdapter(for: thread.provider).respond(to: request.id, with: decision)
         interactions.removeAll { $0.id == request.id }
     }
 
@@ -829,7 +857,7 @@ final class AgentIntegrationStore {
     /// The conversation as clients show it, except that pages stay in the
     /// replies that wrote them, as Atrium keeps it for a fork.
     private func conversation(of thread: AgentThread) async throws -> [TranscriptMessage] {
-        let own = try await enabledAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
+        let own = try await availableAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
         return inherited[thread.id]?.messages(before: own) ?? own
     }
 
@@ -878,7 +906,7 @@ final class AgentIntegrationStore {
         guard !rewindingThreadIDs.contains(thread.id) else {
             throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
         }
-        let adapter = try enabledAdapter(for: thread.provider)
+        let adapter = try availableAdapter(for: thread.provider)
         // A fork of the other provider's chat hands its agent that chat's conversation with its first prompt.
         guard var conversation = inherited[thread.id], let handoff = conversation.handoff, !conversation.isDelivered else {
             return try await adapter.sendPrompt(text, images: images, to: thread)
@@ -901,7 +929,7 @@ final class AgentIntegrationStore {
         let images = if let inherited = inherited[thread.id]?.messages.first(where: { $0.id == messageID }) {
             inherited.images ?? []
         } else {
-            (try? await enabledAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID)) ?? []
+            (try? await availableAdapter(for: thread.provider).promptImages(of: thread, messageID: messageID)) ?? []
         }
         return images.indices.contains(index) ? images[index] : nil
     }
@@ -911,7 +939,7 @@ final class AgentIntegrationStore {
             throw IntegrationError(message: "Wait for the agent to finish or stop it before editing a message.")
         }
         defer { rewindingThreadIDs.remove(thread.id) }
-        let adapter = try enabledAdapter(for: thread.provider)
+        let adapter = try availableAdapter(for: thread.provider)
         let images = try await adapter.promptImages(of: thread, messageID: messageID)
         let own = try await adapter.rewind(thread, before: messageID).map { relayed($0, in: thread) }
         // Rewinding a fork's first prompt takes its handoff too, so the next prompt carries it again.
@@ -920,11 +948,11 @@ final class AgentIntegrationStore {
     }
 
     func interrupt(_ thread: AgentThread) async throws {
-        try await enabledAdapter(for: thread.provider).interrupt(thread)
+        try await availableAdapter(for: thread.provider).interrupt(thread)
     }
 
     func endBackgroundWork(_ thread: AgentThread) async throws {
-        try await enabledAdapter(for: thread.provider).endBackgroundWork(thread)
+        try await availableAdapter(for: thread.provider).endBackgroundWork(thread)
     }
 
     private func refreshModelsIfNeeded(_ provider: AgentProvider) {
@@ -971,7 +999,7 @@ final class AgentIntegrationStore {
     }
 
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
-        try await enabledAdapter(for: thread.provider).changeSettings(change, of: thread)
+        try await availableAdapter(for: thread.provider).changeSettings(change, of: thread)
         record(change, for: thread.id)
     }
 
@@ -984,14 +1012,14 @@ final class AgentIntegrationStore {
         revisions[id, default: 0] += 1
     }
 
-    private func enabledAdapter(for provider: AgentProvider) throws -> any AgentProviderAdapter {
-        guard enabled.contains(provider), let adapter = adapters[provider] else {
-            throw IntegrationError(message: "Enable \(provider.name) in Settings to open tasks.")
+    private func availableAdapter(for provider: AgentProvider) throws -> any AgentProviderAdapter {
+        guard available.contains(provider), let adapter = adapters[provider] else {
+            throw IntegrationError(message: "\(provider.name) isn’t installed on this Mac.")
         }
         return adapter
     }
 
     private func isCurrent(_ provider: AgentProvider, generation: Int) -> Bool {
-        enabled.contains(provider) && generations[provider, default: 0] == generation
+        available.contains(provider) && generations[provider, default: 0] == generation
     }
 }

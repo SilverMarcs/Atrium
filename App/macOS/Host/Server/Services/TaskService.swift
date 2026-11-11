@@ -90,7 +90,7 @@ struct TaskService {
     }
 
     func compose(provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil, checkout: TaskStartCheckout? = nil) async -> HostReply {
-        guard integrations.enabledProviders.contains(provider) else {
+        guard integrations.availableProviders.contains(provider) else {
             return .failed(message: "That agent isn’t enabled on this host.")
         }
         guard let workspace = workspaces.workspaces.first(where: { $0.id == workspaceID }) else {

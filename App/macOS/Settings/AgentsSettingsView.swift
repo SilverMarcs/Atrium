@@ -13,5 +13,7 @@ struct AgentsSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // Looks again for agents, which may have been installed since launch.
+        .task { app.localHost?.send(.refreshTasks) }
     }
 }

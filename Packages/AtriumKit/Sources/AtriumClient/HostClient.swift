@@ -530,8 +530,8 @@ public final class HostClient: Identifiable {
         tasks?.providers.first { $0.provider == provider }?.models ?? []
     }
 
-    public var enabledProviders: [AgentProvider] {
-        tasks?.providers.filter(\.isEnabled).map(\.provider) ?? []
+    public var availableProviders: [AgentProvider] {
+        tasks?.providers.filter(\.isAvailable).map(\.provider) ?? []
     }
 
     /// A path on the host, abbreviated against its home folder for display.

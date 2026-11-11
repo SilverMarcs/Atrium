@@ -10,8 +10,8 @@ struct NewChatPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if host.enabledProviders.isEmpty {
-                Text("Turn on Codex or Claude in Atrium’s settings on \(host.name).")
+            if host.availableProviders.isEmpty {
+                Text("Install Claude Code or Codex on \(host.name) to start a chat.")
                     .foregroundStyle(.secondary)
                     .padding(.bottom)
             }

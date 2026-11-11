@@ -282,7 +282,7 @@ final class HostDirectory {
         let host = item.host
         let task = item.task
         if let newChat, newChat.hostID == host.id, newChat.taskID == task.id { return newChat }
-        guard host.canStartTask, host.enabledProviders.contains(task.provider),
+        guard host.canStartTask, host.availableProviders.contains(task.provider),
               let workspaceID = task.workspaceID, host.workspace(workspaceID) != nil else { return nil }
         return prepareNewChat(
             in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID),
@@ -323,7 +323,7 @@ final class HostDirectory {
         }
         // Moving to another host keeps the agent where that host has it enabled.
         let previous = current.flatMap { self.host($0.hostID)?.drafts[$0.taskID]?.provider }
-        guard let provider = provider ?? previous.flatMap({ host.enabledProviders.contains($0) ? $0 : nil }) ?? host.defaultProvider else { return nil }
+        guard let provider = provider ?? previous.flatMap({ host.availableProviders.contains($0) ? $0 : nil }) ?? host.defaultProvider else { return nil }
         let id = host.openDraft(in: workspace.workspaceID, provider: provider, settings: settings)
         // One on screen closes once the new one replaces it.
         if let current, !isShowing(current) { self.host(current.hostID)?.closeDraft(current.taskID) }

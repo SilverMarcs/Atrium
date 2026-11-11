@@ -59,7 +59,7 @@ final class TasksFeed: TopicFeed {
             providers: integrations.providers.map { provider in
                 WireProvider(
                     provider: provider,
-                    isEnabled: integrations.enabledProviders.contains(provider),
+                    isAvailable: integrations.availableProviders.contains(provider),
                     error: integrations.errors[provider],
                     models: integrations.models[provider],
                     defaultSettings: integrations.defaultSettings[provider],

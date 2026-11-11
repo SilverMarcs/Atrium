@@ -179,7 +179,7 @@ struct ProjectJSON: Encodable {
 
 struct ProviderJSON: Encodable {
     var provider: String
-    var enabled: Bool
+    var available: Bool
     var error: String?
     var models: [Model]?
 
@@ -193,7 +193,7 @@ struct ProviderJSON: Encodable {
 
     init(_ provider: WireProvider) {
         self.provider = provider.provider.rawValue
-        enabled = provider.isEnabled
+        available = provider.isAvailable
         error = provider.error
         models = provider.models?.map {
             Model(id: $0.id, name: $0.name, summary: $0.summary, reasoningEfforts: $0.reasoningEfforts, supportsFastMode: $0.supportsFastMode)

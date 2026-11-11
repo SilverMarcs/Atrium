@@ -37,7 +37,7 @@ extension HostTask {
     /// The task's menu state, offering forks into the host's other enabled providers.
     var menuState: TaskMenuState {
         var state = task.menuState
-        state.forkProviders = host.enabledProviders.filter { $0 != task.provider }
+        state.forkProviders = host.availableProviders.filter { $0 != task.provider }
         return state
     }
 }

@@ -34,7 +34,7 @@ struct NewChatUnavailableView: View {
                 ContentUnavailableView(
                     "New Chat Unavailable",
                     systemImage: "square.and.pencil",
-                    description: Text("Connect to a host with a project and an enabled agent to start a chat.")
+                    description: Text("Connect to a host with a project and an installed agent to start a chat.")
                 )
             }
         }

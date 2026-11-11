@@ -31,7 +31,7 @@ struct TaskListView: View {
     /// Hosts listed whose agents couldn't load their tasks.
     private var unavailable: [String] {
         hosts.visibleHosts.flatMap { host in
-            (host.tasks?.providers ?? []).filter { $0.isEnabled && $0.error != nil }.map { provider in
+            (host.tasks?.providers ?? []).filter { $0.isAvailable && $0.error != nil }.map { provider in
                 hosts.showsHostNames ? "\(provider.provider.name) on \(host.name)" : provider.provider.name
             }
         }
@@ -116,22 +116,31 @@ struct TaskListView: View {
                 .disabled(hosts.visibleHosts.contains { $0.tasks?.isRefreshing == true })
             }
         } else if isEmpty {
-            if !hosts.visibleHosts.contains(where: { $0.tasks?.providers.contains(where: \.isEnabled) == true }) {
-                if hosts.hasLoadedTasks {
-                    ContentUnavailableView {
-                        Label("Enable an Integration", systemImage: "puzzlepiece.extension")
-                    } description: {
-                        Text("Enable Codex or Claude in Settings to open tasks.")
-                    } actions: {
-                        SettingsLink { Text("Open Settings") }
+            if !hosts.hasLoadedTasks || hosts.visibleHosts.contains(where: { $0.tasks?.isRefreshing == true }) {
+                ProgressView()
+            } else if !hosts.visibleHosts.contains(where: { $0.tasks?.providers.contains(where: \.isAvailable) == true }) {
+                ContentUnavailableView {
+                    Label("No Agents Found", systemImage: "puzzlepiece.extension")
+                } description: {
+                    Text("Install Claude Code or Codex. Atrium finds them on its own.")
+                } actions: {
+                    Button("Check Again") {
+                        for host in hosts.visibleHosts { host.send(.refreshTasks) }
                     }
-                } else {
-                    ProgressView()
                 }
-            } else if hosts.visibleHosts.contains(where: { $0.tasks?.isRefreshing == true }) {
-                ProgressView("Loading threads…")
+            } else if isSearching {
+                ContentUnavailableView.search(text: searchText)
+            } else if hosts.visibleHosts.allSatisfy({ $0.tasks?.workspaces.isEmpty != false }) {
+                ContentUnavailableView {
+                    Label("No Projects", systemImage: "folder")
+                } description: {
+                    Text("Add a project folder to start chats in it.")
+                } actions: {
+                    Button("Add Project…") { app.showingProjects = true }
+                        .disabled(!hosts.hosts.contains(where: \.isConnected))
+                }
             } else {
-                ContentUnavailableView(isSearching ? "No Results" : "No Tasks", systemImage: "bubble.left.and.bubble.right", description: Text("Use New Chat to start a task."))
+                ContentUnavailableView("No Tasks", systemImage: "bubble.left.and.bubble.right", description: Text("Use New Chat to start a task."))
             }
         }
     }

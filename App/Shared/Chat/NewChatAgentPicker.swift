@@ -7,13 +7,13 @@ struct NewChatAgentPicker: View {
     let draft: TaskDraft
 
     var body: some View {
-        if !host.enabledProviders.isEmpty {
+        if !host.availableProviders.isEmpty {
             Menu {
                 Picker("Agent", selection: Binding(
                     get: { draft.provider },
                     set: { host.setProvider($0, ofDraft: draft.id) }
                 ).animation()) {
-                    ForEach(host.enabledProviders) { provider in
+                    ForEach(host.availableProviders) { provider in
                         Label {
                             Text(provider.name)
                         } icon: {
@@ -32,7 +32,7 @@ struct NewChatAgentPicker: View {
                         .foregroundStyle(draft.provider.color)
                 }
             }
-            .disabled(host.enabledProviders.count < 2)
+            .disabled(host.availableProviders.count < 2)
             .accessibilityLabel("Agent")
             .accessibilityValue(draft.provider.name)
         }

@@ -13,7 +13,7 @@ extension HostClient {
     /// task with, while the host has it enabled, else the host's first.
     var defaultProvider: AgentProvider? {
         let last = UserDefaults.standard.string(forKey: Self.newTaskProviderKey).flatMap(AgentProvider.init(rawValue:))
-        return enabledProviders.first { $0 == last } ?? enabledProviders.first
+        return availableProviders.first { $0 == last } ?? availableProviders.first
     }
 
     /// The project a new task starts in: the one this device last started a

@@ -8,7 +8,7 @@ struct NewChatModelPicker: View {
     let draft: TaskDraft
 
     var body: some View {
-        if let task = host.draftTask(draft.id), host.enabledProviders.contains(draft.provider) {
+        if let task = host.draftTask(draft.id), host.availableProviders.contains(draft.provider) {
             let models = host.models(for: draft.provider)
             TaskModelMenu(
                 provider: draft.provider,

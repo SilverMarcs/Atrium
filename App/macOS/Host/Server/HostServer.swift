@@ -366,11 +366,6 @@ final class HostServer {
         case .files(let workspaceID, let request):
             guard let workspace = workspace(workspaceID) else { return .missingProject }
             return await FileService.handle(request, in: workspace, isLocal: connection.isLocal)
-        case .setProviderEnabled(let provider, let isEnabled):
-            guard connection.isLocal else { return .hostOnly }
-            integrations[isEnabled: provider] = isEnabled
-            Task { await integrations.refresh() }
-            return .done
         case .setRemoteAccess(let isEnabled):
             guard connection.isLocal else { return .hostOnly }
             isRemoteAccessEnabled = isEnabled

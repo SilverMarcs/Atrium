@@ -57,8 +57,6 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case command(workspaceID: UUID, commandID: UUID, action: CommandAction)
     case git(workspaceID: UUID, repository: URL, operation: GitOperation)
     case files(workspaceID: UUID, request: FileRequest)
-    /// Turns an agent integration on or off. Only the host itself may.
-    case setProviderEnabled(AgentProvider, Bool)
     /// Turns reaching the host through the relay on or off. Only the host itself may.
     case setRemoteAccess(Bool)
     /// Revokes a paired device and disconnects it. Only the host itself may.

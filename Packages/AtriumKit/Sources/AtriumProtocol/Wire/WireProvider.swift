@@ -2,7 +2,8 @@ import Foundation
 
 public nonisolated struct WireProvider: Codable, Sendable, Hashable, Identifiable {
     public var provider: AgentProvider
-    public var isEnabled: Bool
+    /// Its command-line client is installed on the host, which is all it takes to use it.
+    public var isAvailable: Bool
     /// Set while the provider couldn't load its tasks.
     public var error: String?
     /// The models tasks can switch to, once the host has listed them. Absent
@@ -15,14 +16,14 @@ public nonisolated struct WireProvider: Codable, Sendable, Hashable, Identifiabl
 
     public init(
         provider: AgentProvider,
-        isEnabled: Bool,
+        isAvailable: Bool,
         error: String? = nil,
         models: [AgentModel]? = nil,
         defaultSettings: TaskStartSettings? = nil,
         deletionMessage: String
     ) {
         self.provider = provider
-        self.isEnabled = isEnabled
+        self.isAvailable = isAvailable
         self.error = error
         self.models = models
         self.defaultSettings = defaultSettings

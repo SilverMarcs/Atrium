@@ -58,7 +58,7 @@ extension HostClient {
         let reasoningEffort = draft.settings?.reasoningEffort ?? (draft.settings?.model == nil ? defaults?.reasoningEffort : nil)
         let supportsFastMode = models(for: draft.provider).model(running: model)?.supportsFastMode == true
         var actions: TaskActions = [.prompt, .attachImages]
-        if !draft.isCreating, draft.taskID == nil, enabledProviders.contains(draft.provider), !models(for: draft.provider).isEmpty {
+        if !draft.isCreating, draft.taskID == nil, availableProviders.contains(draft.provider), !models(for: draft.provider).isEmpty {
             actions.insert(.selectModel)
         }
         return WireTask(

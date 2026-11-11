@@ -65,7 +65,7 @@ let promptCommands: [Command] = [
         let host = try await client.connectForTasks(options)
         try prompt.checkWaiting(client)
         let workspace = try host.project(projectSelector)
-        guard let provider = provider ?? host.enabledProviders.first else {
+        guard let provider = provider ?? host.availableProviders.first else {
             throw CLIError(.rejected, "\(host.name) has no agent turned on.")
         }
         let settings = model == nil && effort == nil && fast == nil

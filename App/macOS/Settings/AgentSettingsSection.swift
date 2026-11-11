@@ -3,17 +3,30 @@ import AtriumProtocol
 import SwiftUI
 
 struct AgentSettingsSection: View {
-    @Environment(AppModel.self) private var app
     @State private var usage = AgentUsageModel()
     @State private var updates = AgentCLIUpdateModel()
     let provider: WireProvider
 
     var body: some View {
+        if provider.isAvailable {
+            installed
+        } else {
+            Section {
+                LabeledContent("Status", value: "Not installed")
+            } header: {
+                header
+            } footer: {
+                HStack {
+                    Text("Atrium finds \(provider.provider.name) on its own once it’s installed.")
+                    Spacer()
+                    Link("Installation Guide", destination: provider.provider.installationGuide)
+                }
+            }
+        }
+    }
+
+    private var installed: some View {
         Section {
-            Toggle("Enabled", isOn: Binding(
-                get: { provider.isEnabled },
-                set: { app.localHost?.send(.setProviderEnabled(provider.provider, $0)) }
-            ))
             LabeledContent("Status", value: usage.snapshot.status)
             if let plan = usage.snapshot.plan {
                 LabeledContent("Plan", value: plan)
@@ -35,12 +48,7 @@ struct AgentSettingsSection: View {
                 }
             }
         } header: {
-            Label {
-                Text(provider.provider.name)
-            } icon: {
-                Image(provider.provider.symbolName)
-                    .foregroundStyle(provider.provider.color)
-            }
+            header
         } footer: {
             HStack {
                 Text(updates.status)
@@ -61,7 +69,25 @@ struct AgentSettingsSection: View {
         }
     }
 
+    private var header: some View {
+        Label {
+            Text(provider.provider.name)
+        } icon: {
+            Image(provider.provider.symbolName)
+                .foregroundStyle(provider.provider.color)
+        }
+    }
+
     private func update() {
         Task { await updates.performAction(provider.provider) }
+    }
+}
+
+private extension AgentProvider {
+    var installationGuide: URL {
+        switch self {
+        case .codex: URL(string: "https://developers.openai.com/codex/cli")!
+        case .claude: URL(string: "https://docs.claude.com/en/docs/claude-code/setup")!
+        }
     }
 }

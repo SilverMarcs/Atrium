@@ -28,7 +28,7 @@ final class TaskSessionController {
     @discardableResult
     func compose(provider: AgentProvider, workspace: Workspace, settings: TaskStartSettings? = nil,
                  checkout: TaskStartCheckout? = nil) async -> AgentThread? {
-        guard !isOpening, integrations.enabledProviders.contains(provider) else { return nil }
+        guard !isOpening, integrations.availableProviders.contains(provider) else { return nil }
         isOpening = true
         defer { isOpening = false }
         do {
@@ -130,7 +130,7 @@ final class TaskSessionController {
         // A side chat only takes questions, until a new one replaces it.
         guard !thread.isSideChat else {
             var allowed: TaskActions = []
-            if integrations.enabledProviders.contains(thread.provider) {
+            if integrations.availableProviders.contains(thread.provider) {
                 if thread.status != .waiting { allowed.insert(.prompt) }
                 if capabilities.contains(.sideChatImages) { allowed.insert(.attachImages) }
                 if thread.status == .processing { allowed.insert(.interrupt) }
@@ -143,7 +143,7 @@ final class TaskSessionController {
         if !isOpening && !isChanging { allowed.formUnion([.settle, .restore]) }
         if integrations.canSnooze(thread) { allowed.insert(.snooze) }
         if !integrations.deletingThreadIDs.contains(id) { allowed.insert(.unsnooze) }
-        if integrations.enabledProviders.contains(thread.provider) {
+        if integrations.availableProviders.contains(thread.provider) {
             if thread.status != .waiting { allowed.insert(.prompt) }
             allowed.insert(.attachImages)
             if thread.status == .processing { allowed.insert(.interrupt) }
@@ -153,7 +153,7 @@ final class TaskSessionController {
             }
         }
         if !isOpening && !isChanging, thread.status != .processing, thread.status != .waiting,
-           integrations.enabledProviders.contains(thread.provider), capabilities.contains(.editMessage) {
+           integrations.availableProviders.contains(thread.provider), capabilities.contains(.editMessage) {
             allowed.insert(.editMessage)
         }
         if integrations.rewindingThreadIDs.contains(id) { allowed.subtract([.prompt, .selectModel]) }
@@ -208,7 +208,7 @@ final class TaskSessionController {
 
     /// A subagent runs inside its session's agent and a side chat beside it, so neither opens on its own.
     private func canOpen(_ thread: AgentThread) -> Bool {
-        !thread.isSubagent && !thread.isSideChat && integrations.enabledProviders.contains(thread.provider)
+        !thread.isSubagent && !thread.isSideChat && integrations.availableProviders.contains(thread.provider)
             && !integrations.deletingThreadIDs.contains(thread.id) && !integrations.deletedThreadIDs.contains(thread.id)
     }
 
