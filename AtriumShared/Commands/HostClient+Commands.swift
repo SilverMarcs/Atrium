@@ -9,4 +9,13 @@ extension HostClient {
         let directory = scope(for: workspaceID).root.filePath
         send(.command(workspaceID: workspaceID, commandID: commandID, action: .run(directory: directory, script: script)))
     }
+
+    /// Stops a running command, or runs one that isn't.
+    func toggle(_ command: WireCommand, in workspaceID: UUID) {
+        if command.isRunning {
+            send(.command(workspaceID: workspaceID, commandID: command.id, action: .stop))
+        } else {
+            run(command.id, in: workspaceID)
+        }
+    }
 }

@@ -8,7 +8,7 @@ struct CommandConsoleScreen: View {
     @State private var console: CommandConsole
 
     init(host: HostClient, workspaceID: UUID, commandID: UUID) {
-        _console = State(initialValue: CommandConsole(host: host, workspaceID: workspaceID, commandID: commandID))
+        _console = State(initialValue: .of(commandID, in: workspaceID, on: host))
     }
 
     private var command: WireCommand? { console.command }
@@ -39,7 +39,7 @@ struct CommandConsoleScreen: View {
                     if command.isRunning || command.canRun {
                         ToolbarItem(placement: .primaryAction) {
                             Button(command.isRunning ? "Stop" : "Run", systemImage: command.isRunning ? "stop.fill" : "play.fill") {
-                                if command.isRunning { console.perform(.stop) } else { console.host.run(command.id, in: console.workspaceID) }
+                                console.host.toggle(command, in: console.workspaceID)
                             }
                             .contentTransition(.symbolEffect(.replace))
                         }

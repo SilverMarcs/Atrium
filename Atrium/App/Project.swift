@@ -17,8 +17,6 @@ final class Project: Identifiable {
     @ObservationIgnored private(set) lazy var fileTree = FileTreeModel(project: self)
     @ObservationIgnored private(set) lazy var search = SearchInspectorModel(project: self)
     @ObservationIgnored private(set) lazy var git = GitInspectorState(project: self)
-    /// What's typed into each command, kept while the window shows other tasks.
-    @ObservationIgnored private var consoles: [UUID: CommandConsole] = [:]
 
     init(host: HostClient, workspaceID: UUID) {
         self.host = host
@@ -73,15 +71,12 @@ final class Project: Identifiable {
     }
 
     func console(for command: WireCommand) -> CommandConsole {
-        if let console = consoles[command.id] { return console }
-        let console = CommandConsole(host: host, workspaceID: workspaceID, commandID: command.id)
-        consoles[command.id] = console
-        return console
+        .of(command.id, in: workspaceID, on: host)
     }
 
     /// Stops a running command, or runs one that isn't.
     func toggle(_ command: WireCommand) {
-        if command.isRunning { send(.stop, to: command) } else { run(command) }
+        host.toggle(command, in: workspaceID)
     }
 
     /// Opens a file in the editor, showing the files tab with it selected.

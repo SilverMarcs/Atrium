@@ -13,13 +13,7 @@ struct CommandsScreen: View {
     var body: some View {
         List(commands ?? []) { command in
             NavigationLink(value: Route.command(WorkspaceRef(hostID: host.id, workspaceID: workspaceID), commandID: command.id)) {
-                CommandRow(command: command) {
-                    if command.isRunning {
-                        host.send(.command(workspaceID: workspaceID, commandID: command.id, action: .stop))
-                    } else {
-                        host.run(command.id, in: workspaceID)
-                    }
-                }
+                CommandRow(command: command) { host.toggle(command, in: workspaceID) }
             }
         }
         .contentMargins(.top, 10)
