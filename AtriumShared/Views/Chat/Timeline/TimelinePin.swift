@@ -9,4 +9,7 @@ final class TimelinePin {
     /// The reader's finger is down, or the scroll they started is still
     /// coasting. Content growing meanwhile mustn't scroll under them.
     var isReaderScrolling = false
+    /// How many more times the timeline moving is a jump to the end landing,
+    /// to check against its last row.
+    var endChecks = 0
 }
