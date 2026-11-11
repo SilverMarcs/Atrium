@@ -24,6 +24,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         ))
     }
 
+    /// Atrium came to the front on another device, whose push already cleared
+    /// the badge, so the alerts it has seen leave Notification Center too.
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        guard userInfo["clear"] as? Bool == true else { return .noData }
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        return .noData
+    }
+
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
         print("Couldn’t register for push notifications: \(error.localizedDescription)")
     }

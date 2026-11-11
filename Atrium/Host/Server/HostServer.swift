@@ -83,6 +83,8 @@ final class HostServer {
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
     @ObservationIgnored private var latestTasks: WireTasksSnapshot?
     @ObservationIgnored private var listener: RelayListener?
+    /// Phones pushed an alert since Atrium last came to the front anywhere.
+    @ObservationIgnored private var alertedDevices: Set<UUID> = []
     @ObservationIgnored private let localListener = LocalListener()
     @ObservationIgnored private let agentsListener = LocalAgentsListener()
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
@@ -119,6 +121,7 @@ final class HostServer {
             if let target = orchestrator.attentionTarget(for: thread) { alert?(target) }
         }
         integrations.onThreadRemoved = { [orchestrator] id in orchestrator.sessionRemoved(id) }
+        NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
         Task { await integrations.refresh() }
         if isRemoteAccessEnabled { startRemoteAccess() }
         agentsListener.onChannel = { [weak self] channel in self?.accept(channel, as: .localAgents) }
@@ -530,6 +533,22 @@ final class HostServer {
                 taskID: task.id,
                 projectIcon: icon
             ))
+            alertedDevices.insert(device.id)
+        }
+    }
+
+    /// Atrium in front on one device means everything's been seen, so this
+    /// Mac drops its alerts and badge, and each phone alerted since the last
+    /// time is pushed to do the same. The device in front clears its own.
+    private func clearAlerts(except device: UUID?) {
+        DeliveredNotifications.clearAll()
+        AppDelegate.clearBadge()
+        let alerted = alertedDevices
+        alertedDevices = []
+        guard let listener else { return }
+        for paired in pairing.devices where paired.id != device && alerted.contains(paired.id) {
+            guard let push = paired.push else { continue }
+            listener.push(RelayPushClear(token: push.token, environment: push.environment))
         }
     }
 }

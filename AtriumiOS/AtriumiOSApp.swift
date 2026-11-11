@@ -33,6 +33,7 @@ struct AtriumiOSApp: App {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             hosts.setActive(phase == .active)
+            if phase == .active { DeliveredNotifications.clearAll() }
         }
     }
 }

@@ -21,11 +21,20 @@ final class NotificationRouting {
     var macTaskID: String?
     /// Both alert paths require current provider metadata, including for retained tasks.
     var isMainTask: (String) -> Bool = { _ in false }
+    /// Atrium came to the front on a companion, or on this Mac when nil, so
+    /// everything counts as seen and the other devices drop their alerts.
+    var onCameToFront: (_ device: UUID?) -> Void = { _ in }
 
     func update(_ activity: ClientActivity, deviceID: UUID, connectionID: UUID) {
+        let cameToFront = activity.isActive && companions[connectionID] == nil
         companions[connectionID] = activity.isActive
             ? NotificationPresence(deviceID: deviceID, taskID: activity.taskID, usedAt: .now)
             : nil
+        if cameToFront { onCameToFront(deviceID) }
+    }
+
+    func cameToFront(device: UUID?) {
+        onCameToFront(device)
     }
 
     /// Marks a companion in the foreground as just used.

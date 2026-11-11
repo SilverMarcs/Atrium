@@ -69,9 +69,9 @@ final class RelayListener {
         control.start()
     }
 
-    /// Asks the relay to alert a phone. Dropped while the relay is unreachable.
-    func push(_ alert: RelayPushAlert) {
-        guard let control, let data = try? JSONEncoder().encode(alert) else { return }
+    /// Asks the relay to push to a phone. Dropped while the relay is unreachable.
+    func push(_ request: some Encodable) {
+        guard let control, let data = try? JSONEncoder().encode(request) else { return }
         control.send(data)
     }
 

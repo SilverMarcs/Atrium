@@ -39,6 +39,16 @@ interface PushRequest {
   projectIcon?: string;
 }
 
+/**
+ * Clears a phone's badge and wakes it to drop its alerts, once Atrium came to
+ * the front on another device.
+ */
+interface ClearRequest {
+  type: "clear";
+  token: string;
+  environment: APNsEnvironment;
+}
+
 const route = /^\/v1\/(mac|phone)\/([A-Za-z0-9_-]{16,64})(?:\/data\/([A-Za-z0-9-]{1,64}))?$/;
 const iconRoute = /^\/v1\/icon\/([A-Za-z0-9_-]{16,64})\/([0-9a-f-]{36})$/;
 const encoder = new TextEncoder();
@@ -78,11 +88,19 @@ async function isOwner(request: Request, macID: string): Promise<boolean> {
   return base64url(new Uint8Array(digest).slice(0, 16)) === macID;
 }
 
+function isDeviceRequest(value: unknown): value is { token: string; environment: APNsEnvironment } {
+  const request = value as ClearRequest;
+  return !!request && typeof request.token === "string" && /^[0-9a-f]{32,256}$/i.test(request.token)
+    && (request.environment === "sandbox" || request.environment === "production");
+}
+
+function isClearRequest(value: unknown): value is ClearRequest {
+  return isDeviceRequest(value) && (value as ClearRequest).type === "clear";
+}
+
 function isPushRequest(value: unknown): value is PushRequest {
   const push = value as PushRequest;
-  return !!push && push.type === "push"
-    && typeof push.token === "string" && /^[0-9a-f]{32,256}$/i.test(push.token)
-    && (push.environment === "sandbox" || push.environment === "production")
+  return isDeviceRequest(value) && push.type === "push"
     && typeof push.title === "string" && push.title.length <= 1000
     && (push.subtitle === undefined || (typeof push.subtitle === "string" && push.subtitle.length <= 1000))
     && typeof push.body === "string" && push.body.length > 0 && push.body.length <= 1000
@@ -196,6 +214,11 @@ export class Room implements DurableObject {
     } catch {
       return;
     }
+    if (isClearRequest(push) && this.allowPush()) {
+      // The badge resets on arrival; content-available wakes the app to empty Notification Center.
+      await this.send(socket, push, { aps: { badge: 0, "content-available": 1 }, clear: true });
+      return;
+    }
     if (!isPushRequest(push) || !this.allowPush()) return;
     // Bind routing to the authenticated control socket. Older live sockets
     // predate the host tag, so updated Macs also supply their identity.
@@ -210,7 +233,7 @@ export class Room implements DurableObject {
     }
     const payload = {
       aps: {
-        alert: { title: push.title, ...(push.subtitle ? { subtitle: push.subtitle } : {}), body: push.body }, sound: "default", "thread-id": destination,
+        alert: { title: push.title, ...(push.subtitle ? { subtitle: push.subtitle } : {}), body: push.body }, sound: "default", badge: 1, "thread-id": destination,
         ...(projectIconURL ? { "mutable-content": 1 } : {}),
       },
       taskID: push.taskID,
@@ -227,10 +250,17 @@ export class Room implements DurableObject {
       heading.pop();
       alert[key] = heading.join("");
     }
+    await this.send(socket, push, payload, collapseID);
+  }
+
+  /** Delivers to one phone, telling the Mac when APNs no longer knows its token. */
+  private async send(
+    socket: WebSocket, device: { token: string; environment: APNsEnvironment }, payload: object, collapseID?: string,
+  ): Promise<void> {
     try {
-      const result = await deliver(this.env, push.token, push.environment, payload, collapseID);
+      const result = await deliver(this.env, device.token, device.environment, payload, collapseID);
       if (result === "unregistered" && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "pushUnregistered", token: push.token }));
+        socket.send(JSON.stringify({ type: "pushUnregistered", token: device.token }));
       }
     } catch (error) {
       console.error("Push failed", error instanceof Error ? error.message : "unknown");

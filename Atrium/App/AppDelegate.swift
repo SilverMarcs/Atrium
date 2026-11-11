@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        AppDelegate.clearBadge()
+        NotificationRouting.shared.cameToFront(device: nil)
     }
 
     // Show notifications even when the app is in the foreground
