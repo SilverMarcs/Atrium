@@ -16,43 +16,40 @@ import UIKit
 ///   ease-out curve, so the composer first runs ahead of the timeline and
 ///   then covers it.
 ///
-/// Both the composer and the timeline's offset are set on the main thread
-/// before each Core Animation commit. Just before the commit, this draws the
-/// timeline at the offset that matches the composer's progress, with a held
-/// additive `bounds.origin` offset over whatever SwiftUI set. The scroll view's
-/// real offset is left to SwiftUI, so scrolling state and hit testing are
-/// unchanged once the move ends.
-///
-/// The composer sits a fixed distance above the safe area's edge, so it
-/// travels exactly as far as the safe area changes. That ties the two together
-/// without knowing the keyboard's height.
+/// SwiftUI moves the composer with the keyboard in a Core Animation spring,
+/// on the composer's container, while the timeline's safe area and offset
+/// change in one step. This copies that spring onto the timeline's
+/// `bounds.origin`, so the render server moves both on the same clock, and
+/// holds an additive offset, set before each Core Animation commit, for the
+/// rest: the timeline kept at its end above wherever SwiftUI has the composer
+/// in that frame, as it grows or shrinks. The scroll view's real offset is left
+/// to SwiftUI, so scrolling state and hit testing are unchanged once the move
+/// ends.
 @MainActor
 final class TimelineKeyboardFollower {
     private struct Follow {
         let isShowing: Bool
-        /// The composer's top edge and the timeline's safe area and offset
-        /// when the move began.
-        let startY: CGFloat
-        let startSafeAreaBottom: CGFloat
-        let startOffset: CGFloat
-        /// The safe area the timeline ends with.
-        var endSafeAreaBottom: CGFloat
         let startTime: CFTimeInterval
         /// The timeline's safe area in the last pass, and when it last changed.
         var safeAreaBottom: CGFloat
         var safeAreaChangedAt: CFTimeInterval
-        var progress: CGFloat = 0
-        /// The additive offset drawn in the last commit.
+        /// The held additive offset drawn in the last commit.
         var additive: CGFloat = 0
+        /// The composer's keyboard animation the timeline mirrors, by its
+        /// layer, key and start.
+        var mirrored: MirroredAnimation?
+    }
 
-        var endY: CGFloat {
-            startY - (endSafeAreaBottom - startSafeAreaBottom)
-        }
+    private struct MirroredAnimation: Equatable {
+        let layer: ObjectIdentifier
+        let key: String
+        let beginTime: CFTimeInterval
     }
 
     /// The key UIKit animates scroll offset corrections under.
     private static let systemAnimationKey = "bounds.origin"
     private static let animationKey = "atrium.keyboardFollow"
+    private static let mirrorKey = "atrium.keyboardFollow.spring"
     /// Ends a follow whose composer or timeline never settles.
     private static let maximumDuration: CFTimeInterval = 1
     /// How long the safe area must hold still to count as settled. Passes can
@@ -257,7 +254,7 @@ final class TimelineKeyboardFollower {
             beginHideFollowIfNeeded(in: scrollView, composerY: y)
         }
         if follow != nil {
-            updateFollow(in: scrollView, composerY: y)
+            updateFollow(in: scrollView)
         } else if !isKeyboardVisible, CACurrentMediaTime() > watchUntil {
             stopObserving()
             return
@@ -274,19 +271,12 @@ final class TimelineKeyboardFollower {
     /// Runs before either moves. `ScrollOnComposerFocus` takes a pinned
     /// timeline to its newest message, so it follows from anywhere near it.
     private func beginShowFollowIfNeeded() {
+        // The safe area has usually grown for the keyboard already.
         guard followsLatest(), let scrollView, scrollView.window != nil, !scrollView.isTracking,
-              composerY() != nil, let restY = restingComposerY,
-              let restingSafeAreaBottom,
-              maximumOffset(of: scrollView, safeAreaBottom: restingSafeAreaBottom) - scrollView.contentOffset.y < scrollView.bounds.height else { return }
-        // The safe area may already have grown for the keyboard, and SwiftUI
-        // may already have moved a timeline kept at its end along with it.
-        // The presentation layer still has it where it was last drawn.
-        let drawnOffset = scrollView.layer.presentation()?.bounds.origin.y ?? scrollView.contentOffset.y
+              composerY() != nil,
+              endOffset(of: scrollView) - scrollView.contentOffset.y < scrollView.bounds.height else { return }
         let now = CACurrentMediaTime()
-        startFollow(Follow(isShowing: true, startY: restY, startSafeAreaBottom: restingSafeAreaBottom,
-                           startOffset: drawnOffset,
-                           endSafeAreaBottom: max(scrollView.safeAreaInsets.bottom, restingSafeAreaBottom),
-                           startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom,
+        startFollow(Follow(isShowing: true, startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom,
                            safeAreaChangedAt: now), in: scrollView)
     }
 
@@ -310,9 +300,7 @@ final class TimelineKeyboardFollower {
               abs(startOffset - startMaximumOffset) < 2 else { return }
         hasFollowedThisDismissal = true
         let now = CACurrentMediaTime()
-        startFollow(Follow(isShowing: false, startY: startY, startSafeAreaBottom: startSafeAreaBottom,
-                           startOffset: startOffset, endSafeAreaBottom: endSafeAreaBottom,
-                           startTime: now, safeAreaBottom: safeAreaBottom,
+        startFollow(Follow(isShowing: false, startTime: now, safeAreaBottom: safeAreaBottom,
                            safeAreaChangedAt: now), in: scrollView)
     }
 
@@ -340,56 +328,51 @@ final class TimelineKeyboardFollower {
         }
     }
 
-    private func updateFollow(in scrollView: UIScrollView, composerY y: CGFloat) {
-        guard var follow else { return }
-        let safeAreaBottom = scrollView.safeAreaInsets.bottom
-        if follow.isShowing {
-            follow.endSafeAreaBottom = max(follow.endSafeAreaBottom, safeAreaBottom)
-        }
-        let travel = follow.endY - follow.startY
-        follow.progress = abs(travel) < 1 ? 0 : min(max((y - follow.startY) / travel, 0), 1)
-        // The field UIKit rests the composer in after a send sits up to a point
-        // off the one it rested in before, so arriving within two points counts.
-        // Otherwise the follow only ends when it times out.
-        if abs(y - follow.endY) < 2 {
-            follow.progress = 1
-        }
-        // Once the composer has arrived, end where SwiftUI's safe area does,
-        // in case the estimate was a point or two out. The safe area can still
-        // be animating well after the composer arrives; ending then would
-        // drop the timeline back to SwiftUI's offset, above where it settles,
-        // and it would bounce up before following the safe area down.
+    private func updateFollow(in scrollView: UIScrollView) {
+        guard var follow, let composer = currentComposer() else { return }
         let now = CACurrentMediaTime()
+        let safeAreaBottom = scrollView.safeAreaInsets.bottom
         if safeAreaBottom != follow.safeAreaBottom {
             follow.safeAreaBottom = safeAreaBottom
             follow.safeAreaChangedAt = now
         }
-        let isSafeAreaSettled = now - follow.safeAreaChangedAt >= Self.safeAreaSettleDuration
-        if follow.progress >= 1, isSafeAreaSettled {
-            follow.endSafeAreaBottom = safeAreaBottom
+        let spring = keyboardAnimation(above: composer)
+        if let spring, follow.mirrored != spring.id {
+            mirror(spring, in: scrollView)
+            follow.mirrored = spring.id
         }
         self.follow = follow
         applyFollow(to: scrollView)
 
-        let endOffset = maximumOffset(of: scrollView, safeAreaBottom: follow.endSafeAreaBottom)
-        if follow.progress >= 1, isSafeAreaSettled, abs(scrollView.contentOffset.y - endOffset) < 0.5 {
+        let isSafeAreaSettled = now - follow.safeAreaChangedAt >= Self.safeAreaSettleDuration
+        if spring == nil, isSafeAreaSettled, abs(composerDisplacement(of: composer)) < 0.5, abs(follow.additive) < 0.5 {
             endFollow(settling: true)
-        } else if scrollView.isTracking
-            || now - follow.startTime > Self.maximumDuration {
+        } else if scrollView.isTracking || now - follow.startTime > Self.maximumDuration {
             // A new touch, or a move that never settled, hands the rest to an animation.
             endFollow(settling: true)
         }
     }
 
-    /// Draws the timeline at the offset matching the composer's progress.
+    /// Holds the timeline at its end above where SwiftUI has the composer in
+    /// this commit. The keyboard's spring is mirrored separately; anything
+    /// else moving the composer only shows here, a frame late.
     private func applyFollow(to scrollView: UIScrollView) {
         guard var follow else { return }
-        let endOffset = maximumOffset(of: scrollView, safeAreaBottom: follow.endSafeAreaBottom)
-        let target = follow.startOffset + (endOffset - follow.startOffset) * follow.progress
-        let additive = target - scrollView.contentOffset.y
+        var unmirrored: CGFloat = 0
+        var layoutLag: CGFloat = 0
+        if let composer = currentComposer(), let window = scrollView.window {
+            unmirrored = composerDisplacement(of: composer) - (keyboardAnimation(above: composer)?.displacement ?? 0)
+            // SwiftUI gives the timeline the composer's new height at once,
+            // and animates the composer to it frame by frame.
+            let safeAreaEdge = scrollView.convert(scrollView.bounds, to: window).maxY - scrollView.safeAreaInsets.bottom
+            layoutLag = composer.convert(composer.bounds, to: window).minY - safeAreaEdge
+        }
+        let additive = endOffset(of: scrollView) - scrollView.contentOffset.y - layoutLag - unmirrored
         let layer = scrollView.layer
-        // UIKit's own correction would add to this one.
-        layer.removeAnimation(forKey: Self.systemAnimationKey)
+        // UIKit's own corrections would add to this one.
+        for key in layer.animationKeys() ?? [] where key.hasPrefix(Self.systemAnimationKey) {
+            layer.removeAnimation(forKey: key)
+        }
         guard abs(additive - follow.additive) > 0.01 || layer.animation(forKey: Self.animationKey) == nil else { return }
         follow.additive = additive
         self.follow = follow
@@ -397,6 +380,23 @@ final class TimelineKeyboardFollower {
         // Holding them in place draws them where UIKit already has them.
         for view in pinnedSubviews(of: scrollView) {
             view.layer.add(heldOffset(additive, keyPath: "position"), forKey: Self.animationKey)
+        }
+    }
+
+    /// Copies the composer's keyboard spring onto the timeline, inverted: the
+    /// composer drawn lower than its model means the timeline's end is too.
+    private func mirror(_ spring: KeyboardAnimation, in scrollView: UIScrollView) {
+        guard let copy = spring.animation.copy() as? CABasicAnimation else { return }
+        copy.isAdditive = true
+        copy.fromValue = NSValue(cgPoint: CGPoint(x: 0, y: -spring.from))
+        copy.toValue = NSValue(cgPoint: CGPoint(x: 0, y: -spring.to))
+        copy.isRemovedOnCompletion = true
+        copy.keyPath = Self.systemAnimationKey
+        scrollView.layer.add(copy, forKey: Self.mirrorKey)
+        for view in pinnedSubviews(of: scrollView) {
+            guard let pinned = copy.copy() as? CABasicAnimation else { continue }
+            pinned.keyPath = "position"
+            view.layer.add(pinned, forKey: Self.mirrorKey)
         }
     }
 
@@ -411,6 +411,12 @@ final class TimelineKeyboardFollower {
     /// The offset that shows the newest message above a bottom safe area.
     private func maximumOffset(of scrollView: UIScrollView, safeAreaBottom: CGFloat) -> CGFloat {
         scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom + safeAreaBottom
+    }
+
+    /// Where a timeline kept at its end rests above the current safe area,
+    /// or its top when it's shorter than the view.
+    private func endOffset(of scrollView: UIScrollView) -> CGFloat {
+        max(maximumOffset(of: scrollView, safeAreaBottom: scrollView.safeAreaInsets.bottom), -scrollView.adjustedContentInset.top)
     }
 
     /// An additive offset held until the next pass replaces it.
@@ -438,6 +444,8 @@ final class TimelineKeyboardFollower {
             + pinnedSubviews(of: scrollView).map { ($0.layer, "position") }
         for (layer, keyPath) in layers {
             layer.removeAnimation(forKey: Self.animationKey)
+            // A touch takes over mid-spring.
+            if !settling || scrollView.isTracking { layer.removeAnimation(forKey: Self.mirrorKey) }
             guard settling, abs(follow.additive) > 0.25 else { continue }
             let settle = CABasicAnimation(keyPath: keyPath)
             settle.isAdditive = true
@@ -455,14 +463,59 @@ final class TimelineKeyboardFollower {
     /// rides the keyboard in a Core Animation animation, so its model layer
     /// is already where it ends up.
     private func composerY() -> CGFloat? {
-        // A screen kept behind the task list can leave its composer in the
-        // window. Resolve the one in view for each commit.
-        guard let window = scrollView?.window, let composer = findComposer(in: window) else { return nil }
+        guard let window = scrollView?.window, let composer = currentComposer() else { return nil }
         guard let presented = composer.layer.presentation() else {
             return composer.convert(composer.bounds, to: window).minY
         }
         // Presentation layers convert through their presented ancestors.
         return presented.convert(presented.bounds, to: nil).minY
+    }
+
+    /// A screen kept behind the task list can leave its composer in the
+    /// window, so the one in view is resolved for each commit.
+    private func currentComposer() -> UIView? {
+        guard let window = scrollView?.window else { return nil }
+        return findComposer(in: window)
+    }
+
+    /// How far below its model position the composer is drawn.
+    private func composerDisplacement(of composer: UIView) -> CGFloat {
+        guard let window = composer.window, let presented = composer.layer.presentation() else { return 0 }
+        return presented.convert(presented.bounds, to: nil).minY - composer.convert(composer.bounds, to: window).minY
+    }
+
+    private struct KeyboardAnimation {
+        let animation: CABasicAnimation
+        let id: MirroredAnimation
+        /// The additive vertical offset it runs from and to.
+        let from: CGFloat
+        let to: CGFloat
+        /// Its offset in the frame on screen now.
+        let displacement: CGFloat
+    }
+
+    /// The additive position animation SwiftUI moves the composer's container
+    /// with as the keyboard shows or hides, while it runs.
+    private func keyboardAnimation(above composer: UIView) -> KeyboardAnimation? {
+        let now = CACurrentMediaTime()
+        var layer = composer.layer.superlayer
+        while let current = layer {
+            for key in current.animationKeys() ?? [] {
+                guard let animation = current.animation(forKey: key) as? CABasicAnimation,
+                      animation.keyPath == "position", animation.isAdditive,
+                      let from = (animation.fromValue as? NSValue)?.cgPointValue,
+                      let to = (animation.toValue as? NSValue)?.cgPointValue,
+                      from.y != to.y, now < animation.beginTime + animation.duration else { continue }
+                let displacement = (current.presentation()?.position.y ?? current.position.y) - current.position.y
+                return KeyboardAnimation(
+                    animation: animation,
+                    id: MirroredAnimation(layer: ObjectIdentifier(current), key: key, beginTime: animation.beginTime),
+                    from: from.y, to: to.y, displacement: displacement
+                )
+            }
+            layer = current.superlayer
+        }
+        return nil
     }
 
     /// The lowest visible composer, which follows the keyboard.

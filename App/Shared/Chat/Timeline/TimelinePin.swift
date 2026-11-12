@@ -9,6 +9,9 @@ final class TimelinePin {
     /// The reader's finger is down, or the scroll they started is still
     /// coasting. Content growing meanwhile mustn't scroll under them.
     var isReaderScrolling = false
+    /// The end is within a screen of what the reader sees, close enough that
+    /// opening the composer takes the timeline there.
+    var isNearEnd = true
     /// How many more times the timeline moving is a jump to the end landing,
     /// to check against its last row.
     var endChecks = 0

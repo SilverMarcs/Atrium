@@ -130,13 +130,14 @@ struct PhoneComposer: View {
                     .phoneComposerPart(.send)
             }
         }
-        .background(ComposerKeyboardAnchor())
         // At rest the bar sits a little into the home indicator's margin, as
         // the system bottom bar does; above the keyboard it keeps clear.
         .padding(.bottom, isExpanded ? PhoneComposerLayout.expandedMargin : -6)
         // The system bottom bar kept the timeline this much further above
         // its items.
         .padding(.top, 10)
+        // Its top edge is where the timeline's safe area ends.
+        .background(ComposerKeyboardAnchor())
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
         .animation(.smooth(duration: 0.25), value: restingAction)

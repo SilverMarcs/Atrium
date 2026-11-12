@@ -126,8 +126,13 @@ struct TaskChatView: View {
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
                 .followsComposerOnKeyboard { [host, anchorSpace, composer, taskID = task.id] in
-                    pin.isPinned && composer.messageEdit == nil
+                    (pin.isPinned || pin.isNearEnd) && !pin.isReaderScrolling && composer.messageEdit == nil
                         && host.conversations.pendingPrompts[taskID]?.isEmpty != false && !anchorSpace.isHolding
+                }
+                // The iPhone's composer closes on a tap outside it; the iPad's
+                // keeps its own focus.
+                .dismissesComposerOnTap { [composer] in
+                    if UIDevice.current.userInterfaceIdiom == .phone, composer.isFocused { composer.isFocused = false }
                 }
             }
             // The container is what shows between the bars and keyboard. The
@@ -156,9 +161,9 @@ struct TaskChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
-                // A reader who scrolled back through the conversation, or is
-                // still scrolling, stays where they are.
-                guard pin.isPinned, !pin.isReaderScrolling else { return }
+                // A reader who scrolled more than a screen back through the
+                // conversation, or is still scrolling, stays where they are.
+                guard pin.isPinned || pin.isNearEnd, !pin.isReaderScrolling else { return }
                 scrollToLatest(with: proxy, animated: scrollPolicy.animatesGrowth)
             } scrollToEditingMessage: { id in
                 scrollToEditingMessage(id, with: proxy)
@@ -235,6 +240,13 @@ struct TaskChatView: View {
             // pinned. Checking the position as content grows would unpin it
             // whenever growth lands mid-scroll, such as the working indicator
             // appearing while a sent prompt is still sliding up.
+            // Dragging the keyboard away scrolls the timeline a little off its
+            // end, which shouldn't keep the composer from taking it back there.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.visibleRect.maxY < geometry.containerSize.height
+            } action: { _, isNearEnd in
+                pin.isNearEnd = isNearEnd
+            }
             .onScrollPhaseChange { _, phase, context in
                 switch phase {
                 case .tracking, .interacting:
