@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The part of the iPhone composer a subview plays, which places it.
-enum PhoneComposerPart {
+nonisolated enum PhoneComposerPart {
     /// The field's glass, which grows into the panel holding everything.
     case panel
     case attach
@@ -13,7 +13,7 @@ enum PhoneComposerPart {
     case action
 }
 
-private struct PhoneComposerPartKey: LayoutValueKey {
+private nonisolated struct PhoneComposerPartKey: LayoutValueKey {
     static let defaultValue = PhoneComposerPart.panel
 }
 
