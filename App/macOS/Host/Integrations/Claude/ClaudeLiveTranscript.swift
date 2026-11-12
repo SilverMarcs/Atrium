@@ -12,7 +12,7 @@ final class ClaudeLiveTranscript {
 
     func prompt(_ text: String, id: String, images: [Data] = [], relay: TranscriptRelay? = nil) {
         guard prompts.insert(id).inserted, !text.isEmpty || !images.isEmpty else { return }
-        let messageID = "claude-prompt-" + id
+        let messageID = ClaudeTranscript.livePromptPrefix + id
         messages.append(ClaudeTranscript.restoringAttachments(in: TranscriptMessage(
             id: messageID, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: messageID)],
             images: images.isEmpty ? nil : images, relay: relay)))

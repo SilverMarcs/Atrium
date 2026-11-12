@@ -222,7 +222,7 @@ actor ClaudeSessionHistory {
             guard let record = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if ClaudeTranscript.startsTurn(line) {
                 if foundPrompt { break }
-                foundPrompt = record["uuid"] as? String == messageID
+                foundPrompt = ClaudeTranscript.isPrompt(record, shownAs: messageID)
                 if foundPrompt {
                     let content = (record["message"] as? [String: Any])?["content"]
                         ?? (record["attachment"] as? [String: Any])?["prompt"]

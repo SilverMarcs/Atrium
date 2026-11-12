@@ -9,6 +9,18 @@ nonisolated enum ClaudeTranscript {
     /// matching Codex's limit. A turn starts with each prompt.
     static let turnLimit = 20
 
+    /// Before its turn is saved, a prompt its hook reported is shown under the
+    /// hook's prompt ID, which every record Claude saves for the turn carries.
+    static let livePromptPrefix = "claude-prompt-"
+
+    /// Whether `record` is the prompt shown as `messageID`: by its own ID once
+    /// its turn is saved, or by its prompt ID while the turn is live.
+    static func isPrompt(_ record: [String: Any], shownAs messageID: String) -> Bool {
+        if record["uuid"] as? String == messageID { return true }
+        guard messageID.hasPrefix(livePromptPrefix), let promptID = record["promptId"] as? String else { return false }
+        return livePromptPrefix + promptID == messageID
+    }
+
     /// Reads the original embedded bytes, before display thumbnails are made.
     static func imageData(in record: [String: Any]) -> [Data] {
         if let message = record["message"] as? [String: Any], let content = message["content"] as? [[String: Any]] {
