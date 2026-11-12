@@ -2,8 +2,8 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Places the task's composer for the device: the bottom-bar search field on
-/// iPhone, and the inline input bar along the bottom edge on iPad.
+/// Places the task's composer for the device: the composer that expands
+/// above the keyboard on iPhone, and the inline input bar on iPad.
 struct TaskComposerPlacement: ViewModifier {
     let composer: TaskComposer
     let item: HostTask?
@@ -18,7 +18,9 @@ struct TaskComposerPlacement: ViewModifier {
             content
         } else if UIDevice.current.userInterfaceIdiom == .phone {
             content
-                .searchFieldComposer(composer, prompt: prompt, submit: submit)
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    PhoneComposer(item: item, prompt: prompt, submit: submit)
+                }
         } else {
             content
                 .safeAreaBar(edge: .bottom, spacing: 0) {

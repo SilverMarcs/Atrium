@@ -30,7 +30,6 @@ final class PromptSendAnimator: PromptSendAnimating {
 
     // Read at submission, before clearing the draft can shrink the composer.
     @ObservationIgnored var sourceFrame: (() -> CGRect?)?
-    @ObservationIgnored var searchReferenceFrame = CGRect.zero
     @ObservationIgnored private var expiryTasks: [UUID: Task<Void, Never>] = [:]
 
     func begin(_ promptID: PendingPrompt.ID, text: String, from frame: CGRect?) {

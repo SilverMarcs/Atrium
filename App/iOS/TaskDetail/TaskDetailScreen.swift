@@ -4,7 +4,6 @@ import SwiftUI
 
 /// One task's conversation, with a prompt field that sends to its agent on its host.
 struct TaskDetailScreen: View {
-    @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
     @Environment(\.replaceSideChat) private var replaceSideChat
@@ -113,31 +112,6 @@ struct TaskDetailScreen: View {
                             item: item, models: models,
                             showingScratchPad: $showingScratchPad
                         )
-                    }
-                }
-            }
-            // iPad has no bottom bar; its inline input bar carries these. A
-            // subagent answers only to its own agent, so it has no composer.
-            if isPhone, task?.isSubagent != true {
-                if task?.actions.contains(.attachImages) != false {
-                    ToolbarItem(placement: .bottomBar) {
-                        ComposerAttachmentMenu()
-                    }
-                    ToolbarSpacer(.fixed, placement: .bottomBar)
-                }
-                DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    ComposerDictationButton(composer: composer)
-                }
-                if dictationSettings.isEnabled, task?.actions.contains(.interrupt) == true {
-                    ToolbarSpacer(.fixed, placement: .bottomBar)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    if let item, item.task.actions.contains(.interrupt) {
-                        Button("Stop", systemImage: "stop.fill", role: .destructive) {
-                            item.host.interrupt(item.task.id)
-                        }
-                        .tint(.red)
                     }
                 }
             }

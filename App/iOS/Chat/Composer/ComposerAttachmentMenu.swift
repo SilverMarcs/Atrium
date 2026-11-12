@@ -23,10 +23,3 @@ struct ComposerAttachmentMenu<MenuLabel: View>: View {
         .disabled(composer.remainingImageSlots == 0)
     }
 }
-
-extension ComposerAttachmentMenu where MenuLabel == Label<Text, Image> {
-    /// The menu as a toolbar button.
-    init() {
-        self.init { Label("Attach", systemImage: "plus") }
-    }
-}

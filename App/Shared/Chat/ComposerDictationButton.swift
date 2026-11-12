@@ -5,6 +5,9 @@ import SwiftUI
 struct ComposerDictationButton: View {
     let composer: TaskComposer
     var isInline = false
+    /// The waveform's scale, which the iPhone composer enlarges to match
+    /// the toolbar buttons it replaced.
+    var symbolScale: Image.Scale = .small
     @Environment(DictationSettings.self) private var settings
 
     #if os(macOS)
@@ -27,12 +30,12 @@ struct ComposerDictationButton: View {
                     Text("M")
                         .hidden()
                         .accessibilityHidden(true)
-                        .overlay { DictationSymbol(dictation: composer.dictation) }
+                        .overlay { DictationSymbol(dictation: composer.dictation, scale: symbolScale) }
                         .frame(width: Self.inlineWidth)
                         .padding(.vertical, 8)
                         .contentShape(.rect)
                 } else {
-                    DictationSymbol(dictation: composer.dictation)
+                    DictationSymbol(dictation: composer.dictation, scale: symbolScale)
                 }
             }
             .foregroundStyle(color)
@@ -49,6 +52,7 @@ struct ComposerDictationButton: View {
 /// A waveform, or a spinner while the recording is transcribed.
 private struct DictationSymbol: View {
     let dictation: ComposerDictation
+    let scale: Image.Scale
     @ScaledMetric(relativeTo: .body) private var size = 20
 
     var body: some View {
@@ -59,7 +63,7 @@ private struct DictationSymbol: View {
             } else {
                 Label(dictation.isRecording ? "Finish Dictation" : "Dictate", systemImage: "waveform")
                     .labelStyle(.iconOnly)
-                    .imageScale(.small)
+                    .imageScale(scale)
             }
         }
         .frame(width: size, height: size)

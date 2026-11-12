@@ -86,6 +86,10 @@ final class TimelineKeyboardFollower {
     private var follow: Follow?
     /// Ends a follow whose passes stopped before it did.
     private var timeout: Task<Void, Never>?
+    /// Wakes the main run loop every frame while following. The composer
+    /// rides the keyboard in a Core Animation animation, with nothing else
+    /// necessarily running on the main thread to draw the timeline along.
+    private var frameTicker: CADisplayLink?
     private var isKeyboardVisible = false
     /// UIKit announced that the keyboard is hiding. Until then, a shrinking
     /// safe area can also be the keyboard changing height.
@@ -238,8 +242,8 @@ final class TimelineKeyboardFollower {
             return
         }
         guard let y = composerY() else {
-            // UIKit can replace the bottom-bar search field during a focus
-            // transition. Its temporary absence must not disable following.
+            // The composer can be missing for a moment while its screen is
+            // pushed or popped. Its absence must not disable following.
             if CACurrentMediaTime() > watchUntil, !isKeyboardVisible {
                 endFollow(settling: false)
                 stopObserving()
@@ -274,10 +278,13 @@ final class TimelineKeyboardFollower {
               composerY() != nil, let restY = restingComposerY,
               let restingSafeAreaBottom,
               maximumOffset(of: scrollView, safeAreaBottom: restingSafeAreaBottom) - scrollView.contentOffset.y < scrollView.bounds.height else { return }
-        // The safe area may already have grown for the keyboard.
+        // The safe area may already have grown for the keyboard, and SwiftUI
+        // may already have moved a timeline kept at its end along with it.
+        // The presentation layer still has it where it was last drawn.
+        let drawnOffset = scrollView.layer.presentation()?.bounds.origin.y ?? scrollView.contentOffset.y
         let now = CACurrentMediaTime()
         startFollow(Follow(isShowing: true, startY: restY, startSafeAreaBottom: restingSafeAreaBottom,
-                           startOffset: scrollView.contentOffset.y,
+                           startOffset: drawnOffset,
                            endSafeAreaBottom: max(scrollView.safeAreaInsets.bottom, restingSafeAreaBottom),
                            startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom,
                            safeAreaChangedAt: now), in: scrollView)
@@ -320,6 +327,11 @@ final class TimelineKeyboardFollower {
         // wake it until the host answers, which would leave the timeline drawn at
         // the held offset: away from where the lazy rows are built, so it shows
         // blank until a touch ends the follow.
+        if frameTicker == nil {
+            let ticker = CADisplayLink(target: FrameTickTarget.shared, selector: #selector(FrameTickTarget.tick))
+            ticker.add(to: .main, forMode: .common)
+            frameTicker = ticker
+        }
         timeout?.cancel()
         timeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.maximumDuration))
@@ -417,6 +429,8 @@ final class TimelineKeyboardFollower {
         guard let follow else { return }
         self.follow = nil
         offsetObservation = nil
+        frameTicker?.invalidate()
+        frameTicker = nil
         timeout?.cancel()
         timeout = nil
         guard let scrollView else { return }
@@ -437,24 +451,26 @@ final class TimelineKeyboardFollower {
 
     // MARK: - Composer
 
-    /// The composer's top edge in window coordinates, from the model layer:
-    /// where it is drawn in the coming commit.
+    /// The composer's top edge in window coordinates, where it's drawn: it
+    /// rides the keyboard in a Core Animation animation, so its model layer
+    /// is already where it ends up.
     private func composerY() -> CGFloat? {
-        // Search presentation swaps visible fields without necessarily
-        // removing the previous one from its window. Resolve the current
-        // composer for this commit instead of retaining a stale clone.
+        // A screen kept behind the task list can leave its composer in the
+        // window. Resolve the one in view for each commit.
         guard let window = scrollView?.window, let composer = findComposer(in: window) else { return nil }
-        return composer.convert(composer.bounds, to: window).minY
+        guard let presented = composer.layer.presentation() else {
+            return composer.convert(composer.bounds, to: window).minY
+        }
+        // Presentation layers convert through their presented ancestors.
+        return presented.convert(presented.bounds, to: nil).minY
     }
 
-    /// The lowest visible search field: the composer UIKit draws in the
-    /// bottom bar, which follows the keyboard.
+    /// The lowest visible composer, which follows the keyboard.
     private func findComposer(in window: UIWindow) -> UIView? {
         var best: (view: UIView, maxY: CGFloat)?
         func visit(_ view: UIView) {
             guard !view.isHidden, view.alpha > 0.01 else { return }
-            if let field = view as? UISearchTextField, field.leftView is ComposerSearchFieldStyle,
-               !field.bounds.isEmpty {
+            if view is ComposerKeyboardAnchorView, !view.bounds.isEmpty {
                 let maxY = view.convert(view.bounds, to: window).maxY
                 if maxY <= window.bounds.maxY, maxY > (best?.maxY ?? -.infinity) {
                     best = (view, maxY)
@@ -466,4 +482,11 @@ final class TimelineKeyboardFollower {
         visit(window)
         return best?.view
     }
+}
+
+/// The display link's target, which only needs to wake the run loop.
+private final class FrameTickTarget: NSObject {
+    static let shared = FrameTickTarget()
+
+    @objc func tick() {}
 }
