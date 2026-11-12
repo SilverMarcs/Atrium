@@ -204,17 +204,24 @@ struct ComposerBar: View {
     /// closes its keyboard. A draft that couldn't be sent stays open.
     private func send() {
         guard submit(editorFrame) else { return }
-        if isExpanded {
-            showsRestingAction = false
-            revealTask?.cancel()
-            revealTask = Task {
-                do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-                withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
-            }
+        guard isExpanded else {
+            composer.isFocused = false
+            return
         }
-        composer.isFocused = false
-        // Closes the keyboard in this turn, rather than after SwiftUI's next
-        // update reaches the editor.
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        // The prompt goes up to the top first, and the keyboard closes once
+        // it's there, as it did from the system bar. The resting circle
+        // shows once the composer has dropped back into place.
+        showsRestingAction = false
+        revealTask?.cancel()
+        revealTask = Task {
+            do { try await Task.sleep(for: Self.keyboardCloseDelay) } catch { return }
+            composer.isFocused = false
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
+        }
     }
+
+    /// About as long as the sent prompt takes to fly up to the top.
+    private static let keyboardCloseDelay: Duration = .milliseconds(200)
+
 }
