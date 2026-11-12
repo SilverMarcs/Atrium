@@ -6,6 +6,10 @@ nonisolated enum ComposerPasteContent: Sendable {
     case text(String)
     case image(ComposerImage)
 
+    /// Concrete image formats, most useful first. Screenshot thumbnails can
+    /// advertise private formats before their usable image representation.
+    static let imageTypes: [UTType] = [.png, .jpeg, .heic, .heif, .gif, .tiff, .webP, .bmp, .image]
+
     static func supports(_ url: URL) -> Bool {
         guard url.isFileURL, let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return type.conforms(to: .image) || type.conforms(to: .text)
@@ -45,16 +49,31 @@ nonisolated enum ComposerPasteContent: Sendable {
     /// system still grants access to its payload. Decoding can finish later.
     @MainActor
     static func beginLoading(from provider: NSItemProvider, prefersFileURL: Bool = false) -> Task<Self?, Error>? {
-        // Screenshot thumbnails can advertise private formats before their
-        // usable image representation. Prefer a concrete image format.
-        let imageTypes: [UTType] = [.png, .jpeg, .heic, .heif, .gif, .tiff, .webP, .bmp, .image]
         let imageType = imageTypes.first { provider.hasItemConformingToTypeIdentifier($0.identifier) }
         let isFileURL = (prefersFileURL || imageType == nil)
             && provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        guard let type = isFileURL ? UTType.fileURL.identifier : imageType?.identifier else { return nil }
+        guard let type = isFileURL ? UTType.fileURL : imageType else { return nil }
 
+        let transfer = loadData(type, from: provider)
+        return Task {
+            guard isFileURL else { return try await load(imageData: transfer.value) }
+            guard let url = URL(dataRepresentation: try await transfer.value, relativeTo: nil), supports(url) else { return nil }
+            do {
+                return try await load(contentsOf: url)
+            } catch {
+                // The file can sit where this app may not read, such as an
+                // image pasted from Spotlight's clipboard history. The item's
+                // own image data still pastes.
+                guard let imageType else { throw error }
+                return try await load(imageData: loadData(imageType, from: provider).value)
+            }
+        }
+    }
+
+    @MainActor
+    private static func loadData(_ type: UTType, from provider: NSItemProvider) -> Task<Data, Error> {
         let transfer = AsyncThrowingStream<Data, Error> { continuation in
-            provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
                 if let data {
                     continuation.yield(data)
                     continuation.finish()
@@ -64,14 +83,8 @@ nonisolated enum ComposerPasteContent: Sendable {
             }
         }
         return Task {
-            for try await data in transfer {
-                if isFileURL {
-                    guard let url = URL(dataRepresentation: data, relativeTo: nil), supports(url) else { return nil }
-                    return try await load(contentsOf: url)
-                }
-                return try await load(imageData: data)
-            }
-            return nil
+            for try await data in transfer { return data }
+            throw ComposerPasteError.unreadableItem
         }
     }
 }

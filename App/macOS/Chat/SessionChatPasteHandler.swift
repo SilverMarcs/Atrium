@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SessionChatPasteHandler: ViewModifier {
   let composer: TaskComposer
@@ -39,7 +40,7 @@ struct SessionChatPasteHandler: ViewModifier {
       if let url = fileURL(from: item) {
         return ComposerPasteContent.supports(url)
       }
-      return item.types.contains(.png) || item.types.contains(.tiff)
+      return imageType(of: item) != nil
     }
     guard !items.isEmpty else { return false }
     let threadID = app.selection
@@ -49,8 +50,17 @@ struct SessionChatPasteHandler: ViewModifier {
         do {
           let content: ComposerPasteContent
           if let url = fileURL(from: item) {
-            content = try await ComposerPasteContent.load(contentsOf: url)
-          } else if let data = item.data(forType: .png) ?? item.data(forType: .tiff) {
+            do {
+              content = try await ComposerPasteContent.load(contentsOf: url)
+            } catch {
+              // Spotlight's clipboard history pastes its cached copy of the
+              // file, which only Full Disk Access can read, alongside the
+              // image itself.
+              guard let data = imageData(of: item) else { throw error }
+              try composer.checkImageSlot()
+              content = try await ComposerPasteContent.load(imageData: data)
+            }
+          } else if let data = imageData(of: item) {
             try composer.checkImageSlot()
             content = try await ComposerPasteContent.load(imageData: data)
           } else {
@@ -71,6 +81,14 @@ struct SessionChatPasteHandler: ViewModifier {
       }
     }
     return true
+  }
+
+  private func imageType(of item: NSPasteboardItem) -> NSPasteboard.PasteboardType? {
+    item.availableType(from: ComposerPasteContent.imageTypes.map { NSPasteboard.PasteboardType($0.identifier) })
+  }
+
+  private func imageData(of item: NSPasteboardItem) -> Data? {
+    imageType(of: item).flatMap(item.data(forType:))
   }
 
   private func fileURL(from item: NSPasteboardItem) -> URL? {
