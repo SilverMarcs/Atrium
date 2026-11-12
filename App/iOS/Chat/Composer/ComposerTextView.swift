@@ -274,6 +274,13 @@ final class ComposerEditor: UITextView {
         becomeFirstResponder()
     }
 
+    /// Leaving ends the window a touch opened, so nothing hands focus back
+    /// straight after a send.
+    override func resignFirstResponder() -> Bool {
+        focusAllowedUntil = 0
+        return super.resignFirstResponder()
+    }
+
     override func becomeFirstResponder() -> Bool {
         guard CACurrentMediaTime() < focusAllowedUntil else { return false }
         return super.becomeFirstResponder()

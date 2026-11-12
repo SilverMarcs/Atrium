@@ -24,9 +24,12 @@ struct ComposerBar: View {
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
     @State private var width: CGFloat = 0
-    /// The resting Send or Stop circle shows once the composer has collapsed
-    /// back into place, rather than riding down from the panel's end.
+    /// After a send, the resting circle (Stop, or none, as the draft has
+    /// gone) shows once the composer has dropped back into place, rather
+    /// than riding down from the panel's end. Otherwise it melts out of the
+    /// panel as it collapses.
     @State private var showsRestingAction = true
+    @State private var revealTask: Task<Void, Never>?
 
     /// Expanded while the editor has focus. It follows the editor rather
     /// than the request for focus, so the composer only starts to grow or
@@ -175,14 +178,6 @@ struct ComposerBar: View {
         .animation(.smooth(duration: 0.25), value: expandedEditorHeight)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .animation(.smooth(duration: 0.25), value: restingAction)
-        .task(id: isExpanded) {
-            guard !isExpanded else {
-                showsRestingAction = false
-                return
-            }
-            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-            withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
-        }
         .onChange(of: composer.messageEdit?.id) { _, id in
             editFocusTask?.cancel()
             guard id != nil else { return }
@@ -199,6 +194,8 @@ struct ComposerBar: View {
         // focus; the next task's first focus must register as a change.
         .onDisappear {
             editFocusTask?.cancel()
+            revealTask?.cancel()
+            showsRestingAction = true
             composer.isFocused = false
         }
     }
@@ -206,8 +203,18 @@ struct ComposerBar: View {
     /// Sends the draft and, once it's gone, collapses the composer and
     /// closes its keyboard. A draft that couldn't be sent stays open.
     private func send() {
-        if submit(editorFrame) {
-            composer.isFocused = false
+        guard submit(editorFrame) else { return }
+        if isExpanded {
+            showsRestingAction = false
+            revealTask?.cancel()
+            revealTask = Task {
+                do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+                withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
+            }
         }
+        composer.isFocused = false
+        // Closes the keyboard in this turn, rather than after SwiftUI's next
+        // update reaches the editor.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
