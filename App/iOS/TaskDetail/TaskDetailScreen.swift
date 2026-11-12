@@ -38,6 +38,7 @@ struct TaskDetailScreen: View {
     }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+    private var newChatPlacement: ToolbarItemPlacement { isPhone ? .primaryAction : .navigation }
 
     /// Whether the screen is in view. A collapsed split view, as on iPhone,
     /// keeps the detail column's screen while the task list shows, and stops
@@ -96,12 +97,14 @@ struct TaskDetailScreen: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if let task {
+                // On iPhone the new-chat button sits just left of the More menu;
+                // iPad keeps it at the leading edge.
                 if task.isSideChat, let item {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: newChatPlacement) {
                         NewSideChatButton(sideChat: item, open: replaceSideChat)
                     }
                 } else if task.workspaceID != nil, let item {
-                    ToolbarItem(placement: .navigation) {
+                    ToolbarItem(placement: newChatPlacement) {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat() }
                     }
                 }
