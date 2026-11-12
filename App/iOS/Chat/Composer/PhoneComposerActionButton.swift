@@ -25,6 +25,7 @@ struct PhoneComposerActionButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(.circle)
         .glassEffect(glass, in: .circle)
+        .scaleEffect(isHidden ? 0.8 : 1)
         .buttonStyle(.plain)
         .allowsHitTesting(!isHidden && isEnabled)
         .accessibilityHidden(isHidden)

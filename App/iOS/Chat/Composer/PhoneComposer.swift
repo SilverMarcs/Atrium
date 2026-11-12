@@ -22,6 +22,9 @@ struct PhoneComposer: View {
 
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
+    /// The resting Send or Stop circle shows once the composer has collapsed
+    /// back into place, rather than riding down from the panel's end.
+    @State private var showsRestingAction = true
 
     private var isExpanded: Bool { composer.isFocused }
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
@@ -84,7 +87,7 @@ struct PhoneComposer: View {
                             action: action,
                             isEditing: composer.messageEdit != nil,
                             isEnabled: action == .stop || composer.canSend,
-                            isHidden: isExpanded
+                            isHidden: isExpanded || !showsRestingAction
                         ) {
                             if action == .send { send() } else if let item { item.host.interrupt(item.task.id) }
                         }
@@ -125,6 +128,8 @@ struct PhoneComposer: View {
                 PhoneComposerSendButton(item: item, send: send)
                     .scaleEffect(isExpanded ? 1 : 0.5)
                     .opacity(isExpanded ? 1 : 0)
+                    // Gone as soon as the panel starts to drop.
+                    .animation(isExpanded ? .easeOut(duration: 0.12) : nil, value: isExpanded)
                     .allowsHitTesting(isExpanded)
                     .accessibilityHidden(!isExpanded)
                     .phoneComposerPart(.send)
@@ -141,6 +146,14 @@ struct PhoneComposer: View {
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
         .animation(.smooth(duration: 0.25), value: restingAction)
+        .task(id: isExpanded) {
+            guard !isExpanded else {
+                showsRestingAction = false
+                return
+            }
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
+        }
         // A transcript landing in the draft opens it for editing.
         .onChange(of: composer.focusRequestID) { _, id in
             if id != nil { composer.isFocused = true }

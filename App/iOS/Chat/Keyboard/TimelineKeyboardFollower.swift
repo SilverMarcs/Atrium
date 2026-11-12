@@ -29,7 +29,8 @@ import UIKit
 final class TimelineKeyboardFollower {
     private struct Follow {
         let isShowing: Bool
-        let startTime: CFTimeInterval
+        /// When the latest move began; another can begin before one ends.
+        var startTime: CFTimeInterval
         /// The timeline's safe area in the last pass, and when it last changed.
         var safeAreaBottom: CGFloat
         var safeAreaChangedAt: CFTimeInterval
@@ -128,6 +129,16 @@ final class TimelineKeyboardFollower {
             center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.keyboardDidHide() }
             },
+            // The composer starts growing or shrinking as it gains or loses
+            // focus, which can be a frame before UIKit announces the keyboard.
+            center.addObserver(forName: UITextView.textDidBeginEditingNotification, object: nil, queue: .main) { [weak self] notification in
+                let isComposer = notification.object is ComposerEditor
+                MainActor.assumeIsolated { if isComposer { self?.composerFocusChanged(isFocused: true) } }
+            },
+            center.addObserver(forName: UITextView.textDidEndEditingNotification, object: nil, queue: .main) { [weak self] notification in
+                let isComposer = notification.object is ComposerEditor
+                MainActor.assumeIsolated { if isComposer { self?.composerFocusChanged(isFocused: false) } }
+            },
         ]
     }
 
@@ -159,8 +170,29 @@ final class TimelineKeyboardFollower {
         startObserving()
         // A second announcement while the keyboard is up is a size change,
         // with no resting composer to start from.
-        if !wasVisible, follow == nil {
+        guard !wasVisible else { return }
+        if follow != nil {
+            follow?.startTime = CACurrentMediaTime()
+        } else {
             beginShowFollowIfNeeded()
+        }
+    }
+
+    private func composerFocusChanged(isFocused: Bool) {
+        startObserving()
+        if follow != nil {
+            follow?.startTime = CACurrentMediaTime()
+        } else if isFocused {
+            beginShowFollowIfNeeded()
+        } else if followsLatest(), let scrollView, scrollView.window != nil,
+                  !scrollView.isTracking, !scrollView.isDecelerating,
+                  abs(scrollView.contentOffset.y - endOffset(of: scrollView)) < 2 {
+            // Nothing has moved yet; a timeline at its end stays above the
+            // composer as it shrinks and drops with the keyboard.
+            hasFollowedThisDismissal = true
+            let now = CACurrentMediaTime()
+            startFollow(Follow(isShowing: false, startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom,
+                               safeAreaChangedAt: now), in: scrollView)
         }
     }
 
@@ -169,8 +201,10 @@ final class TimelineKeyboardFollower {
         isHideAnnounced = true
         watchUntil = CACurrentMediaTime() + 0.6
         startObserving()
-        if follow?.isShowing == true {
-            endFollow(settling: true)
+        // A follow already running carries on into the drop.
+        if follow != nil {
+            follow?.startTime = CACurrentMediaTime()
+            hasFollowedThisDismissal = true
         }
         // Closing the composer, UIKit can collapse the safe area in one step
         // and commit the clamped offset before another pass runs, which draws
@@ -337,10 +371,6 @@ final class TimelineKeyboardFollower {
             follow.safeAreaChangedAt = now
         }
         let spring = keyboardAnimation(above: composer)
-        if let spring, follow.mirrored != spring.id {
-            mirror(spring, in: scrollView)
-            follow.mirrored = spring.id
-        }
         self.follow = follow
         applyFollow(to: scrollView)
 
@@ -361,7 +391,18 @@ final class TimelineKeyboardFollower {
         var unmirrored: CGFloat = 0
         var layoutLag: CGFloat = 0
         if let composer = currentComposer(), let window = scrollView.window {
-            unmirrored = composerDisplacement(of: composer) - (keyboardAnimation(above: composer)?.displacement ?? 0)
+            // The spring only counts as handled once it's mirrored, in the
+            // same commit as this.
+            var springDisplacement: CGFloat = 0
+            if let spring = keyboardAnimation(above: composer) {
+                if follow.mirrored != spring.id {
+                    mirror(spring, in: scrollView)
+                    follow.mirrored = spring.id
+                    self.follow = follow
+                }
+                springDisplacement = spring.displacement
+            }
+            unmirrored = composerDisplacement(of: composer) - springDisplacement
             // SwiftUI gives the timeline the composer's new height at once,
             // and animates the composer to it frame by frame.
             let safeAreaEdge = scrollView.convert(scrollView.bounds, to: window).maxY - scrollView.safeAreaInsets.bottom
