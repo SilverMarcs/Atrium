@@ -134,6 +134,9 @@ struct PhoneComposer: View {
         // At rest the bar sits a little into the home indicator's margin, as
         // the system bottom bar does; above the keyboard it keeps clear.
         .padding(.bottom, isExpanded ? PhoneComposerLayout.expandedMargin : -6)
+        // The system bottom bar kept the timeline this much further above
+        // its items.
+        .padding(.top, 10)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
         // A transcript landing in the draft opens it for editing.
