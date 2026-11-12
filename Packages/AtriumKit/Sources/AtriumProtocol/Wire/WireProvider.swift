@@ -30,5 +30,21 @@ public nonisolated struct WireProvider: Codable, Sendable, Hashable, Identifiabl
         self.deletionMessage = deletionMessage
     }
 
+    private enum EncodingKeys: String, CodingKey {
+        case provider, isAvailable, isEnabled, error, models, defaultSettings, deletionMessage
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: EncodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(isAvailable, forKey: .isAvailable)
+        // Older clients require isEnabled; clients already on the newer release require isAvailable.
+        try container.encode(isAvailable, forKey: .isEnabled)
+        try container.encodeIfPresent(error, forKey: .error)
+        try container.encodeIfPresent(models, forKey: .models)
+        try container.encodeIfPresent(defaultSettings, forKey: .defaultSettings)
+        try container.encode(deletionMessage, forKey: .deletionMessage)
+    }
+
     public var id: AgentProvider { provider }
 }
