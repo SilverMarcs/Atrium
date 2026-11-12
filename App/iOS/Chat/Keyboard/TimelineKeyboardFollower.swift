@@ -369,9 +369,15 @@ final class TimelineKeyboardFollower {
         }
         let additive = endOffset(of: scrollView) - scrollView.contentOffset.y - layoutLag - unmirrored
         let layer = scrollView.layer
-        // UIKit's own corrections would add to this one.
+        // UIKit's own corrections would add to this one, and it moves the
+        // chrome pinned to the viewport along with them.
         for key in layer.animationKeys() ?? [] where key.hasPrefix(Self.systemAnimationKey) {
             layer.removeAnimation(forKey: key)
+        }
+        for view in pinnedSubviews(of: scrollView) {
+            for key in view.layer.animationKeys() ?? [] where key.hasPrefix("position") {
+                view.layer.removeAnimation(forKey: key)
+            }
         }
         guard abs(additive - follow.additive) > 0.01 || layer.animation(forKey: Self.animationKey) == nil else { return }
         follow.additive = additive
