@@ -46,7 +46,7 @@ struct BranchMenuItems: View {
                 Divider()
             }
             Menu("Repository", systemImage: "folder") {
-                RepositoryPicker(repositories: repositories, selection: Binding(
+                RepositoryPicker(repositories: repositories, changed: source.scope.changedRepositories, selection: Binding(
                     get: { Optional(status.mainRepositoryURL) },
                     set: { source.scope.selectedRepository = $0 }
                 ))

@@ -29,8 +29,13 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     /// How much of its model's context the conversation uses, in percent, when its provider says.
     public var contextUsedPercent: Int?
     public var interactions: [AgentInteraction] = []
-    /// The checkout the agent works in, when it's in a Git repository.
+    /// The checkout the agent works in, when it's in a Git repository: the one
+    /// it last changed files in, or else where it runs commands.
     public var checkout: TaskCheckout? = nil
+    /// The checkouts of its project the agent changed files in, the most
+    /// recently changed first, one for each repository. Nil from a host that
+    /// doesn't say.
+    public var changedCheckouts: [TaskCheckout]? = nil
     /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
     public var origin: WireTaskOrigin? = nil
 
@@ -55,6 +60,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         contextUsedPercent: Int? = nil,
         interactions: [AgentInteraction] = [],
         checkout: TaskCheckout? = nil,
+        changedCheckouts: [TaskCheckout]? = nil,
         origin: WireTaskOrigin? = nil
     ) {
         self.id = id
@@ -77,6 +83,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.contextUsedPercent = contextUsedPercent
         self.interactions = interactions
         self.checkout = checkout
+        self.changedCheckouts = changedCheckouts
         self.origin = origin
     }
 

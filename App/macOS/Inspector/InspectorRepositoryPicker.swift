@@ -3,9 +3,10 @@ import AtriumProtocol
 import SwiftUI
 
 /// Picks the project's repository when it has several, at the foot of Source
-/// Control, Files and Search alike. Files and Search show the one picked on
-/// its own when it's inside the project folder. There, a project folder that
-/// only holds repositories comes first, showing all of it.
+/// Control, Files and Search alike. The ones the task on screen changed files
+/// in come first. Files and Search show the one picked on its own when it's
+/// inside the project folder. There, a project folder that only holds
+/// repositories comes next, showing all of it.
 struct InspectorRepositoryPicker: View {
     let project: Project
     /// Whether the whole project folder is a choice, for Files and Search.
@@ -14,12 +15,13 @@ struct InspectorRepositoryPicker: View {
     var body: some View {
         let scope = project.scope
         let repositories = scope.repositories ?? []
+        let changed = scope.changedRepositories
         let submodules = repositories.filter { repository in
-            repositories.contains {
+            !scope.isChanged(repository) && repositories.contains {
                 $0.mainRepositoryURL != repository.mainRepositoryURL && $0.mainRepositoryURL.contains(repository.mainRepositoryURL)
             }
         }
-        let mainRepositories = repositories.filter { !submodules.contains($0) }
+        let mainRepositories = repositories.filter { !scope.isChanged($0) && !submodules.contains($0) }
 
         let includesProjectFolder = includesProjectFolder && scope.offersProjectFolder
 
@@ -27,6 +29,19 @@ struct InspectorRepositoryPicker: View {
             get: { includesProjectFolder && scope.showsProjectFolder ? nil : scope.status?.mainRepositoryURL },
             set: { scope.selectedRepository = $0 }
         )) {
+            if !changed.isEmpty {
+                Section("Changed in This Task") {
+                    ForEach(changed, id: \.mainRepositoryURL) { repository in
+                        RepositoryLabel(repository: repository)
+                            .tag(Optional(repository.mainRepositoryURL))
+                    }
+                }
+
+                if includesProjectFolder || !mainRepositories.isEmpty || !submodules.isEmpty {
+                    Divider()
+                }
+            }
+
             if includesProjectFolder {
                 Label(project.workspace?.name ?? "Project", systemImage: "folder")
                     .tag(URL?.none)

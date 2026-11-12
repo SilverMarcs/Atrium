@@ -2,10 +2,9 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Shows the checkout a task works in, in its project's scope: when the task
-/// opens, and again whenever it moves into or out of a worktree. A checkout
-/// picked in between stays until then. Also follows the project's Git status,
-/// which the scope's pages, pickers and titles read.
+/// Shows the checkouts a task works in, in its project's scope, when the task
+/// opens and as it works. Also follows the project's Git status, which the
+/// scope's pages, pickers and titles read.
 private struct ProjectScopeFollower: ViewModifier {
     let item: HostTask?
 
@@ -16,16 +15,19 @@ private struct ProjectScopeFollower: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: item?.id, initial: true) { showCheckout() }
-            .onChange(of: item?.task.checkout) { showCheckout() }
+            .onChange(of: item?.id, initial: true) {
+                if let task = item?.task { scope?.show(task) }
+            }
+            .onChange(of: item?.task.changedCheckouts) { update() }
+            .onChange(of: item?.task.checkout) { update() }
             .task(id: scope?.gitScope) {
                 guard let item, let scope else { return }
                 await item.host.follow(.git(scope.gitScope))
             }
     }
 
-    private func showCheckout() {
-        scope?.show(item?.task.checkout)
+    private func update() {
+        if let task = item?.task { scope?.update(task) }
     }
 }
 

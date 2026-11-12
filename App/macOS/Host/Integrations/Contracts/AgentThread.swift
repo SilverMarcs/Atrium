@@ -30,6 +30,11 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var sideChatParentSessionID: String?
     /// How full the conversation keeps the model's context, as the provider last counted it.
     var contextUsage: AgentContextUsage?
+    /// The folders the agent changed files in, as its provider recorded the edits.
+    var edits: AgentEdits?
+    /// The folder the agent's commands last ran in, when the provider records
+    /// it: an agent can `cd` into a worktree without its session moving there.
+    var currentDirectory: String?
 
     nonisolated var id: String { "\(provider.rawValue):\(sessionID)" }
     var projectName: String { URL(fileURLWithPath: projectDirectory ?? directory).lastPathComponent }

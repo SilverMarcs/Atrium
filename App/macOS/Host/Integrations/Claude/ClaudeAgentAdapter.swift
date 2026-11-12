@@ -165,7 +165,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             title: subagent.title, directory: session.directory, updatedAt: subagent.updatedAt,
             status: subagent.isFinished ? .done : isRunning ? .processing : .stopped,
             isMainTask: false, hasProviderTitle: true, projectDirectory: session.projectDirectory,
-            parentSessionID: session.sessionID
+            parentSessionID: session.sessionID, edits: subagent.edits
         )
     }
 

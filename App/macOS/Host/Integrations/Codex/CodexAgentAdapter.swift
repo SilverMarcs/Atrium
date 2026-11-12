@@ -63,6 +63,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// How full each thread keeps its model's context, from Codex's latest
     /// token count, which it sends after each turn and on resume.
     private var contextUsages: [String: AgentContextUsage] = [:]
+    private let rolloutEdits = CodexRolloutEdits()
 
     init(instructions: ChatInstructions) {
         self.instructions = instructions
@@ -101,6 +102,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
 
     func listThreads() async throws -> [AgentThread] {
         try await connect()
+        await rolloutEdits.dropDeleted()
         let sessions = try await listThreads(archived: false)
         var threads = sessions
         for session in sessions {
@@ -249,12 +251,20 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread list.")
         }
         let readStates = result["readStates"] as? [String: [String: Any]] ?? [:]
-        let threads: [AgentThread] = rows.compactMap { row in
-            guard var thread = withDefaults(Self.thread(row)) else { return nil }
+        var threads: [AgentThread] = []
+        for row in rows {
+            guard var thread = withDefaults(Self.thread(row)) else { continue }
             thread.readState = Self.readState(readStates[thread.sessionID])
-            return thread
+            thread.edits = await edits(of: row)
+            threads.append(thread)
         }
         return AgentThread.unique(threads)
+    }
+
+    /// The files a thread changed, from the rollout Codex saves it in.
+    private func edits(of row: [String: Any]) async -> AgentEdits? {
+        guard let path = row["path"] as? String else { return nil }
+        return await rolloutEdits.edits(atPath: path)
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
@@ -265,6 +275,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
+        thread.edits = await edits(of: row)
         if let parentID = sideChats[id] { return sideChat(thread, of: parentID) }
         return withSubagentState(thread)
     }
@@ -829,6 +840,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
             if ["item/started", "item/completed"].contains(method) {
                 onEvent?(.transcriptChanged(sessionID: id))
+                // The thread's rollout now records the files the change touched.
+                if method == "item/completed", (params["item"] as? [String: Any])?["type"] as? String == "fileChange" {
+                    onEvent?(.threadInvalidated(sessionID: id))
+                }
                 for subagent in recordSubagents(in: [params["item"] as? [String: Any] ?? [:]], of: id) {
                     onEvent?(.threadInvalidated(sessionID: subagent))
                     onEvent?(.transcriptChanged(sessionID: subagent))

@@ -23,17 +23,14 @@ actor ClaudeSessionHistory {
         let metadata: ClaudeSessionMetadata?
     }
 
-    /// The newest records found in the whole lines of a transcript read so far.
-    private struct RecordScan {
-        var scanned = 0
-        var latest = ClaudeSessionMetadata.Latest()
-    }
-
     private static let windowSize = 64 * 1024
     private let projects: URL
     private var cache: [URL: Cached] = [:]
     private var locations: [String: URL] = [:]
-    private var recordScans: [URL: RecordScan] = [:]
+    /// The newest records found in each transcript.
+    private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
+    /// The edits found in each subagent's transcript.
+    private var editScans: [URL: JSONLines.Scan<AgentEdits>] = [:]
 
     init(configDirectory: URL? = nil) {
         let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
@@ -70,6 +67,11 @@ actor ClaudeSessionHistory {
         let existing = Set(files.map(\.url))
         cache = cache.filter { existing.contains($0.key) }
         recordScans = recordScans.filter { existing.contains($0.key) }
+        // A subagent's files sit in a folder named after its session's transcript.
+        let transcripts = Set(files.map(\.url.path))
+        editScans = editScans.filter { url, _ in
+            transcripts.contains(url.deletingLastPathComponent().deletingLastPathComponent().path + ".jsonl")
+        }
         locations = locations.filter { seen.contains($0.key) }
         return threads
     }
@@ -137,6 +139,8 @@ actor ClaudeSessionHistory {
         let isFinished: Bool
         /// Whether its last turn was stopped before it reported back.
         let wasInterrupted: Bool
+        /// The folders its edit tools changed files in.
+        let edits: AgentEdits
     }
 
     /// The subagents a session's agent started, newest first.
@@ -153,8 +157,17 @@ actor ClaudeSessionHistory {
             let isFinished = meta["finished"] as? Bool == true
             return Subagent(agentID: agentID, title: description.isEmpty ? type ?? "Subagent" : description,
                             updatedAt: stamp.modified, isFinished: isFinished,
-                            wasInterrupted: !isFinished && Self.endsInterrupted(url, size: stamp.size))
+                            wasInterrupted: !isFinished && Self.endsInterrupted(url, size: stamp.size),
+                            edits: subagentEdits(at: url, stamp: stamp))
         }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Brings a subagent's edits up to date, reading only what was appended since the last scan.
+    private func subagentEdits(at url: URL, stamp: Stamp) -> AgentEdits {
+        var scan = editScans[url] ?? JSONLines.Scan(AgentEdits())
+        try? scan.read(url, size: stamp.size) { data, range, edits in Self.recordEdits(in: data, range, into: &edits) }
+        editScans[url] = scan
+        return scan.state
     }
 
     /// Claude ends a stopped turn with an interruption notice as its last prompt.
@@ -369,39 +382,71 @@ actor ClaudeSessionHistory {
     /// Brings a transcript's newest records up to date, reading only what was appended since the last scan.
     /// Each is searched for from the end, so a long transcript's first scan seldom reads all of it.
     private func latestRecords(of file: File) throws -> ClaudeSessionMetadata.Latest {
-        var scan = recordScans[file.url].flatMap { $0.scanned <= file.stamp.size ? $0 : nil } ?? RecordScan()
-        guard scan.scanned < file.stamp.size else { return scan.latest }
-        let data = try Data(contentsOf: file.url, options: .alwaysMapped)
-        // Only whole lines are read; a line still being written waits for the next scan.
-        guard scan.scanned < data.count, let end = data[scan.scanned...].lastIndex(of: 10) else { return scan.latest }
-        let range = scan.scanned..<end
-        var latest = scan.latest
-        if latest.firstAITitle == nil {
-            latest.firstAITitle = Self.record(ofType: "ai-title", key: "aiTitle", in: data, range, last: false).map { String($0.prefix(200)) }
+        var scan = recordScans[file.url] ?? JSONLines.Scan(ClaudeSessionMetadata.Latest())
+        try scan.read(file.url, size: file.stamp.size) { data, range, latest in
+            if latest.firstAITitle == nil {
+                latest.firstAITitle = Self.record(ofType: "ai-title", key: "aiTitle", in: data, range, last: false).map { String($0.prefix(200)) }
+            }
+            let title = { (type: String, key: String) in Self.record(ofType: type, key: key, in: data, range, last: true).map { String($0.prefix(200)) } }
+            latest.customTitle = title("custom-title", "customTitle") ?? latest.customTitle
+            latest.aiTitle = title("ai-title", "aiTitle") ?? latest.aiTitle
+            latest.agentName = title("agent-name", "agentName") ?? latest.agentName
+            latest.lastPrompt = Self.record(ofType: "last-prompt", key: "lastPrompt", in: data, range, last: true) ?? latest.lastPrompt
+            // Claude records the folder a session moves into, and within the tool's
+            // result the one leaving a worktree restored; whichever it did last wins.
+            var move: String?
+            JSONLines.forEachLine(containing: #"Cwd":""#, in: data, range, newestFirst: true) { line in
+                let text = String(decoding: data[line], as: UTF8.self)
+                move = ["relocatedCwd", "restoredCwd"]
+                    .compactMap { key in text.range(of: "\"\(key)\"", options: .backwards).map { ($0.lowerBound, key) } }
+                    .max { $0.0 < $1.0 }
+                    .flatMap { ClaudeSessionMetadata.string($0.1, in: text, last: true) }
+                return move == nil
+            }
+            latest.worktreeDirectory = move ?? latest.worktreeDirectory
+            // A record's own folder is its last `cwd`: the context some carry before it names others.
+            JSONLines.forEachLine(containing: Self.cwdMarker, in: data, range, newestFirst: true) { line in
+                latest.cwd = JSONLines.string(after: Self.cwdMarker, in: data, line, last: true) ?? latest.cwd
+                return false
+            }
+            Self.recordEdits(in: data, range, into: &latest.edits)
+            latest.activity = ClaudeSessionMetadata.latestActivity(after: latest.activity, appended: Self.linesNewestFirst(in: data, range))
+            latest.reply = ClaudeSessionMetadata.latestReply(after: latest.reply, appended: Self.linesNewestFirst(in: data, range))
         }
-        let title = { (type: String, key: String) in Self.record(ofType: type, key: key, in: data, range, last: true).map { String($0.prefix(200)) } }
-        latest.customTitle = title("custom-title", "customTitle") ?? latest.customTitle
-        latest.aiTitle = title("ai-title", "aiTitle") ?? latest.aiTitle
-        latest.agentName = title("agent-name", "agentName") ?? latest.agentName
-        latest.lastPrompt = Self.record(ofType: "last-prompt", key: "lastPrompt", in: data, range, last: true) ?? latest.lastPrompt
-        // Claude records the folder a session moves into, and within the tool's
-        // result the one leaving a worktree restored; whichever it did last wins.
-        var move: String?
-        Self.forEachLine(containing: #"Cwd":""#, in: data, range, newestFirst: true) { line in
-            let text = String(decoding: data[line], as: UTF8.self)
-            move = ["relocatedCwd", "restoredCwd"]
-                .compactMap { key in text.range(of: "\"\(key)\"", options: .backwards).map { ($0.lowerBound, key) } }
-                .max { $0.0 < $1.0 }
-                .flatMap { ClaudeSessionMetadata.string($0.1, in: text, last: true) }
-            return move == nil
-        }
-        latest.worktreeDirectory = move ?? latest.worktreeDirectory
-        latest.activity = ClaudeSessionMetadata.latestActivity(after: latest.activity, appended: Self.linesNewestFirst(in: data, range))
-        latest.reply = ClaudeSessionMetadata.latestReply(after: latest.reply, appended: Self.linesNewestFirst(in: data, range))
-        scan.latest = latest
-        scan.scanned = end + 1
         recordScans[file.url] = scan
-        return latest
+        return scan.state
+    }
+
+    // MARK: - Edits
+
+    private static let cwdMarker = #""cwd":""#
+    private static let timestampMarker = #""timestamp":""#
+
+    /// Claude's edit tools as their calls are recorded, each with the input
+    /// naming the file it changes. Only a record's own keys appear unescaped,
+    /// so file contents quoting these never match.
+    private static let editTools: [(call: String, path: String)] = [
+        (#""name":"Edit","input":{"#, #""file_path":""#),
+        (#""name":"MultiEdit","input":{"#, #""file_path":""#),
+        (#""name":"Write","input":{"#, #""file_path":""#),
+        (#""name":"NotebookEdit","input":{"#, #""notebook_path":""#),
+    ]
+
+    /// Records the files the edit tool calls among the lines in `range`
+    /// changed, each at the time of its record. Claude repeats calls in
+    /// records of requests, which have no time and are skipped. `range`
+    /// starts a line.
+    private static func recordEdits(in data: Data, _ range: Range<Int>, into edits: inout AgentEdits) {
+        for tool in editTools {
+            JSONLines.forEachLine(containing: tool.call, in: data, range, newestFirst: false) { line in
+                guard let call = JSONLines.position(of: tool.call, in: data, line),
+                      let path = JSONLines.string(after: tool.path, in: data, call..<line.upperBound),
+                      let date = JSONLines.string(after: timestampMarker, in: data, line)
+                        .flatMap({ try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) }) else { return true }
+                edits.record(file: path, at: date)
+                return true
+            }
+        }
     }
 
     /// The lines in `range`, newest first, read lazily so a search can stop early. `range` starts a line.
@@ -418,7 +463,7 @@ actor ClaudeSessionHistory {
     /// `range` starts a line. Lines are only parsed when they contain the record's type.
     private static func record(ofType type: String, key: String, in data: Data, _ range: Range<Int>, last: Bool) -> String? {
         var found: String?
-        forEachLine(containing: #""type":"\#(type)""#, in: data, range, newestFirst: last) { line in
+        JSONLines.forEachLine(containing: #""type":"\#(type)""#, in: data, range, newestFirst: last) { line in
             guard let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
                   record["type"] as? String == type,
                   let value = (record[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -427,41 +472,6 @@ actor ClaudeSessionHistory {
             return false
         }
         return found
-    }
-
-    /// Calls `body` with each line among those in `range` that contains
-    /// `marker`, in file order or newest first, until it returns false.
-    /// `range` starts a line. Newest first, the range is searched a chunk at a
-    /// time from its end, so finding a recent line doesn't read all of it.
-    private static func forEachLine(containing marker: String, in data: Data, _ range: Range<Int>, newestFirst: Bool,
-                                    _ body: (Range<Int>) -> Bool) {
-        let marker = Array(marker.utf8)
-        let chunk = newestFirst ? 1 << 20 : range.count
-        var upper = range.upperBound
-        var seen = range.upperBound
-        while upper > range.lowerBound {
-            let lower = max(range.lowerBound, upper - chunk)
-            // A match can straddle the chunk's end; lines already passed to `body` are skipped.
-            let window = lower..<min(range.upperBound, upper + marker.count - 1)
-            var lines: [Range<Int>] = []
-            data.withUnsafeBytes { buffer in
-                guard let base = buffer.baseAddress else { return }
-                var position = window.lowerBound
-                while position < window.upperBound,
-                      let match = memmem(base + position, window.upperBound - position, marker, marker.count) {
-                    let offset = base.distance(to: UnsafeRawPointer(match))
-                    let start = buffer[range.lowerBound..<offset].lastIndex(of: 10).map { $0 + 1 } ?? range.lowerBound
-                    let end = buffer[offset..<range.upperBound].firstIndex(of: 10) ?? range.upperBound
-                    position = end + 1
-                    if start < seen { lines.append(start..<end) }
-                }
-            }
-            for line in newestFirst ? lines.reversed() : lines {
-                guard body(line) else { return }
-            }
-            seen = lines.first?.lowerBound ?? seen
-            upper = lower
-        }
     }
 
     /// Turns an agent name, kebab-case or spaced, into sentence case when no readable title was recorded.
@@ -474,6 +484,7 @@ actor ClaudeSessionHistory {
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
                     updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: metadata.hasProviderTitle, projectDirectory: metadata.projectDirectory,
                     model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode,
-                    contextUsage: metadata.contextTokens.map { AgentContextUsage(tokens: $0) })
+                    contextUsage: metadata.contextTokens.map { AgentContextUsage(tokens: $0) },
+                    edits: metadata.edits, currentDirectory: metadata.currentDirectory)
     }
 }

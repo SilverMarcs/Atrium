@@ -86,10 +86,51 @@ public final class ProjectScope {
         return repositories?.first(where: holdsFolder).map(Self.branch)
     }
 
-    /// Shows the checkout a task works in, and picks its repository.
-    public func show(_ checkout: TaskCheckout?) {
-        guard let checkout else { return }
-        showWorktree(checkout.worktree, of: checkout.repository)
+    /// The repositories the task this scope follows changed files in, the
+    /// most recently changed first, among those the host shows.
+    public var changedRepositories: [GitRepositoryStatus] {
+        guard let repositories else { return [] }
+        return changedRepositoryURLs.compactMap { repository in repositories.first { $0.mainRepositoryURL == repository } }
+    }
+
+    /// Whether the task this scope follows changed files in a repository.
+    public func isChanged(_ repository: GitRepositoryStatus) -> Bool {
+        changedRepositoryURLs.contains(repository.mainRepositoryURL)
+    }
+
+    /// Main checkouts of the repositories the followed task changed files in.
+    private var changedRepositoryURLs: [URL] = []
+    /// The task followed and the checkouts last shown for it.
+    @ObservationIgnored private var followed: (taskID: String, checkouts: Set<TaskCheckout>)?
+
+    /// Shows the checkouts a task works in as it opens: each repository it
+    /// changed files in through the checkout it changed them in, every other
+    /// one through its main checkout, and the one it works in now picked.
+    public func show(_ task: WireTask) {
+        followed = nil
+        update(task)
+    }
+
+    /// Keeps up with the task shown as it works. What's shown changes again
+    /// only once it changes files in another checkout or moves to one, so a
+    /// checkout picked in between stays, and an agent going back and forth
+    /// between its checkouts doesn't switch them each time.
+    public func update(_ task: WireTask) {
+        let changed = task.changedCheckouts ?? []
+        let repositories = changed.map(\.repository)
+        if repositories != changedRepositoryURLs { changedRepositoryURLs = repositories }
+        guard let current = task.checkout else {
+            followed = nil
+            return
+        }
+        let checkouts = Set(changed + [current])
+        if let followed, followed.taskID == task.id, followed.checkouts == checkouts { return }
+        followed = (task.id, checkouts)
+        worktrees = [:]
+        for checkout in changed + [current] {
+            worktrees[checkout.repository] = checkout.worktree?.standardizedFileURL
+        }
+        selectedRepository = current.repository
     }
 
     /// Shows a repository through one of its linked worktrees, or through its

@@ -21,6 +21,10 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     /// How full the conversation keeps Claude's context, as of the newest
     /// reply; unknown once it's compacted, until the next reply.
     let contextTokens: Int?
+    /// The folders the session's edit tools changed files in.
+    let edits: AgentEdits
+    /// The folder its commands last ran in, which a `cd` changes.
+    let currentDirectory: String?
 
     /// The model, reasoning effort and speed of a reply, and the tokens its
     /// request took in unless the conversation was compacted since: all of its
@@ -44,6 +48,9 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         var lastPrompt: String?
         /// The folder the session last moved into, or back to from a worktree.
         var worktreeDirectory: String?
+        /// The folder the newest record was written in.
+        var cwd: String?
+        var edits = AgentEdits()
         var activity: Date?
         var reply: Reply?
     }
@@ -61,14 +68,16 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             hasProviderTitle: name != nil,
             isRenamed: customName != nil,
             agentName: latest.agentName,
-            directory: latest.worktreeDirectory ?? originalDirectory ?? string("cwd", in: tail, last: true) ?? "",
+            directory: latest.worktreeDirectory ?? originalDirectory ?? latest.cwd ?? "",
             projectDirectory: originalDirectory,
             continuedIn: continuation(in: tail),
             lastActivity: latest.activity,
             model: latest.reply?.model,
             reasoningEffort: latest.reply?.effort,
             isFastMode: latest.reply?.speed.map { $0 == "fast" },
-            contextTokens: latest.reply?.contextTokens
+            contextTokens: latest.reply?.contextTokens,
+            edits: latest.edits,
+            currentDirectory: latest.cwd
         )
     }
 
