@@ -118,7 +118,9 @@ struct TaskDetailScreen: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let item, let draft = newChatDraft {
-                NewChatPicker(hosts: hosts, host: item.host, draft: draft)
+                NewChatPickerScroller {
+                    NewChatPicker(hosts: hosts, host: item.host, draft: draft)
+                }
             }
         }
         // A subagent answers only to its own agent, so it has no composer.
