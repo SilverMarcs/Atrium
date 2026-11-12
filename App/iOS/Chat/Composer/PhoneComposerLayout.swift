@@ -9,7 +9,8 @@ enum PhoneComposerPart {
     case editor
     case dictation
     case send
-    case stop
+    /// The circle after the field at rest: Send with a draft, else Stop.
+    case action
 }
 
 private struct PhoneComposerPartKey: LayoutValueKey {
@@ -27,7 +28,7 @@ extension View {
 ///
 /// At rest it's the bottom bar it replaced: the attachment button's circle,
 /// then the field's capsule with the dictation button inside its end, and
-/// the Stop button's circle while the agent works. Expanded, the field's
+/// a Send or Stop circle. Expanded, the field's
 /// glass is one panel across the width: the editor on top, over a row with
 /// the attachment button at its leading end and dictation and Send at its
 /// trailing end.
@@ -93,8 +94,8 @@ struct PhoneComposerLayout: Layout {
             frames[.cancelEdit] = CGRect(x: leading, y: y, width: row, height: row)
             leading += row + Self.restingSpacing
         }
-        if has(.stop, in: subviews) {
-            frames[.stop] = CGRect(x: trailing - row, y: y, width: row, height: row)
+        if has(.action, in: subviews) {
+            frames[.action] = CGRect(x: trailing - row, y: y, width: row, height: row)
             trailing -= row + Self.restingSpacing
         }
         frames[.panel] = CGRect(x: leading, y: y, width: max(trailing - leading, 0), height: row)
@@ -128,10 +129,10 @@ struct PhoneComposerLayout: Layout {
         let cancelX = has(.attach, in: subviews) ? leading + row : leading
         frames[.cancelEdit] = CGRect(x: cancelX, y: rowY, width: row, height: row)
 
-        // Send and Stop share the trailing cell; only one shows.
+        // The action circle melts into the cell Send takes.
         let sendCell = trailing - row
         frames[.send] = centered(size(of: .send, in: subviews), inCellAt: sendCell, y: rowY)
-        frames[.stop] = CGRect(x: sendCell, y: rowY, width: row, height: row)
+        frames[.action] = CGRect(x: sendCell, y: rowY, width: row, height: row)
         let dictation = size(of: .dictation, in: subviews)
         frames[.dictation] = CGRect(x: sendCell - dictation.width, y: rowY + (row - dictation.height) / 2,
                                     width: dictation.width, height: dictation.height)

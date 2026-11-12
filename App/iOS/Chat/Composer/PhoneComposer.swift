@@ -27,8 +27,15 @@ struct PhoneComposer: View {
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
     private var showsAttach: Bool { item?.task.actions.contains(.attachImages) != false }
     private var showsCancelEdit: Bool { composer.messageEdit != nil }
-    /// At rest, Stop has a button of its own; expanded, Send stands in for it.
-    private var showsStop: Bool { item?.task.actions.contains(.interrupt) == true }
+    /// At rest, Send has a circle of its own once there's something to send,
+    /// as Stop does while the agent works; expanded, the panel's Send button
+    /// stands in for both.
+    private var restingAction: PhoneComposerActionButton.Action? {
+        if let item, composer.offersStop(for: item.task.actions) { return .stop }
+        if composer.hasContent || composer.dictation.isActive { return .send }
+        if item?.task.actions.contains(.interrupt) == true { return .stop }
+        return nil
+    }
 
     var body: some View {
         @Bindable var composer = composer
@@ -72,23 +79,16 @@ struct PhoneComposer: View {
 
                     // Expanded, its circle melts into the panel's end, where
                     // Send stands in for it.
-                    if showsStop, let item {
-                        Button(role: .destructive) {
-                            item.host.interrupt(item.task.id)
-                        } label: {
-                            Label("Stop", systemImage: "stop.fill")
-                                .labelStyle(.iconOnly)
-                                .font(.title2)
-                                .foregroundStyle(.red)
-                                .opacity(isExpanded ? 0 : 1)
+                    if let action = restingAction {
+                        PhoneComposerActionButton(
+                            action: action,
+                            isEditing: composer.messageEdit != nil,
+                            isEnabled: action == .stop || composer.canSend,
+                            isHidden: isExpanded
+                        ) {
+                            if action == .send { send() } else if let item { item.host.interrupt(item.task.id) }
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(.circle)
-                        .glassEffect(isExpanded ? .identity : .regular.interactive(), in: .circle)
-                        .buttonStyle(.plain)
-                        .allowsHitTesting(!isExpanded)
-                        .accessibilityHidden(isExpanded)
-                        .phoneComposerPart(.stop)
+                        .phoneComposerPart(.action)
                     }
                 }
             }
@@ -99,7 +99,7 @@ struct PhoneComposer: View {
             PhoneComposerLayout(isExpanded: isExpanded, draft: composer.draft) {
                 if showsAttach { Color.clear.phoneComposerPart(.attach) }
                 if showsCancelEdit { Color.clear.phoneComposerPart(.cancelEdit) }
-                if showsStop { Color.clear.phoneComposerPart(.stop) }
+                if restingAction != nil { Color.clear.phoneComposerPart(.action) }
 
                 ComposerTextView(
                     text: $composer.draft,
@@ -139,6 +139,7 @@ struct PhoneComposer: View {
         .padding(.top, 10)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
+        .animation(.smooth(duration: 0.25), value: restingAction)
         // A transcript landing in the draft opens it for editing.
         .onChange(of: composer.focusRequestID) { _, id in
             if id != nil { composer.isFocused = true }
