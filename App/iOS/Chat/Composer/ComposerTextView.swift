@@ -162,12 +162,19 @@ final class ComposerEditor: UITextView {
     private func applyMode() {
         textContainer.maximumNumberOfLines = isExpanded ? 0 : 1
         textContainer.lineBreakMode = isExpanded ? .byWordWrapping : .byTruncatingTail
-        if !isExpanded {
-            isScrollEnabled = false
-            contentOffset = .zero
-        }
+        // Expanded, it always scrolls, so UIKit keeps the caret in view
+        // once the draft outgrows it.
+        isScrollEnabled = isExpanded
+        contentOffset = .zero
         setNeedsLayout()
-        updateScrolling()
+        if isExpanded {
+            // Opening a long draft shows where the caret is, once laid out.
+            Task { @MainActor [weak self] in
+                guard let self, self.isExpanded else { return }
+                self.layoutIfNeeded()
+                self.scrollRangeToVisible(self.selectedRange)
+            }
+        }
     }
 
     /// The editor's expanded height at this width for `text`: its wrapped
@@ -220,12 +227,11 @@ final class ComposerEditor: UITextView {
     }
 
     /// Scrolls only once the draft is taller than the editor can grow.
+    /// A new line scrolls to the caret before the editor has grown to fit
+    /// it; once the draft fits, its first line goes back to the top.
     private func updateScrolling() {
-        guard isExpanded else { return }
-        let fits = contentSize.height <= bounds.height + 0.5
-        if isScrollEnabled == fits {
-            isScrollEnabled = !fits
-        }
+        guard isExpanded, contentSize.height <= bounds.height + 0.5, contentOffset.y != 0 else { return }
+        contentOffset = .zero
     }
 
     // MARK: - Focus

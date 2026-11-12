@@ -18,7 +18,7 @@ struct TaskComposerPlacement: ViewModifier {
             content
         } else if UIDevice.current.userInterfaceIdiom == .phone {
             content
-                .safeAreaBar(edge: .bottom, spacing: 0) {
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     PhoneComposer(item: item, prompt: prompt, submit: submit)
                 }
         } else {
