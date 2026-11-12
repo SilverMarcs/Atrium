@@ -1,20 +1,14 @@
 import PhotosUI
 import SwiftUI
 
-/// Presents the photo library and camera for the composer's attachment menu,
-/// and on iPhone shows the images attached so far above the composer. The
-/// iPad's inline input bar shows them itself.
+/// Presents the photo library and camera for the composer's attachment menu.
+/// The composers show the images attached so far themselves.
 struct ComposerAttachmentPickers: ViewModifier {
     @Bindable var composer: TaskComposer
     @State private var selection: [PhotosPickerItem] = []
 
     func body(content: Content) -> some View {
         content
-            .safeAreaInset(edge: .bottom) {
-                if UIDevice.current.userInterfaceIdiom == .phone, !composer.images.isEmpty {
-                    ComposerAttachmentStrip(composer: composer)
-                }
-            }
             .photosPicker(
                 isPresented: $composer.isPickingPhotos,
                 selection: $selection,
@@ -36,7 +30,7 @@ struct ComposerAttachmentPickers: ViewModifier {
 }
 
 extension View {
-    /// Lets the composer's attachment menu pick images, and shows them.
+    /// Lets the composer's attachment menu pick images.
     func composerAttachmentPickers(_ composer: TaskComposer) -> some View {
         modifier(ComposerAttachmentPickers(composer: composer))
     }

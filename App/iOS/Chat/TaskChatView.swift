@@ -132,7 +132,11 @@ struct TaskChatView: View {
                 // The iPhone's composer closes on a tap outside it; the iPad's
                 // keeps its own focus.
                 .dismissesComposerOnTap { [composer] in
-                    if UIDevice.current.userInterfaceIdiom == .phone, composer.isFocused { composer.isFocused = false }
+                    // Resigning at once, rather than through the composer's
+                    // focus, lets UIKit announce the keyboard hiding before
+                    // the composer starts to shrink.
+                    guard UIDevice.current.userInterfaceIdiom == .phone, composer.isFocused else { return }
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             }
             // The container is what shows between the bars and keyboard. The

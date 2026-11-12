@@ -122,11 +122,6 @@ struct TaskDetailScreen: View {
             }
         }
         .taskComposer(composer, item: item, prompt: "Ask anything…", submit: sendDraft)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if isPhone, let edit = composer.messageEdit {
-                ConversationEditContent(edit: edit)
-            }
-        }
         .composerAttachmentPickers(composer)
         .composerDropHandler(composer, isEnabled: item?.task.actions.contains(.attachImages) == true)
         .composerDictationLifecycle(composer)

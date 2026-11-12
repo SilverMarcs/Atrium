@@ -7,7 +7,11 @@ import SwiftUI
 /// and Shift- or Option-Return adds a line.
 struct ComposerTextView: UIViewRepresentable {
     @Binding var text: String
+    /// Asks for focus, and follows it.
     @Binding var isFocused: Bool
+    /// Whether the editor is first responder: set only once UIKit has moved
+    /// focus, after the keyboard's own announcements.
+    @Binding var isEditing: Bool
     let placeholder: String
     /// Whether the editor shows the whole draft, rather than its first line.
     let isExpanded: Bool
@@ -19,7 +23,7 @@ struct ComposerTextView: UIViewRepresentable {
     static let maximumLines = 8
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused)
+        Coordinator(text: $text, isFocused: $isFocused, isEditing: $isEditing)
     }
 
     func makeUIView(context: Context) -> ComposerEditor {
@@ -33,6 +37,7 @@ struct ComposerTextView: UIViewRepresentable {
     func updateUIView(_ editor: ComposerEditor, context: Context) {
         context.coordinator.text = $text
         context.coordinator.isFocused = $isFocused
+        context.coordinator.isEditing = $isEditing
         editor.onReturn = onReturn
         editor.placeholder = placeholder
         editor.isEditable = isEditable
@@ -62,10 +67,12 @@ struct ComposerTextView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var text: Binding<String>
         var isFocused: Binding<Bool>
+        var isEditing: Binding<Bool>
 
-        init(text: Binding<String>, isFocused: Binding<Bool>) {
+        init(text: Binding<String>, isFocused: Binding<Bool>, isEditing: Binding<Bool>) {
             self.text = text
             self.isFocused = isFocused
+            self.isEditing = isEditing
         }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -76,10 +83,12 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            isEditing.wrappedValue = true
             if !isFocused.wrappedValue { isFocused.wrappedValue = true }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            isEditing.wrappedValue = false
             if isFocused.wrappedValue { isFocused.wrappedValue = false }
         }
     }
