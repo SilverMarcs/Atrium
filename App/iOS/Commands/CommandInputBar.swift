@@ -1,9 +1,9 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The command console's input on iPad, laid out like the chat's inline
-/// composer: a field that grows with its draft, with the Keys menu inside it
-/// while the command runs, and a Send button.
+/// The command console's input: a field that grows with its draft, with the
+/// Keys menu inside it while the command runs, and a Send button. Return
+/// submits and keeps the field open for the next line.
 struct CommandInputBar: View {
     let command: WireCommand
     @Bindable var console: CommandConsole

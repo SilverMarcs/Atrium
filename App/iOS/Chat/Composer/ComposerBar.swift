@@ -2,7 +2,8 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The iPhone's composer, along the bottom edge above the keyboard.
+/// The task's composer, along the bottom edge above the keyboard, on iPhone
+/// and iPad alike.
 ///
 /// At rest it looks like the bottom bar it replaced: the attachment button
 /// beside a field showing the draft's first line, with dictation inside it.
@@ -10,7 +11,7 @@ import SwiftUI
 /// the whole draft above a row of the attachment button, dictation and Send.
 /// Losing focus, by sending, going back or dragging the keyboard away,
 /// collapses it again with the draft kept.
-struct PhoneComposer: View {
+struct ComposerBar: View {
     @Environment(TaskComposer.self) private var composer
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,6 +23,7 @@ struct PhoneComposer: View {
 
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
+    @State private var width: CGFloat = 0
     /// The resting Send or Stop circle shows once the composer has collapsed
     /// back into place, rather than riding down from the panel's end.
     @State private var showsRestingAction = true
@@ -30,15 +32,23 @@ struct PhoneComposer: View {
     /// than the request for focus, so the composer only starts to grow or
     /// shrink once UIKit has announced the keyboard moving with it.
     @State private var isExpanded = false
+    private var expandedEditorHeight: CGFloat {
+        guard isExpanded, width > 0 else { return 0 }
+        return ComposerEditor.expandedHeight(
+            of: composer.draft, width: width - ComposerBarLayout.expandedMargin * 2,
+            maximumLines: ComposerTextView.maximumLines
+        )
+    }
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
     private var showsAttach: Bool { item?.task.actions.contains(.attachImages) != false }
     private var showsCancelEdit: Bool { composer.messageEdit != nil }
     /// At rest, Send has a circle of its own once there's something to send,
     /// as Stop does while the agent works; expanded, the panel's Send button
     /// stands in for both.
-    private var restingAction: PhoneComposerActionButton.Action? {
+    private var restingAction: ComposerBarActionButton.Action? {
         if let item, composer.offersStop(for: item.task.actions) { return .stop }
-        if composer.hasContent || composer.dictation.isActive { return .send }
+        // Dictating shows Send only once the recording has become text.
+        if composer.hasContent { return .send }
         if item?.task.actions.contains(.interrupt) == true { return .stop }
         return nil
     }
@@ -60,10 +70,10 @@ struct PhoneComposer: View {
                 // The container lets the attachment button's circle melt into
                 // the field's glass as it grows.
                 GlassEffectContainer(spacing: 0) {
-                    PhoneComposerLayout(isExpanded: isExpanded, draft: composer.draft) {
+                    ComposerBarLayout(isExpanded: isExpanded, draft: composer.draft) {
                         Color.clear
-                            .glassEffect(.regular, in: .rect(cornerRadius: PhoneComposerLayout.cornerRadius))
-                            .phoneComposerPart(.panel)
+                            .glassEffect(.regular, in: .rect(cornerRadius: ComposerBarLayout.cornerRadius))
+                            .composerBarPart(.panel)
 
                         if showsAttach {
                             ComposerAttachmentMenu {
@@ -75,7 +85,7 @@ struct PhoneComposer: View {
                                     .glassEffect(isExpanded ? .identity : .regular.interactive(), in: .circle)
                             }
                             .buttonStyle(.plain)
-                            .phoneComposerPart(.attach)
+                            .composerBarPart(.attach)
                         }
 
                         if showsCancelEdit {
@@ -90,13 +100,13 @@ struct PhoneComposer: View {
                             .glassEffect(isExpanded ? .identity : .regular.interactive(), in: .circle)
                             .buttonStyle(.plain)
                             .disabled(isSubmittingEdit)
-                            .phoneComposerPart(.cancelEdit)
+                            .composerBarPart(.cancelEdit)
                         }
 
                         // Expanded, its circle melts into the panel's end, where
                         // Send stands in for it.
                         if let action = restingAction {
-                            PhoneComposerActionButton(
+                            ComposerBarActionButton(
                                 action: action,
                                 isEditing: composer.messageEdit != nil,
                                 isEnabled: action == .stop || composer.canSend,
@@ -104,7 +114,7 @@ struct PhoneComposer: View {
                             ) {
                                 if action == .send { send() } else if let item { item.host.interrupt(item.task.id) }
                             }
-                            .phoneComposerPart(.action)
+                            .composerBarPart(.action)
                         }
                     }
                 }
@@ -112,10 +122,10 @@ struct PhoneComposer: View {
                 // The container draws its glass over everything inside it that
                 // isn't glass itself, so the field's contents are laid over it by
                 // an identical layout, with empty stand-ins for the buttons above.
-                PhoneComposerLayout(isExpanded: isExpanded, draft: composer.draft) {
-                    if showsAttach { Color.clear.phoneComposerPart(.attach) }
-                    if showsCancelEdit { Color.clear.phoneComposerPart(.cancelEdit) }
-                    if restingAction != nil { Color.clear.phoneComposerPart(.action) }
+                ComposerBarLayout(isExpanded: isExpanded, draft: composer.draft) {
+                    if showsAttach { Color.clear.composerBarPart(.attach) }
+                    if showsCancelEdit { Color.clear.composerBarPart(.cancelEdit) }
+                    if restingAction != nil { Color.clear.composerBarPart(.action) }
 
                     ComposerTextView(
                         text: $composer.draft,
@@ -128,31 +138,31 @@ struct PhoneComposer: View {
                         onReturn: send
                     )
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
-                    .phoneComposerPart(.editor)
+                    .composerBarPart(.editor)
 
                     if dictationSettings.isEnabled {
                         ComposerDictationButton(composer: composer, isInline: true, symbolScale: .large)
                             .buttonStyle(.plain)
-                            .phoneComposerPart(.dictation)
+                            .composerBarPart(.dictation)
                     }
 
                     // Waits hidden at the field's end, so it travels with the
                     // field as it grows. Becomes Stop while the agent works with
                     // nothing to send.
-                    PhoneComposerSendButton(item: item, send: send)
+                    ComposerBarSendButton(item: item, send: send)
                         .scaleEffect(isExpanded ? 1 : 0.5)
                         .opacity(isExpanded ? 1 : 0)
                         // Gone as soon as the panel starts to drop.
                         .animation(isExpanded ? .easeOut(duration: 0.12) : nil, value: isExpanded)
                         .allowsHitTesting(isExpanded)
                         .accessibilityHidden(!isExpanded)
-                        .phoneComposerPart(.send)
+                        .composerBarPart(.send)
                 }
             }
             // At rest the bar sits a little into the home indicator's margin, as
             // the system bottom bar does; above the keyboard it keeps clear.
         }
-        .padding(.bottom, isExpanded ? PhoneComposerLayout.expandedMargin : -6)
+        .padding(.bottom, isExpanded ? ComposerBarLayout.expandedMargin : -6)
         // The system bottom bar kept the timeline this much further above
         // its items.
         .padding(.top, 10)
@@ -160,6 +170,10 @@ struct PhoneComposer: View {
         .background(ComposerKeyboardAnchor())
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
+        // Each line the draft gains or loses grows or shrinks the panel
+        // smoothly, and the timeline follows it.
+        .animation(.smooth(duration: 0.25), value: expandedEditorHeight)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .animation(.smooth(duration: 0.25), value: restingAction)
         .task(id: isExpanded) {
             guard !isExpanded else {
@@ -168,10 +182,6 @@ struct PhoneComposer: View {
             }
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
-        }
-        // A transcript landing in the draft opens it for editing.
-        .onChange(of: composer.focusRequestID) { _, id in
-            if id != nil { composer.isFocused = true }
         }
         .onChange(of: composer.messageEdit?.id) { _, id in
             editFocusTask?.cancel()

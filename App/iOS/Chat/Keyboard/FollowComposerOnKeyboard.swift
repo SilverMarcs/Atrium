@@ -4,8 +4,7 @@ import SwiftUI
 /// `TimelineKeyboardFollower`.
 ///
 /// Apply it to the scroll view's content, so the introspector sits inside
-/// the `UIScrollView` it looks for. Only the iPhone's composer
-/// rides the keyboard, so elsewhere this does nothing.
+/// the `UIScrollView` it looks for.
 struct FollowComposerOnKeyboard: ViewModifier {
     @State private var follower = TimelineKeyboardFollower()
     let followsLatest: () -> Bool
@@ -13,15 +12,13 @@ struct FollowComposerOnKeyboard: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    EnclosingScrollViewIntrospector { scrollView in
-                        follower.followsLatest = followsLatest
-                        follower.attach(to: scrollView)
-                    } onDetach: { scrollView in
-                        follower.detach(from: scrollView)
-                    }
-                    .accessibilityHidden(true)
+                EnclosingScrollViewIntrospector { scrollView in
+                    follower.followsLatest = followsLatest
+                    follower.attach(to: scrollView)
+                } onDetach: { scrollView in
+                    follower.detach(from: scrollView)
                 }
+                .accessibilityHidden(true)
             }
     }
 }

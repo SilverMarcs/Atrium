@@ -129,13 +129,11 @@ struct TaskChatView: View {
                     (pin.isPinned || pin.isNearEnd) && !pin.isReaderScrolling && composer.messageEdit == nil
                         && host.conversations.pendingPrompts[taskID]?.isEmpty != false && !anchorSpace.isHolding
                 }
-                // The iPhone's composer closes on a tap outside it; the iPad's
-                // keeps its own focus.
                 .dismissesComposerOnTap { [composer] in
                     // Resigning at once, rather than through the composer's
                     // focus, lets UIKit announce the keyboard hiding before
                     // the composer starts to shrink.
-                    guard UIDevice.current.userInterfaceIdiom == .phone, composer.isFocused else { return }
+                    guard composer.isFocused else { return }
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             }
@@ -186,9 +184,8 @@ struct TaskChatView: View {
             }
             // Another task, or a transcript arriving for the first time, opens
             // at its newest message, pinned. The scroll view itself is kept
-            // rather than recreated with a new identity: the bottom bar
-            // re-adopts a new scroll view, so recreating it while a task opens
-            // makes the composer's placeholder spring.
+            // rather than recreated with a new identity, so the keyboard
+            // follower stays attached to it.
             .onChange(of: TranscriptTracker(
                 taskID: task.id,
                 hasTranscript: messages != nil,
@@ -244,6 +241,14 @@ struct TaskChatView: View {
             // pinned. Checking the position as content grows would unpin it
             // whenever growth lands mid-scroll, such as the working indicator
             // appearing while a sent prompt is still sliding up.
+            // The composer growing, as the keyboard comes up or the draft gains
+            // a line, takes a timeline kept at its end along; the keyboard
+            // follower draws the move in step with the composer.
+            .onScrollGeometryChange(for: CGFloat.self, of: \.contentInsets.bottom) { oldInset, newInset in
+                guard newInset > oldInset, composer.messageEdit == nil, pin.isPinned, !pin.isReaderScrolling,
+                      !sections.hasTurn else { return }
+                scrollToLatest(with: proxy, animated: false)
+            }
             // Dragging the keyboard away scrolls the timeline a little off its
             // end, which shouldn't keep the composer from taking it back there.
             .onScrollGeometryChange(for: Bool.self) { geometry in

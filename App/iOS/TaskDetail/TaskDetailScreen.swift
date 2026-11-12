@@ -121,7 +121,12 @@ struct TaskDetailScreen: View {
                 NewChatPicker(hosts: hosts, host: item.host, draft: draft)
             }
         }
-        .taskComposer(composer, item: item, prompt: "Ask anything…", submit: sendDraft)
+        // A subagent answers only to its own agent, so it has no composer.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if item?.task.isSubagent != true {
+                ComposerBar(item: item, prompt: "Ask anything…", submit: sendDraft)
+            }
+        }
         .composerAttachmentPickers(composer)
         .composerDropHandler(composer, isEnabled: item?.task.actions.contains(.attachImages) == true)
         .composerDictationLifecycle(composer)

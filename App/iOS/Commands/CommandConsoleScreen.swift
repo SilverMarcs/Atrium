@@ -13,7 +13,6 @@ struct CommandConsoleScreen: View {
 
     private var command: WireCommand? { console.command }
 
-    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         CommandOutputLines(output: console.output)
@@ -23,8 +22,8 @@ struct CommandConsoleScreen: View {
                                            description: Text("This command is no longer in the project."))
                 }
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) {
-                if !isPhone, let command {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let command {
                     CommandInputBar(command: command, console: console)
                 }
             }
@@ -45,18 +44,7 @@ struct CommandConsoleScreen: View {
                         }
                     }
                 }
-                // iPad has no bottom bar; its inline input bar carries the keys.
-                if isPhone {
-                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                    if command?.isRunning == true {
-                        ToolbarSpacer(.fixed, placement: .bottomBar)
-                        ToolbarItem(placement: .bottomBar) {
-                            CommandKeysMenu { console.perform(.key($0)) }
-                        }
-                    }
-                }
             }
-            .modifier(CommandInputPlacement(console: console, isPhone: isPhone))
             .task(id: console.workspaceID) { await console.host.follow(.commands(workspaceID: console.workspaceID)) }
             .task(id: console.topic) { await console.host.follow(console.topic) }
     }
@@ -89,29 +77,6 @@ private struct CommandOutputLines: View {
                 ProgressView()
                     .controlSize(.large)
             }
-        }
-    }
-}
-
-/// Types a reply while the command runs, or a one-off script in the
-/// project's checkout while it doesn't, in the bottom-bar search field on
-/// iPhone, the way the chat composes prompts. iPad shows its inline input bar
-/// instead.
-private struct CommandInputPlacement: ViewModifier {
-    let console: CommandConsole
-    let isPhone: Bool
-
-    func body(content: Content) -> some View {
-        if isPhone {
-            let isRunning = console.command?.isRunning == true
-            content
-                .commandSearchFieldComposer(
-                    console,
-                    prompt: isRunning ? "Reply" : "Run a command",
-                    submitLabel: isRunning ? .send : .go
-                )
-        } else {
-            content
         }
     }
 }

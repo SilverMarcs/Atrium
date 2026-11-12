@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The iPhone composer's editor: a `UITextView` that shows the draft's first
+/// The composer bar's editor: a `UITextView` that shows the draft's first
 /// line at rest and grows with the draft while it's being written.
 ///
 /// The keyboard's Return adds a line. A hardware keyboard's Return sends,
@@ -58,7 +58,7 @@ struct ComposerTextView: UIViewRepresentable {
         }
     }
 
-    /// Exactly the room `PhoneComposerLayout` gives it, rather than the
+    /// Exactly the room `ComposerBarLayout` gives it, rather than the
     /// draft's unwrapped width UIKit would ask for.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView editor: ComposerEditor, context: Context) -> CGSize? {
         proposal.replacingUnspecifiedDimensions()
@@ -161,8 +161,22 @@ final class ComposerEditor: UITextView {
         nil
     }
 
+    /// Posted, with the editor, just before a change to the draft makes
+    /// the expanded composer grow or shrink, so the timeline can follow it.
+    static let willResizeNotification = Notification.Name("ComposerEditor.willResize")
+
+    /// The height the expanded editor is growing or shrinking to.
+    private var targetHeight: CGFloat = 0
+
     func textDidChange() {
         placeholderLabel.isHidden = !text.isEmpty
+        if isExpanded, bounds.width > 0 {
+            let height = Self.expandedHeight(of: text, width: bounds.width, maximumLines: ComposerTextView.maximumLines)
+            if height != targetHeight {
+                targetHeight = height
+                NotificationCenter.default.post(name: Self.willResizeNotification, object: self)
+            }
+        }
         updateScrolling()
     }
 
@@ -175,6 +189,7 @@ final class ComposerEditor: UITextView {
         // once the draft outgrows it.
         isScrollEnabled = isExpanded
         contentOffset = .zero
+        targetHeight = 0
         setNeedsLayout()
         if isExpanded {
             // Opening a long draft shows where the caret is, once laid out.
@@ -238,8 +253,11 @@ final class ComposerEditor: UITextView {
     /// Scrolls only once the draft is taller than the editor can grow.
     /// A new line scrolls to the caret before the editor has grown to fit
     /// it; once the draft fits, its first line goes back to the top.
+    ///
+    /// While the editor grows to fit, it stays at the top rather than
+    /// scrolling to the new line it hasn't grown to show yet.
     private func updateScrolling() {
-        guard isExpanded, contentSize.height <= bounds.height + 0.5, contentOffset.y != 0 else { return }
+        guard isExpanded, contentSize.height <= max(bounds.height, targetHeight) + 0.5, contentOffset.y != 0 else { return }
         contentOffset = .zero
     }
 

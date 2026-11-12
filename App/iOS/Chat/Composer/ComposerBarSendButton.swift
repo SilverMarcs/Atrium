@@ -2,12 +2,12 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Send, at the end of the expanded iPhone composer's button row. While the
+/// Send, at the end of the expanded composer bar's button row. While the
 /// agent works and there's nothing to send, it stops the agent instead.
 ///
 /// A solid circle rather than glass: inside the composer's glass container,
 /// glass this close would melt into the panel around it.
-struct PhoneComposerSendButton: View {
+struct ComposerBarSendButton: View {
     @Environment(TaskComposer.self) private var composer
     let item: HostTask?
     let send: () -> Void
@@ -19,10 +19,10 @@ struct PhoneComposerSendButton: View {
             Button("Stop", systemImage: "stop.fill", role: .destructive) {
                 item.host.interrupt(item.task.id)
             }
-            .buttonStyle(PhoneComposerSendButtonStyle(diameter: diameter, fill: .red))
+            .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .red))
         } else {
             Button(composer.messageEdit == nil ? "Send" : "Save and Continue", systemImage: composer.messageEdit == nil ? "arrow.up" : "checkmark", action: send)
-                .buttonStyle(PhoneComposerSendButtonStyle(diameter: diameter, fill: .accentColor, isBusy: isSubmittingEdit))
+                .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .accentColor, isBusy: isSubmittingEdit))
                 .opacity(isSendDisabled && !isSubmittingEdit ? 0.35 : 1)
                 .allowsHitTesting(!isSendDisabled)
         }
@@ -33,7 +33,7 @@ struct PhoneComposerSendButton: View {
     private var isSendDisabled: Bool { item == nil || !composer.canSend }
 }
 
-private struct PhoneComposerSendButtonStyle: ButtonStyle {
+private struct ComposerBarSendButtonStyle: ButtonStyle {
     let diameter: CGFloat
     let fill: Color
     var isBusy = false

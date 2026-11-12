@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The glass circle after the resting iPhone composer's field: Send, tinted,
+/// The glass circle after the resting composer bar's field: Send, tinted,
 /// once there's a draft, or Stop while the agent works. Hidden, its glass
 /// melts into the expanded panel.
-struct PhoneComposerActionButton: View {
+struct ComposerBarActionButton: View {
     enum Action { case send, stop }
 
     let action: Action

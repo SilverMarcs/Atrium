@@ -87,8 +87,7 @@ struct CompanionRootView: View {
     /// task then updates that screen in place: a screen swapped in while the
     /// collapsed split view pushes the column is attached twice, so its tasks
     /// run twice (subscribing, unsubscribing and resubscribing to the
-    /// transcript, and marking it read twice) and its search-field composer is
-    /// installed twice, bouncing the bottom bar.
+    /// transcript, and marking it read twice).
     private var detailTask: TaskRef? {
         selectedTask ?? lastSelectedTask
     }

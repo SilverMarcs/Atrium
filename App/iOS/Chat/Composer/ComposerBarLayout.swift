@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The part of the iPhone composer a subview plays, which places it.
-nonisolated enum PhoneComposerPart {
+/// The part of the composer bar a subview plays, which places it.
+nonisolated enum ComposerBarPart {
     /// The field's glass, which grows into the panel holding everything.
     case panel
     case attach
@@ -13,17 +13,17 @@ nonisolated enum PhoneComposerPart {
     case action
 }
 
-private nonisolated struct PhoneComposerPartKey: LayoutValueKey {
-    static let defaultValue = PhoneComposerPart.panel
+private nonisolated struct ComposerBarPartKey: LayoutValueKey {
+    static let defaultValue = ComposerBarPart.panel
 }
 
 extension View {
-    func phoneComposerPart(_ part: PhoneComposerPart) -> some View {
-        layoutValue(key: PhoneComposerPartKey.self, value: part)
+    func composerBarPart(_ part: ComposerBarPart) -> some View {
+        layoutValue(key: ComposerBarPartKey.self, value: part)
     }
 }
 
-/// Lays out the iPhone composer in either of its states, so moving between
+/// Lays out the composer bar in either of its states, so moving between
 /// them animates every part from one place to the other.
 ///
 /// At rest it's the bottom bar it replaced: the attachment button's circle,
@@ -32,7 +32,7 @@ extension View {
 /// glass is one panel across the width: the editor on top, over a row with
 /// the attachment button at its leading end and dictation and Send at its
 /// trailing end.
-struct PhoneComposerLayout: Layout {
+struct ComposerBarLayout: Layout {
     var isExpanded: Bool
     /// The draft, which the expanded editor grows to fit.
     var draft: String
@@ -57,17 +57,17 @@ struct PhoneComposerLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let frames = isExpanded ? expandedFrames(in: bounds, subviews: subviews) : restingFrames(in: bounds, subviews: subviews)
         for subview in subviews {
-            let frame = frames[subview[PhoneComposerPartKey.self]] ?? .zero
+            let frame = frames[subview[ComposerBarPartKey.self]] ?? .zero
             subview.place(at: frame.origin, anchor: .topLeading, proposal: ProposedViewSize(frame.size))
         }
     }
 
-    private func has(_ part: PhoneComposerPart, in subviews: Subviews) -> Bool {
-        subviews.contains { $0[PhoneComposerPartKey.self] == part }
+    private func has(_ part: ComposerBarPart, in subviews: Subviews) -> Bool {
+        subviews.contains { $0[ComposerBarPartKey.self] == part }
     }
 
-    private func size(of part: PhoneComposerPart, in subviews: Subviews) -> CGSize {
-        subviews.first { $0[PhoneComposerPartKey.self] == part }?.sizeThatFits(.unspecified) ?? .zero
+    private func size(of part: ComposerBarPart, in subviews: Subviews) -> CGSize {
+        subviews.first { $0[ComposerBarPartKey.self] == part }?.sizeThatFits(.unspecified) ?? .zero
     }
 
     private func editorHeight(in width: CGFloat) -> CGFloat {
@@ -81,10 +81,10 @@ struct PhoneComposerLayout: Layout {
                width: size.width, height: size.height)
     }
 
-    private func restingFrames(in bounds: CGRect, subviews: Subviews) -> [PhoneComposerPart: CGRect] {
+    private func restingFrames(in bounds: CGRect, subviews: Subviews) -> [ComposerBarPart: CGRect] {
         let row = Self.rowHeight
         let y = bounds.maxY - row
-        var frames: [PhoneComposerPart: CGRect] = [:]
+        var frames: [ComposerBarPart: CGRect] = [:]
         var leading = bounds.minX + Self.restingMargin
         var trailing = bounds.maxX - Self.restingMargin
 
@@ -114,14 +114,14 @@ struct PhoneComposerLayout: Layout {
         return frames
     }
 
-    private func expandedFrames(in bounds: CGRect, subviews: Subviews) -> [PhoneComposerPart: CGRect] {
+    private func expandedFrames(in bounds: CGRect, subviews: Subviews) -> [ComposerBarPart: CGRect] {
         let row = Self.rowHeight
         let leading = bounds.minX + Self.expandedMargin
         let trailing = bounds.maxX - Self.expandedMargin
         let editorHeight = editorHeight(in: bounds.width)
         let top = bounds.maxY - row - editorHeight
         let rowY = bounds.maxY - row
-        var frames: [PhoneComposerPart: CGRect] = [:]
+        var frames: [ComposerBarPart: CGRect] = [:]
 
         frames[.panel] = CGRect(x: leading, y: top, width: trailing - leading, height: editorHeight + row)
         frames[.editor] = CGRect(x: leading, y: top, width: trailing - leading, height: editorHeight)
