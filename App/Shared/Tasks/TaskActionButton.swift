@@ -1,17 +1,19 @@
 import AtriumProtocol
 import SwiftUI
 
-/// One task action as a button, worded and tinted the same in both apps.
+/// One task action as a button, worded the same in both apps.
 struct TaskActionButton: View {
     let action: TaskMenuAction
     let state: TaskMenuState
     /// Swipe actions drop the destructive role so a row stays until a delete is confirmed.
     var role: ButtonRole?
+    /// Swipe actions color their buttons; menus keep plain, monochrome symbols.
+    var tinted = false
     let perform: (TaskMenuAction) -> Void
 
     var body: some View {
         Button(action.title, systemImage: action.systemImage, role: role) { perform(action) }
-            .tint(tint)
+            .tint(tinted ? tint : nil)
             .disabled(!state.allowed.allows(action))
     }
 

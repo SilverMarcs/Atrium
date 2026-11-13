@@ -9,19 +9,19 @@ struct TaskSwipeActions: ViewModifier {
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .leading) {
-                TaskActionButton(action: state.settleAction, state: state, perform: perform)
+                TaskActionButton(action: state.settleAction, state: state, tinted: true, perform: perform)
                     .labelStyle(.iconOnly)
                 if let snoozeAction = state.snoozeAction {
-                    TaskActionButton(action: snoozeAction, state: state, perform: perform)
+                    TaskActionButton(action: snoozeAction, state: state, tinted: true, perform: perform)
                         .labelStyle(.iconOnly)
                 }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 if state.supportsDeletion {
-                    TaskActionButton(action: .delete, state: state, perform: perform)
+                    TaskActionButton(action: .delete, state: state, tinted: true, perform: perform)
                         .labelStyle(.iconOnly)
                 }
-                TaskActionButton(action: state.readAction, state: state, perform: perform)
+                TaskActionButton(action: state.readAction, state: state, tinted: true, perform: perform)
                     .labelStyle(.iconOnly)
             }
     }
