@@ -20,6 +20,13 @@ struct ViewedImages: Identifiable {
         self.init(urls: loan.urls, startIndex: startIndex)
         self.loan = loan
     }
+
+    /// The images attached to a draft, which live only in memory, each lent under its own id.
+    init(draft images: [ComposerImage], startIndex: Int) {
+        let loan = PromptImageLoan(draft: images)
+        self.init(urls: loan.urls, startIndex: startIndex)
+        self.loan = loan
+    }
 }
 
 extension View {

@@ -17,9 +17,24 @@ nonisolated final class PromptImageLoan: Sendable {
         (0..<count).compactMap { URL(string: "\(scheme)://image/\(id.uuidString)-\($0)") }
     }
 
-    init(_ images: [Data], id: UUID) {
+    /// The URL a draft's image is lent under, which stays its own while
+    /// others are added or removed around it.
+    static func url(of image: ComposerImage) -> URL? {
+        urls(id: image.id, count: 1).first
+    }
+
+    convenience init(_ images: [Data], id: UUID) {
+        self.init(urls: Self.urls(id: id, count: images.count), images: images)
+    }
+
+    /// Lends a draft's images, each under its own URL.
+    convenience init(draft images: [ComposerImage]) {
+        let lent = images.compactMap { image in Self.url(of: image).map { ($0, image.data) } }
+        self.init(urls: lent.map(\.0), images: lent.map(\.1))
+    }
+
+    private init(urls: [URL], images: [Data]) {
         _ = Self.registration
-        let urls = Self.urls(id: id, count: images.count)
         self.urls = urls
         Self.lent.withLock { lent in
             for (url, data) in zip(urls, images) {
