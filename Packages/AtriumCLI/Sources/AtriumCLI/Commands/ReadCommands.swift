@@ -62,7 +62,8 @@ let readCommands: [Command] = [
         details: """
             Prints {"session", "messages"}. A message has id, role (user or assistant), text, blocks (text, tools, \
             page, and report or question for another agent's), imageCount, steer (sent while the agent worked) and \
-            from (another agent that wrote the prompt). The host sends its most recent turns.
+            from (another agent that wrote the prompt). Without --last or --after, it prints the last \
+            \(SessionWatch.recentTurns) turns.
 
               --last N          Only the last N messages.
               --after MESSAGE   Only messages after the one with this ID.
@@ -83,6 +84,8 @@ let readCommands: [Command] = [
                 throw CLIError(.notFound, "The conversation doesn’t include a message with the ID “\(after)”.")
             }
             messages = Array(messages[(index + 1)...])
+        } else if last == nil {
+            messages = watch.lastTurns(SessionWatch.recentTurns)
         }
         if let last { messages = Array(messages.suffix(last)) }
         Output.write(ReadResult(session: host.json(watch.task ?? task), messages: messages.map(MessageJSON.init)))
@@ -100,7 +103,7 @@ let readCommands: [Command] = [
 
               --until idle|input   Stop once the agent isn't working, or once it needs an answer.
               --timeout S          Stop after S seconds, exiting with status 6.
-              --history N          Start with only the last N messages.
+              --history N          Start with the last N messages rather than the last \(SessionWatch.recentTurns) turns.
             """,
         options: ["until", "timeout", "history"]
     ) { arguments in

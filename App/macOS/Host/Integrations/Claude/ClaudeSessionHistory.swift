@@ -31,6 +31,11 @@ actor ClaudeSessionHistory {
     private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
     /// The edits found in each subagent's transcript.
     private var editScans: [URL: JSONLines.Scan<AgentEdits>] = [:]
+    /// Transcripts' conversations up to a prompt some turns back, so a reload
+    /// reads only the turns after it. Claude only appends records, so the chain
+    /// behind a record never changes: one holds for as long as its prompt stays
+    /// in the chain, which only a rewind past it ends. Least recently used first.
+    private var settled: [(url: URL, history: SettledHistory)] = []
 
     init(configDirectory: URL? = nil) {
         let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
@@ -116,15 +121,13 @@ actor ClaudeSessionHistory {
         if FileManager.default.fileExists(atPath: related.path) { try FileManager.default.removeItem(at: related) }
         cache[file.url] = nil
         recordScans[file.url] = nil
+        settled.removeAll { $0.url == file.url }
         locations[id] = nil
     }
 
-    /// The last turns of a session's transcript. Transcripts can grow to many
-    /// megabytes of request records, so they're read backwards a window at a time
-    /// and only until the prompt opening the oldest turn shown.
-    /// Nil when Claude has no file for the session.
+    /// A session's whole conversation. Nil when Claude has no file for the session.
     func transcript(_ id: String) throws -> [TranscriptMessage]? {
-        try transcriptLines(id).map { ClaudeTranscript.messages(fromLines: $0) }
+        try locate(id).map { try conversation(of: $0, sidechain: false).messages }
     }
 
     // MARK: - Subagents
@@ -188,10 +191,10 @@ actor ClaudeSessionHistory {
         return text?.hasPrefix("[Request interrupted") == true
     }
 
-    /// The last turns of a subagent's transcript.
+    /// A subagent's whole conversation.
     func subagentTranscript(_ id: String, agentID: String) throws -> [TranscriptMessage]? {
         guard let url = subagentFolder(of: id)?.appending(path: "agent-\(agentID).jsonl"), let stamp = stamp(at: url) else { return nil }
-        return try transcriptLines(of: File(url: url, stamp: stamp), sidechain: true).map { ClaudeTranscript.messages(fromLines: $0, sidechain: true) }
+        return try conversation(of: File(url: url, stamp: stamp), sidechain: true).messages
     }
 
     /// The agent ID in the name of one of a subagent's files, such as `agent-a03f….jsonl`.
@@ -205,21 +208,26 @@ actor ClaudeSessionHistory {
         locate(id).map { $0.url.deletingPathExtension().appending(path: "subagents", directoryHint: .isDirectory) }
     }
 
-    /// The last turns of a session's transcript, with the latest Stop Claude saved in them.
+    /// A session's whole conversation, with the latest Stop Claude saved in
+    /// the turns read for it: those after its settled history, several at least.
     func transcriptWithStop(_ id: String) throws -> (messages: [TranscriptMessage], stop: String?)? {
-        guard let lines = try transcriptLines(id) else { return nil }
-        return (ClaudeTranscript.messages(fromLines: lines), lines.reversed().lazy.compactMap(ClaudeTranscript.stopID).first)
+        guard let file = locate(id) else { return nil }
+        let read = try conversation(of: file, sidechain: false)
+        return (read.messages, read.lines.reversed().lazy.compactMap(ClaudeTranscript.stopID).first)
     }
 
     /// Original attachments stay at full quality when the edited text is resent.
     func promptImages(_ id: String, messageID: String) throws -> [Data] {
-        guard let lines = try transcriptLines(id) else { return [] }
+        guard let file = locate(id) else { return [] }
+        let lines = try chain(of: file, sidechain: false).lines
         var foundPrompt = false
         var images: [Data] = []
         var referencedFiles: [URL] = []
         var embeddedFiles: [String: Data] = [:]
         for line in lines {
-            guard let record = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
+            // Only the prompt and what follows it are parsed.
+            guard foundPrompt || ClaudeTranscript.startsTurn(line),
+                  let record = try JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if ClaudeTranscript.startsTurn(line) {
                 if foundPrompt { break }
                 foundPrompt = ClaudeTranscript.isPrompt(record, shownAs: messageID)
@@ -247,17 +255,47 @@ actor ClaudeSessionHistory {
         catch { throw IntegrationError(message: "An attached image is no longer available. Attach it again to edit this message.") }
     }
 
-    private func transcriptLines(_ id: String) throws -> [Data]? {
-        guard let file = locate(id) else { return nil }
-        return try transcriptLines(of: file, sidechain: false)
+    /// The turns after a transcript's settled history: at least this many, and
+    /// fewer than twice as many, once it has that many. Only the latest turn
+    /// still changes, and rewinding past them reads the whole chain again.
+    private static let unsettledTurns = 3
+    /// How many transcripts keep a settled history.
+    private static let settledLimit = 16
+
+    /// A transcript's conversation, and the lines read for it: those after
+    /// its settled history, or all of them when it has none. Transcripts can
+    /// grow to many megabytes of request records, so as one changes, only its
+    /// newest turns are read again.
+    private func conversation(of file: File, sidechain: Bool) throws -> (messages: [TranscriptMessage], lines: [Data]) {
+        let earlier = settled.last { $0.url == file.url }?.history
+        let read = try chain(of: file, sidechain: sidechain, to: earlier?.promptID)
+        let recent = ClaudeTranscript.messages(fromLines: read.lines, sidechain: sidechain)
+        let messages = if let earlier, read.reachedBoundary { earlier.messages + recent } else { recent }
+        settled.removeAll { $0.url == file.url }
+        // A prompt starts a message of its own, and nothing after it changes the
+        // messages before it, so those stand for the lines before it.
+        if read.promptIDs.count >= (read.reachedBoundary ? 2 : 1) * Self.unsettledTurns,
+           case let promptID = read.promptIDs[read.promptIDs.count - Self.unsettledTurns],
+           let index = messages.lastIndex(where: { $0.id == promptID }) {
+            settled.append((file.url, SettledHistory(promptID: promptID, messages: Array(messages[..<index]))))
+        } else if let earlier, read.reachedBoundary {
+            settled.append((file.url, earlier))
+        }
+        if settled.count > Self.settledLimit { settled.removeFirst() }
+        return (messages, read.lines)
     }
 
+    /// The lines of Claude's active parent chain, oldest first, back to its
+    /// first record or else to `boundary`, a prompt whose line is the first
+    /// one kept, with the IDs of the prompts among them, which start turns.
+    /// They're read backwards a window at a time.
     /// A subagent's file holds only sidechain records, which a session's skips.
-    private func transcriptLines(of file: File, sidechain: Bool) throws -> [Data]? {
+    private func chain(of file: File, sidechain: Bool, to boundary: String? = nil) throws -> (lines: [Data], promptIDs: [String], reachedBoundary: Bool) {
         let handle = try FileHandle(forReadingFrom: file.url)
         defer { try? handle.close() }
         var lines: [Data] = []
-        var prompts = 0
+        var promptIDs: [String] = []
+        var reachedBoundary = false
         var hasLeaf = false
         var expectedID: String?
         var offset = UInt64(file.stamp.size)
@@ -267,23 +305,26 @@ actor ClaudeSessionHistory {
         var partialLine: [Data] = []
         /// Follow Claude's active parent chain, skipping discarded branches.
         /// A native rewind writes an explicit leaf even before the next prompt.
+        let decoder = JSONDecoder()
         func add(_ line: Data) -> Bool {
-            guard !line.isEmpty,
-                  let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-                  (record["isSidechain"] as? Bool == true) == sidechain else { return false }
-            if !hasLeaf, record["type"] as? String == "last-prompt", record["leafUuid"] != nil {
-                expectedID = record["leafUuid"] as? String
+            guard !line.isEmpty, let record = try? decoder.decode(ChainLink.self, from: line),
+                  record.isSidechain == sidechain else { return false }
+            if !hasLeaf, record.type == "last-prompt", record.hasLeaf {
+                expectedID = record.leafID
                 hasLeaf = true
                 return expectedID == nil
             }
-            guard let uuid = record["uuid"] as? String, record["parentUuid"] != nil else { return false }
+            guard let uuid = record.id, record.hasParent else { return false }
             if !hasLeaf { expectedID = uuid; hasLeaf = true }
             guard uuid == expectedID else { return false }
             lines.append(line)
-            expectedID = record["parentUuid"] as? String
-            if ClaudeTranscript.startsTurn(line) { prompts += 1 }
-            return expectedID == nil || prompts == ClaudeTranscript.turnLimit
+            expectedID = record.parentID
+            // A prompt steered into a turn is saved as an attachment and doesn't start one.
+            if record.type == "user", ClaudeTranscript.startsTurn(line) { promptIDs.append(uuid) }
+            reachedBoundary = uuid == boundary
+            return expectedID == nil || reachedBoundary
         }
+        var isDone = false
         scan: while offset > 0 {
             try Task.checkCancellation()
             let count = min(UInt64(Self.windowSize), offset)
@@ -296,16 +337,16 @@ actor ClaudeSessionHistory {
                 continue
             }
             // The window's last piece finishes the line carried over from later windows.
-            if add(Data(pieces.removeLast()) + partialLine.joined()) { break }
+            if add(Data(pieces.removeLast()) + partialLine.joined()) { isDone = true; break }
             partialLine = [Data(pieces.removeFirst())]
             for piece in pieces.reversed() {
-                if add(Data(piece)) { break scan }
+                if add(Data(piece)) { isDone = true; break scan }
             }
         }
-        if offset == 0, prompts < ClaudeTranscript.turnLimit {
+        if offset == 0, !isDone {
             _ = add(Data(partialLine.joined()))
         }
-        return Array(lines.reversed())
+        return (lines.reversed(), promptIDs.reversed(), reachedBoundary)
     }
 
     private static let fileKeys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
@@ -487,4 +528,39 @@ actor ClaudeSessionHistory {
                     contextUsage: metadata.contextTokens.map { AgentContextUsage(tokens: $0) },
                     edits: metadata.edits, currentDirectory: metadata.currentDirectory)
     }
+}
+
+/// What a transcript record says of its place in the parent chain. Decoding
+/// only these keys skips over the request and tool output most records
+/// carry, which is most of a transcript, without building objects for them.
+private nonisolated struct ChainLink: Decodable {
+    let type: String?
+    let id: String?
+    /// Whether the record has a parent at all; the first record's is null.
+    let hasParent: Bool
+    let parentID: String?
+    let isSidechain: Bool
+    let hasLeaf: Bool
+    let leafID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case type, uuid, parentUuid, isSidechain, leafUuid
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try? container.decodeIfPresent(String.self, forKey: .type)
+        id = try? container.decodeIfPresent(String.self, forKey: .uuid)
+        hasParent = container.contains(.parentUuid)
+        parentID = try? container.decodeIfPresent(String.self, forKey: .parentUuid)
+        isSidechain = (try? container.decodeIfPresent(Bool.self, forKey: .isSidechain)) == true
+        hasLeaf = container.contains(.leafUuid)
+        leafID = try? container.decodeIfPresent(String.self, forKey: .leafUuid)
+    }
+}
+
+/// A transcript's conversation before one of its prompts.
+private nonisolated struct SettledHistory {
+    let promptID: String
+    let messages: [TranscriptMessage]
 }

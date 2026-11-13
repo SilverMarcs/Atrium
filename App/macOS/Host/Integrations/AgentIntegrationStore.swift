@@ -858,7 +858,7 @@ final class AgentIntegrationStore {
     /// replies that wrote them, as Atrium keeps it for a fork.
     private func conversation(of thread: AgentThread) async throws -> [TranscriptMessage] {
         let own = try await availableAdapter(for: thread.provider).transcript(for: thread).map { relayed($0, in: thread) }
-        return inherited[thread.id]?.messages(before: own) ?? own
+        return (inherited[thread.id]?.messages ?? []) + own
     }
 
     private func withPages(_ source: TranscriptMessage) -> TranscriptMessage {
@@ -944,7 +944,7 @@ final class AgentIntegrationStore {
         let own = try await adapter.rewind(thread, before: messageID).map { relayed($0, in: thread) }
         // Rewinding a fork's first prompt takes its handoff too, so the next prompt carries it again.
         if own.isEmpty, inherited[thread.id]?.isDelivered == true { inherited[thread.id]?.isDelivered = false }
-        return ((inherited[thread.id]?.messages(before: own) ?? own).map(withPages), images)
+        return (((inherited[thread.id]?.messages ?? []) + own).map(withPages), images)
     }
 
     func interrupt(_ thread: AgentThread) async throws {

@@ -444,7 +444,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         // Codex may not send a subagent's events here, so its turns are read each time.
         if thread.isSubagent {
             try await connect()
-            return CodexLiveConversation(turns: try await turns(of: thread.sessionID)).messages
+            return CodexTranscript.messages(fromTurns: try await turns(of: thread.sessionID))
         }
         try await openConversation(thread)
         return conversations[thread.sessionID]?.messages ?? []
@@ -460,16 +460,25 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         desiredConversations[thread.sessionID] = thread
         try await connect()
-        if conversations[thread.sessionID] != nil { return }
+        // A conversation still opening isn't whole yet.
         if let opening = openingConversations[thread.sessionID] { return try await opening.value }
+        if conversations[thread.sessionID] != nil { return }
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
             _ = try await self.request("thread/resume", params: [
                 "threadId": thread.sessionID, "excludeTurns": true,
                 "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id)), "config": Self.threadConfig
             ])
-            let rows = try await self.turns(of: thread.sessionID)
-            self.conversations[thread.sessionID] = CodexLiveConversation(turns: rows)
+            // Events arrive from the resume on, while the history is listed a page at a time.
+            let conversation = CodexLiveConversation(turns: [])
+            self.conversations[thread.sessionID] = conversation
+            let rows: [[String: Any]]
+            do { rows = try await self.turns(of: thread.sessionID) }
+            catch {
+                if self.conversations[thread.sessionID] === conversation { self.conversations[thread.sessionID] = nil }
+                throw error
+            }
+            conversation.restore(rows)
             let spawned = self.recordSubagents(in: rows.flatMap { $0["items"] as? [[String: Any]] ?? [] }, of: thread.sessionID)
             if !spawned.isEmpty { self.onEvent?(.listInvalidated) }
             self.refreshAsyncQuestions(sessionID: thread.sessionID)
@@ -524,7 +533,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         } catch let error as IntegrationError where error.message.localizedStandardContains("no active turn")
             || error.message.localizedStandardContains("expected active turn id") {
             // The turn this adapter knew of ended, and another may have started since.
-            guard let turn = try await turns(of: threadID).last, turn["status"] as? String == "inProgress",
+            guard let turn = try await latestTurn(of: threadID), turn["status"] as? String == "inProgress",
                   let currentID = turn["id"] as? String else { return false }
             _ = try await request("turn/steer", params: ["threadId": threadID, "input": input, "expectedTurnId": currentID])
             return true
@@ -548,10 +557,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// A prompt's message ID is its item's, and its `editTarget` the turn it starts.
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
         try await connect()
-        let prompt = try await turns(of: thread.sessionID).lazy.compactMap { turn -> [String: Any]? in
+        var prompt: [String: Any]?
+        try await forEachTurn(of: thread.sessionID) { turn in
             let prompts = (turn["items"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "userMessage" }
-            return turn["id"] as? String == messageID ? prompts.first : prompts.first { $0["id"] as? String == messageID }
-        }.first
+            prompt = turn["id"] as? String == messageID ? prompts.first : prompts.first { $0["id"] as? String == messageID }
+            return prompt != nil
+        }
         guard let prompt else {
             throw IntegrationError(message: "That message is no longer in the conversation. Reload it and try again.")
         }
@@ -675,22 +686,47 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         _ = try await request("thread/backgroundTerminals/clean", params: ["threadId": thread.sessionID])
     }
 
-    /// Restores a subscribed conversation through the current app-server API.
+    /// A thread's whole history, oldest first.
     private func turns(of threadID: String) async throws -> [[String: Any]] {
-        do {
-            let data = try await request("thread/turns/list", params: ["threadId": threadID, "limit": CodexTranscript.turnLimit, "sortDirection": "desc", "itemsView": "full"])
-            let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            return Array((result?["data"] as? [[String: Any]] ?? []).reversed())
-        } catch let error as IntegrationError where error.message.localizedStandardContains("not materialized") {
-            return []
+        var turns: [[String: Any]] = []
+        try await forEachTurn(of: threadID) { turns.append($0); return false }
+        return turns.reversed()
+    }
 
-        }
+    private func latestTurn(of threadID: String) async throws -> [String: Any]? {
+        var latest: [String: Any]?
+        try await forEachTurn(of: threadID, pageSize: 1) { latest = $0; return true }
+        return latest
+    }
+
+    /// Goes through a thread's turns newest first, with their items, until
+    /// `body` returns true. They're listed a page at a time, since items hold
+    /// whole command outputs and a reply can't outgrow the socket's limit. A
+    /// page that takes too long fails on its own, leaving the connection and
+    /// the approvals waiting on it alone.
+    private func forEachTurn(of threadID: String, pageSize: Int = 10, _ body: ([String: Any]) -> Bool) async throws {
+        var cursor: String?
+        repeat {
+            var params: [String: Any] = ["threadId": threadID, "limit": pageSize, "sortDirection": "desc", "itemsView": "full"]
+            if let cursor { params["cursor"] = cursor }
+            let result: [String: Any]?
+            do {
+                let data = try await request("thread/turns/list", params: params, disconnectOnTimeout: false)
+                result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            } catch let error as IntegrationError where error.message.localizedStandardContains("not materialized") {
+                return
+            }
+            for turn in result?["data"] as? [[String: Any]] ?? [] {
+                if body(turn) { return }
+            }
+            cursor = result?["nextCursor"] as? String
+        } while cursor != nil
     }
 
     private func activeTurnID(of threadID: String) async throws -> String? {
         if let turnID = activeTurnIDs[threadID] { return turnID }
         if let conversation = conversations[threadID] { return conversation.activeTurnID }
-        let turn = try await turns(of: threadID).last
+        let turn = try await latestTurn(of: threadID)
         return turn?["status"] as? String == "inProgress" ? turn?["id"] as? String : nil
     }
 

@@ -39,7 +39,7 @@ protocol AgentProviderAdapter: AnyObject {
     func markRead(_ thread: AgentThread) async throws -> AgentReadState
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState
     func deleteThread(_ thread: AgentThread) async throws
-    /// The most recent part of the conversation, oldest first.
+    /// The whole conversation, oldest first.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
     /// Images are local files attached to the prompt.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws

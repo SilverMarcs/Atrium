@@ -5,11 +5,21 @@ import Foundation
 /// replace streamed drafts without reloading rollout files.
 @MainActor
 final class CodexLiveConversation {
+    /// The newest turns, which events may still change.
     private var turns: [[String: Any]]
+    /// The messages of the turns before them, which no longer change, kept as
+    /// messages since their items can hold whole command outputs.
+    private var settled: [TranscriptMessage] = []
     private var answeredQuestionIDs: Set<String> = []
+    /// The newest turns kept whole: at least this many, fewer than twice as many.
+    private static let liveTurns = 10
 
-    init(turns: [[String: Any]]) { self.turns = turns }
-    var messages: [TranscriptMessage] { CodexTranscript.messages(fromTurns: turns) }
+    init(turns: [[String: Any]]) {
+        self.turns = turns
+        trim()
+    }
+
+    var messages: [TranscriptMessage] { settled + CodexTranscript.messages(fromTurns: turns) }
     var activeTurnID: String? {
         turns.last(where: { $0["status"] as? String == "inProgress" })?["id"] as? String
     }
@@ -41,6 +51,21 @@ final class CodexLiveConversation {
             return changes.map { ($0["path"] as? String ?? "File") + "\n" + ($0["diff"] as? String ?? "") }.joined(separator: "\n\n")
         }
         return nil
+    }
+
+    /// Puts the thread's history, listed after events started arriving, ahead
+    /// of the turns they brought. Events are newer, so where both have a turn
+    /// or an item, the event's version stands.
+    func restore(_ history: [[String: Any]]) {
+        let live = turns
+        let listedIDs = Set(history.compactMap { $0["id"] as? String })
+        turns = history.map { turn in
+            guard let newer = live.first(where: { $0["id"] as? String == turn["id"] as? String }) else { return turn }
+            var merged = turn.merging(newer) { _, new in new }
+            merged["items"] = mergeItems(turn["items"] as? [[String: Any]] ?? [], with: newer["items"] as? [[String: Any]] ?? [])
+            return merged
+        } + live.filter { !listedIDs.contains($0["id"] as? String ?? "") }
+        trim()
     }
 
     func apply(_ method: String, params: [String: Any]) {
@@ -92,7 +117,12 @@ final class CodexLiveConversation {
         return merged
     }
 
+    /// Settles all but the newest turns once twice as many are kept. A
+    /// turn in progress stays, and with it every turn after it.
     private func trim() {
-        if turns.count > CodexTranscript.turnLimit { turns.removeFirst(turns.count - CodexTranscript.turnLimit) }
+        guard turns.count >= 2 * Self.liveTurns else { return }
+        let end = min(turns.count - Self.liveTurns, turns.firstIndex { $0["status"] as? String == "inProgress" } ?? turns.count)
+        settled += CodexTranscript.messages(fromTurns: turns[..<end])
+        turns.removeFirst(end)
     }
 }

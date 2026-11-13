@@ -29,14 +29,3 @@ public nonisolated extension [TranscriptMessage] {
         }
     }
 }
-
-public nonisolated extension [TranscriptMessage] {
-    /// A conversation as a client keeps it: `window`, the latest turns as the
-    /// host sends them now, after the earlier messages of `self` the window
-    /// has moved past. Messages leaving from its end, as a rolled-back turn's
-    /// do, are gone.
-    func extended(by window: [TranscriptMessage]) -> [TranscriptMessage] {
-        guard let first = window.first, let start = firstIndex(where: { $0.id == first.id }) else { return window }
-        return Array(self[..<start]) + window
-    }
-}

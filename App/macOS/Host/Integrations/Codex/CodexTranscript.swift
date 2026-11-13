@@ -5,12 +5,10 @@ import Foundation
 /// Reasoning, hook and bookkeeping items are left out; tool items are only counted
 /// so clients never receive commands, output or diffs.
 nonisolated enum CodexTranscript {
-    /// Older turns are dropped to keep transcripts small enough to send often.
-    static let turnLimit = 20
-
-    static func messages(fromTurns turns: [[String: Any]]) -> [TranscriptMessage] {
+    /// Each turn's messages are its own, so turns can be turned into messages apart.
+    static func messages(fromTurns turns: some Sequence<[String: Any]>) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
-        for turn in turns.suffix(turnLimit) {
+        for turn in turns {
             guard let turnID = turn["id"] as? String else { continue }
             var segment = 0
             var hasUserMessage = false

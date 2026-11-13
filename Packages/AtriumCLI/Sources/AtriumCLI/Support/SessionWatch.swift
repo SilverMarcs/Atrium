@@ -23,9 +23,10 @@ final class SessionWatch {
 
     let host: HostClient
     let taskID: String
-    /// The conversation as reported so far, including messages the host's
-    /// window of recent turns has since moved past.
+    /// The whole conversation as the host last sent it.
     private(set) var messages: [TranscriptMessage] = []
+    /// How many of the newest turns are shown when no other count is asked for.
+    static let recentTurns = 20
     private var reported: [String: TranscriptMessage] = [:]
     private var reportedSession: SessionJSON?
     private var following: Task<Void, Never>?
@@ -67,11 +68,19 @@ final class SessionWatch {
         return Array(messages[index...])
     }
 
+    /// The messages of the newest `count` turns. A turn starts with each prompt
+    /// sent between turns, not with one steered into a turn.
+    func lastTurns(_ count: Int) -> [TranscriptMessage] {
+        let starts = messages.indices.filter { messages[$0].role == .user && !messages[$0].isSteer }
+        guard starts.count > count else { return messages }
+        return Array(messages[starts[starts.count - count]...])
+    }
+
     /// Reports the session and its messages as they stand, as a follow starts with.
     func reportSnapshot(history: Int?) {
         if let task { report(.session(host.json(task))) }
         reportedSession = task.map(host.json)
-        let shown = history.map { Array(messages.suffix($0)) } ?? messages
+        let shown = history.map { Array(messages.suffix($0)) } ?? lastTurns(Self.recentTurns)
         for message in messages { reported[message.id] = message }
         for message in shown { report(.message(MessageJSON(message))) }
     }
@@ -136,7 +145,7 @@ final class SessionWatch {
     }
 
     private func refreshMessages() {
-        messages = messages.extended(by: host.conversations.transcripts[taskID] ?? [])
+        messages = host.conversations.transcripts[taskID] ?? []
     }
 
     private func reportMessages() {

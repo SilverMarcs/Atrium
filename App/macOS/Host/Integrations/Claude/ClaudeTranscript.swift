@@ -5,10 +5,6 @@ import Foundation
 /// transcript messages. Each user prompt starts a message; everything the agent
 /// writes or runs until the next prompt joins one assistant message.
 nonisolated enum ClaudeTranscript {
-    /// Older turns are dropped to keep transcripts small enough to send often,
-    /// matching Codex's limit. A turn starts with each prompt.
-    static let turnLimit = 20
-
     /// Before its turn is saved, a prompt its hook reported is shown under the
     /// hook's prompt ID, which every record Claude saves for the turn carries.
     static let livePromptPrefix = "claude-prompt-"
@@ -43,8 +39,9 @@ nonisolated enum ClaudeTranscript {
     private static let queuedCommandMarker = Data(#""type":"queued_command""#.utf8)
     private static let stopMarker = Data(#""subtype":"stop_hook_summary""#.utf8)
 
-    /// The last `turnLimit` turns of the lines, oldest first. A subagent's
-    /// transcript is all sidechain records, which a session's leaves out.
+    /// The conversation of the lines, oldest first. A prompt starts a message
+    /// of its own, and nothing after it changes the messages before it. A
+    /// subagent's transcript is all sidechain records, which a session's leaves out.
     static func messages(fromLines lines: some Sequence<Data>, sidechain: Bool = false) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
         var referencedPreviews: [String: [String: Data]] = [:]
@@ -109,11 +106,7 @@ nonisolated enum ClaudeTranscript {
         }
         flushAssistant()
         messages = messages.map { restoringAttachments(in: $0, embeddedPreviews: referencedPreviews[$0.id] ?? [:]) }
-        let prompts = messages.indices.filter { index in
-            messages[index].role == .user && startsTurn((messages[index].blocks.first?.text ?? "", messages[index].relay))
-        }
-        guard prompts.count > turnLimit else { return messages }
-        return Array(messages[prompts[prompts.count - turnLimit]...])
+        return messages
     }
 
     /// Claude may leave Atrium's image references as plain text and read the
@@ -154,8 +147,7 @@ nonisolated enum ClaudeTranscript {
         }
     }
 
-    /// Agents reporting back join the turn they arrive in, so they never push
-    /// the user's own turns out of the window.
+    /// Agents reporting back join the turn they arrive in.
     private static func startsTurn(_ prompt: (text: String, relay: TranscriptRelay?)) -> Bool {
         prompt.relay?.kind != .results && !RelayedMessage.isResults(prompt.text)
     }

@@ -63,7 +63,6 @@ final class ClaudeLiveTranscript {
     }
 
     private func trim() {
-        if messages.count > 100 { messages.removeFirst(messages.count - 100) }
         if prompts.count > 100 { prompts = Set(prompts.suffix(100)) }
         if batches.count > 100 {
             let ids = Set(messages.flatMap(\.blocks).map(\.id))

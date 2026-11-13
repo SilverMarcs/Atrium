@@ -102,19 +102,13 @@ final class ServerConnection {
         sentTasks = snapshot
     }
 
-    /// Sends a task's recent turns first, then only messages that changed.
-    ///
-    /// The transcript is a window over the last turns, so each new turn pushes the
-    /// oldest one out. The client keeps what it already shows instead: removing
-    /// it would shift the timeline under a reader scrolled up. Only messages that
-    /// leave the window from its end, as a rolled-back turn does, are removed.
+    /// Sends a task's whole conversation first, then only messages that changed.
     private func push(transcript messages: [TranscriptMessage], of taskID: String) {
         if let sent = sentTranscripts[taskID] {
-            let held = sent.extended(by: messages)
-            let delta = WireTranscriptDelta(from: sent, to: held)
+            let delta = WireTranscriptDelta(from: sent, to: messages)
             guard !delta.isEmpty else { return }
             send(.transcriptChanged(taskID: taskID, delta: delta))
-            sentTranscripts[taskID] = held
+            sentTranscripts[taskID] = messages
         } else {
             send(.transcript(taskID: taskID, messages: messages))
             sentTranscripts[taskID] = messages

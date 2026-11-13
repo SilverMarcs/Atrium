@@ -21,21 +21,6 @@ nonisolated struct InheritedConversation: Codable, Sendable {
         }
         self.handoff = handoff
     }
-
-    /// The inherited messages, then `own`, keeping as many of the newest
-    /// turns as a provider's transcript shows. A turn starts with each prompt
-    /// the user or another agent sent between turns.
-    func messages(before own: [TranscriptMessage]) -> [TranscriptMessage] {
-        let available = ClaudeTranscript.turnLimit - own.count(where: \.startsTurn)
-        guard available > 0 else { return own }
-        let starts = messages.indices.filter { messages[$0].startsTurn }
-        guard starts.count > available else { return messages + own }
-        return Array(messages[starts[starts.count - available]...]) + own
-    }
-}
-
-private nonisolated extension TranscriptMessage {
-    var startsTurn: Bool { role == .user && !isSteer && relay?.kind != .results }
 }
 
 /// The inherited conversations of forked chats, by task ID, kept as files
