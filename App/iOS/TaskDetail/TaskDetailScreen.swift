@@ -102,7 +102,7 @@ struct TaskDetailScreen: View {
                     }
                 }
                 if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || item.hasSubagents
-                    || item.sideChat != nil || task.actions.contains(.sideChat) {
+                    || item.sideChat != nil || task.actions.contains(.sideChat) || !task.pullRequests.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
                             item: item, models: models,

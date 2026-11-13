@@ -13,6 +13,11 @@ struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
+            if !item.task.pullRequests.isEmpty {
+                Section("Pull Requests") {
+                    PullRequestButtons(pullRequests: item.task.pullRequests)
+                }
+            }
             if !models.isEmpty {
                 Section {
                     TaskModelMenu(

@@ -40,6 +40,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     /// recently changed first, one for each repository. Nil from a host that
     /// doesn't say.
     public var changedCheckouts: [TaskCheckout]? = nil
+    /// Pull requests opened from the branches it worked on, or linked by hand.
+    public var pullRequests: [PullRequest] = []
     /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
     public var origin: WireTaskOrigin? = nil
 
@@ -67,6 +69,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         interactions: [AgentInteraction] = [],
         checkout: TaskCheckout? = nil,
         changedCheckouts: [TaskCheckout]? = nil,
+        pullRequests: [PullRequest] = [],
         origin: WireTaskOrigin? = nil
     ) {
         self.id = id
@@ -92,6 +95,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.interactions = interactions
         self.checkout = checkout
         self.changedCheckouts = changedCheckouts
+        self.pullRequests = pullRequests
         self.origin = origin
     }
 

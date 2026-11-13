@@ -39,6 +39,11 @@ struct TaskDetailToolbar: ToolbarContent {
                 ToolbarSpacer(.fixed)
             }
         }
+        if !item.task.pullRequests.isEmpty {
+            ToolbarItem {
+                PullRequestMenu(pullRequests: item.task.pullRequests)
+            }
+        }
         // The terminal runs on the task's host, so only this Mac's own tasks open in one.
         if item.host.isLocal, item.task.actions.contains(.openTerminal) {
             ToolbarItem {

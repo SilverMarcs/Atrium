@@ -20,7 +20,8 @@ struct TaskRow: View {
             status: needsInput ? .waiting : item.progressStatus,
             hasUnreadResult: task.hasUnreadResult,
             isSettled: task.isSettled,
-            snoozedUntil: task.isSettled ? nil : task.snoozedUntil
+            snoozedUntil: task.isSettled ? nil : task.snoozedUntil,
+            pullRequest: task.pullRequests.mostPressing
         ) {
             WorkspaceIcon(item.workspace, on: item.host, size: 13, relativeTo: .subheadline)
         }
