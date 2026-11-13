@@ -11,7 +11,7 @@ final class JcodeConnection {
     var onClose: ((Error) -> Void)?
     private(set) var isOpen = false
     private var connection: NWConnection?
-    private var buffer = Data()
+    private var decoder = JcodeFrameDecoder()
     private var nextID = 0
     private var pending: [Int: Pending] = [:]
 
@@ -21,8 +21,6 @@ final class JcodeConnection {
         /// `send_message`, which `message_accepted` acknowledges.
         let acknowledgement: (([String: Any]) -> Bool)?
     }
-
-    private static let maximumFrameSize = 32 * 1024 * 1024
 
     /// Connects and says hello. Fails when the bridge, or the server behind it, isn't running.
     func open(path: String) async throws {
@@ -90,7 +88,7 @@ final class JcodeConnection {
         connection?.cancel()
         connection = nil
         isOpen = false
-        buffer.removeAll()
+        decoder = JcodeFrameDecoder()
         let waiting = pending
         pending.removeAll()
         for request in waiting.values { request.continuation.resume(throwing: CancellationError()) }
@@ -106,20 +104,18 @@ final class JcodeConnection {
             Task { @MainActor [weak self] in
                 guard let self, self.connection === connection else { return }
                 if let data {
-                    self.buffer.append(data)
-                    guard self.buffer.count <= Self.maximumFrameSize else {
+                    let lines: [Data]
+                    do {
+                        lines = try self.decoder.append(data)
+                    } catch {
                         self.fail(IntegrationError(message: "Jcode sent an oversized frame."))
                         return
                     }
-                    var start = self.buffer.startIndex
-                    while let end = self.buffer[start...].firstIndex(of: 10) {
-                        let line = self.buffer[start..<end]
-                        start = self.buffer.index(after: end)
+                    for line in lines {
                         if let frame = try? JSONSerialization.jsonObject(with: line) as? [String: Any] { self.handle(frame) }
-                        // A handler can close the connection, which empties the buffer.
+                        // A handler can close or replace the connection.
                         guard self.connection === connection else { return }
                     }
-                    self.buffer.removeSubrange(..<start)
                 }
                 if let error { self.fail(error) }
                 else if complete { self.fail(IntegrationError(message: "Jcode closed the connection.")) }
@@ -150,7 +146,7 @@ final class JcodeConnection {
         connection?.cancel()
         connection = nil
         isOpen = false
-        buffer.removeAll()
+        decoder = JcodeFrameDecoder()
         for request in waiting.values { request.continuation.resume(throwing: error) }
         onClose?(error)
     }
