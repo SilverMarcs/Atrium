@@ -48,8 +48,16 @@ public nonisolated enum HostRequest: Codable, Sendable {
         checkout: TaskStartCheckout? = nil, standalone: Bool? = nil
     )
     /// Sends a prompt to the task's agent, with any attached images as JPEG data.
-    case prompt(taskID: String, text: String, images: [Data])
-    /// Stops the agent's current turn.
+    /// With `queue`, the prompt waits for the agent's current turn to end
+    /// rather than joining it, added to any prompt already waiting; a prompt
+    /// that starts waiting takes `queue` as its ID. An agent that isn't
+    /// working gets it at once.
+    case prompt(taskID: String, text: String, images: [Data], queue: UUID? = nil)
+    /// Stops the agent's current turn. The user's prompt queued behind it, if
+    /// any, comes back as `.queuedPrompt` for the composer rather than
+    /// starting the next turn, and an agent's is dropped, which that agent
+    /// hears. A command-line client's stop drops only a prompt its own agent
+    /// queued.
     case interrupt(taskID: String)
     /// Adds a folder on the host as a project. Only the host itself may.
     case addWorkspace(path: String)
@@ -98,6 +106,9 @@ public nonisolated enum TaskAction: Codable, Sendable {
     case setPermissionMode(PermissionMode)
     /// Removes this prompt and later conversation, keeping files unchanged.
     case rewind(messageID: String)
+    /// Takes back the prompt waiting for the agent's turn to end, so it can be
+    /// edited. Replies `.queuedPrompt`.
+    case takeQueuedPrompt
     case respond(interactionID: String, decision: AgentDecision)
 }
 

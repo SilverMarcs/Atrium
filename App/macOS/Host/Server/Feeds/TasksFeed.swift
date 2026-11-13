@@ -14,6 +14,7 @@ final class TasksFeed: TopicFeed {
     private let sessions: TaskSessionController
     private let workspaces: WorkspaceStore
     private let orchestrator: Orchestrator
+    private let queue: PromptQueue
     /// Resolving a task's project and checkouts reads Git metadata from disk,
     /// so results are cached until the set of projects changes.
     private var projects: [String: Workspace?] = [:]
@@ -29,11 +30,15 @@ final class TasksFeed: TopicFeed {
     private var observation: Task<Void, Never>?
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-    init(integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore, orchestrator: Orchestrator) {
+    init(
+        integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore,
+        orchestrator: Orchestrator, queue: PromptQueue
+    ) {
         self.integrations = integrations
         self.sessions = sessions
         self.workspaces = workspaces
         self.orchestrator = orchestrator
+        self.queue = queue
     }
 
     func start(publish: @escaping (HostEvent) -> Void) {
@@ -117,7 +122,8 @@ final class TasksFeed: TopicFeed {
             checkout: checkouts.current,
             changedCheckouts: checkouts.changed,
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
-                ?? orchestrator.origin(of: thread)
+                ?? orchestrator.origin(of: thread),
+            queuedPrompt: queue.queuedPrompt(for: thread.id)
         )
     }
 

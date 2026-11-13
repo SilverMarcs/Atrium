@@ -15,6 +15,22 @@ extension HostClient {
         return prompt.id
     }
 
+    /// Has a prompt wait for the agent's current turn to end, added to any
+    /// prompt already waiting. The task shows it waiting at once.
+    public func queuePrompt(_ text: String, images: [Data] = [], to taskID: String) async throws {
+        let id = task(taskID)?.queuedPrompt?.id ?? UUID()
+        _ = try await request(.prompt(taskID: taskID, text: text, images: images, queue: id))
+    }
+
+    /// Takes back the prompt waiting for the agent's turn to end, to edit it.
+    /// - Returns: Its text and images as they were sent.
+    public func takeQueuedPrompt(from taskID: String) async throws -> (text: String, images: [Data]) {
+        guard case .queuedPrompt(let text, let images) = try await request(.task(id: taskID, action: .takeQueuedPrompt)) else {
+            throw HostClientError.unexpectedReply
+        }
+        return (text, images)
+    }
+
     /// Sends a failed prompt again. It keeps its key, so if the host did get
     /// it the first time, the agent doesn't get it twice.
     public func retryPrompt(_ id: UUID, in taskID: String) {
@@ -22,8 +38,12 @@ extension HostClient {
         deliver(id, to: taskID)
     }
 
-    public func interrupt(_ taskID: String) {
-        send(.interrupt(taskID: taskID))
+    /// Stops the agent's turn.
+    /// - Returns: The prompt that was queued behind the turn, for the
+    ///   composer, with its images as they were sent.
+    public func interrupt(_ taskID: String) async throws -> (text: String, images: [Data])? {
+        guard case .queuedPrompt(let text, let images) = try await request(.interrupt(taskID: taskID)) else { return nil }
+        return (text, images)
     }
 
     /// Sends a prompt to a task's agent and returns once the host has handed it

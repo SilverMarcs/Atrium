@@ -11,7 +11,8 @@ public nonisolated struct PendingPrompt: Identifiable, Equatable, Sendable {
     }
 
     /// Also the prompt's key, so retrying it can't prompt the agent twice.
-    public let id = UUID()
+    /// A queued prompt's, once its host sends it, so it keeps its bubble.
+    public var id = UUID()
     public let text: String
     /// Attached images, as the JPEG data sent to the host.
     public var images: [Data] = []
@@ -33,5 +34,9 @@ public nonisolated struct PendingPrompt: Identifiable, Equatable, Sendable {
 
     /// Distinct from transcript message IDs, so the timeline can tell an
     /// optimistic row from a confirmed one.
-    public var timelineID: String { "pending-\(id.uuidString)" }
+    public var timelineID: String { Self.timelineID(id) }
+
+    /// A queued prompt's row takes the ID its pending prompt will have once
+    /// the host sends it.
+    public static func timelineID(_ id: UUID) -> String { "pending-\(id.uuidString)" }
 }

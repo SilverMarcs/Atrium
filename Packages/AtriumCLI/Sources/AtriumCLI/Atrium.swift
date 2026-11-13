@@ -74,7 +74,8 @@ enum Atrium {
               atrium projects
               atrium start --project <project> --provider codex "<the task, with everything it needs to know>"
               atrium send <session> "<a follow-up>"
-            Then end your turn. Atrium sends you any question a session asks as a new message, which you answer \
+            A follow-up to a session that's still working waits for its current turn to end, then starts the next \
+            one; add --steer to have the agent take it in now, as a correction to the turn under way. Then end your turn. Atrium sends you any question a session asks as a new message, which you answer \
             with `atrium respond`, and the sessions' final replies together, in one message, once every one you \
             handed work to is done. Sessions you start are listed \
             under yours, and stopping yours stops them, along with any turn you asked of another session. Prompting \

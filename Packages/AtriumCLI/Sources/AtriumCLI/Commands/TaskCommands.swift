@@ -22,7 +22,7 @@ extension TaskAction {
         // Reading from the command line is passive; only mark-read acknowledges a result.
         case .viewed: nil
         // The Mac's own: its terminal app, and the chat's side chat and message editing.
-        case .openTerminal, .startSideChat, .rewind: nil
+        case .openTerminal, .startSideChat, .rewind, .takeQueuedPrompt: nil
         }
     }
 }

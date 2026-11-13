@@ -14,11 +14,13 @@ struct SessionChatMessageRow: View, Equatable {
   /// A prompt in the transcript the agent can rewind or fork at; pending ones can't be yet.
   let isRewindable: Bool
   let pendingPrompt: PendingPrompt?
+  /// Set on the prompt waiting for the agent's turn to end.
+  var queuedPrompt: QueuedPrompt?
   @Environment(\.promptActions) private var actions
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.isStreaming == rhs.isStreaming && lhs.isRewindable == rhs.isRewindable
-      && lhs.pendingPrompt == rhs.pendingPrompt && lhs.message == rhs.message
+      && lhs.pendingPrompt == rhs.pendingPrompt && lhs.queuedPrompt == rhs.queuedPrompt && lhs.message == rhs.message
   }
 
   var body: some View {
@@ -31,7 +33,7 @@ struct SessionChatMessageRow: View, Equatable {
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
           images: pendingPrompt?.images ?? message.images ?? [],
           messageID: pendingPrompt == nil ? message.id : nil,
-          isFromAgent: message.relay != nil,
+          isFromAgent: message.relay != nil || queuedPrompt?.isFromAgent == true,
           edit: isRewindable ? PromptAction(isEnabled: { [message] in actions.isEditEnabled(message.id) }, perform: { [message] in actions.edit(message) }) : nil,
           fork: isRewindable ? PromptAction(isEnabled: actions.isForkEnabled, perform: { [message] in actions.fork(message) }) : nil,
           flightRowID: message.id.hasPrefix("pending-") ? message.id : nil)
@@ -41,6 +43,9 @@ struct SessionChatMessageRow: View, Equatable {
             .font(.caption)
             .buttonStyle(.borderless)
             .tint(.red)
+        }
+        if queuedPrompt != nil {
+          QueuedPromptFooter(edit: queuedPrompt?.isFromAgent == true ? nil : actions.editQueued)
         }
       }
     case .assistant:
@@ -64,6 +69,8 @@ struct PromptActions: Equatable {
   var isForkEnabled: @MainActor () -> Bool = { false }
   var fork: @MainActor (TranscriptMessage) -> Void = { _ in }
   var retry: @MainActor (UUID) -> Void = { _ in }
+  /// Takes the queued prompt back into the composer.
+  var editQueued: @MainActor () -> Void = {}
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
 }

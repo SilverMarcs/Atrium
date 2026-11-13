@@ -44,6 +44,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var pullRequests: [PullRequest] = []
     /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
     public var origin: WireTaskOrigin? = nil
+    /// The prompt waiting for the agent's turn to end.
+    public var queuedPrompt: QueuedPrompt? = nil
 
     public init(
         id: String,
@@ -70,7 +72,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         checkout: TaskCheckout? = nil,
         changedCheckouts: [TaskCheckout]? = nil,
         pullRequests: [PullRequest] = [],
-        origin: WireTaskOrigin? = nil
+        origin: WireTaskOrigin? = nil,
+        queuedPrompt: QueuedPrompt? = nil
     ) {
         self.id = id
         self.title = title
@@ -97,6 +100,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.changedCheckouts = changedCheckouts
         self.pullRequests = pullRequests
         self.origin = origin
+        self.queuedPrompt = queuedPrompt
     }
 
     public var isSnoozed: Bool { snoozedUntil != nil && !isSettled }

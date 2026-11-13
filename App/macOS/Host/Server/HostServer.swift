@@ -75,6 +75,7 @@ final class HostServer {
     @ObservationIgnored private let workspaces: WorkspaceStore
     @ObservationIgnored private let sessions: TaskSessionController
     @ObservationIgnored private let orchestrator: Orchestrator
+    @ObservationIgnored private let queue: PromptQueue
     @ObservationIgnored private let media: MediaService
     /// What Settings → Integrations turns on, which stays with this Mac's host.
     @ObservationIgnored let integrationSettings = IntegrationSettings()
@@ -110,17 +111,39 @@ final class HostServer {
         ], settings: integrationSettings)
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)
+        queue = PromptQueue(integrations: integrations, file: bridge.storage.appending(path: "queued-prompts.json"))
         media = MediaService(integrations: integrations)
-        tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator)
+        tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue)
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publishTasks(event) }
-        integrations.onStatusChange = { [orchestrator] thread in orchestrator.observe(thread) }
+        integrations.onStatusChange = { [orchestrator, queue] thread in
+            orchestrator.observe(thread)
+            queue.observe(thread)
+        }
+        queue.onSend = { [weak self] in
+            guard let self else { return }
+            publishTasks(.tasks(tasksFeed.snapshot()))
+        }
+        queue.deliver = { [weak self] entry, thread in
+            guard let self else { return }
+            let tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue)
+            let reply = if let requester = entry.requester {
+                await orchestrator.delegate(entry.text, images: entry.images, to: thread.id, from: requester, using: tasks)
+            } else {
+                await tasks.prompt(entry.text, images: entry.images, toTask: thread.id)
+            }
+            if case .failed(let message) = reply { throw IntegrationError(message: message) }
+            feeds[.transcript(taskID: thread.id)]?.refresh()
+        }
         let alert = integrations.onAttention
         integrations.onAttention = { [orchestrator] thread in
             if let target = orchestrator.attentionTarget(for: thread) { alert?(target) }
         }
-        integrations.onThreadRemoved = { [orchestrator] id in orchestrator.sessionRemoved(id) }
+        integrations.onThreadRemoved = { [orchestrator, queue] id in
+            orchestrator.sessionRemoved(id)
+            queue.remove(id)
+        }
         NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
         Task { await integrations.refresh() }
         if isRemoteAccessEnabled { startRemoteAccess() }
@@ -247,7 +270,7 @@ final class HostServer {
     }
 
     private func handleAuthenticated(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
-        let tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces)
+        let tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue)
         switch request {
         case .pair, .authenticate:
             return .done
@@ -322,11 +345,11 @@ final class HostServer {
                 orchestrator.started(id, by: device, caller: connection.caller)
             }
             return reply
-        case .prompt(let taskID, let text, let images):
+        case .prompt(let taskID, let text, let images, let queueID):
             let reply = if let caller = connection.caller {
-                await orchestrator.delegate(text, images: images, to: taskID, from: caller, using: tasks)
+                await orchestrator.delegate(text, images: images, to: taskID, from: caller, queueID: queueID, using: tasks)
             } else {
-                await tasks.prompt(text, images: images, toTask: taskID)
+                await tasks.prompt(text, images: images, toTask: taskID, queueID: queueID)
             }
             publishTasks(.tasks(tasksFeed.snapshot()))
             feeds[.transcript(taskID: taskID)]?.refresh()
@@ -335,11 +358,25 @@ final class HostServer {
             guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
                 return .failed(message: "This task no longer exists.")
             }
+            // A stop doesn't let the prompt queued behind the turn start the
+            // next one. A person gets their own back for the composer, and an
+            // agent that queued one hears it wasn't sent; an agent's stop drops
+            // only its own.
+            let isPerson = connection.device?.kind != .commandLine
+            let waiting = queue.entries[taskID]
+            let queued = isPerson || (waiting?.requester != nil && waiting?.requester == connection.caller)
+                ? queue.take(from: taskID) : nil
             do {
                 // Everything working for it stops with it.
                 try await orchestrator.stop(thread)
-                return .done
+                guard let queued else { return .done }
+                if let requester = queued.requester {
+                    if isPerson { orchestrator.queuedPromptDropped(for: taskID, from: requester) }
+                    return .done
+                }
+                return .queuedPrompt(text: queued.text, images: queued.images)
             } catch {
+                if let queued { queue.putBack(queued, to: taskID) }
                 return .failed(message: error.localizedDescription)
             }
         case .addWorkspace(let path):

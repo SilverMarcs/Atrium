@@ -11,7 +11,7 @@ private let promptDetails = """
       --follow      Stream the turn as JSON lines, as `follow` does, until it ends or needs an answer.
       --timeout S   With --wait or --follow, stop waiting after S seconds, exiting with status 6.
 
-    Without --wait or --follow it returns once the agent has the prompt: {"id", "sessionID", "session"}. \
+    Without --wait or --follow it returns once the host has the prompt: {"id", "sessionID", "session", "queued"}. \
     Agents on the Mac don't wait for sessions there: Atrium sends them the result as a new message. They wait, or \
     read it later, only for a session on another Mac or one they start with --standalone.
     """
@@ -90,20 +90,28 @@ let promptCommands: [Command] = [
         client.stop()
     },
     Command(
-        name: "send", usage: "send <session> [PROMPT]",
-        summary: "Send a prompt to a session. One sent while its agent works joins the current turn.",
+        name: "send", usage: "send <session> [--steer] [PROMPT]",
+        summary: "Send a prompt to a session. One sent while its agent works waits for the current turn to end.",
         details: """
+              --steer       Join the turn under way instead of waiting for it to end, for a correction or extra \
+            detail the agent should take in now. It reads the prompt at its next step.
+
+            Sent while the session's agent works, the prompt is queued: it starts the next turn once the current \
+            one ends, added to any prompt you already queued there, and prints "queued": true. Sent while the agent \
+            is free, it starts a turn at once. The user sees a queued prompt waiting at the end of the chat; if \
+            they stop the turn, it isn't sent, and Atrium tells you so.
+
             The session stays where it's listed. Sent by an agent on the Mac, the turn's result and questions go \
-            back to that agent; a session already on a turn another agent asked for refuses until its result has \
-            gone back.
+            back to that agent once the prompt's own turn ends; a session already on a turn another agent asked \
+            for refuses until its result has gone back, and so does one with someone else's prompt waiting.
 
             \(promptDetails)
             """,
-        options: promptOptions, flags: promptFlags
+        options: promptOptions, flags: promptFlags.union(["steer"])
     ) { arguments in
         try arguments.allowPositionals(2)
         let selector = try arguments.required(0, "session")
-        let prompt = try Prompt(arguments, at: 1)
+        let prompt = try Prompt(arguments, at: 1, queues: true)
         let options = try HostOptions(arguments)
         let client = Client()
         let host = try await client.connectForTasks(options)
@@ -172,9 +180,15 @@ private struct Prompt {
     let wait: Bool
     let follow: Bool
     let timeout: Duration?
+    /// Whether a prompt sent while the agent works waits for its turn to end,
+    /// rather than joining it as `--steer` has it.
+    let queues: Bool
 
-    init(_ arguments: Arguments, at index: Int = 0) throws {
+    /// - Parameter queues: Whether the command queues by default; `start`'s
+    ///   first prompt has no turn to wait for.
+    init(_ arguments: Arguments, at index: Int = 0, queues: Bool = false) throws {
         key = try deliveryKey(arguments.value("id"))
+        self.queues = queues && !arguments.flag("steer")
         wait = arguments.flag("wait")
         follow = arguments.flag("follow")
         if wait && follow { throw CLIError(.invalidArgument, "Use either --wait or --follow.") }
@@ -202,15 +216,30 @@ private struct Prompt {
             try await watch.start(timeout: options.connectTimeout)
             watch.markReported()
         }
-        let anchor = watch.anchor
-        _ = try await client.perform(.prompt(taskID: taskID, text: text, images: images), on: host, key: key)
-        _ = try await waitUntil(host, timeout: options.connectTimeout) { host.task(taskID) }
+        var anchor = watch.anchor
+        _ = try await client.perform(.prompt(taskID: taskID, text: text, images: images, queue: queues ? key : nil), on: host, key: key)
+        let task = try await waitUntil(host, timeout: options.connectTimeout) { host.task(taskID) }
+        // The host replies once it has the prompt, with the task list already showing it waiting.
+        let waitingID = queues ? task?.queuedPrompt.flatMap { $0.isSending ? nil : $0.id } : nil
         guard isWaiting else {
-            Output.write(Delivered(id: key, session: watch.task.map(host.json), sessionID: taskID))
+            Output.write(Delivered(id: key, session: watch.task.map(host.json), sessionID: taskID, queued: waitingID != nil))
             return
         }
-        if follow { Output.write(DeliveredEvent(id: key, sessionID: taskID)) }
+        if follow { Output.write(DeliveredEvent(id: key, sessionID: taskID, queued: waitingID != nil)) }
+        // A queued prompt's turn is the one it starts once the turn ahead of it ends.
+        if let waitingID {
+            let sent = try await waitUntil(host, timeout: timeout) {
+                host.task(taskID).map { $0.queuedPrompt?.id != waitingID || $0.queuedPrompt?.isSending == true } == true ? true : nil
+            }
+            guard sent != nil else { return try finish(.timeout, watch: watch, on: host, taskID: taskID, anchor: anchor) }
+            watch.restartTurn()
+            anchor = watch.anchor
+        }
         let end = try await watch.run(until: .turn(after: anchor), timeout: timeout, isReporting: follow)
+        try finish(end, watch: watch, on: host, taskID: taskID, anchor: anchor)
+    }
+
+    private func finish(_ end: SessionWatch.End, watch: SessionWatch, on host: HostClient, taskID: String, anchor: String?) throws {
         watch.stop()
         if follow {
             watch.report(.end(end))
@@ -228,12 +257,15 @@ private struct Delivered: Encodable {
     var id: UUID
     var session: SessionJSON?
     var sessionID: String
+    /// Waiting for the agent's turn to end.
+    var queued: Bool
 }
 
 private struct DeliveredEvent: Encodable {
     var type = "delivered"
     var id: UUID
     var sessionID: String
+    var queued: Bool
 }
 
 private struct TurnResult: Encodable {

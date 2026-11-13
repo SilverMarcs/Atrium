@@ -14,6 +14,7 @@ struct TaskDetailScreen: View {
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptSendAnimator()
+    @AppStorage(SendMode.key) private var sendMode = SendMode.steer
 
     private var host: HostClient? { hosts.host(ref.hostID) }
 
@@ -172,6 +173,6 @@ struct TaskDetailScreen: View {
 
     private func sendDraft(from sourceFrame: CGRect?) -> Bool {
         guard let item else { return false }
-        return composer.submit(to: item, animator: sendAnimator, from: sourceFrame)
+        return composer.submit(to: item, animator: sendAnimator, from: sourceFrame, mode: sendMode)
     }
 }

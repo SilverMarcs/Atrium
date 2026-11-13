@@ -8,6 +8,7 @@ struct TaskService {
     let integrations: AgentIntegrationStore
     let sessions: TaskSessionController
     let workspaces: WorkspaceStore
+    let queue: PromptQueue
 
     func perform(_ action: TaskAction, onTask id: String) async -> HostReply {
         guard let thread = integrations.threads.first(where: { $0.id == id }) else {
@@ -20,6 +21,11 @@ struct TaskService {
                     let result = try await integrations.rewind(thread, before: messageID)
                     return .rewound(messages: result.messages.foldingReports(), images: result.images)
                 } catch { return .failed(message: error.localizedDescription) }
+            case .takeQueuedPrompt:
+                guard let waiting = queue.entries[id] else { return .failed(message: "This message has already been sent.") }
+                guard waiting.requester == nil else { return .failed(message: "Another session queued this message, so only it can change it.") }
+                _ = queue.take(from: id)
+                return .queuedPrompt(text: waiting.text, images: waiting.images)
             case .respond(let interactionID, let decision):
                 guard let request = integrations.interactions.first(where: { $0.id == interactionID && $0.taskID == id }) else {
                     return .failed(message: "This request has already been answered or cancelled.")
@@ -64,9 +70,16 @@ struct TaskService {
         }
     }
 
-    func prompt(_ text: String, images: [Data], toTask id: String) async -> HostReply {
+    /// Sends a prompt to the task's agent, or with `queueID`, queues it while the agent works.
+    func prompt(_ text: String, images: [Data], toTask id: String, queueID: UUID? = nil) async -> HostReply {
         guard let thread = integrations.threads.first(where: { $0.id == id }) else {
             return .failed(message: "This task no longer exists.")
+        }
+        if let queueID, thread.status.isWorking {
+            guard queue.add(text, images: images, to: id, as: queueID) else {
+                return .failed(message: "Another session’s message is waiting for this turn to end. Send yours once it has gone.")
+            }
+            return .done
         }
         do {
             let imageURLs = try PromptAttachments.save(images)

@@ -7,6 +7,8 @@ struct OptimisticTaskUpdate: Identifiable {
     let id = UUID()
     let taskID: String
     let action: TaskAction
+    /// A prompt queued to wait for the agent's turn to end.
+    private var queued: QueuedPrompt?
     let date = Date.now
 
     init?(_ request: HostRequest) {
@@ -19,9 +21,10 @@ struct OptimisticTaskUpdate: Identifiable {
             if case .openTerminal = action { return nil }
             self.taskID = taskID
             self.action = action
-        case .prompt(let taskID, _, _):
+        case .prompt(let taskID, let text, let images, let queue):
             self.taskID = taskID
             self.action = .unsnooze
+            queued = queue.map { QueuedPrompt(id: $0, text: text, images: images) }
         default:
             return nil
         }
@@ -31,6 +34,11 @@ struct OptimisticTaskUpdate: Identifiable {
     /// sent them, as the host withholds them itself while a change is under way.
     func apply(to snapshot: inout WireTasksSnapshot) {
         guard let index = snapshot.tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        // A first queued prompt shows waiting at once. One joining it shows
+        // once the host has added it, which this can't tell from its text.
+        if let queued, snapshot.tasks[index].queuedPrompt == nil {
+            snapshot.tasks[index].queuedPrompt = queued
+        }
         switch action {
         case .settle:
             snapshot.tasks[index].isSettled = true
@@ -58,6 +66,8 @@ struct OptimisticTaskUpdate: Identifiable {
             snapshot.tasks[index].permissionMode = mode
         case .delete:
             snapshot.tasks.remove(at: index)
+        case .takeQueuedPrompt:
+            snapshot.tasks[index].queuedPrompt = nil
         case .fork, .startSideChat, .respond, .rewind, .openTerminal:
             break
         }

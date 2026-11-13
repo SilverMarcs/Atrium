@@ -20,6 +20,8 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            SendModeSettingsSection()
+
             Section {
                 Toggle("Wrap long lines", isOn: $editorWrapLines)
             } header: {

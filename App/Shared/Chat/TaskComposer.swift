@@ -167,7 +167,8 @@ final class TaskComposer {
     func submit(
         to item: HostTask,
         animator: any PromptSendAnimating,
-        from sourceFrame: CGRect? = nil
+        from sourceFrame: CGRect? = nil,
+        mode: SendMode = .steer
     ) -> Bool {
         guard !isSubmittingDictation else { return false }
         if dictation.isActive {
@@ -177,14 +178,14 @@ final class TaskComposer {
                 defer { isSubmittingDictation = false }
                 guard await dictation.finish(session: session),
                       let current = item.host.displayedTask(item.task.id) else { return }
-                _ = sendDraft(to: HostTask(host: item.host, task: current), animator: animator, from: sourceFrame)
+                _ = sendDraft(to: HostTask(host: item.host, task: current), animator: animator, from: sourceFrame, mode: mode)
             }
             return false
         }
-        return sendDraft(to: item, animator: animator, from: sourceFrame)
+        return sendDraft(to: item, animator: animator, from: sourceFrame, mode: mode)
     }
 
-    private func sendDraft(to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> Bool {
+    private func sendDraft(to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?, mode: SendMode) -> Bool {
         if let edit = messageEdit {
             Task {
                 _ = await edit.submit { text, images in
@@ -203,10 +204,61 @@ final class TaskComposer {
                 : "\(task.provider.name) can’t take a prompt right now."
             return false
         }
-        _ = send(text, images: images.map(\.data), to: item, animator: animator, from: sourceFrame)
+        if mode == .queue, task.status.isWorking {
+            queue(text, images: images, to: item)
+        } else {
+            _ = send(text, images: images.map(\.data), to: item, animator: animator, from: sourceFrame)
+        }
         draft = ""
         images = []
         return true
+    }
+
+    /// Has the prompt wait for the agent's turn to end. One the host turns
+    /// down comes back to the composer, if it's still empty.
+    private func queue(_ text: String, images: [ComposerImage], to item: HostTask) {
+        Task {
+            do {
+                try await item.host.queuePrompt(text, images: images.map(\.data), to: item.task.id)
+            } catch {
+                if !hasContent {
+                    draft = text
+                    self.images = images
+                }
+                item.host.actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Takes the task's queued prompt back into the composer to edit, ahead
+    /// of anything already drafted. Sending it again queues it again.
+    func editQueuedPrompt(of item: HostTask) {
+        guard messageEdit?.isSubmitting != true else { return }
+        Task {
+            do { restore(try await item.host.takeQueuedPrompt(from: item.task.id)) }
+            catch { item.host.actionError = error.localizedDescription }
+        }
+    }
+
+    /// Stops the agent's turn. The prompt queued behind it comes back to the
+    /// composer rather than starting the next turn.
+    func stop(_ item: HostTask) {
+        Task {
+            do {
+                if let queued = try await item.host.interrupt(item.task.id) { restore(queued) }
+            } catch {
+                item.host.actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Puts a prompt taken back from the queue in the ordinary draft, ahead
+    /// of anything already there.
+    private func restore(_ prompt: (text: String, images: [Data])) {
+        if messageEdit?.isSubmitting != true { messageEdit = nil }
+        draft = QueuedPrompt.joined(draft, to: prompt.text)
+        images = prompt.images.map { ComposerImage(data: $0) } + images
+        focusRequestID = UUID()
     }
 
     private func send(_ text: String, images: [Data], to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> UUID {

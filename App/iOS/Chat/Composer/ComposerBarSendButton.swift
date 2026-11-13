@@ -17,7 +17,7 @@ struct ComposerBarSendButton: View {
     var body: some View {
         if let item, composer.offersStop(for: item.task.actions) {
             Button("Stop", systemImage: "stop.fill", role: .destructive) {
-                item.host.interrupt(item.task.id)
+                composer.stop(item)
             }
             .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .red))
         } else {

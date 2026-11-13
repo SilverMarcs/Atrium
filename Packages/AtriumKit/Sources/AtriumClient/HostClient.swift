@@ -655,12 +655,31 @@ public final class HostClient: Identifiable {
 
     private func tasksDidChange(from previous: WireTasksSnapshot?) {
         dropListedDrafts()
+        followQueuedPrompts(from: previous)
         for taskID in Set(conversations.tasksAwaitingAgent.keys).union(conversations.pendingPrompts.keys) {
             if let status = task(taskID)?.status {
                 let previousStatus = previous?.tasks.first { $0.id == taskID }?.status
                 conversations.noteStatus(status, previous: previousStatus, for: taskID)
             } else if draftTask(taskID) == nil {
                 conversations.tasksAwaitingAgent[taskID] = nil
+            }
+        }
+    }
+
+    /// A queued prompt the host starts sending carries on as a prompt on its
+    /// way, in the same row; one it puts back shows as queued again.
+    private func followQueuedPrompts(from previous: WireTasksSnapshot?) {
+        let wasSending = Dictionary(
+            (previous?.tasks ?? []).compactMap { task in task.queuedPrompt.map { (task.id, $0) } }.filter(\.1.isSending),
+            uniquingKeysWith: { first, _ in first })
+        for task in hostTasks?.tasks ?? [] {
+            // Another agent's shows as relayed from it once the transcript has it.
+            if let queued = task.queuedPrompt, queued.isSending, !queued.isFromAgent {
+                // Once: the transcript may show it before the host stops saying it's sending.
+                guard wasSending[task.id]?.id != queued.id else { continue }
+                conversations.adopt(queued, in: task.id) { [weak self] in self?.task(task.id)?.status }
+            } else if let sent = wasSending[task.id], task.queuedPrompt?.id == sent.id {
+                conversations.dropAdopted(sent.id, in: task.id)
             }
         }
     }

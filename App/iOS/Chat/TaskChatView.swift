@@ -33,6 +33,10 @@ struct TaskChatView: View {
     var body: some View {
         let messages = host.conversations.transcripts[task.id]
         let pendingPrompts = host.conversations.pendingPrompts[task.id] ?? []
+        // Waiting for the turn to end, until the host sends it as a prompt on its way.
+        let queuedPrompt = task.queuedPrompt.flatMap { queued in
+            queued.isSending || pendingPrompts.contains { $0.id == queued.id } ? nil : queued
+        }
         // A prompt just sent shows the agent working with it, before the host
         // reports so, so the indicator arrives with the prompt's row.
         let footerStatus = host.conversations.footerStatus(for: task.id, status: item.progressStatus)
@@ -103,6 +107,12 @@ struct TaskChatView: View {
                                     PendingPromptView(prompt: prompt, item: item)
                                         .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.turnMessages.last?.role))
                                 }
+                                if let queuedPrompt {
+                                    QueuedPromptView(prompt: queuedPrompt, item: item)
+                                        .id(PendingPrompt.timelineID(queuedPrompt.id))
+                                        .padding(.top, ChatMessageSpacing.before(
+                                            .user, after: sections.turnPendingPrompts.isEmpty ? sections.turnMessages.last?.role : .user))
+                                }
                                 TaskChatStatusFooter(status: footerStatus)
                                     .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                             }
@@ -114,6 +124,12 @@ struct TaskChatView: View {
                             .frame(minHeight: anchorSpace.turnMinimumHeight, alignment: .top)
                             .id(TimelineAnchorSpace.turnID)
                         } else {
+                            if let queuedPrompt {
+                                QueuedPromptView(prompt: queuedPrompt, item: item)
+                                    .id(PendingPrompt.timelineID(queuedPrompt.id))
+                                    .padding(.top, ChatMessageSpacing.before(
+                                        .user, after: sections.historyPendingPrompts.isEmpty ? sections.historyMessages.last?.role : .user))
+                            }
                             TaskChatStatusFooter(status: footerStatus)
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                                 .id(Self.footerID)

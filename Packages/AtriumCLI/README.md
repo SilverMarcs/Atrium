@@ -57,6 +57,7 @@ Standard output carries exactly one JSON document per command, or one JSON objec
 
 - **Reading is passive.** `sessions`, `show`, `read` and `follow` never mark a result read or report this device as in use. Only `mark-read` acknowledges a result.
 - **No duplicate prompts.** Every `start` and `send` has an ID (`--id`, any UUID; generated when omitted and printed as `id`). The host performs each ID once per device for a day, so after exit status 5 the same command with the same `--id` returns the first result instead of prompting again.
+- **Queued follow-ups.** `send` to a session that's working queues the prompt for after its current turn, added to any prompt the same sender queued, and prints `"queued": true`; `--wait` then waits for the turn the prompt starts. `--steer` joins the turn under way instead.
 - **Approvals.** `respond <session> --allow` or `--decline` answers a tool approval; `--answer` answers questions. An agent can finish a task unattended, or report back what only the user can answer.
 - **Concurrency.** Commands can run at once, such as a long `follow` beside `send` and `respond`.
 

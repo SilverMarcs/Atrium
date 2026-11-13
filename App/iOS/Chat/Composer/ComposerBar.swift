@@ -115,7 +115,7 @@ struct ComposerBar: View {
                                 isEnabled: action == .stop || composer.canSend,
                                 isHidden: isExpanded || !showsRestingAction
                             ) {
-                                if action == .send { send() } else if let item { item.host.interrupt(item.task.id) }
+                                if action == .send { send() } else if let item { composer.stop(item) }
                             }
                             .composerBarPart(.action)
                         }

@@ -61,14 +61,7 @@ public final class ConversationStore {
         try await transport.deliverPrompt(prompt, to: taskID)
         guard let self, !Task.isCancelled else { return }
         self.update(id, in: taskID) { $0.state = .sent }
-        try await Task.sleep(for: self.acknowledgementTimeout)
-        guard !Task.isCancelled else { return }
-        if status() == .processing {
-          self.update(id, in: taskID) { $0.isOverdue = true }
-        } else {
-          self.pendingPrompts[taskID]?.removeAll { $0.id == id && $0.state == .sent }
-        }
-        self.stopAwaitingAgent(for: taskID, after: id)
+        try await self.awaitTranscript(id, in: taskID, status: status)
       } catch {
         if !Task.isCancelled {
           self?.markFailed(id, in: taskID, message: error.localizedDescription)
@@ -77,6 +70,45 @@ public final class ConversationStore {
       }
       self?.deliveries[id] = nil
     }
+  }
+
+  /// Gives a sent prompt a while to show in the transcript. One the agent
+  /// hasn't taken by then stays while it works, and goes once it stops.
+  private func awaitTranscript(
+    _ id: UUID, in taskID: String, status: @escaping @MainActor () -> AgentThreadStatus?
+  ) async throws {
+    try await Task.sleep(for: acknowledgementTimeout)
+    guard !Task.isCancelled else { return }
+    if status() == .processing {
+      update(id, in: taskID) { $0.isOverdue = true }
+    } else {
+      pendingPrompts[taskID]?.removeAll { $0.id == id && $0.state == .sent }
+    }
+    stopAwaitingAgent(for: taskID, after: id)
+  }
+
+  /// Shows a queued prompt the host is sending as a prompt on its way, in the
+  /// same row, until the transcript shows it.
+  func adopt(_ queued: QueuedPrompt, in taskID: String, status: @escaping @MainActor () -> AgentThreadStatus?) {
+    guard pendingPrompts[taskID]?.contains(where: { $0.id == queued.id }) != true else { return }
+    let prompt = PendingPrompt(
+      id: queued.id, text: queued.text, images: queued.images, state: .sent,
+      anchorUserMessageID: newestUserMessageID(in: taskID),
+      expectedUserMessagesAfterAnchor: nextExpectedUserMessageCount(for: taskID)
+    )
+    pendingPrompts[taskID, default: []].append(prompt)
+    tasksAwaitingAgent[taskID] = prompt.id
+    deliveries[prompt.id] = Task { [weak self] in
+      try? await self?.awaitTranscript(prompt.id, in: taskID, status: status)
+      self?.deliveries[prompt.id] = nil
+    }
+  }
+
+  /// The host put back a queued prompt it couldn't send, which shows as queued again.
+  func dropAdopted(_ id: UUID, in taskID: String) {
+    deliveries.removeValue(forKey: id)?.cancel()
+    pendingPrompts[taskID]?.removeAll { $0.id == id }
+    stopAwaitingAgent(for: taskID, after: id)
   }
 
   func update(_ id: UUID, in taskID: String, _ update: (inout PendingPrompt) -> Void) {

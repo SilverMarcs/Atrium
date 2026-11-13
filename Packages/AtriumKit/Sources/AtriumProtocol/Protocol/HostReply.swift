@@ -13,6 +13,9 @@ public nonisolated enum HostReply: Codable, Sendable {
     /// The task a fork created, with the original images of the prompt it
     /// was forked before, so a client can put that prompt in its composer.
     case forked(taskID: String, images: [Data])
+    /// The prompt taken back from a task's queue, to edit or because its turn
+    /// was stopped, with its images as they were sent.
+    case queuedPrompt(text: String, images: [Data])
     case workspace(id: UUID)
     case command(id: UUID)
     case icon(data: Data)

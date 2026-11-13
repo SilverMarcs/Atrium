@@ -31,6 +31,7 @@ struct HostsSheet: View {
                         Label("Pair New Host", systemImage: "plus")
                     }
                 }
+                SendModeSettingsSection()
                 DictationSettingsSection()
             }
             .navigationTitle("Hosts")

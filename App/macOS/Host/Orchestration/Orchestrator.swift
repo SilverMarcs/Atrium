@@ -113,7 +113,11 @@ final class Orchestrator {
 
     /// Relays a prompt from the caller's agent to a session, whose turn then
     /// reports back to the caller. Where the session is listed stays as it was.
-    func delegate(_ text: String, images: [Data], to id: String, from callerID: String, using tasks: TaskService) async -> HostReply {
+    /// With `queueID`, a prompt to a session that's working waits for its turn
+    /// to end, and is relayed then.
+    func delegate(
+        _ text: String, images: [Data], to id: String, from callerID: String, queueID: UUID? = nil, using tasks: TaskService
+    ) async -> HostReply {
         guard self.thread(id) != nil, let caller = self.thread(callerID) else { return .failed(message: "That session no longer exists.") }
         guard id != callerID, !requesters(of: callerID).contains(id) else {
             return .failed(message: "That session handed you this work. End your turn with your result instead: Atrium sends it back.")
@@ -127,6 +131,16 @@ final class Orchestrator {
                 or read it with `atrium read`.
                 """)
         }
+        // Its turn starts, and reports back, once the queue sends it.
+        if let queueID, self.thread(id)?.status.isWorking == true {
+            guard tasks.queue.add(text, images: images, to: id, as: queueID, from: callerID) else {
+                return .failed(message: """
+                    That session already has a message from someone else waiting for its turn to end. Add --steer to \
+                    join its current turn instead, or send yours once that message has gone.
+                    """)
+            }
+            return .done
+        }
         if previous == nil || previous?.state == .finished { store.turns[id] = DelegatedTurn(requester: callerID) }
         prompted.insert(id)
         let reply = await tasks.prompt(RelayedMessage.task(text, from: name(of: caller)), images: images, toTask: id)
@@ -138,6 +152,17 @@ final class Orchestrator {
             observe(latest)
         }
         return reply
+    }
+
+    /// A person stopped a session before the prompt an agent queued for it
+    /// went, so it won't: the agent hears so, as that turn's result.
+    func queuedPromptDropped(for id: String, from requesterID: String) {
+        // A turn it asked for, which reports the stop itself, keeps its place.
+        guard store.turns[id] == nil, thread(requesterID) != nil else { return }
+        store.turns[id] = DelegatedTurn(
+            requester: requesterID, state: .finished, outcome: .stopped,
+            result: "The user stopped this session's turn before your queued message reached it, so it wasn't sent.")
+        settleSoon()
     }
 
     /// The sessions waiting on a session's turn under way, nearest first: the

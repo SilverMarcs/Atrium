@@ -8,6 +8,7 @@ struct SessionChatView: View {
   let project: Project?
   @Environment(AppModel.self) private var app
   @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
+  @AppStorage(SendMode.key) private var sendMode = SendMode.steer
   @State private var pin = TimelinePin()
   @State private var anchorSpace = TimelineAnchorSpace()
   @State private var turnFill = TurnFill()
@@ -35,14 +36,17 @@ struct SessionChatView: View {
     let prompts = conversation.pendingPrompts[task.id] ?? []
     let turns = ConversationTurns(
       messages: conversation.displayMessages(for: task.id), pendingPrompts: prompts, status: task.status)
-    let rows = conversation.rows(for: task.id, turns: turns)
+    let rows = conversation.rows(for: task.id, turns: turns, queued: task.queuedPrompt)
     let footerStatus = conversation.footerStatus(for: task.id, status: item.progressStatus)
-    let newestPromptID = rows.last { $0.message.role == .user }?.id
+    // A queued prompt hasn't started a turn yet.
+    let queuedRowID = rows.last?.queuedPrompt == nil ? nil : rows.last?.id
+    let newestPromptID = rows.last { $0.message.role == .user && $0.queuedPrompt == nil }?.id
     // A prompt sent from here starts the latest turn, held at the top of the
     // timeline. A host can give the held prompt a new ID, as Claude does once
     // it saves the turn; the prompt that starts the latest turn stays held instead.
     let anchorID = anchorSpace.anchorID.flatMap { id in
-      rows.contains { $0.id == id } ? id : rows.last { $0.message.role == .user && !$0.message.isSteer }?.id
+      rows.contains { $0.id == id } ? id
+        : rows.last { $0.message.role == .user && !$0.message.isSteer && $0.queuedPrompt == nil }?.id
     }
     ScrollViewReader { proxy in
       ScrollView {
@@ -56,7 +60,8 @@ struct SessionChatView: View {
                 message: row.message,
                 isStreaming: turns.liveIDs.contains(row.id),
                 isRewindable: row.pendingPrompt == nil && row.message.editTarget != nil,
-                pendingPrompt: row.pendingPrompt
+                pendingPrompt: row.pendingPrompt,
+                queuedPrompt: row.queuedPrompt
               )
               .equatable()
               // The first message has the usual gap above it too, so held at
@@ -161,8 +166,8 @@ struct SessionChatView: View {
               composer: composer, provider: task.provider,
               isSending: conversation.isSending(in: task.id),
               actions: task.actions,
-              send: { send(composer) },
-              interrupt: { host.interrupt(task.id) },
+              send: { send(composer, mode: sendMode) },
+              interrupt: { composer.stop(item) },
               noteSourceFrame: { frame in flights.sourceFrame = { frame } }
             )
           }
@@ -177,7 +182,8 @@ struct SessionChatView: View {
           taskID: task.id,
           hasTranscript: transcript != nil,
           count: rows.count,
-          lastID: rows.last?.id
+          lastID: rows.last?.id,
+          queuedRowID: queuedRowID
         ), initial: true
       ) { old, new in
         guard composer.messageEdit == nil else { return }
@@ -194,6 +200,12 @@ struct SessionChatView: View {
           anchorSpace.reset()
           turnFill.reset()
           scrollToLatest(proxy, holding: nil, animated: false)
+          return
+        }
+        // A queued prompt the host sends starts the next turn in its own row,
+        // held at the top like a prompt sent then.
+        if let queued = old.queuedRowID, new.queuedRowID == nil, queued == newestPromptID {
+          hold(queued, proxy)
           return
         }
         // Scroll when a new message arrives. A shrinking transcript keeps the
@@ -275,23 +287,27 @@ struct SessionChatView: View {
         guard let task = host.displayedTask(taskID) else { return }
         hosts.fork(HostTask(host: host, task: task), into: task.provider, before: message)
       },
-      retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) }
+      retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) },
+      editQueued: { [host, taskID = task.id] in
+        guard let task = host.displayedTask(taskID) else { return }
+        composer.editQueuedPrompt(of: HostTask(host: host, task: task))
+      }
     )
   }
 
   /// The newest prompt's bubble Edit action, offered when its menu would offer it.
   private func latestPromptEdit(rows: [ConversationRow], actions: PromptActions) -> LatestPromptEdit? {
-    guard let row = rows.last(where: { $0.message.role == .user }),
+    guard let row = rows.last(where: { $0.message.role == .user && $0.queuedPrompt == nil }),
           row.pendingPrompt == nil, row.message.editTarget != nil,
           actions.isEditEnabled(row.id) else { return nil }
     return LatestPromptEdit(messageID: row.id) { [message = row.message] in actions.edit(message) }
   }
 
   /// Sends with nothing else animating; the sent bubble flies in on its own.
-  private func send(_ composer: TaskComposer) {
+  private func send(_ composer: TaskComposer, mode: SendMode) {
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
-    withTransaction(transaction) { composer.submit(to: item, animator: flights) }
+    withTransaction(transaction) { composer.submit(to: item, animator: flights, mode: mode) }
   }
 
   /// Holds a prompt sent from here at the top of the timeline, as the start

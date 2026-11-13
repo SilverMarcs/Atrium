@@ -86,6 +86,13 @@ final class SessionWatch {
     }
 
     /// Takes in what's already there without reporting it.
+    /// Starts watching for a turn afresh, as a queued prompt goes: the turn
+    /// it waited behind doesn't count.
+    func restartTurn() {
+        refreshMessages()
+        sawProcessing = false
+    }
+
     func markReported() {
         reportedSession = task.map(host.json)
         for message in messages { reported[message.id] = message }
