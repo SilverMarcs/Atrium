@@ -8,6 +8,9 @@ import SwiftUI
 struct TasksScreen: View {
     @Environment(HostDirectory.self) private var hosts
     @Binding var selection: TaskRef?
+    /// Whether a chat covers the list, as on iPhone from the moment one
+    /// starts opening until going back starts.
+    let isCoveredByChat: Bool
     let onEditHosts: () -> Void
     @State private var searchText = ""
     @State private var filter: TaskListFilter = .all
@@ -93,7 +96,13 @@ struct TasksScreen: View {
             if isPhone {
                 ToolbarSpacer(.fixed, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
+                    Button("New Chat", systemImage: "square.and.pencil") {
+                        // The bar keeps taking taps for most of a second while
+                        // a chat slides over it, right where the chat's
+                        // dictation button sits.
+                        guard !isCoveredByChat else { return }
+                        hosts.openNewChat()
+                    }
                         .disabled(!hosts.canStartNewChat)
                 }
             }

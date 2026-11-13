@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CompanionRootView: View {
     @Environment(HostDirectory.self) private var hosts
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var dictationSettings = DictationSettings()
     @State private var selectedTask: TaskRef?
     /// The task the detail column keeps showing once going back on iPhone has
@@ -17,7 +18,10 @@ struct CompanionRootView: View {
                 // Tasks in the sidebar and the selected task in the detail column on
                 // iPad; on iPhone the split view collapses into a single stack.
                 NavigationSplitView {
-                    TasksScreen(selection: $selectedTask) { showingHosts = true }
+                    TasksScreen(
+                        selection: $selectedTask,
+                        isCoveredByChat: horizontalSizeClass == .compact && hosts.visibleTask != nil
+                    ) { showingHosts = true }
                         .navigationSplitViewColumnWidth(min: 300, ideal: 340)
                 } detail: {
                     NavigationStack(path: $detailPath) {
