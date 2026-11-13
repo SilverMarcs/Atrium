@@ -46,13 +46,6 @@ struct TaskDetailScreen: View {
     /// new chat created meanwhile doesn't open over the list.
     private var isOnScreen: Bool { horizontalSizeClass != .compact || isPresented }
 
-    private var newChatDraft: TaskDraft? {
-        guard let item,
-              item.host.conversations.transcripts[item.task.id]?.isEmpty == true,
-              item.host.conversations.pendingPrompts[item.task.id]?.isEmpty != false else { return nil }
-        return item.host.drafts[item.task.id]
-    }
-
     var body: some View {
         let composer = composer
         Group {
@@ -116,13 +109,6 @@ struct TaskDetailScreen: View {
                             showingScratchPad: $showingScratchPad
                         )
                     }
-                }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let item, let draft = newChatDraft {
-                NewChatPickerScroller {
-                    NewChatPicker(hosts: hosts, host: item.host, draft: draft)
                 }
             }
         }

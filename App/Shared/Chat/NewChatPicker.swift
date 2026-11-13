@@ -29,9 +29,8 @@ struct NewChatPicker: View {
         .padding(.horizontal)
         .padding(.bottom, 4)
         #else
-        .padding(.leading, 31)
-        .padding(.trailing)
-        .padding(.bottom)
+        // At the end of the timeline, within its margins.
+        .padding(.leading, 16)
         #endif
         // The project folder's own checkout, which the checkout picker reads
         // whichever worktree the project's pages show.

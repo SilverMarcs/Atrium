@@ -23,6 +23,13 @@ struct TaskChatView: View {
     private var task: WireTask { item.task }
     private var host: HostClient { item.host }
 
+    /// A new chat's draft, until its first prompt is sent.
+    private var newChatDraft: TaskDraft? {
+        guard host.conversations.transcripts[task.id]?.isEmpty == true,
+              host.conversations.pendingPrompts[task.id]?.isEmpty != false else { return nil }
+        return host.drafts[task.id]
+    }
+
     var body: some View {
         let messages = host.conversations.transcripts[task.id]
         let pendingPrompts = host.conversations.pendingPrompts[task.id] ?? []
@@ -111,6 +118,15 @@ struct TaskChatView: View {
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                                 .id(Self.footerID)
                         }
+                        // A new chat's timeline holds where it starts, at its
+                        // end like any short timeline's rows, and scrolls where
+                        // that doesn't fit above the keyboard.
+                        if let draft = newChatDraft {
+                            NewChatPicker(hosts: hosts, host: host, draft: draft)
+                                // Choosing where a new chat starts keeps writing
+                                // its prompt.
+                                .keepsComposerOpenOnTap()
+                        }
                         // The end is a row of the lazy stack, so scrolling to it
                         // lays out the rows above it from the end. Placed after
                         // the stack, it's put where the stack's estimate of the
@@ -159,7 +175,8 @@ struct TaskChatView: View {
             .contentMargins(.horizontal, 15, for: .scrollContent)
             // Three times the gap between messages, so the last one reads as
             // the end of the timeline rather than running into the composer.
-            .contentMargins(.bottom, ChatMessageSpacing.standard * 3, for: .scrollContent)
+            // A new chat's pickers sit closer, as the composer's own settings.
+            .contentMargins(.bottom, newChatDraft == nil ? ChatMessageSpacing.standard * 3 : 16, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {

@@ -55,11 +55,45 @@ final class TimelineTapRecognizer: NSObject, UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         true
     }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let view = gestureRecognizer.view else { return true }
+        return !view.hasComposerKeeper(under: touch)
+    }
+}
+
+/// Marks content in the timeline that a tap on leaves the composer open.
+private struct ComposerKeeper: UIViewRepresentable {
+    func makeUIView(context: Context) -> ComposerKeeperView {
+        let view = ComposerKeeperView()
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        return view
+    }
+
+    func updateUIView(_ uiView: ComposerKeeperView, context: Context) {}
+}
+
+final class ComposerKeeperView: UIView {}
+
+private extension UIView {
+    func hasComposerKeeper(under touch: UITouch) -> Bool {
+        subviews.contains { subview in
+            if subview is ComposerKeeperView, subview.bounds.contains(touch.location(in: subview)) { return true }
+            return subview.hasComposerKeeper(under: touch)
+        }
+    }
 }
 
 extension View {
     /// Closes the composer when the timeline around this content is tapped.
     func dismissesComposerOnTap(_ dismiss: @escaping () -> Void) -> some View {
         modifier(DismissComposerOnTap(dismiss: dismiss))
+    }
+
+    /// Leaves the composer open when this content in the timeline is tapped,
+    /// as for controls that set up what it sends.
+    func keepsComposerOpenOnTap() -> some View {
+        background(ComposerKeeper().accessibilityHidden(true))
     }
 }
