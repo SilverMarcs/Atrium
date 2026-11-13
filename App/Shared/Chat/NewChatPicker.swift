@@ -20,6 +20,7 @@ struct NewChatPicker: View {
             NewChatCheckoutPicker(host: host, draft: draft)
             NewChatAgentPicker(host: host, draft: draft)
             NewChatModelPicker(host: host, draft: draft)
+            NewChatPermissionPicker(host: host, draft: draft)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)

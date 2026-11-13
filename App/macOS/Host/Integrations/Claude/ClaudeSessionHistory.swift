@@ -433,6 +433,7 @@ actor ClaudeSessionHistory {
             latest.aiTitle = title("ai-title", "aiTitle") ?? latest.aiTitle
             latest.agentName = title("agent-name", "agentName") ?? latest.agentName
             latest.lastPrompt = Self.record(ofType: "last-prompt", key: "lastPrompt", in: data, range, last: true) ?? latest.lastPrompt
+            latest.permissionMode = Self.record(ofType: "permission-mode", key: "permissionMode", in: data, range, last: true) ?? latest.permissionMode
             // Claude records the folder a session moves into, and within the tool's
             // result the one leaving a worktree restored; whichever it did last wins.
             var move: String?
@@ -525,6 +526,7 @@ actor ClaudeSessionHistory {
         AgentThread(sessionID: file.sessionID, provider: .claude, title: metadata.title, directory: metadata.directory,
                     updatedAt: metadata.lastActivity ?? file.stamp.modified, status: .unknown, isMainTask: true, hasProviderTitle: metadata.hasProviderTitle, projectDirectory: metadata.projectDirectory,
                     model: metadata.model, reasoningEffort: metadata.reasoningEffort, isFastMode: metadata.isFastMode,
+                    permissionMode: metadata.permissionMode,
                     contextUsage: metadata.contextTokens.map { AgentContextUsage(tokens: $0) },
                     edits: metadata.edits, currentDirectory: metadata.currentDirectory)
     }

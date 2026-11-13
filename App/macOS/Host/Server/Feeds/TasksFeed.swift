@@ -77,7 +77,7 @@ final class TasksFeed: TopicFeed {
                     isAvailable: integrations.availableProviders.contains(provider),
                     error: integrations.errors[provider],
                     models: integrations.models[provider],
-                    defaultSettings: integrations.defaultSettings[provider],
+                    defaultSettings: defaultSettings(for: provider),
                     deletionMessage: integrations.deletionMessage(for: provider)
                 )
             },
@@ -110,6 +110,8 @@ final class TasksFeed: TopicFeed {
             model: thread.model,
             reasoningEffort: thread.reasoningEffort,
             isFastMode: thread.isFastMode,
+            permissionMode: thread.permissionMode,
+            permissionModesNeedingRestart: thread.permissionModesNeedingRestart,
             contextUsedPercent: thread.contextUsage?.usedPercent,
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: checkouts.current,
@@ -117,6 +119,13 @@ final class TasksFeed: TopicFeed {
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
                 ?? orchestrator.origin(of: thread)
         )
+    }
+
+    /// The provider's own defaults, with the permission mode Atrium starts new chats in.
+    private func defaultSettings(for provider: AgentProvider) -> TaskStartSettings {
+        var settings = integrations.defaultSettings[provider] ?? TaskStartSettings()
+        settings.permissionMode = integrations.defaultPermissionMode
+        return settings
     }
 
     private func wireWorkspace(_ workspace: Workspace) -> WireWorkspace {

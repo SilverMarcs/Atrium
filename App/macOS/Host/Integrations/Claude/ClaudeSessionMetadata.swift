@@ -18,6 +18,8 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     let model: String?
     let reasoningEffort: String?
     let isFastMode: Bool?
+    /// The permission mode Claude last recorded, as of the session's latest start.
+    let permissionMode: PermissionMode?
     /// How full the conversation keeps Claude's context, as of the newest
     /// reply; unknown once it's compacted, until the next reply.
     let contextTokens: Int?
@@ -53,6 +55,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         var edits = AgentEdits()
         var activity: Date?
         var reply: Reply?
+        var permissionMode: String?
     }
 
     static func parse(head: String, tail: String, renamedTitle: String?, latest: Latest) -> Self? {
@@ -75,6 +78,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             model: latest.reply?.model,
             reasoningEffort: latest.reply?.effort,
             isFastMode: latest.reply?.speed.map { $0 == "fast" },
+            permissionMode: ClaudePermissions.mode(latest.permissionMode),
             contextTokens: latest.reply?.contextTokens,
             edits: latest.edits,
             currentDirectory: latest.cwd

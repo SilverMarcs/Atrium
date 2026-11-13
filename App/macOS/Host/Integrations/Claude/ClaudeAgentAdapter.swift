@@ -50,6 +50,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Each model's context window as Claude reported it, and the models whose window was asked for.
     private var contextWindows: [String: Int] = [:]
     private var askedContextWindows: Set<String> = []
+    /// Permission modes chosen for sessions, shown until Claude switches to
+    /// them, which waits for a running turn to end.
+    private var pendingPermissionModes: [String: PermissionMode] = [:]
+    private var switchingPermissionModes: Set<String> = []
+    /// The modes Claude's settings on this Mac allow, as last checked.
+    private var allowedPermissionModes = PermissionMode.allCases
     /// Chats without hooks that were sent a prompt mid-turn, connected once the turn ends.
     private var awaitingHooks: [String: AgentThread] = [:]
     private var hookConnections: [String: Task<Bool, Never>] = [:]
@@ -403,21 +409,40 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
         try await openConversation(thread)
+        if case .permissionMode(let mode) = change {
+            pendingPermissionModes[thread.sessionID] = mode
+            onEvent?(.threadInvalidated(sessionID: thread.sessionID))
+            return try await switchPermissionMode(of: thread.sessionID)
+        }
         guard let id = backgroundIDs[thread.sessionID] else { return }
         for command in slashCommands(for: change, of: thread) { try await daemon.reply(command, jobID: id) }
         onEvent?(.threadInvalidated(sessionID: thread.sessionID))
     }
 
     /// Lists models the way the SDK does: Claude answers an `initialize` request
-    /// with its picker's rows, without starting a conversation.
+    /// with its picker's rows, without starting a conversation. Switching that
+    /// session to bypassing permissions and to auto mode, which Claude refuses
+    /// when its settings turn them off, tells which modes chats can use.
     func models() async throws -> [AgentModel] {
-        let request = #"{"type":"control_request","request_id":"atrium","request":{"subtype":"initialize"}}"# + "\n"
+        let requests = [
+            #"{"type":"control_request","request_id":"atrium","request":{"subtype":"initialize"}}"#,
+            #"{"type":"control_request","request_id":"fullAccess","request":{"subtype":"set_permission_mode","mode":"bypassPermissions"}}"#,
+            #"{"type":"control_request","request_id":"auto","request":{"subtype":"set_permission_mode","mode":"auto"}}"#
+        ]
         let output = try await IntegrationProcess.run("claude", arguments: [
-            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"
-        ], input: Data(request.utf8), timeout: .seconds(30))
-        let response = output.split(separator: UInt8(ascii: "\n")).lazy
+            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence",
+            ClaudePermissions.allowBypassFlag
+        ], input: Data(requests.map { $0 + "\n" }.joined().utf8), timeout: .seconds(30))
+        let lines = output.split(separator: UInt8(ascii: "\n"))
+        let response = lines.lazy
             .compactMap { try? JSONDecoder().decode(ClaudeInitializeResponse.self, from: Data($0)) }
-            .first { $0.type == "control_response" }
+            .first { $0.type == "control_response" && $0.requestID == "atrium" }
+        let refused = Set(lines.compactMap { line -> String? in
+            guard let event = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  let reply = event["response"] as? [String: Any], reply["subtype"] as? String == "error" else { return nil }
+            return reply["request_id"] as? String
+        })
+        allowedPermissionModes = PermissionMode.allCases.filter { !refused.contains($0.rawValue) }
         guard let options = response?.models else {
             throw IntegrationError(message: "Claude did not list its models.")
         }
@@ -447,7 +472,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             isFastMode: allowsFastMode && configured.isFastMode == true
         )
         // "default" stands for one of the other rows, which tasks report running instead.
-        return options.filter { $0.value != "default" }.map { $0.model(allowingFastMode: allowsFastMode) }
+        return options.filter { $0.value != "default" }.map {
+            $0.model(allowingFastMode: allowsFastMode, permissionModes: allowedPermissionModes)
+        }
     }
 
     /// As Claude counts it for a session in the thread's folder with its model,
@@ -491,6 +518,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             return ["/model \(model)"] + (reasoningEffort.map { ["/effort \($0)"] } ?? [])
         case .fastMode(let isOn):
             return ["/fast \(isOn ? "on" : "off")"]
+        case .permissionMode:
+            return []
         }
     }
 
@@ -510,6 +539,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         backgroundIDs[thread.sessionID] = nil
         backgroundSessions[thread.sessionID] = nil
         settingsOverrides[thread.sessionID] = nil
+        pendingPermissionModes[thread.sessionID] = nil
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
@@ -534,6 +564,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             settingsOverrides[thread.sessionID] = override
             thread = change.applying(to: thread)
         }
+        thread.permissionMode = settings?.permissionMode
         return thread
     }
 
@@ -600,6 +631,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil, inNewWorktree: Bool = false) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory)
+        try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
         let settingsFile = try await settingsForBridge()
         let existingBackground: Bool
         if let sessionID {
@@ -609,8 +641,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // even if those options equal its old ones. Preserve the job's options.
         var arguments = ["--bg"]
         if !existingBackground {
-            arguments += ["--settings", settingsFile.path, "--append-system-prompt", instructions]
+            arguments += ["--settings", settingsFile.path, "--append-system-prompt", instructions, ClaudePermissions.allowBypassFlag]
         }
+        if let mode = startSettings?.permissionMode { arguments += ["--permission-mode", ClaudePermissions.value(for: mode)] }
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
@@ -707,6 +740,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             if previous?.threadStatus == .processing, session.threadStatus != .processing, session.threadStatus != .waiting,
                let thread = awaitingHooks.removeValue(forKey: sessionID) {
                 Task { _ = await connectHooks(to: thread, jobID: id) }
+            }
+            if previous?.threadStatus == .processing, session.threadStatus != .processing, session.threadStatus != .waiting {
+                switchPermissionModeLater(of: sessionID)
             }
             guard previous != session else { continue }
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: session.threadStatus)))
@@ -966,6 +1002,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         runningTurns.remove(sessionID)
         setTerminalPrompt(nil, sessionID: sessionID)
         resolveDecisions(sessionID: sessionID)
+        switchPermissionModeLater(of: sessionID)
     }
 
     private func resolveDecisions(sessionID: String) {
@@ -1009,16 +1046,85 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if !options.contains("--append-system-prompt") {
             options += ["--append-system-prompt", instructions.text(for: thread.id)]
         }
-        try daemon.setLaunchOptions(options, jobID: jobID)
-        _ = try await IntegrationProcess.run("claude", arguments: ["respawn", jobID])
-        if let pid = session.pid { try await AgentProcessExit.wait(for: pid) }
-        let restarted = try await runningSession(jobID: jobID)
-        backgroundSessions[thread.sessionID] = restarted
+        if !options.contains(ClaudePermissions.allowBypassFlag) { options.append(ClaudePermissions.allowBypassFlag) }
+        try await respawn(thread.sessionID, jobID: jobID, options: options)
         guard try await hasHooks(jobID: jobID) else { return false }
-        liveStatuses[thread.sessionID] = restarted.threadStatus
+        liveStatuses[thread.sessionID] = backgroundSessions[thread.sessionID]?.threadStatus
         _ = try await liveTranscript(thread.sessionID)
         onEvent?(.transcriptChanged(sessionID: thread.sessionID))
         return true
+    }
+
+    /// Restarts a job with new launch options, in the same conversation. It ends a running turn.
+    private func respawn(_ sessionID: String, jobID: String, options: [String]) async throws {
+        let pid = backgroundSessions[sessionID]?.pid
+        try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
+        try daemon.setLaunchOptions(options, jobID: jobID)
+        _ = try await IntegrationProcess.run("claude", arguments: ["respawn", jobID])
+        if let pid { try await AgentProcessExit.wait(for: pid) }
+        backgroundSessions[sessionID] = try await runningSession(jobID: jobID)
+    }
+
+    // MARK: - Permission modes
+
+    private func isTurnRunning(_ sessionID: String) -> Bool {
+        let status = liveStatuses[sessionID] ?? backgroundSessions[sessionID]?.threadStatus
+        return runningTurns.contains(sessionID) || status == .processing || status == .waiting
+    }
+
+    /// Switches a session to the mode chosen for it, unless a turn is running,
+    /// whose end switches it instead. Claude switches with Shift+Tab, which
+    /// steps through the modes the session can use; one launched without
+    /// leave to bypass permissions restarts bypassing them.
+    private func switchPermissionMode(of sessionID: String) async throws {
+        guard let mode = pendingPermissionModes[sessionID], !isTurnRunning(sessionID),
+              switchingPermissionModes.insert(sessionID).inserted else { return }
+        defer { switchingPermissionModes.remove(sessionID) }
+        do {
+            guard let jobID = backgroundIDs[sessionID] else { throw IntegrationError(message: "Claude is not connected.") }
+            let options = try daemon.launchOptions(jobID: jobID)
+            if mode == .fullAccess, !ClaudePermissions.canBypass(options) {
+                try await respawn(sessionID, jobID: jobID, options: ClaudePermissions.options(options, launchingIn: mode))
+                if liveStatuses[sessionID] != nil { liveStatuses[sessionID] = backgroundSessions[sessionID]?.threadStatus }
+            } else {
+                try await cyclePermissionMode(to: mode, jobID: jobID)
+            }
+        } catch {
+            if pendingPermissionModes[sessionID] == mode { pendingPermissionModes[sessionID] = nil }
+            onEvent?(.threadInvalidated(sessionID: sessionID))
+            throw error
+        }
+        if pendingPermissionModes[sessionID] == mode { pendingPermissionModes[sessionID] = nil }
+        // Another mode chosen meanwhile follows.
+        else { switchPermissionModeLater(of: sessionID) }
+        onEvent?(.threadInvalidated(sessionID: sessionID))
+    }
+
+    /// Switches to a mode chosen during a turn once that turn has ended.
+    private func switchPermissionModeLater(of sessionID: String) {
+        guard pendingPermissionModes[sessionID] != nil else { return }
+        Task {
+            // The turn's Stop hooks finish first.
+            try? await Task.sleep(for: .seconds(1))
+            do { try await switchPermissionMode(of: sessionID) }
+            catch { Logger(subsystem: "Atrium", category: "Claude").error("Switching permission mode failed: \(error.localizedDescription)") }
+        }
+    }
+
+    /// Presses Shift+Tab until the job runs in the mode, as its saved options record it.
+    private func cyclePermissionMode(to mode: PermissionMode, jobID: String) async throws {
+        for _ in 0..<ClaudePermissions.cycleLength {
+            let options = try daemon.launchOptions(jobID: jobID)
+            guard ClaudePermissions.launchedMode(options) != mode else { return }
+            try await daemon.cyclePermissionMode(jobID: jobID)
+            // Claude saves the mode it switched to with the job's options.
+            for _ in 0..<20 where (try? daemon.launchOptions(jobID: jobID)) == options {
+                try await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        guard ClaudePermissions.launchedMode(try daemon.launchOptions(jobID: jobID)) == mode else {
+            throw IntegrationError(message: "Claude couldn’t switch to that permission mode.")
+        }
     }
 
     /// The settings that send Claude's hooks to Atrium, pointing at the
@@ -1063,6 +1169,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             if let applied = override.applied(to: thread) { thread = applied }
             else { settingsOverrides[thread.sessionID] = nil }
         }
+        // A job's saved options hold its current mode, which its transcript records only on resume.
+        if let id = backgroundIDs[thread.sessionID], let options = try? daemon.launchOptions(jobID: id) {
+            thread.permissionMode = ClaudePermissions.launchedMode(options) ?? thread.permissionMode
+            thread.permissionModesNeedingRestart = ClaudePermissions.canBypass(options) ? [] : [.fullAccess]
+        }
+        if let mode = pendingPermissionModes[thread.sessionID] { thread.permissionMode = mode }
         if let model = thread.model, thread.contextUsage != nil {
             thread.contextUsage?.window = contextWindows[model]
             if thread.contextUsage?.window == nil { requestContextWindow(for: thread) }

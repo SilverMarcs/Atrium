@@ -50,6 +50,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// Model settings chosen in Atrium for each thread, sent with the next turn
     /// Atrium starts. Codex has no way to change them between turns.
     private var pendingSettings: [String: [String: String]] = [:]
+    /// Each thread's permission mode as Codex last reported it, and the one
+    /// chosen in Atrium for its next turn.
+    private var permissionModes: [String: PermissionMode] = [:]
+    private var pendingPermissionModes: [String: PermissionMode] = [:]
+    /// The modes Codex's requirements on this Mac allow.
+    private var allowedPermissionModes = PermissionMode.allCases
     /// The service tier chosen in Atrium for each thread. Codex doesn't report
     /// a thread's tier, so threads without one run at the configured default.
     private var serviceTiers: [String: String] = [:]
@@ -336,6 +342,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let worktree = inNewWorktree ? try await Self.newWorktree(of: directory) : nil
         var params: [String: Any] = ["cwd": worktree?.path ?? directory, "config": config]
         if let model = settings?.model { params["model"] = model }
+        if let mode = settings?.permissionMode { params.merge(CodexPermissions.threadParams(mode)) { $1 } }
         let blocks = instructions.forNewChat
         let result: [String: Any]
         do {
@@ -352,6 +359,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
         instructions.record(blocks, for: thread.id)
+        permissionModes[thread.sessionID] = CodexPermissions.mode(in: result)
+        thread.permissionMode = permissionModes[thread.sessionID]
         if let settings, let model = settings.model {
             pendingSettings[thread.sessionID] = ["model": model]
             pendingSettings[thread.sessionID]?["effort"] = settings.reasoningEffort
@@ -425,6 +434,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             }
         }
         instructions.record(blocks, for: fork.id)
+        permissionModes[fork.sessionID] = CodexPermissions.mode(in: result)
         // Codex copies only a name the thread was given, leaving an unnamed one's fork untitled until its next prompt.
         // The fork exists either way, so a name Codex refuses doesn't fail it.
         if (try? await request("thread/name/set", params: ["threadId": fork.sessionID, "name": thread.forkTitle])) != nil {
@@ -465,10 +475,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if conversations[thread.sessionID] != nil { return }
         let task = Task {
             try await self.trustWorkspace(directory: thread.directory)
-            _ = try await self.request("thread/resume", params: [
+            let resumed = try await self.request("thread/resume", params: [
                 "threadId": thread.sessionID, "excludeTurns": true,
                 "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id)), "config": Self.threadConfig
             ])
+            if let result = try? JSONSerialization.jsonObject(with: resumed) as? [String: Any] {
+                self.permissionModes[thread.sessionID] = CodexPermissions.mode(in: result)
+            }
             // Events arrive from the resume on, while the history is listed a page at a time.
             let conversation = CodexLiveConversation(turns: [])
             self.conversations[thread.sessionID] = conversation
@@ -503,8 +516,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         } else { false }
         if !isSteered {
             let settings = pendingSettings[thread.sessionID] ?? [:]
+            let permissionMode = pendingPermissionModes[thread.sessionID]
             var params: [String: Any] = ["threadId": thread.sessionID, "input": input]
             params.merge(settings) { $1 }
+            if let permissionMode { params.merge(CodexPermissions.turnParams(permissionMode)) { $1 } }
             startingTurnThreadIDs.insert(thread.sessionID)
             defer { startingTurnThreadIDs.remove(thread.sessionID) }
             let data = try await request("turn/start", params: params)
@@ -515,6 +530,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.transcriptChanged(sessionID: thread.sessionID))
             }
             if pendingSettings[thread.sessionID] == settings { pendingSettings[thread.sessionID] = nil }
+            if let permissionMode {
+                permissionModes[thread.sessionID] = permissionMode
+                if pendingPermissionModes[thread.sessionID] == permissionMode { pendingPermissionModes[thread.sessionID] = nil }
+            }
         }
         conversations[thread.sessionID]?.resolveQuestions(questionIDs)
         refreshAsyncQuestions(sessionID: thread.sessionID)
@@ -660,6 +679,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws {
         var settings = pendingSettings[thread.sessionID] ?? [:]
         switch change {
+        case .permissionMode(let mode):
+            pendingPermissionModes[thread.sessionID] = mode
         case .model(let model, let reasoningEffort):
             settings["model"] = model
             settings["effort"] = reasoningEffort
@@ -893,6 +914,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                     // A terminal attached to the thread started this turn with its own settings.
                     pendingSettings[id] = nil
                     serviceTiers[id] = nil
+                    pendingPermissionModes[id] = nil
                 }
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status(.processing, sessionID: id), updatedAt: .now, startsNewTurn: true)))
@@ -1107,6 +1129,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         defaultReasoningEffort = config["model_reasoning_effort"] as? String
         defaultServiceTier = config["service_tier"] as? String
         userDeveloperInstructions = (config["developer_instructions"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let data = try? await request("configRequirements/read", params: [:]),
+           let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            allowedPermissionModes = CodexPermissions.allowedModes(result["requirements"] as? [String: Any])
+        }
         // Fast mode is reported from each model's service tiers.
         _ = try? await listModels()
     }
@@ -1145,7 +1171,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 name: row["displayName"] as? String ?? id,
                 summary: row["description"] as? String ?? "",
                 reasoningEfforts: efforts.compactMap { $0["reasoningEffort"] as? String },
-                supportsFastMode: fastTier != nil
+                supportsFastMode: fastTier != nil,
+                permissionModes: allowedPermissionModes
             )
         }
         fastServiceTiers = tiers
@@ -1171,6 +1198,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             thread.isFastMode = (serviceTiers[thread.sessionID] ?? defaultServiceTier) == fastTier
         }
         thread.contextUsage = contextUsages[thread.sessionID]
+        thread.permissionMode = pendingPermissionModes[thread.sessionID] ?? permissionModes[thread.sessionID]
         return thread
     }
 

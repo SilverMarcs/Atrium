@@ -7,9 +7,16 @@ struct ClaudeInitializeResponse: Decodable, Sendable {
     let response: Envelope?
 
     var models: [ClaudeModelOption]? { response?.response?.models }
+    var requestID: String? { response?.requestID }
 
     struct Envelope: Decodable, Sendable {
+        let requestID: String?
         let response: Payload?
+
+        enum CodingKeys: String, CodingKey {
+            case requestID = "request_id"
+            case response
+        }
     }
 
     struct Payload: Decodable, Sendable {

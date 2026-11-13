@@ -7,6 +7,7 @@ struct TaskMoreMenu: View {
     let item: HostTask
     let models: [AgentModel]
     @Binding var showingScratchPad: Bool
+    @State private var restartMode: PermissionMode?
     @Environment(\.openSubagent) private var openSubagent
     @Environment(\.openSideChat) private var openSideChat
 
@@ -15,9 +16,11 @@ struct TaskMoreMenu: View {
             if !models.isEmpty {
                 Section {
                     TaskModelMenu(
-                        provider: item.task.provider, selection: item.task.modelSelection, models: models
-                    ) { action in
-                        item.host.send(.task(id: item.task.id, action: action))
+                        provider: item.task.provider, selection: item.task.modelSelection, models: models,
+                        perform: perform
+                    )
+                    if let permissions = item.task.permissionSelection(using: models) {
+                        TaskPermissionMenu(selection: permissions, restartMode: $restartMode, perform: perform)
                     }
                 } header: {
                     if let percent = item.task.contextUsedPercent {
@@ -54,5 +57,10 @@ struct TaskMoreMenu: View {
             Label("More", systemImage: "ellipsis")
         }
         .badge(item.workingSubagents)
+        .permissionRestartAlert($restartMode, provider: item.task.provider, perform: perform)
+    }
+
+    private func perform(_ action: TaskAction) {
+        item.host.send(.task(id: item.task.id, action: action))
     }
 }

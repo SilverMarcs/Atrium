@@ -77,6 +77,11 @@ final class ClaudeDaemonClient {
         try await press([0x1b], jobID: jobID)
     }
 
+    /// Moves the session to its next permission mode, as Shift+Tab does in its terminal.
+    func cyclePermissionMode(jobID: String) async throws {
+        try await press([0x1b, 0x5b, 0x5a], jobID: jobID)
+    }
+
     /// Has the running turn take in the prompts queued behind it now, as the terminal's send-now
     /// key does: Claude moves running tools to the background or stops the turn for them.
     /// It does nothing when no prompt waits or no turn is running.

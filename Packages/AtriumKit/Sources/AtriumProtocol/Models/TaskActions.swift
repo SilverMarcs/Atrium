@@ -23,7 +23,7 @@ public nonisolated struct TaskActions: OptionSet, Codable, Sendable, Hashable {
     public static let prompt = Self(rawValue: 1 << 9)
     /// The agent is working and its turn can be stopped.
     public static let interrupt = Self(rawValue: 1 << 10)
-    /// The agent's model, reasoning effort and fast mode can be changed right now.
+    /// The agent's model, reasoning effort, fast mode and permission mode can be changed right now.
     public static let selectModel = Self(rawValue: 1 << 11)
 
     /// Conversation history can be rewound while the agent is idle.

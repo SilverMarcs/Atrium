@@ -15,6 +15,9 @@ public nonisolated struct AgentModel: Codable, Sendable, Hashable, Identifiable 
     /// Whether fast mode can be turned on with this model. Providers without a
     /// fast mode, and accounts that aren't allowed it, never offer it.
     public var supportsFastMode: Bool
+    /// The permission modes chats can use with this model on this host, as
+    /// the provider and its settings allow. Nil from a host that doesn't say.
+    public var permissionModes: [PermissionMode]?
 
     public init(
         id: String,
@@ -22,7 +25,8 @@ public nonisolated struct AgentModel: Codable, Sendable, Hashable, Identifiable 
         name: String,
         summary: String,
         reasoningEfforts: [String],
-        supportsFastMode: Bool
+        supportsFastMode: Bool,
+        permissionModes: [PermissionMode]? = nil
     ) {
         self.id = id
         self.resolvedID = resolvedID
@@ -30,6 +34,7 @@ public nonisolated struct AgentModel: Codable, Sendable, Hashable, Identifiable 
         self.summary = summary
         self.reasoningEfforts = reasoningEfforts
         self.supportsFastMode = supportsFastMode
+        self.permissionModes = permissionModes
     }
 
     /// How a reasoning effort reads in menus, such as "Extra High" for "xhigh".
@@ -47,5 +52,14 @@ public nonisolated extension Sequence<AgentModel> {
     func model(running model: String?) -> AgentModel? {
         guard let model else { return nil }
         return first { $0.id == model } ?? first { $0.resolvedID == model }
+    }
+
+    /// The permission modes a chat running a model can use: that model's, or
+    /// any model's while the chat's model isn't known. Nil when the host doesn't say.
+    func permissionModes(running model: String?) -> [PermissionMode]? {
+        if let modes = self.model(running: model)?.permissionModes { return modes }
+        let listed = compactMap(\.permissionModes)
+        guard !listed.isEmpty else { return nil }
+        return PermissionMode.allCases.filter { mode in listed.contains { $0.contains(mode) } }
     }
 }

@@ -1,9 +1,12 @@
-/// A change to the model settings a thread's next turns use, chosen from one
-/// the provider lists.
+import AtriumProtocol
+
+/// A change to the settings a thread's next turns use, chosen from one the
+/// provider lists.
 enum AgentSettingsChange: Sendable {
     /// A model, and its reasoning effort when it has any.
     case model(String, reasoningEffort: String?)
     case fastMode(Bool)
+    case permissionMode(PermissionMode)
 
     func applying(to source: AgentThread) -> AgentThread {
         var thread = source
@@ -13,6 +16,8 @@ enum AgentSettingsChange: Sendable {
             if let reasoningEffort { thread.reasoningEffort = reasoningEffort }
         case .fastMode(let isOn):
             thread.isFastMode = isOn
+        case .permissionMode(let mode):
+            thread.permissionMode = mode
         }
         return thread
     }

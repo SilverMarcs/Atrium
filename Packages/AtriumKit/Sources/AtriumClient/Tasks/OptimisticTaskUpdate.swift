@@ -54,6 +54,8 @@ struct OptimisticTaskUpdate: Identifiable {
             if let reasoningEffort { snapshot.tasks[index].reasoningEffort = reasoningEffort }
         case .setFastMode(let isOn):
             snapshot.tasks[index].isFastMode = isOn
+        case .setPermissionMode(let mode):
+            snapshot.tasks[index].permissionMode = mode
         case .delete:
             snapshot.tasks.remove(at: index)
         case .fork, .startSideChat, .respond, .rewind, .openTerminal:

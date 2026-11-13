@@ -57,6 +57,8 @@ struct TaskService {
                 return await changeSettings(.model(model, reasoningEffort: reasoningEffort), of: thread)
             case .setFastMode(let isOn):
                 return await changeSettings(.fastMode(isOn), of: thread)
+            case .setPermissionMode(let mode):
+                return await changeSettings(.permissionMode(mode), of: thread)
             }
             return .done
         }

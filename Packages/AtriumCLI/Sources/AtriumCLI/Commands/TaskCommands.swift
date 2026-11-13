@@ -17,7 +17,7 @@ extension TaskAction {
         case .rename: "rename"
         case .fork: "fork"
         case .delete: "delete"
-        case .selectModel, .setFastMode: "configure"
+        case .selectModel, .setFastMode, .setPermissionMode: "configure"
         case .respond: "respond"
         // Reading from the command line is passive; only mark-read acknowledges a result.
         case .viewed: nil

@@ -21,6 +21,10 @@ struct AgentThread: Identifiable, Codable, Sendable, Equatable {
     var reasoningEffort: String?
     /// Whether the agent runs in fast mode, when the provider has one and reports it.
     var isFastMode: Bool?
+    /// How freely the agent acts without asking, when the provider reports it.
+    var permissionMode: PermissionMode?
+    /// Modes the thread can switch to only by restarting its session.
+    var permissionModesNeedingRestart: [PermissionMode]?
     /// For a subagent the provider runs itself, the session whose agent started
     /// it. Atrium shows it under that session, to read but not to prompt:
     /// neither provider takes input for a subagent from anyone but its agent.

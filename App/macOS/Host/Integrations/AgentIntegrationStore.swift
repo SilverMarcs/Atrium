@@ -45,6 +45,7 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var terminationObserver: (any NSObjectProtocol)?
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let settings: IntegrationSettings
     @ObservationIgnored private let adapters: [AgentProvider: any AgentProviderAdapter]
     // Results from before a provider was last found or lost must not update its new connection.
     @ObservationIgnored private var generations: [AgentProvider: Int] = [:]
@@ -63,6 +64,8 @@ final class AgentIntegrationStore {
     @ObservationIgnored private var listingModels: Set<AgentProvider> = []
 
     var availableProviders: [AgentProvider] { providers.filter { available.contains($0) } }
+    /// The permission mode new chats start in, from Settings → Agents.
+    var defaultPermissionMode: PermissionMode { settings.defaultPermissionMode }
     /// The latest sessions, and the subagents and side chats of those shown, which don't count toward the limit.
     func visibleThreads(matching searchText: String) -> [AgentThread] {
         let sessions = availableProviders.flatMap { provider in
@@ -79,8 +82,9 @@ final class AgentIntegrationStore {
         return (sessions + children).sorted(by: AgentThread.newestFirst)
     }
 
-    init(adapters: [any AgentProviderAdapter], defaults: UserDefaults = .standard) {
+    init(adapters: [any AgentProviderAdapter], settings: IntegrationSettings, defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.settings = settings
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.provider, $0) })
         providers = adapters.map(\.provider)
         // The last launch's findings, until this one's detection finishes.
@@ -784,6 +788,13 @@ final class AgentIntegrationStore {
         if let isFastMode = settings?.isFastMode {
             try validate(.fastMode(isFastMode), provider: provider, model: settings?.model ?? defaultSettings[provider]?.model)
         }
+        // Every chat starts in a mode Atrium chose, rather than whatever the provider's own settings say.
+        var started = settings ?? TaskStartSettings()
+        started.permissionMode = PermissionMode.resolved(
+            settings?.permissionMode ?? defaultPermissionMode,
+            allowed: models[provider]?.permissionModes(running: settings?.model ?? defaultSettings[provider]?.model)
+        )
+        settings = started
         let thread = try await adapter.createThread(directory: directory, settings: settings, title: nil, inNewWorktree: inNewWorktree)
         try Task.checkCancellation()
         guard isCurrent(provider, generation: generation) else { throw CancellationError() }
@@ -994,6 +1005,10 @@ final class AgentIntegrationStore {
         case .fastMode(let isOn):
             if isOn, models.model(running: model)?.supportsFastMode != true {
                 throw IntegrationError(message: "Fast mode isn’t available with this model.")
+            }
+        case .permissionMode(let mode):
+            if models.permissionModes(running: model)?.contains(mode) == false {
+                throw IntegrationError(message: "\(provider.name) can’t use that permission mode here.")
             }
         }
     }

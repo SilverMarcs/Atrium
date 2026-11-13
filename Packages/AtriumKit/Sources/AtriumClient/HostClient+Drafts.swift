@@ -30,7 +30,8 @@ extension HostClient {
         updateDraft(id) { draft in
             guard draft.provider != provider else { return }
             draft.provider = provider
-            draft.settings = nil
+            // A permission mode means the same with either agent; model settings don't.
+            draft.settings = draft.settings?.permissionMode.map { TaskStartSettings(permissionMode: $0) }
         }
     }
 
@@ -57,6 +58,9 @@ extension HostClient {
         let model = draft.settings?.model ?? defaults?.model
         let reasoningEffort = draft.settings?.reasoningEffort ?? (draft.settings?.model == nil ? defaults?.reasoningEffort : nil)
         let supportsFastMode = models(for: draft.provider).model(running: model)?.supportsFastMode == true
+        let permissionModes = models(for: draft.provider).permissionModes(running: model)
+        let permissionMode = (draft.settings?.permissionMode ?? defaults?.permissionMode)
+            .map { PermissionMode.resolved($0, allowed: permissionModes) }
         var actions: TaskActions = [.prompt, .attachImages]
         if !draft.isCreating, draft.taskID == nil, availableProviders.contains(draft.provider), !models(for: draft.provider).isEmpty {
             actions.insert(.selectModel)
@@ -77,7 +81,8 @@ extension HostClient {
             actions: actions,
             model: model,
             reasoningEffort: reasoningEffort,
-            isFastMode: supportsFastMode && (draft.settings?.isFastMode ?? defaults?.isFastMode ?? false)
+            isFastMode: supportsFastMode && (draft.settings?.isFastMode ?? defaults?.isFastMode ?? false),
+            permissionMode: permissionMode
         )
     }
 
@@ -97,7 +102,8 @@ extension HostClient {
             updateDraft(draft.id) {
                 $0.settings = TaskStartSettings(
                     model: model.id, reasoningEffort: reasoningEffort,
-                    isFastMode: model.supportsFastMode ? $0.settings?.isFastMode : false
+                    isFastMode: model.supportsFastMode ? $0.settings?.isFastMode : false,
+                    permissionMode: $0.settings?.permissionMode
                 )
             }
         case .setFastMode(let isOn):
@@ -107,6 +113,15 @@ extension HostClient {
             updateDraft(id) {
                 var settings = $0.settings ?? TaskStartSettings()
                 settings.isFastMode = isOn
+                $0.settings = settings
+            }
+        case .setPermissionMode(let mode):
+            guard models(for: draft.provider).permissionModes(running: draftTask(id)?.model)?.contains(mode) != false else {
+                return .failed(message: "That permission mode isn’t available with this model.")
+            }
+            updateDraft(id) {
+                var settings = $0.settings ?? TaskStartSettings()
+                settings.permissionMode = mode
                 $0.settings = settings
             }
         default:
