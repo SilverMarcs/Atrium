@@ -19,6 +19,12 @@ final class TasksFeed: TopicFeed {
     private var projects: [String: Workspace?] = [:]
     /// Folder path → the checkout it's in, if any.
     private var checkouts: [String: TaskCheckout?] = [:]
+    /// The repositories of the checkouts found, whose worktrees are watched:
+    /// one made, moved or removed can change where a folder is.
+    private var repositories: Set<URL> = []
+    private var watchedRepositories: Set<URL> = []
+    private var worktreeWatcher: FileSystemWatcher?
+    private let worktreeChanges = WorktreeChanges()
     private var projectsSignature: [UUID: String] = [:]
     private var observation: Task<Void, Never>?
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -39,6 +45,7 @@ final class TasksFeed: TopicFeed {
                 let event = HostEvent.tasks(snapshot)
                 self.current = event
                 publish(event)
+                self.watchWorktrees()
                 try? await Task.sleep(for: .milliseconds(150))
             }
         }
@@ -47,11 +54,15 @@ final class TasksFeed: TopicFeed {
     func stop() {
         observation?.cancel()
         observation = nil
+        worktreeWatcher?.stop()
+        worktreeWatcher = nil
+        watchedRepositories = []
     }
 
     /// The latest state, reading through any change not yet published.
     func snapshot() -> WireTasksSnapshot {
         invalidateProjectsIfNeeded()
+        _ = worktreeChanges.count
         let withWorkingDescendants = orchestrator.sessionsWithWorkingDescendants()
         let threads = integrations.visibleThreads(matching: "")
         let subagents = Dictionary(grouping: threads.filter { $0.parentID != nil }) { $0.parentID ?? "" }
@@ -147,23 +158,57 @@ final class TasksFeed: TopicFeed {
         }
         var changed: [TaskCheckout] = []
         for path in edits.newestFirst {
-            guard let checkout = checkout(containing: path), inProject(checkout),
+            guard let checkout = checkout(containing: path, lastUsed: edits.folders[path]), inProject(checkout),
                   !changed.contains(where: { $0.repository == checkout.repository }) else { continue }
             changed.append(checkout)
         }
         let current = changed.first
-            ?? thread.currentDirectory.flatMap(checkout(containing:)).flatMap { inProject($0) ? $0 : nil }
-            ?? checkout(containing: thread.directory)
+            ?? thread.currentDirectory.flatMap { checkout(containing: $0, lastUsed: thread.updatedAt) }.flatMap { inProject($0) ? $0 : nil }
+            ?? checkout(containing: thread.directory, lastUsed: thread.updatedAt)
         return (current, changed)
     }
 
-    private func checkout(containing path: String) -> TaskCheckout? {
+    /// The checkout a folder the task used is in now: where its worktree
+    /// went if it has moved since, or the main checkout if it was removed.
+    private func checkout(containing path: String, lastUsed: Date?) -> TaskCheckout? {
         if let cached = checkouts[path] { return cached }
-        let checkout = GitCheckout(containing: URL(filePath: path, directoryHint: .isDirectory)).map {
+        let checkout = GitCheckout(locating: URL(filePath: path, directoryHint: .isDirectory), lastUsed: lastUsed).map {
             TaskCheckout(repository: $0.mainCheckoutURL, worktree: $0.linkedWorktreeURL)
         }
         checkouts[path] = .some(checkout)
+        if let checkout { repositories.insert(checkout.repository) }
         return checkout
+    }
+
+    /// Watches the admin directories Git keeps for the repositories' linked
+    /// worktrees, which change when one is made, moved or removed, to find
+    /// the tasks' checkouts again.
+    private func watchWorktrees() {
+        guard repositories != watchedRepositories else { return }
+        watchedRepositories = repositories
+        worktreeWatcher?.stop()
+        worktreeWatcher = repositories.isEmpty ? nil : FileSystemWatcher(
+            urls: repositories.map { $0.appending(path: ".git", directoryHint: .isDirectory) }
+        ) { [weak self] paths in
+            guard paths.contains(where: Self.changesWorktree) else { return }
+            Task { @MainActor in self?.worktreesChanged() }
+        }
+    }
+
+    private func worktreesChanged() {
+        projects.removeAll()
+        checkouts.removeAll()
+        repositories.removeAll()
+        worktreeChanges.count += 1
+    }
+
+    /// Whether a change in a `.git` folder adds, moves or removes a linked
+    /// worktree: its admin directory comes or goes, or its `gitdir` file,
+    /// naming where the worktree is, is written.
+    private nonisolated static func changesWorktree(_ path: String) -> Bool {
+        guard let range = path.range(of: "/.git/worktrees/") else { return path.hasSuffix("/.git/worktrees") }
+        let inside = path[range.upperBound...]
+        return !inside.contains("/") || inside.hasSuffix("/gitdir")
     }
 
     private func invalidateProjectsIfNeeded() {
@@ -172,9 +217,18 @@ final class TasksFeed: TopicFeed {
         projectsSignature = signature
         projects.removeAll()
         checkouts.removeAll()
+        repositories.removeAll()
     }
 
     private func abbreviated(_ path: String) -> String {
         path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
+}
+
+/// Counts the changes to the watched repositories' worktrees, so the tasks
+/// are listed again when one is made, moved or removed.
+@MainActor
+@Observable
+private final class WorktreeChanges {
+    var count = 0
 }

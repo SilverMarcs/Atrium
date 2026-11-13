@@ -8,9 +8,11 @@ final class GitFeed: TopicFeed {
     let scope: GitScope
     private(set) var current: HostEvent?
 
-    private let root: URL
+    private let workspacePath: String
     private var publish: ((HostEvent) -> Void)?
     private var watcher: FileSystemWatcher?
+    /// The folder watched: the project folder through the worktrees shown.
+    private var root: URL?
     /// The reload in flight. Reloads run one at a time, so an older one can't
     /// publish over a newer one.
     private var reload: Task<Void, Never>?
@@ -18,20 +20,18 @@ final class GitFeed: TopicFeed {
 
     init(scope: GitScope, workspace: Workspace) {
         self.scope = scope
-        root = scope.root(of: workspace.directory)
+        workspacePath = workspace.directory
     }
 
     func start(publish: @escaping (HostEvent) -> Void) {
         self.publish = publish
-        watcher = FileSystemWatcher(url: root) { @Sendable [weak self] in
-            Task { @MainActor in self?.refresh() }
-        }
         refresh()
     }
 
     func stop() {
         watcher?.stop()
         watcher = nil
+        root = nil
         publish = nil
     }
 
@@ -57,13 +57,27 @@ final class GitFeed: TopicFeed {
     }
 
     private func load() async {
-        let repositories = (try? await GitRepository.shared.statusSnapshots(in: root, worktreeOverrides: scope.worktrees))
-            .map { Self.collapseWorktreeSiblings($0, overrides: scope.worktrees) } ?? []
+        // A worktree chosen that has since moved or been removed is seen
+        // through its main checkout, until the client chooses another.
+        let worktrees = scope.worktrees.filter { FileManager.default.fileExists(atPath: $0.value.path) }
+        let root = GitScope(workspaceID: scope.workspaceID, worktrees: worktrees).root(of: workspacePath)
+        if publish != nil { watch(root) }
+        let repositories = (try? await GitRepository.shared.statusSnapshots(in: root, worktreeOverrides: worktrees))
+            .map { Self.collapseWorktreeSiblings($0, overrides: worktrees) } ?? []
         guard let publish else { return }
         if case .git(_, let previous) = current, previous == repositories { return }
         let event = HostEvent.git(scope, repositories: repositories)
         current = event
         publish(event)
+    }
+
+    private func watch(_ root: URL) {
+        guard root != self.root else { return }
+        self.root = root
+        watcher?.stop()
+        watcher = FileSystemWatcher(url: root) { @Sendable [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
     }
 
     /// A linked worktree discovered alongside its repository's main checkout (e.g.

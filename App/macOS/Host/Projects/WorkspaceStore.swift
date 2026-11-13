@@ -75,12 +75,14 @@ final class WorkspaceStore {
     // MARK: - Lookup
 
     /// The project a task belongs to. A task that relocated into a linked worktree
-    /// stays with the project of its original folder, or of the worktree's main checkout.
+    /// stays with the project of its original folder, or of the worktree's main
+    /// checkout, also once the worktree has moved or been removed.
     func workspace(for thread: AgentThread) -> Workspace? {
         for directory in [thread.projectDirectory, thread.directory].compactMap(\.self) {
             let url = URL(fileURLWithPath: directory)
             if let workspace = workspace(at: url) { return workspace }
-            if let checkout = GitCheckout(containing: url), checkout.linkedWorktreeURL != nil,
+            if let checkout = GitCheckout(locating: url, lastUsed: thread.updatedAt),
+               checkout.linkedWorktreeURL != nil || !FileManager.default.fileExists(atPath: url.path),
                let workspace = workspace(at: checkout.mainCheckoutURL) {
                 return workspace
             }
