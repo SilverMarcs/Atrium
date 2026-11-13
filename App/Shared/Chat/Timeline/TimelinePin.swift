@@ -15,4 +15,10 @@ final class TimelinePin {
     /// How many more times the timeline moving is a jump to the end landing,
     /// to check against its last row.
     var endChecks = 0
+    #if os(iOS)
+    /// A programmatic scroll is on its way, through offsets it doesn't rest at.
+    var isAnimatingScroll = false
+    /// Where the timeline was last laid out against the offsets it can rest at.
+    var restingPlace = TimelineRestingRange.Place.within
+    #endif
 }

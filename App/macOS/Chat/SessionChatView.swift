@@ -217,6 +217,9 @@ struct SessionChatView: View {
         // A reply arriving below a prompt held at the top leaves the prompt
         // there for the reader to read down from.
         guard anchorID == nil else { return }
+        // A reader who scrolled back through the conversation stays where
+        // they are, as they do while a reply streams.
+        guard pin.isPinned, !pin.isReaderScrolling else { return }
         scrollToLatest(proxy, holding: nil)
       }
       .onChange(of: composer.messageEdit?.id) { _, id in

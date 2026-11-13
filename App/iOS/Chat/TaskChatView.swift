@@ -59,6 +59,8 @@ struct TaskChatView: View {
         // checked against.
         let endRowID = footerStatus == .processing || footerStatus == .waiting
             ? Self.footerID : sections.historyPendingPrompts.last?.timelineID ?? sections.historyMessages.last?.id
+        let firstRowID = sections.historyMessages.first?.id ?? sections.historyPendingPrompts.first?.timelineID
+            ?? (sections.hasTurn ? TimelineAnchorSpace.turnID : nil)
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -268,6 +270,9 @@ struct TaskChatView: View {
                 // A reply arriving below a prompt held at the top leaves the
                 // prompt there for the reader to read down from.
                 guard !sections.hasTurn else { return }
+                // A reader who scrolled back through the conversation stays
+                // where they are, as they do while a reply streams.
+                guard pin.isPinned, !pin.isReaderScrolling else { return }
                 scrollToLatest(with: proxy)
             }
             // Only the reader scrolling decides whether the timeline stays
@@ -285,7 +290,7 @@ struct TaskChatView: View {
             // Dragging the keyboard away scrolls the timeline a little off its
             // end, which shouldn't keep the composer from taking it back there.
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.visibleRect.maxY < geometry.containerSize.height
+                geometry.distanceToEnd < geometry.containerSize.height
             } action: { _, isNearEnd in
                 pin.isNearEnd = isNearEnd
             }
@@ -293,7 +298,14 @@ struct TaskChatView: View {
                 switch phase {
                 case .tracking, .interacting:
                     pin.isReaderScrolling = true
+                case .animating:
+                    pin.isAnimatingScroll = true
                 case .idle:
+                    // A scroll on its way only rests once it lands.
+                    if pin.isAnimatingScroll {
+                        pin.isAnimatingScroll = false
+                        restoreRestingPlace(firstRowID: firstRowID, with: proxy)
+                    }
                     guard pin.isReaderScrolling else { return }
                     pin.isReaderScrolling = false
                     pin.isPinned = context.geometry.isAtBottom
@@ -316,6 +328,20 @@ struct TaskChatView: View {
                 guard offset != nil, pin.endChecks > 0 else { return }
                 pin.endChecks -= 1
                 settleAtEnd(endRowID, sections: sections, with: proxy)
+            }
+            // SwiftUI aligns a timeline shorter than the view to its bottom
+            // with a top inset, and moves the offset by as much as that inset
+            // changes, even when a jump to the end in the same update has
+            // already put it there, as when a transcript or a new chat's
+            // pickers arrive. Nothing scrolls it back, so the timeline rests
+            // past its end or above its top, drawn behind the bars or the
+            // composer, until the reader drags it. A resting timeline outside
+            // what it can scroll to goes back to its nearest edge.
+            .onScrollGeometryChange(for: TimelineRestingRange.self) { geometry in
+                TimelineRestingRange(geometry)
+            } action: { _, range in
+                pin.restingPlace = range.place
+                restoreRestingPlace(firstRowID: firstRowID, with: proxy)
             }
             // Content growing below a pinned timeline (a streaming reply, the
             // working indicator) carries it along, retargeting any scroll
@@ -358,6 +384,24 @@ struct TaskChatView: View {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) { proxy.scrollTo(endRowID, anchor: .bottom) }
+    }
+
+    /// Puts a timeline resting outside what it can scroll to back at its
+    /// end, or, when the reader left the end and it's above its top, at its
+    /// first row.
+    private func restoreRestingPlace(firstRowID: String?, with proxy: ScrollViewProxy) {
+        guard !pin.isReaderScrolling, !pin.isAnimatingScroll, composer.messageEdit == nil else { return }
+        switch pin.restingPlace {
+        case .within:
+            break
+        case .beforeTop where !pin.isPinned:
+            guard let firstRowID else { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { proxy.scrollTo(firstRowID, anchor: .top) }
+        case .beforeTop, .pastEnd:
+            scrollToLatest(with: proxy, animated: false)
+        }
     }
 
     private func scrollToEditingMessage(_ id: String, with proxy: ScrollViewProxy) {
