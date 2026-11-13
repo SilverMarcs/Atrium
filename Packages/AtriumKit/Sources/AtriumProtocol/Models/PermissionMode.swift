@@ -10,9 +10,10 @@ public nonisolated enum PermissionMode: String, Codable, Sendable, Hashable, Cas
     /// Never asks.
     case fullAccess
 
-    /// The mode a chat starts in for `preferred`: Supervised when the agent can't use that.
+    /// The mode a chat starts in for `preferred`: Supervised when the agent can't
+    /// use that, or the first it can when it can't ask either.
     public static func resolved(_ preferred: PermissionMode, allowed: [PermissionMode]?) -> PermissionMode {
         guard let allowed, !allowed.contains(preferred) else { return preferred }
-        return .supervised
+        return allowed.contains(.supervised) || allowed.isEmpty ? .supervised : allowed[0]
     }
 }

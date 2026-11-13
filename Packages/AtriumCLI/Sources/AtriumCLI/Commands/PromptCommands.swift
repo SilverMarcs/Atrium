@@ -22,11 +22,11 @@ private let promptFlags: Set<String> = ["wait", "follow", "standalone"]
 let promptCommands: [Command] = [
     Command(
         name: "start",
-        usage: "start --project P [--provider codex|claude] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [--standalone] [PROMPT]",
+        usage: "start --project P [--provider codex|claude|jcode] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [--standalone] [PROMPT]",
         summary: "Start a session in a project with its first prompt.",
         details: """
               --project P   The project, by ID, name or folder (`atrium projects`).
-              --provider    codex or claude. Defaults to the host's first agent that's on.
+              --provider    codex, claude or jcode. Defaults to the host's first agent that's on.
               --model M     A model, as `atrium models` lists them. Defaults to the agent's own.
               --effort E    The model's reasoning effort.
               --fast        Turn fast mode on, or off with --no-fast, where the model has it.
@@ -47,7 +47,7 @@ let promptCommands: [Command] = [
         let prompt = try Prompt(arguments)
         guard let projectSelector = arguments.value("project") else { throw CLIError(.invalidArgument, "Choose a project with --project.") }
         let provider = try arguments.value("provider").map { name in
-            guard let provider = AgentProvider(rawValue: name) else { throw CLIError(.invalidArgument, "--provider takes codex or claude.") }
+            guard let provider = AgentProvider(rawValue: name) else { throw CLIError(.invalidArgument, "--provider takes codex, claude or jcode.") }
             return provider
         }
         let fast = try arguments.toggle("fast")

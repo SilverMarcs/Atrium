@@ -211,6 +211,9 @@ final class AgentIntegrationStore {
     }
 
     func deletionMessage(for provider: AgentProvider) -> String {
+        if provider == .jcode {
+            return "Jcode can’t delete chats, so this archives the chat in Jcode: it leaves every list and its history stays on this Mac. Open tasks for it will be stopped."
+        }
         let scope = adapters[provider]?.capabilities.contains(.deleteDescendants) == true
             ? "This permanently deletes this thread and any child threads it created."
             : "This permanently deletes this thread and its associated agent history."

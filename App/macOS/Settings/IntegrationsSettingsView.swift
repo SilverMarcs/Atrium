@@ -11,7 +11,7 @@ struct IntegrationsSettingsView: View {
             Section {
                 Toggle(isOn: $settings.isOrchestratorEnabled) {
                     Text("Orchestrator")
-                    Text("Agents can delegate and monitor tasks to other Claude or Codex sessions.")
+                    Text("Agents can delegate and monitor tasks to other Claude, Codex or Jcode sessions.")
                 }
                 Toggle(isOn: $settings.isVisualizationsEnabled) {
                     Text("Visualizations")

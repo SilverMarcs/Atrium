@@ -1,7 +1,7 @@
 import Foundation
 
 /// One turn of a task's conversation, normalized from each agent's own history
-/// so both apps render Claude and Codex the same way.
+/// so both apps render every provider the same way.
 public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identifiable {
     public enum Role: String, Codable, Sendable {
         case user

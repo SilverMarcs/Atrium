@@ -69,15 +69,15 @@ enum LocalHost {
     }
 }
 
-/// The agent session a command runs in, as far as this Mac tells: Claude and
-/// Codex export their session's ID to every command they run. Commands
+/// The agent session a command runs in, as far as this Mac tells: Claude,
+/// Codex and Jcode export their session's ID to every command they run. Commands
 /// inherit them, so a command Codex runs inside a Claude session sees both.
 /// The nearest agent among this process's ancestors goes first, and the host
 /// takes the first one that's working.
 enum Caller {
     static let candidates: [String] = {
         let environment = ProcessInfo.processInfo.environment
-        let ids = [("claude", "CLAUDE_CODE_SESSION_ID"), ("codex", "CODEX_THREAD_ID")].compactMap { provider, variable in
+        let ids = [("claude", "CLAUDE_CODE_SESSION_ID"), ("codex", "CODEX_THREAD_ID"), ("jcode", "JCODE_SESSION_ID")].compactMap { provider, variable in
             environment[variable].flatMap { $0.isEmpty ? nil : (provider, "\(provider):\($0)") }
         }
         let nearest = ancestorAgents()
@@ -93,7 +93,7 @@ enum Caller {
             var info = proc_bsdinfo()
             guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0 else { break }
             let name = withUnsafeBytes(of: info.pbi_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
-            if ["claude", "codex"].contains(name), !agents.contains(name) { agents.append(name) }
+            if ["claude", "codex", "jcode"].contains(name), !agents.contains(name) { agents.append(name) }
             pid = pid_t(info.pbi_ppid)
         }
         return agents

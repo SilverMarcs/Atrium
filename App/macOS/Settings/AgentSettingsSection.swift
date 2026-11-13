@@ -88,6 +88,7 @@ private extension AgentProvider {
         switch self {
         case .codex: URL(string: "https://developers.openai.com/codex/cli")!
         case .claude: URL(string: "https://docs.claude.com/en/docs/claude-code/setup")!
+        case .jcode: URL(string: "https://github.com/1jehuang/jcode#installation")!
         }
     }
 }

@@ -54,7 +54,7 @@ enum Atrium {
         let width = commands.map(\.name.count).max() ?? 0
         let list = commands.map { "  " + $0.name.padding(toLength: width + 2, withPad: " ", startingAt: 0) + $0.summary }
         return """
-            atrium drives the Claude and Codex sessions on an Atrium host: a Mac running Atrium.
+            atrium drives the Claude, Codex and Jcode sessions on an Atrium host: a Mac running Atrium.
 
             On that Mac, agents Atrium runs have the atrium bundled in Atrium.app on their PATH; it reaches its own Mac \
             with nothing to set up, while the Orchestrator is on in Atrium Settings → Integrations, and every other Mac \
@@ -67,7 +67,7 @@ enum Atrium {
             can't be reached, so nothing was sent; 5 sent, but the reply was lost: repeat with the same --id; 6 timed \
             out waiting; 64 invalid usage. Reading a session never marks it read.
 
-            Sessions are named by ID, as `atrium sessions` lists them (claude:… or codex:…), or by a prefix only one \
+            Sessions are named by ID, as `atrium sessions` lists them (claude:…, codex:… or jcode:…), or by a prefix only one \
             has; projects by ID, name or folder. A session that needs an answer lists it under `interactions`.
 
             Handing work to another session, as an agent on the Mac:

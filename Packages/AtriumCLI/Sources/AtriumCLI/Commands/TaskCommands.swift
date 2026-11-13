@@ -42,11 +42,11 @@ let taskCommands: [Command] = [
     taskCommand("unsnooze", summary: "Wake a snoozed session.") { _, _ in [.unsnooze] },
     taskCommand("mark-read", summary: "Acknowledge a session's result, as opening it on the Mac does.") { _, _ in [.markRead] },
     taskCommand("mark-unread", summary: "Mark a session's result unread.") { _, _ in [.markUnread] },
-    taskCommand("fork", usage: "fork <session> [--into codex|claude]",
+    taskCommand("fork", usage: "fork <session> [--into codex|claude|jcode]",
                 summary: "Start a new session from a copy of this one's conversation, with its agent or the other.",
                 options: ["into"]) { arguments, task in
         let provider = try arguments.value("into").map { name in
-            guard let provider = AgentProvider(rawValue: name) else { throw CLIError(.invalidArgument, "--into takes codex or claude.") }
+            guard let provider = AgentProvider(rawValue: name) else { throw CLIError(.invalidArgument, "--into takes codex, claude or jcode.") }
             return provider
         } ?? task.provider
         return [.fork(into: provider)]

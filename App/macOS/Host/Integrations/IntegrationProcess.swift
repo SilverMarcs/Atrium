@@ -41,8 +41,10 @@ enum IntegrationProcess {
     /// Runs a command to completion and returns its output. `input`, when given, is
     /// written to its standard input, which is then closed.
     static func run(_ command: String, arguments: [String], directory: String? = nil, input: Data? = nil,
-                    timeout: Duration = .seconds(15), acceptedExitCodes: Set<Int32> = [0]) async throws -> Data {
+                    timeout: Duration = .seconds(15), acceptedExitCodes: Set<Int32> = [0],
+                    environment overrides: [String: String] = [:]) async throws -> Data {
         let process = make(command, arguments: arguments, directory: directory)
+        process.environment?.merge(overrides) { $1 }
         let inputPipe = input.map { _ in Pipe() }
         if let inputPipe { process.standardInput = inputPipe }
         let output = Pipe()
