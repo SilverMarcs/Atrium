@@ -3,7 +3,8 @@ import AtriumProtocol
 import SwiftUI
 
 /// The title Source Control, Files and Search share: the branch the project's
-/// scope shows, its repository under it, and a title menu picking the branch
+/// scope shows, its repository under it when the project holds more than one,
+/// and a title menu picking the branch
 /// or worktree and the repository, the same on every page. The menu is left
 /// out when there's nothing to pick, since an empty one still shows as a menu.
 /// It presents what picking a branch asks to confirm, and its errors.
@@ -24,7 +25,7 @@ private struct ProjectScopeTitle: ViewModifier {
         let status = source.status
         let titled = content
             .navigationTitle(title ?? status.map { $0.branchName ?? "Detached HEAD" } ?? placeholder)
-            .navigationSubtitle(title == nil ? status?.name ?? "" : "")
+            .navigationSubtitle(title == nil && (source.repositories?.count ?? 0) > 1 ? status?.name ?? "" : "")
             .toolbarTitleDisplayMode(.inline)
             .task(id: source.scope.gitScope) {
                 await source.host.follow(.git(source.scope.gitScope))
