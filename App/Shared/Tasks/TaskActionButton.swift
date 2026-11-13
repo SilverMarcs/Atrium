@@ -35,8 +35,8 @@ extension TaskMenuAction {
         case .restore: "Restore Thread"
         case .snooze: "Snooze for a Day"
         case .unsnooze: "Unsnooze Thread"
-        case .fork: "Fork Chat"
-        case .forkInto(let provider): "Fork in \(provider.name)"
+        case .fork: "Fork"
+        case .forkInto(let provider): provider.name
         case .rename: "Rename Chat"
         case .markRead: "Mark as Read"
         case .markUnread: "Mark as Unread"

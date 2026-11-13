@@ -15,8 +15,17 @@ struct TaskContextMenu: View {
         Divider()
 
         TaskActionButton(action: .fork, state: state, perform: perform)
-        ForEach(state.forkProviders) { provider in
-            TaskActionButton(action: .forkInto(provider), state: state, perform: perform)
+        if !state.forkProviders.isEmpty {
+            Menu("Fork in", systemImage: "arrow.triangle.branch") {
+                ForEach(state.forkProviders) { provider in
+                    Button {
+                        perform(.forkInto(provider))
+                    } label: {
+                        Label(provider.name, image: provider.symbolName)
+                    }
+                }
+            }
+            .disabled(!state.allowed.allows(.fork))
         }
 
         Divider()
