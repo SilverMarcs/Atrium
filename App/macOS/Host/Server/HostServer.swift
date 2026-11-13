@@ -77,6 +77,7 @@ final class HostServer {
     @ObservationIgnored private let orchestrator: Orchestrator
     @ObservationIgnored private let queue: PromptQueue
     @ObservationIgnored private let media: MediaService
+    @ObservationIgnored private let pullRequests: PullRequestTracker
     /// What Settings → Integrations turns on, which stays with this Mac's host.
     @ObservationIgnored let integrationSettings = IntegrationSettings()
     @ObservationIgnored private let tasksFeed: TasksFeed
@@ -113,7 +114,11 @@ final class HostServer {
         orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)
         queue = PromptQueue(integrations: integrations, file: bridge.storage.appending(path: "queued-prompts.json"))
         media = MediaService(integrations: integrations)
-        tasksFeed = TasksFeed(integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue)
+        pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
+        tasksFeed = TasksFeed(
+            integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue,
+            pullRequests: pullRequests)
+        pullRequests.start()
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publishTasks(event) }

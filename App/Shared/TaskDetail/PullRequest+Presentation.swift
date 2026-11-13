@@ -53,6 +53,9 @@ extension PullRequest {
         return parts.joined(separator: " · ")
     }
 
+    /// The repository's name without its owner.
+    var repositoryName: String { repository.split(separator: "/").last.map(String.init) ?? repository }
+
     /// How much it needs the user, so a task shows its most pressing one.
     fileprivate var urgency: Int {
         switch (state, checks) {

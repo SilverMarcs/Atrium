@@ -15,6 +15,7 @@ final class TasksFeed: TopicFeed {
     private let workspaces: WorkspaceStore
     private let orchestrator: Orchestrator
     private let queue: PromptQueue
+    private let pullRequests: PullRequestTracker
     /// Resolving a task's project and checkouts reads Git metadata from disk,
     /// so results are cached until the set of projects changes.
     private var projects: [String: Workspace?] = [:]
@@ -32,13 +33,14 @@ final class TasksFeed: TopicFeed {
 
     init(
         integrations: AgentIntegrationStore, sessions: TaskSessionController, workspaces: WorkspaceStore,
-        orchestrator: Orchestrator, queue: PromptQueue
+        orchestrator: Orchestrator, queue: PromptQueue, pullRequests: PullRequestTracker
     ) {
         self.integrations = integrations
         self.sessions = sessions
         self.workspaces = workspaces
         self.orchestrator = orchestrator
         self.queue = queue
+        self.pullRequests = pullRequests
     }
 
     func start(publish: @escaping (HostEvent) -> Void) {
@@ -96,6 +98,7 @@ final class TasksFeed: TopicFeed {
         if hasWorkingDescendants { menu.allowed.insert(.interrupt) }
         let project = project(for: thread)
         let checkouts = checkouts(of: thread, subagents: subagents, in: project)
+        let isSettled = integrations.settledThreadIDs.contains(thread.id)
         return WireTask(
             id: thread.id,
             title: thread.title,
@@ -108,7 +111,7 @@ final class TasksFeed: TopicFeed {
             workspaceID: project?.id,
             updatedAt: thread.updatedAt,
             hasUnreadResult: thread.hasUnreadResult,
-            isSettled: integrations.settledThreadIDs.contains(thread.id),
+            isSettled: isSettled,
             snoozedUntil: integrations.snoozedUntil[thread.id],
             supportsDeletion: menu.supportsDeletion,
             actions: menu.allowed,
@@ -121,6 +124,10 @@ final class TasksFeed: TopicFeed {
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: checkouts.current,
             changedCheckouts: checkouts.changed,
+            // Settled tasks and ones untouched for days keep the pull requests they have.
+            pullRequests: pullRequests.pullRequests(
+                for: thread.id, checkouts: checkouts.changed, firstChanges: checkouts.firstChanges, updatedAt: thread.updatedAt,
+                isActive: !isSettled && thread.updatedAt > .now.addingTimeInterval(-3 * 86_400)),
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
                 ?? orchestrator.origin(of: thread),
             queuedPrompt: queue.queuedPrompt(for: thread.id)
@@ -159,10 +166,12 @@ final class TasksFeed: TopicFeed {
     /// The checkouts of its project a task changed files in, the most recently
     /// changed first and one for each repository, its subagents' edits
     /// included; and the one it works in now: the last it changed, or else the
-    /// one its commands last ran in, or else its own folder's. Changes to
-    /// other projects' repositories or to files outside any are left out.
+    /// one its commands last ran in, or else its own folder's; and when it
+    /// first changed files in each repository, as far as its edits go back.
+    /// Changes to other projects' repositories or to files outside any are
+    /// left out.
     private func checkouts(of thread: AgentThread, subagents: [AgentThread], in project: Workspace?)
-        -> (current: TaskCheckout?, changed: [TaskCheckout]) {
+        -> (current: TaskCheckout?, changed: [TaskCheckout], firstChanges: [URL: Date]) {
         let folder = project.map { URL(filePath: $0.directory, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath() }
         func inProject(_ checkout: TaskCheckout) -> Bool {
             folder.map { $0.contains(checkout.repository) || checkout.repository.contains($0) } ?? false
@@ -172,15 +181,16 @@ final class TasksFeed: TopicFeed {
             if let theirs = subagent.edits { edits.merge(theirs) }
         }
         var changed: [TaskCheckout] = []
+        var firstChanges: [URL: Date] = [:]
         for path in edits.newestFirst {
-            guard let checkout = checkout(containing: path, lastUsed: edits.folders[path]), inProject(checkout),
-                  !changed.contains(where: { $0.repository == checkout.repository }) else { continue }
-            changed.append(checkout)
+            guard let date = edits.folders[path], let checkout = checkout(containing: path, lastUsed: date), inProject(checkout) else { continue }
+            firstChanges[checkout.repository] = min(firstChanges[checkout.repository] ?? date, date)
+            if !changed.contains(where: { $0.repository == checkout.repository }) { changed.append(checkout) }
         }
         let current = changed.first
             ?? thread.currentDirectory.flatMap { checkout(containing: $0, lastUsed: thread.updatedAt) }.flatMap { inProject($0) ? $0 : nil }
             ?? checkout(containing: thread.directory, lastUsed: thread.updatedAt)
-        return (current, changed)
+        return (current, changed, firstChanges)
     }
 
     /// The checkout a folder the task used is in now: where its worktree
