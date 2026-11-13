@@ -1,15 +1,15 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The task's permission mode: a toolbar button showing the mode's symbol on
-/// Mac, a row below the model menu on iPhone and iPad, and a new-chat row.
+/// The task's permission mode: a menu in the composer's row on Mac, a row
+/// below the model menu on iPhone and iPad, and a new-chat row.
 /// A mode the chat switches to only by restarting asks first, with an alert
 /// its owner shows through `restartMode`, as a menu inside another menu can't.
 struct TaskPermissionMenu: View {
     let selection: TaskPermissionSelection
     @Binding var restartMode: PermissionMode?
     let perform: (TaskAction) -> Void
-    var showsToolbarLabel = false
+    var isComposerRow = false
     var isNewChatRow = false
 
     var body: some View {
@@ -31,14 +31,16 @@ struct TaskPermissionMenu: View {
                 NewChatPickerLabel(title: title) {
                     Image(systemName: symbol)
                 }
-            } else if showsToolbarLabel {
-                Label(title, systemImage: symbol)
-                    .labelStyle(.iconOnly)
+            } else if isComposerRow {
+                ComposerMenuLabel {
+                    Image(systemName: symbol)
+                    Text(title)
+                }
             } else {
                 Label(title, systemImage: symbol)
             }
         }
-        .menuIndicator(showsToolbarLabel ? .hidden : .automatic)
+        .menuIndicator(isComposerRow ? .hidden : .automatic)
         .disabled(!selection.canSelect)
         .help(title)
         .accessibilityLabel("Permissions")

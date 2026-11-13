@@ -2,13 +2,13 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's model picker, named for the model and effort it runs with: a
-/// submenu of More on iPhone and iPad, and a toolbar button on Mac.
+/// submenu of More on iPhone and iPad, and a menu in the composer's row on Mac.
 struct TaskModelMenu: View {
   let provider: AgentProvider
   let selection: TaskModelSelection
   let models: [AgentModel]
   let perform: (TaskAction) -> Void
-  var showsToolbarLabel = false
+  var isComposerRow = false
   var isNewChatRow = false
 
   var body: some View {
@@ -22,12 +22,13 @@ struct TaskModelMenu: View {
         NewChatPickerLabel(title: [name, detail].filter { !$0.isEmpty }.joined(separator: " · ")) {
           Image(systemName: "cpu")
         }
-      } else if showsToolbarLabel {
-        Label {
+      } else if isComposerRow {
+        ComposerMenuLabel {
           Text(name)
-          Text(detail)
-        } icon: {
-          Image(provider.symbolName)
+          if !detail.isEmpty {
+            Text(detail)
+              .foregroundStyle(.tertiary)
+          }
         }
       } else {
         Label {

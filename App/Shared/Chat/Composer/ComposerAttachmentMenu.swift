@@ -12,13 +12,23 @@ struct ComposerAttachmentMenu<MenuLabel: View>: View {
             Button("Photo Library", systemImage: "photo.on.rectangle") {
                 composer.isPickingPhotos = true
             }
+            #if os(iOS)
             Button("Camera", systemImage: "camera") {
                 composer.isTakingPhoto = true
             }
             .disabled(!CameraPicker.isAvailable)
+            #else
+            Divider()
+            Button("Attach Images", systemImage: "paperclip") {
+                composer.isImportingFiles = true
+            }
+            #endif
         } label: {
             label
         }
+        #if os(macOS)
+        .menuStyle(.button)
+        #endif
         .menuIndicator(.hidden)
         .disabled(composer.remainingImageSlots == 0)
     }

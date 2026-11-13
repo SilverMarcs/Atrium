@@ -11,6 +11,10 @@ nonisolated enum ComposerBarPart {
     case send
     /// The circle after the field at rest: Send with a draft, else Stop.
     case action
+    /// The Mac's permission-mode menu, after the attachment button.
+    case permissions
+    /// The Mac's model menu, before dictation.
+    case model
 }
 
 private nonisolated struct ComposerBarPartKey: LayoutValueKey {
@@ -32,6 +36,9 @@ extension View {
 /// glass is one panel across the width: the editor on top, over a row with
 /// the attachment button at its leading end and dictation and Send at its
 /// trailing end.
+///
+/// On Mac it's always expanded, and its row also holds the permission-mode
+/// menu after the attachment button and the model menu before dictation.
 struct ComposerBarLayout: Layout {
     var isExpanded: Bool
     /// The draft, which the expanded editor grows to fit.
@@ -42,11 +49,23 @@ struct ComposerBarLayout: Layout {
     static let restingMargin: CGFloat = 28
     static let restingSpacing: CGFloat = 12
     /// Expanded, the panel nearly reaches the edges, as a focused search
-    /// field does. Its corners stay concentric with the row's buttons.
+    /// field does. On iPhone and iPad its corners stay concentric with the
+    /// row's buttons.
+    #if os(macOS)
+    static let expandedMargin: CGFloat = 12
+    #else
     static let expandedMargin: CGFloat = 8
+    #endif
+    #if os(macOS)
+    /// The Mac's panel keeps the tighter corners of a grown Messages field.
+    static let cornerRadius: CGFloat = 18
+    #else
     static let cornerRadius: CGFloat = rowHeight / 2
+    #endif
     /// Between the field's end and the dictation button inside it.
     private static let dictationInset: CGFloat = 4
+    /// Between the row's menus and the buttons beside them.
+    private static let menuSpacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 402
@@ -70,8 +89,19 @@ struct ComposerBarLayout: Layout {
         subviews.first { $0[ComposerBarPartKey.self] == part }?.sizeThatFits(.unspecified) ?? .zero
     }
 
+    /// A part's ideal size, narrowed to `width` if it's wider.
+    private func fitted(_ part: ComposerBarPart, width: CGFloat, in subviews: Subviews) -> CGSize {
+        guard let subview = subviews.first(where: { $0[ComposerBarPartKey.self] == part }) else { return .zero }
+        let ideal = subview.sizeThatFits(.unspecified)
+        guard ideal.width > width else { return ideal }
+        return subview.sizeThatFits(ProposedViewSize(width: width, height: ideal.height))
+    }
+
     private func editorHeight(in width: CGFloat) -> CGFloat {
         let panelWidth = width - Self.expandedMargin * 2
+        // SwiftUI also asks for the composer's size with no width at all,
+        // where measuring would wrap the whole draft a letter a line.
+        guard panelWidth > ComposerEditor.horizontalInset * 2 else { return 0 }
         return ComposerEditor.expandedHeight(of: draft, width: panelWidth, maximumLines: ComposerTextView.maximumLines)
     }
 
@@ -134,8 +164,23 @@ struct ComposerBarLayout: Layout {
         frames[.send] = centered(size(of: .send, in: subviews), inCellAt: sendCell, y: rowY)
         frames[.action] = CGRect(x: sendCell, y: rowY, width: row, height: row)
         let dictation = size(of: .dictation, in: subviews)
-        frames[.dictation] = CGRect(x: sendCell - dictation.width, y: rowY + (row - dictation.height) / 2,
+        let dictationX = sendCell - dictation.width
+        frames[.dictation] = CGRect(x: dictationX, y: rowY + (row - dictation.height) / 2,
                                     width: dictation.width, height: dictation.height)
+
+        // The menus take what they need from the room between the buttons,
+        // the permission menu after the attachment and cancel buttons, and
+        // the model menu first, as its name says most.
+        var menusStart = has(.attach, in: subviews) ? leading + row : leading + Self.menuSpacing * 2
+        if has(.cancelEdit, in: subviews) { menusStart += row }
+        let menusEnd = (has(.dictation, in: subviews) ? dictationX : sendCell) - Self.menuSpacing
+        let room = max(menusEnd - menusStart, 0)
+        let model = fitted(.model, width: room, in: subviews)
+        frames[.model] = CGRect(x: menusEnd - model.width, y: rowY + (row - model.height) / 2,
+                                width: model.width, height: model.height)
+        let permissions = fitted(.permissions, width: max(room - model.width - Self.menuSpacing * 2, 0), in: subviews)
+        frames[.permissions] = CGRect(x: menusStart, y: rowY + (row - permissions.height) / 2,
+                                      width: permissions.width, height: permissions.height)
         return frames
     }
 }

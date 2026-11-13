@@ -162,14 +162,9 @@ struct SessionChatView: View {
           }
           // A subagent answers only to its own agent.
           if !task.isSubagent {
-            SessionChatComposer(
-              composer: composer, provider: task.provider,
-              isSending: conversation.isSending(in: task.id),
-              actions: task.actions,
-              send: { send(composer, mode: sendMode) },
-              interrupt: { composer.stop(item) },
-              noteSourceFrame: { frame in flights.sourceFrame = { frame } }
-            )
+            ComposerBar(item: item, prompt: "Message \(task.provider.name)…") { frame in
+              send(composer, from: frame, mode: sendMode)
+            }
           }
         }
         .frame(maxWidth: SessionChatLayout.maximumWidth)
@@ -261,8 +256,10 @@ struct SessionChatView: View {
     ))
     .focusedSceneValue(\.latestPromptEdit, latestPromptEdit(rows: rows, actions: actions))
     .font(.system(size: chatFontSize))
+    .composerAttachmentPickers(composer)
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
+    .environment(composer)
     // One action for the chat's lifetime: a new one on every update would
     // update every reply's Markdown view.
     .environment(\.openURL, links.action)
@@ -307,11 +304,13 @@ struct SessionChatView: View {
     return LatestPromptEdit(messageID: row.id) { [message = row.message] in actions.edit(message) }
   }
 
-  /// Sends with nothing else animating; the sent bubble flies in on its own.
-  private func send(_ composer: TaskComposer, mode: SendMode) {
+  /// Sends with nothing else animating; the sent bubble flies in on its own
+  /// from the composer's editor.
+  private func send(_ composer: TaskComposer, from frame: CGRect?, mode: SendMode) -> Bool {
+    guard !conversation.isSending(in: task.id) else { return false }
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
-    withTransaction(transaction) { composer.submit(to: item, animator: flights, mode: mode) }
+    return withTransaction(transaction) { composer.submit(to: item, animator: flights, from: frame, mode: mode) }
   }
 
   /// Holds a prompt sent from here at the top of the timeline, as the start

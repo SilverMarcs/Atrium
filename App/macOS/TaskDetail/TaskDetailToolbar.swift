@@ -2,19 +2,6 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The toolbar's permission-mode button, which asks before restarting the chat.
-private struct TaskPermissionToolbarMenu: View {
-    let item: HostTask
-    let selection: TaskPermissionSelection
-    @State private var restartMode: PermissionMode?
-
-    var body: some View {
-        let perform = { (action: TaskAction) in item.host.send(.task(id: item.task.id, action: action)) }
-        TaskPermissionMenu(selection: selection, restartMode: $restartMode, perform: perform, showsToolbarLabel: true)
-            .permissionRestartAlert($restartMode, provider: item.task.provider, perform: perform)
-    }
-}
-
 /// The Mac toolbar of a task's detail view.
 struct TaskDetailToolbar: ToolbarContent {
     let item: HostTask
@@ -22,23 +9,6 @@ struct TaskDetailToolbar: ToolbarContent {
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if !TaskDraft.isDraftID(item.task.id), !item.task.isSubagent, !item.task.isSideChat {
-            ToolbarItem {
-                let models = item.host.models(for: item.task.provider)
-                TaskModelMenu(
-                    provider: item.task.provider, selection: item.task.modelSelection, models: models,
-                    perform: { item.host.send(.task(id: item.task.id, action: $0)) }, showsToolbarLabel: true
-                )
-                .disabled(models.isEmpty)
-            }
-            if let permissions = item.task.permissionSelection(using: item.host.models(for: item.task.provider)) {
-                ToolbarSpacer(.fixed)
-                ToolbarItem {
-                    TaskPermissionToolbarMenu(item: item, selection: permissions)
-                }
-                ToolbarSpacer(.fixed)
-            }
-        }
         if !item.task.pullRequests.isEmpty {
             ToolbarItem {
                 PullRequestMenu(pullRequests: item.task.pullRequests)

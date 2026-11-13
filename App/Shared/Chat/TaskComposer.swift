@@ -35,19 +35,24 @@ final class TaskComposer {
     /// Why an image or item couldn't be attached, until it's been shown.
     var attachmentError: String?
 
-    #if os(iOS)
     @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
     var isPickingPhotos = false
-    var isTakingPhoto = false
     /// Mirrors the composer's focus, where the timeline observes it to scroll
     /// to the latest message (`FocusState` is view-local).
     var isFocused = false
+
+    #if os(iOS)
+    var isTakingPhoto = false
 
     static let maxImages = 4
     /// As in Relay, context-menu dismissal must finish before it restores keyboard focus.
     static let contextMenuDismissalDelay: Duration = .milliseconds(200)
     #else
+    var isImportingFiles = false
+
     static let maxImages = 10
+    /// A Mac menu has closed by the time its action runs.
+    static let contextMenuDismissalDelay: Duration = .zero
     #endif
 
     /// Not while an edit is saving, and not the message already being edited,

@@ -12,7 +12,12 @@ struct ComposerBarSendButton: View {
     let item: HostTask?
     let send: () -> Void
 
+    /// Twice the body text's size, which is smaller on Mac.
+    #if os(macOS)
+    @ScaledMetric(relativeTo: .body) private var diameter = 26
+    #else
     @ScaledMetric(relativeTo: .body) private var diameter = 34
+    #endif
 
     var body: some View {
         if let item, composer.offersStop(for: item.task.actions) {
@@ -20,11 +25,17 @@ struct ComposerBarSendButton: View {
                 composer.stop(item)
             }
             .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .red))
+            .help("Stop")
         } else {
-            Button(composer.messageEdit == nil ? "Send" : "Save and Continue", systemImage: composer.messageEdit == nil ? "arrow.up" : "checkmark", action: send)
+            let title = composer.messageEdit == nil ? "Send" : "Save and Continue"
+            Button(title, systemImage: composer.messageEdit == nil ? "arrow.up" : "checkmark", action: send)
                 .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .accentColor, isBusy: isSubmittingEdit))
                 .opacity(isSendDisabled && !isSubmittingEdit ? 0.35 : 1)
                 .allowsHitTesting(!isSendDisabled)
+                .help(title)
+                #if os(macOS)
+                .keyboardShortcut(.return, modifiers: .command)
+                #endif
         }
     }
 

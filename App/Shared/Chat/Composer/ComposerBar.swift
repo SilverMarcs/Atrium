@@ -3,7 +3,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's composer, along the bottom edge above the keyboard, on iPhone
-/// and iPad alike.
+/// and iPad alike, and along the bottom of the Mac's chat.
 ///
 /// At rest it looks like the bottom bar it replaced: the attachment button
 /// beside a field showing the draft's first line, with dictation inside it.
@@ -11,6 +11,9 @@ import SwiftUI
 /// the whole draft above a row of the attachment button, dictation and Send.
 /// Losing focus, by sending, going back or dragging the keyboard away,
 /// collapses it again with the draft kept.
+///
+/// On Mac it stays expanded, and its row also holds the chat's permission
+/// menu after the attachment button and its model menu before dictation.
 struct ComposerBar: View {
     @Environment(TaskComposer.self) private var composer
     @Environment(DictationSettings.self) private var dictationSettings
@@ -31,10 +34,18 @@ struct ComposerBar: View {
     @State private var showsRestingAction = true
     @State private var revealTask: Task<Void, Never>?
 
-    /// Expanded while the editor has focus. It follows the editor rather
-    /// than the request for focus, so the composer only starts to grow or
-    /// shrink once UIKit has announced the keyboard moving with it.
-    @State private var isExpanded = false
+    /// Whether the editor has focus. It follows the editor rather than the
+    /// request for focus, so the composer only starts to grow or shrink
+    /// once UIKit has announced the keyboard moving with it.
+    @State private var isEditing = false
+    /// Expanded while the editor has focus, and always on Mac.
+    private var isExpanded: Bool {
+        #if os(macOS)
+        true
+        #else
+        isEditing
+        #endif
+    }
     private var expandedEditorHeight: CGFloat {
         guard isExpanded, width > 0 else { return 0 }
         return ComposerEditor.expandedHeight(
@@ -49,11 +60,16 @@ struct ComposerBar: View {
     /// as Stop does while the agent works; expanded, the panel's Send button
     /// stands in for both.
     private var restingAction: ComposerBarActionButton.Action? {
+        #if os(macOS)
+        // Never at rest.
+        return nil
+        #else
         if let item, composer.offersStop(for: item.task.actions) { return .stop }
         // Dictating shows Send only once the recording has become text.
         if composer.hasContent { return .send }
         if item?.task.actions.contains(.interrupt) == true { return .stop }
         return nil
+        #endif
     }
 
     var body: some View {
@@ -102,6 +118,8 @@ struct ComposerBar: View {
                             .contentShape(.circle)
                             .glassEffect(isExpanded ? .identity : .regular.interactive(), in: .circle)
                             .buttonStyle(.plain)
+                            .keyboardShortcut(.cancelAction)
+                            .help("Cancel Edit")
                             .disabled(isSubmittingEdit)
                             .composerBarPart(.cancelEdit)
                         }
@@ -133,7 +151,7 @@ struct ComposerBar: View {
                     ComposerTextView(
                         text: $composer.draft,
                         isFocused: $composer.isFocused,
-                        isEditing: $isExpanded,
+                        isEditing: $isEditing,
                         placeholder: composer.messageEdit == nil ? prompt : "Edit message…",
                         isExpanded: isExpanded,
                         isEditable: !isSubmittingEdit,
@@ -142,6 +160,17 @@ struct ComposerBar: View {
                     )
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
+
+                    #if os(macOS)
+                    if let item, item.offersComposerMenus {
+                        ComposerModelMenu(item: item)
+                            .composerBarPart(.model)
+                        if let permissions = item.task.permissionSelection(using: item.host.models(for: item.task.provider)) {
+                            ComposerPermissionMenu(item: item, selection: permissions)
+                                .composerBarPart(.permissions)
+                        }
+                    }
+                    #endif
 
                     if dictationSettings.isEnabled {
                         ComposerDictationButton(composer: composer, isInline: true, symbolScale: .large)
@@ -162,15 +191,20 @@ struct ComposerBar: View {
                         .composerBarPart(.send)
                 }
             }
-            // At rest the bar sits a little into the home indicator's margin, as
-            // the system bottom bar does; above the keyboard it keeps clear.
         }
+        #if os(iOS)
+        // At rest the bar sits a little into the home indicator's margin, as
+        // the system bottom bar does; above the keyboard it keeps clear.
         .padding(.bottom, isExpanded ? ComposerBarLayout.expandedMargin : -6)
         // The system bottom bar kept the timeline this much further above
         // its items.
         .padding(.top, 10)
         // Its top edge is where the timeline's safe area ends.
         .background(ComposerKeyboardAnchor())
+        #else
+        .padding(.bottom, ComposerBarLayout.expandedMargin)
+        .composerFocusRequests()
+        #endif
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)
         // Each line the draft gains or loses grows or shrinks the panel
@@ -187,9 +221,11 @@ struct ComposerBar: View {
                 composer.isFocused = true
             }
         }
+        #if os(iOS)
         .onChange(of: composer.editedPromptID) { _, _ in
             composer.isFocused = false
         }
+        #endif
         // Leaving the task can tear the editor down while it still has
         // focus; the next task's first focus must register as a change.
         .onDisappear {
@@ -204,6 +240,7 @@ struct ComposerBar: View {
     /// closes its keyboard. A draft that couldn't be sent stays open.
     private func send() {
         guard submit(editorFrame) else { return }
+        #if os(iOS)
         guard isExpanded else {
             composer.isFocused = false
             return
@@ -219,6 +256,7 @@ struct ComposerBar: View {
             do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
             withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
         }
+        #endif
     }
 
     /// About as long as the sent prompt takes to fly up to the top.
