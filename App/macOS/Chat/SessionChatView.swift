@@ -291,6 +291,10 @@ struct SessionChatView: View {
       editQueued: { [host, taskID = task.id] in
         guard let task = host.displayedTask(taskID) else { return }
         composer.editQueuedPrompt(of: HostTask(host: host, task: task))
+      },
+      sendQueuedNow: { [host, taskID = task.id] in
+        guard let task = host.displayedTask(taskID) else { return }
+        composer.sendQueuedPromptNow(of: HostTask(host: host, task: task))
       }
     )
   }

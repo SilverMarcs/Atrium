@@ -45,7 +45,9 @@ struct SessionChatMessageRow: View, Equatable {
             .tint(.red)
         }
         if queuedPrompt != nil {
-          QueuedPromptFooter(edit: queuedPrompt?.isFromAgent == true ? nil : actions.editQueued)
+          QueuedPromptFooter(
+            edit: queuedPrompt?.isFromAgent == true ? nil : actions.editQueued,
+            sendNow: queuedPrompt?.isFromAgent == true ? nil : actions.sendQueuedNow)
         }
       }
     case .assistant:
@@ -71,6 +73,8 @@ struct PromptActions: Equatable {
   var retry: @MainActor (UUID) -> Void = { _ in }
   /// Takes the queued prompt back into the composer.
   var editQueued: @MainActor () -> Void = {}
+  /// Sends the queued prompt immediately as a steer.
+  var sendQueuedNow: @MainActor () -> Void = {}
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
 }

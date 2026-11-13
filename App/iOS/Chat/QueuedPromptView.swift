@@ -11,7 +11,9 @@ struct QueuedPromptView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             UserMessageView(text: prompt.text, images: prompt.images, isFromAgent: prompt.isFromAgent)
-            QueuedPromptFooter(edit: prompt.isFromAgent ? nil : { composer.editQueuedPrompt(of: item) })
+            QueuedPromptFooter(
+                edit: prompt.isFromAgent ? nil : { composer.editQueuedPrompt(of: item) },
+                sendNow: prompt.isFromAgent ? nil : { composer.sendQueuedPromptNow(of: item) })
         }
     }
 }

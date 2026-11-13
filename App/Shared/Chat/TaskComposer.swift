@@ -240,6 +240,19 @@ final class TaskComposer {
         }
     }
 
+    /// Sends the waiting prompt through the ordinary steering path. A failed
+    /// send stays in the timeline with Retry, including its original images.
+    func sendQueuedPromptNow(of item: HostTask) {
+        Task {
+            do {
+                let prompt = try await item.host.takeQueuedPrompt(from: item.task.id)
+                item.host.sendPrompt(prompt.text, images: prompt.images, to: item.task.id)
+            } catch {
+                item.host.actionError = error.localizedDescription
+            }
+        }
+    }
+
     /// Stops the agent's turn. The prompt queued behind it comes back to the
     /// composer rather than starting the next turn.
     func stop(_ item: HostTask) {
