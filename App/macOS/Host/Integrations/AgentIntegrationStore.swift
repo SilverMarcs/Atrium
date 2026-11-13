@@ -356,7 +356,17 @@ final class AgentIntegrationStore {
         metadataRequests.remove(thread.id)
         revisions[thread.id, default: 0] += 1
         if viewedThreadID == thread.id { viewedThreadID = nil }
-        guard stoppingThreadIDs.insert(thread.id).inserted else { return draft }
+        stopSession(of: thread, with: adapter) { [weak self] error in
+            guard let self else { return }
+            if self.settledThreadIDs.contains(thread.id) { self.restore(thread, draft: draft) }
+            self.actionError = "Couldn’t stop this session: \(error.localizedDescription)"
+        }
+        return draft
+    }
+
+    /// Stops the thread's session, so it holds no agent process, and shows it as stopped.
+    private func stopSession(of thread: AgentThread, with adapter: any AgentProviderAdapter, onFailure: @escaping (Error) -> Void) {
+        guard stoppingThreadIDs.insert(thread.id).inserted else { return }
         stopTasks[thread.id] = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -375,11 +385,22 @@ final class AgentIntegrationStore {
                 self.revisions[thread.id, default: 0] += 1
                 self.saveActivity()
             } catch {
-                if self.settledThreadIDs.contains(thread.id) { self.restore(thread, draft: draft) }
-                self.actionError = "Couldn’t stop this session: \(error.localizedDescription)"
+                onFailure(error)
             }
         }
-        return draft
+    }
+
+    /// A settled chat keeps no session running. One still running, such as one
+    /// an earlier version opened to show it, is stopped once it's idle.
+    private func releaseSettledSessions(of provider: AgentProvider, with adapter: any AgentProviderAdapter) {
+        let running = threads.filter {
+            $0.provider == provider && settledThreadIDs.contains($0.id) && $0.status.isLive && !$0.status.isWorking
+                && !$0.isSubagent && !$0.isSideChat
+                && !deletingThreadIDs.contains($0.id) && !deletedThreadIDs.contains($0.id) && !renamingThreadIDs.contains($0.id)
+        }
+        for thread in running {
+            stopSession(of: thread, with: adapter) { _ in }
+        }
     }
 
     func restore(_ thread: AgentThread, draft: AgentThread? = nil) {
@@ -669,6 +690,7 @@ final class AgentIntegrationStore {
             threads.removeAll { $0.provider == provider }
             threads.append(contentsOf: reconciled)
             saveActivity()
+            releaseSettledSessions(of: provider, with: adapter)
             errors[provider] = nil
             refreshModelsIfNeeded(provider)
         } catch is CancellationError {
@@ -818,6 +840,8 @@ final class AgentIntegrationStore {
         if let stopTask = stopTasks[thread.id] { await stopTask.value }
         try Task.checkCancellation()
         let adapter = try availableAdapter(for: thread.provider)
+        // Opening a settled chat in a terminal takes it back up, so its session isn't stopped as settled.
+        if settledThreadIDs.contains(thread.id) { restore(thread) }
         let generation = generations[thread.provider, default: 0]
         let launch = try await adapter.prepareLaunch(for: thread)
         try Task.checkCancellation()
@@ -918,6 +942,8 @@ final class AgentIntegrationStore {
             throw IntegrationError(message: "This conversation is being edited. Try again when it finishes.")
         }
         let adapter = try availableAdapter(for: thread.provider)
+        // A prompt takes a settled chat back up, before its session opens, so it isn't stopped again as settled.
+        if settledThreadIDs.contains(thread.id) { restore(thread) }
         // A fork of the other provider's chat hands its agent that chat's conversation with its first prompt.
         guard var conversation = inherited[thread.id], let handoff = conversation.handoff, !conversation.isDelivered else {
             return try await adapter.sendPrompt(text, images: images, to: thread)

@@ -21,8 +21,9 @@ final class TranscriptFeed: TopicFeed {
     func start(publish: @escaping (HostEvent) -> Void) {
         self.publish = publish
         integrations.transcriptFeeds[taskID] = self
-        if let thread = integrations.threads.first(where: { $0.id == taskID }) {
-            // Live events for a conversation only flow once it's open.
+        // Live events for a conversation only flow once it's open. A settled
+        // chat has none and shows its saved history, so reading it starts no agent.
+        if let thread = integrations.threads.first(where: { $0.id == taskID }), !integrations.settledThreadIDs.contains(thread.id) {
             Task { try? await integrations.openConversation(thread) }
         }
         refresh()
