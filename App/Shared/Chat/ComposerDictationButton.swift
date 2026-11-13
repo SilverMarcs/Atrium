@@ -64,8 +64,9 @@ private struct DictationSymbol: View {
                 Label(dictation.isRecording ? "Finish Dictation" : "Dictate", systemImage: "waveform")
                     .labelStyle(.iconOnly)
                     .imageScale(scale)
-                    // The waveform ripples while it listens.
-                    .symbolEffect(.variableColor.iterative.dimInactiveLayers, options: .repeating, isActive: dictation.isRecording)
+                    // The waveform ripples back and forth while it listens; a one-way
+                    // sweep leaves every bar dim between passes.
+                    .symbolEffect(.variableColor.iterative.dimInactiveLayers.reversing, options: .repeat(.continuous), isActive: dictation.isRecording)
             }
         }
         .frame(width: size, height: size)
