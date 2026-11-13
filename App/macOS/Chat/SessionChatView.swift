@@ -149,7 +149,7 @@ struct SessionChatView: View {
           ProgressView()
         }
       }
-      .safeAreaBar(edge: .bottom) {
+      .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
             NewChatPicker(hosts: app.hosts, host: host, draft: draft)
