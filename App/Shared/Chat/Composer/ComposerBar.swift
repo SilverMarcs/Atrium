@@ -27,9 +27,9 @@ struct ComposerBar: View {
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
     @State private var width: CGFloat = 0
-    /// After a send, the resting circle (Stop, or none, as the draft has
-    /// gone) shows once the composer has dropped back into place, rather
-    /// than riding down from the panel's end. Otherwise it melts out of the
+    /// After a send, the resting circle shows once the composer has
+    /// dropped back into place, rather than riding down from the panel's
+    /// end. Otherwise it melts out of the
     /// panel as it collapses.
     @State private var showsRestingAction = true
     @State private var revealTask: Task<Void, Never>?
@@ -56,19 +56,16 @@ struct ComposerBar: View {
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
     private var showsAttach: Bool { item?.task.actions.contains(.attachImages) != false }
     private var showsCancelEdit: Bool { composer.messageEdit != nil }
-    /// At rest, Send has a circle of its own once there's something to send,
-    /// as Stop does while the agent works; expanded, the panel's Send button
-    /// stands in for both.
+    /// At rest, Send always has a circle of its own, disabled until there's
+    /// content or active dictation. It becomes Stop while the agent works
+    /// with nothing to send; expanded, the panel's button stands in for both.
     private var restingAction: ComposerBarActionButton.Action? {
         #if os(macOS)
         // Never at rest.
         return nil
         #else
         if let item, composer.offersStop(for: item.task.actions) { return .stop }
-        // Dictating shows Send only once the recording has become text.
-        if composer.hasContent { return .send }
-        if item?.task.actions.contains(.interrupt) == true { return .stop }
-        return nil
+        return .send
         #endif
     }
 
@@ -130,7 +127,7 @@ struct ComposerBar: View {
                             ComposerBarActionButton(
                                 action: action,
                                 isEditing: composer.messageEdit != nil,
-                                isEnabled: action == .stop || composer.canSend,
+                                isEnabled: action == .stop || (item != nil && composer.canSend),
                                 isHidden: isExpanded || !showsRestingAction
                             ) {
                                 if action == .send { send() } else if let item { composer.stop(item) }

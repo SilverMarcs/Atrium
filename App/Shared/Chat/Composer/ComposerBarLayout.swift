@@ -9,7 +9,7 @@ nonisolated enum ComposerBarPart {
     case editor
     case dictation
     case send
-    /// The circle after the field at rest: Send with a draft, else Stop.
+    /// The circle after the field at rest: Send, or Stop while the agent works.
     case action
     /// The Mac's permission-mode menu, after the attachment button.
     case permissions

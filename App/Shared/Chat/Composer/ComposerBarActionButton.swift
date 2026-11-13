@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The glass circle after the resting composer bar's field: Send, tinted,
-/// once there's a draft, or Stop while the agent works. Hidden, its glass
-/// melts into the expanded panel.
+/// enabled for content or dictation, or Stop while the agent works. Hidden,
+/// its glass melts into the expanded panel.
 struct ComposerBarActionButton: View {
     enum Action { case send, stop }
 
@@ -27,7 +27,8 @@ struct ComposerBarActionButton: View {
         .glassEffect(glass, in: .circle)
         .scaleEffect(isHidden ? 0.8 : 1)
         .buttonStyle(.plain)
-        .allowsHitTesting(!isHidden && isEnabled)
+        .disabled(!isEnabled)
+        .allowsHitTesting(!isHidden)
         .accessibilityHidden(isHidden)
     }
 

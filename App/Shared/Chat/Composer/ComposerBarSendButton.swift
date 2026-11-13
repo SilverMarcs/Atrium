@@ -31,7 +31,7 @@ struct ComposerBarSendButton: View {
             Button(title, systemImage: composer.messageEdit == nil ? "arrow.up" : "checkmark", action: send)
                 .buttonStyle(ComposerBarSendButtonStyle(diameter: diameter, fill: .accentColor, isBusy: isSubmittingEdit))
                 .opacity(isSendDisabled && !isSubmittingEdit ? 0.35 : 1)
-                .allowsHitTesting(!isSendDisabled)
+                .disabled(isSendDisabled)
                 .help(title)
                 #if os(macOS)
                 .keyboardShortcut(.return, modifiers: .command)
