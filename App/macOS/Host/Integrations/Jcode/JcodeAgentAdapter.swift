@@ -29,6 +29,7 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
         let conversation = JcodeLiveConversation()
         var status: AgentThreadStatus = .idle
         var reloading: Task<Void, Never>?
+        var reloadID: UUID?
         /// A name to give the session once its first turn has saved it.
         var pendingTitle: String?
         init(connection: JcodeConnection) { self.connection = connection }
@@ -108,8 +109,8 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
             connect(session, id: id)
             do {
                 _ = try await connection.request(["req": "attach_session", "session_id": id])
-                let history = try await connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60))
-                session.conversation.restore(history)
+                try await connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60),
+                                             receivingReply: { session.conversation.restore($0) })
             } catch {
                 connection.close()
                 throw error
@@ -197,14 +198,16 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
     /// Reads the saved history again once a turn ends, which replaces what it streamed.
     private func reload(_ session: Session, id: String, then finish: (() -> Void)? = nil) {
         session.reloading?.cancel()
+        let reloadID = UUID()
+        session.reloadID = reloadID
         session.reloading = Task { [weak self, weak session] in
             guard let session else { return }
-            let history = try? await session.connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60))
-            guard !Task.isCancelled else { return }
-            if let history {
+            _ = try? await session.connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60), receivingReply: { [weak self, weak session] history in
+                guard let session, session.reloadID == reloadID, session.reloading?.isCancelled == false else { return }
                 session.conversation.restore(history)
                 self?.onEvent?(.transcriptChanged(sessionID: id))
-            }
+            })
+            guard !Task.isCancelled else { return }
             finish?()
         }
     }
@@ -263,7 +266,8 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
             update(session, id: thread.sessionID, status: .processing)
             onEvent?(.transcriptChanged(sessionID: thread.sessionID))
             do {
-                try await session.connection.request(request, timeout: .seconds(60)) { $0["ev"] as? String == "message_accepted" }
+                try await session.connection.request(request, timeout: .seconds(60),
+                                                     acknowledgedBy: { $0["ev"] as? String == "message_accepted" })
             } catch {
                 reload(session, id: thread.sessionID)
                 update(session, id: thread.sessionID, status: .idle)
@@ -302,8 +306,8 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {
         let session = try await session(of: thread)
         try await rewind(thread.sessionID, before: messageID, on: session.connection)
-        let history = try await session.connection.request(["req": "get_history", "session_id": thread.sessionID], timeout: .seconds(60))
-        session.conversation.restore(history)
+        try await session.connection.request(["req": "get_history", "session_id": thread.sessionID], timeout: .seconds(60),
+                                             receivingReply: { session.conversation.restore($0) })
         onEvent?(.transcriptChanged(sessionID: thread.sessionID))
         return session.conversation.messages
     }
@@ -410,7 +414,8 @@ final class JcodeAgentAdapter: AgentProviderAdapter {
             _ = try await connection.request(["req": "attach_session", "session_id": id])
             if let messageID { try await rewind(id, before: messageID, on: connection) }
             _ = try? await connection.request(["req": "rename_session", "session_id": id, "title": thread.forkTitle])
-            session.conversation.restore(try await connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60)))
+            try await connection.request(["req": "get_history", "session_id": id], timeout: .seconds(60),
+                                         receivingReply: { session.conversation.restore($0) })
         } catch {
             connection.close()
             throw error
