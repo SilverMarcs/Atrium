@@ -15,8 +15,21 @@ final class JcodeConnection {
     private var nextID = 0
     private var pending: [Int: Pending] = [:]
 
+    /// Reply payloads stay on the main actor, including across continuation delivery.
+    @MainActor
+    private final class Reply {
+        let frame: [String: Any]
+        init(_ frame: [String: Any]) { self.frame = frame }
+    }
+
+    @MainActor
+    private final class Opening {
+        var resumed = false
+    }
+
     private struct Pending {
-        let continuation: CheckedContinuation<[String: Any], Error>
+        let continuation: CheckedContinuation<Reply, Error>
+        let receivingReply: (([String: Any]) -> Void)?
         /// Requests the API answers with an event rather than a reply, such as
         /// `send_message`, which `message_accepted` acknowledges.
         let acknowledgement: (([String: Any]) -> Bool)?
@@ -28,18 +41,18 @@ final class JcodeConnection {
         let connection = NWConnection(to: .unix(path: path), using: .tcp)
         self.connection = connection
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            let opening = Opening()
             connection.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor [weak self] in
                     guard let self, self.connection === connection else { return }
                     switch state {
-                    case .ready where !resumed:
-                        resumed = true
+                    case .ready where !opening.resumed:
+                        opening.resumed = true
                         self.isOpen = true
                         self.receive(connection)
                         continuation.resume()
                     case .failed(let error), .waiting(let error):
-                        if !resumed { resumed = true; continuation.resume(throwing: error) }
+                        if !opening.resumed { opening.resumed = true; continuation.resume(throwing: error) }
                         self.fail(error)
                     default: break
                     }
@@ -55,8 +68,11 @@ final class JcodeConnection {
     }
 
     /// Sends a request and returns its reply, or throws the error the API answered with.
+    /// `receivingReply` applies a successful reply before the next frame is handled,
+    /// so a history restore cannot erase live events from the same socket read.
     @discardableResult
     func request(_ body: [String: Any], timeout: Duration = .seconds(30),
+                 receivingReply: (([String: Any]) -> Void)? = nil,
                  acknowledgedBy acknowledgement: (([String: Any]) -> Bool)? = nil) async throws -> [String: Any] {
         guard let connection, isOpen else { throw IntegrationError(message: "Jcode disconnected.") }
         nextID += 1
@@ -71,9 +87,9 @@ final class JcodeConnection {
             self?.finish(id, with: .failure(IntegrationError(message: "Jcode didn’t answer in time.")))
         }
         defer { deadline.cancel() }
-        return try await withTaskCancellationHandler {
+        let reply: Reply = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                pending[id] = Pending(continuation: continuation, acknowledgement: acknowledgement)
+                pending[id] = Pending(continuation: continuation, receivingReply: receivingReply, acknowledgement: acknowledgement)
                 connection.send(content: line, completion: .contentProcessed { [weak self] error in
                     guard let error else { return }
                     Task { @MainActor [weak self] in self?.finish(id, with: .failure(error)) }
@@ -82,6 +98,7 @@ final class JcodeConnection {
         } onCancel: {
             Task { @MainActor [weak self] in self?.finish(id, with: .failure(CancellationError())) }
         }
+        return reply.frame
     }
 
     func close() {
@@ -96,7 +113,8 @@ final class JcodeConnection {
 
     private func finish(_ id: Int, with result: Result<[String: Any], Error>) {
         guard let request = pending.removeValue(forKey: id) else { return }
-        request.continuation.resume(with: result)
+        if case .success(let frame) = result { request.receivingReply?(frame) }
+        request.continuation.resume(with: result.map(Reply.init))
     }
 
     private func receive(_ connection: NWConnection) {
