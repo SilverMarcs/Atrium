@@ -101,10 +101,24 @@ struct AgentInteractionSheet: View {
                         Button("Decline", role: .destructive) { submit(AgentDecision(allowed: false)) }
                     }
                     ToolbarItem(placement: .confirmationAction) {
+                        #if os(iOS)
+                        if isResponding {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Sending response")
+                        } else {
+                            Button(drafts.isEmpty ? "Allow" : "Submit", systemImage: drafts.isEmpty ? "checkmark" : "arrow.up", role: .confirm) {
+                                submit(AgentDecision(allowed: true, answers: Dictionary(uniqueKeysWithValues: drafts.map { ($0.id, $0.answers) })))
+                            }
+                            .labelStyle(.iconOnly)
+                            .disabled(!drafts.allSatisfy { !$0.answers.isEmpty })
+                        }
+                        #else
                         Button(drafts.isEmpty ? "Allow" : "Submit", role: .confirm) {
                             submit(AgentDecision(allowed: true, answers: Dictionary(uniqueKeysWithValues: drafts.map { ($0.id, $0.answers) })))
                         }
                         .disabled(!drafts.allSatisfy { !$0.answers.isEmpty })
+                        #endif
                     }
                 }
                 if !request.supportsResponse {
@@ -112,9 +126,11 @@ struct AgentInteractionSheet: View {
                         Button("Done") { dismiss() }
                     }
                 }
+                #if os(macOS)
                 if isResponding {
                     ToolbarItem { ProgressView().controlSize(.small) }
                 }
+                #endif
             }
             .disabled(isResponding)
         }
