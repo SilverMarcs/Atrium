@@ -27,12 +27,10 @@ struct ComposerBar: View {
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
     @State private var width: CGFloat = 0
-    /// After a send, the resting circle shows once the composer has
-    /// dropped back into place, rather than riding down from the panel's
-    /// end. Otherwise it melts out of the
-    /// panel as it collapses.
-    @State private var showsRestingAction = true
-    @State private var revealTask: Task<Void, Never>?
+    @State private var keyboardCloseTask: Task<Void, Never>?
+    #if os(iOS)
+    @State private var menusReady = false
+    #endif
 
     /// Whether the editor has focus. It follows the editor rather than the
     /// request for focus, so the composer only starts to grow or shrink
@@ -54,19 +52,17 @@ struct ComposerBar: View {
         )
     }
     private var isSubmittingEdit: Bool { composer.messageEdit?.isSubmitting == true }
+    private var areMenusVisible: Bool {
+        #if os(iOS)
+        isExpanded && menusReady
+        #else
+        true
+        #endif
+    }
     private var showsAttach: Bool { item?.task.actions.contains(.attachImages) != false }
     private var showsCancelEdit: Bool { composer.messageEdit != nil }
-    /// At rest, Send always has a circle of its own, disabled until there's
-    /// content or active dictation. It becomes Stop while the agent works
-    /// with nothing to send; expanded, the panel's button stands in for both.
-    private var restingAction: ComposerBarActionButton.Action? {
-        #if os(macOS)
-        // Never at rest.
-        return nil
-        #else
-        if let item, composer.offersStop(for: item.task.actions) { return .stop }
-        return .send
-        #endif
+    private var action: ComposerBarActionButton.Action {
+        composer.sendState(for: item) == .stop ? .stop : .send
     }
 
     var body: some View {
@@ -121,19 +117,33 @@ struct ComposerBar: View {
                             .composerBarPart(.cancelEdit)
                         }
 
-                        // Expanded, its circle melts into the panel's end, where
-                        // Send stands in for it.
-                        if let action = restingAction {
-                            ComposerBarActionButton(
-                                action: action,
-                                isEditing: composer.messageEdit != nil,
-                                isEnabled: action == .stop || (item != nil && composer.canSend),
-                                isHidden: isExpanded || !showsRestingAction
-                            ) {
-                                if action == .send { send() } else if let item { composer.stop(item) }
+                        // The resting circle joins the panel's glass. Its
+                        // content is drawn above the container so the glass
+                        // transition cannot fade the action itself.
+                        ComposerBarActionGlass(
+                            action: action,
+                            isExpanded: isExpanded,
+                            isEnabled: action == .stop || (item != nil && composer.canSend),
+                            isBusy: composer.sendState(for: item) == .sending
+                        )
+                        .composerBarPart(.action)
+                        #if os(iOS)
+                        // Both overlaid layouts must reserve the same menu
+                        // row, including when editing at a narrow iPad width.
+                        if let item, item.offersComposerMenus {
+                            Color.clear
+                                .frame(width: ComposerBarLayout.menuControlSize, height: ComposerBarLayout.menuControlSize)
+                                .composerBarPart(.model)
+                            if item.task.permissionSelection(using: item.host.models(for: item.task.provider)) != nil {
+                                Color.clear
+                                    .frame(width: ComposerBarLayout.menuControlSize, height: ComposerBarLayout.menuControlSize)
+                                    .composerBarPart(.permissions)
                             }
-                            .composerBarPart(.action)
                         }
+                        if dictationSettings.isEnabled {
+                            Color.clear.frame(width: 44).composerBarPart(.dictation)
+                        }
+                        #endif
                     }
                 }
 
@@ -143,9 +153,9 @@ struct ComposerBar: View {
                 ComposerBarLayout(isExpanded: isExpanded, draft: composer.draft) {
                     if showsAttach { Color.clear.composerBarPart(.attach) }
                     if showsCancelEdit { Color.clear.composerBarPart(.cancelEdit) }
-                    if restingAction != nil { Color.clear.composerBarPart(.action) }
 
                     ComposerTextView(
+                        composer: composer,
                         text: $composer.draft,
                         isFocused: $composer.isFocused,
                         isEditing: $isEditing,
@@ -158,16 +168,22 @@ struct ComposerBar: View {
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
 
-                    #if os(macOS)
                     if let item, item.offersComposerMenus {
                         ComposerModelMenu(item: item)
+                            .opacity(areMenusVisible ? 1 : 0)
+                            .allowsHitTesting(areMenusVisible)
+                            .accessibilityHidden(!areMenusVisible)
+                            .animation(nil, value: areMenusVisible)
                             .composerBarPart(.model)
                         if let permissions = item.task.permissionSelection(using: item.host.models(for: item.task.provider)) {
                             ComposerPermissionMenu(item: item, selection: permissions)
+                                .opacity(areMenusVisible ? 1 : 0)
+                                .allowsHitTesting(areMenusVisible)
+                                .accessibilityHidden(!areMenusVisible)
+                                .animation(nil, value: areMenusVisible)
                                 .composerBarPart(.permissions)
                         }
                     }
-                    #endif
 
                     if dictationSettings.isEnabled {
                         ComposerDictationButton(composer: composer, isInline: true, symbolScale: .large)
@@ -175,17 +191,19 @@ struct ComposerBar: View {
                             .composerBarPart(.dictation)
                     }
 
-                    // Waits hidden at the field's end, so it travels with the
-                    // field as it grows. Becomes Stop while the agent works with
-                    // nothing to send.
-                    ComposerBarSendButton(item: item, send: send)
-                        .scaleEffect(isExpanded ? 1 : 0.5)
-                        .opacity(isExpanded ? 1 : 0)
-                        // Gone as soon as the panel starts to drop.
-                        .animation(isExpanded ? .easeOut(duration: 0.12) : nil, value: isExpanded)
-                        .allowsHitTesting(isExpanded)
-                        .accessibilityHidden(!isExpanded)
-                        .composerBarPart(.send)
+                    // One Button keeps its identity and layout frame in both
+                    // composer states, outside Liquid Glass's content animation.
+                    ComposerBarActionButton(
+                        action: action,
+                        isExpanded: isExpanded,
+                        isEditing: composer.messageEdit != nil,
+                        isEnabled: action == .stop || (item != nil && composer.canSend),
+                        isBusy: composer.sendState(for: item) == .sending
+                    ) {
+                        if action == .send { send() } else if let item { composer.stop(item) }
+                    }
+                    .composerBarPart(.action)
+
                 }
             }
         }
@@ -208,7 +226,7 @@ struct ComposerBar: View {
         // smoothly, and the timeline follows it.
         .animation(.smooth(duration: 0.25), value: expandedEditorHeight)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .animation(.smooth(duration: 0.25), value: restingAction)
+        .modifier(ComposerHaptics(composer: composer, item: item))
         .onChange(of: composer.messageEdit?.id) { _, id in
             editFocusTask?.cancel()
             guard id != nil else { return }
@@ -219,6 +237,15 @@ struct ComposerBar: View {
             }
         }
         #if os(iOS)
+        .task(id: isExpanded) {
+            menusReady = false
+            guard isExpanded else { return }
+            do { try await Task.sleep(for: .milliseconds(10)) }
+            catch { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { menusReady = true }
+        }
         .onChange(of: composer.editedPromptID) { _, _ in
             composer.isFocused = false
         }
@@ -227,8 +254,7 @@ struct ComposerBar: View {
         // focus; the next task's first focus must register as a change.
         .onDisappear {
             editFocusTask?.cancel()
-            revealTask?.cancel()
-            showsRestingAction = true
+            keyboardCloseTask?.cancel()
             composer.isFocused = false
         }
     }
@@ -242,16 +268,12 @@ struct ComposerBar: View {
             composer.isFocused = false
             return
         }
-        // The prompt goes up to the top first, and the keyboard closes once
-        // it's there, as it did from the system bar. The resting circle
-        // shows once the composer has dropped back into place.
-        showsRestingAction = false
-        revealTask?.cancel()
-        revealTask = Task {
+        // Let the prompt begin its flight before closing the keyboard. The
+        // same action button then travels with the collapsing composer.
+        keyboardCloseTask?.cancel()
+        keyboardCloseTask = Task {
             do { try await Task.sleep(for: Self.keyboardCloseDelay) } catch { return }
             composer.isFocused = false
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            withAnimation(.smooth(duration: 0.3)) { showsRestingAction = true }
         }
         #endif
     }

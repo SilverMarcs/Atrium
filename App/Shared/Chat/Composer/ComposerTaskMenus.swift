@@ -2,7 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The task's model menu in the Mac composer's row, before dictation.
+/// The task's model menu in the composer's row, before dictation.
 struct ComposerModelMenu: View {
     let item: HostTask
 
@@ -17,7 +17,7 @@ struct ComposerModelMenu: View {
     }
 }
 
-/// The task's permission-mode menu in the Mac composer's row, after the
+/// The task's permission-mode menu in the composer's row, after the
 /// attachment button. It asks before restarting the chat.
 struct ComposerPermissionMenu: View {
     let item: HostTask
@@ -34,16 +34,24 @@ struct ComposerPermissionMenu: View {
 
 extension HostTask {
     /// Whether the composer offers the chat's model and permission menus:
-    /// not for a new chat, whose pickers sit above it, nor for a side chat,
-    /// which runs with its parent's.
+    /// side chats run with their parent's settings. Only Mac new chats keep
+    /// their model and permission pickers above the composer.
     var offersComposerMenus: Bool {
-        !TaskDraft.isDraftID(task.id) && !task.isSubagent && !task.isSideChat
+        guard !task.isSubagent, !task.isSideChat else { return false }
+        #if os(macOS)
+        return !TaskDraft.isDraftID(task.id)
+        #else
+        return true
+        #endif
     }
 }
 
 private extension View {
     func composerRowMenuStyle() -> some View {
-        menuStyle(.button)
+        self
+            #if os(macOS)
+            .menuStyle(.button)
+            #endif
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
     }

@@ -31,13 +31,6 @@ struct TaskDetailScreen: View {
     private var item: HostTask? { hosts.task(resolvedRef) }
     private var task: WireTask? { item?.task }
 
-    /// Drafts choose a model beside the composer; only created chats also
-    /// show the picker in the detail toolbar or More menu.
-    private var models: [AgentModel] {
-        guard let task, !TaskDraft.isDraftID(task.id), !task.isSubagent, !task.isSideChat else { return [] }
-        return host?.models(for: task.provider) ?? []
-    }
-
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var newChatPlacement: ToolbarItemPlacement { isPhone ? .primaryAction : .navigation }
 
@@ -102,11 +95,11 @@ struct TaskDetailScreen: View {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat() }
                     }
                 }
-                if let item, !task.isSideChat, task.workspaceID != nil || !models.isEmpty || item.hasSubagents
+                if let item, !task.isSideChat, task.workspaceID != nil || item.hasSubagents
                     || item.sideChat != nil || task.actions.contains(.sideChat) || !task.pullRequests.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
-                            item: item, models: models,
+                            item: item,
                             showingScratchPad: $showingScratchPad
                         )
                     }

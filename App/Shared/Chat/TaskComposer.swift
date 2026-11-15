@@ -21,6 +21,8 @@ final class TaskComposer {
         }
     }
     private(set) var isSubmittingDictation = false
+    private(set) var isQueueingPrompt = false
+    private(set) var feedback: ComposerFeedback?
     /// Changes when a transcript lands in the draft, so the field can take focus.
     private(set) var focusRequestID: UUID?
     private var ordinaryImages: [ComposerImage] = []
@@ -36,6 +38,7 @@ final class TaskComposer {
     var attachmentError: String?
 
     @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
+    @ObservationIgnored weak var textEditor: (any ComposerTextInserting)?
     var isPickingPhotos = false
     /// Mirrors the composer's focus, where the timeline observes it to scroll
     /// to the latest message (`FocusState` is view-local).
@@ -74,14 +77,25 @@ final class TaskComposer {
         messageEdit = nil
     }
 
-    /// Starts recording, or stops and appends its transcript to the draft.
+    /// Starts recording, or stops and inserts its transcript at the editor's selection.
     func toggleDictation(using settings: DictationSettings) {
         guard !isSubmittingDictation, settings.isEnabled else { return }
-        dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey)) { [weak self] text in
+        dictation.toggle(provider: OpenAITranscriber(apiKey: settings.apiKey), feedback: { [weak self] kind in
+            self?.provideFeedback(kind)
+        }) { [weak self] text in
             guard let self else { return }
-            draft += (draft.isEmpty || draft.last?.isWhitespace == true ? "" : " ") + text
+            draft = textEditor?.insertDictation(text, in: draft)
+                ?? ComposerDictationInsertion(transcript: text, draft: draft, selection: nil).applying(to: draft)
             focusRequestID = UUID()
+            provideFeedback(.transcriptReady)
         }
+    }
+
+    private func provideFeedback(_ kind: ComposerFeedback.Kind) {
+        // Send while recording is one action, with immediate feedback. Its
+        // transcription and eventual send must not produce more taps.
+        guard !isSubmittingDictation else { return }
+        feedback = ComposerFeedback(kind: kind)
     }
 
     var remainingImageSlots: Int { max(Self.maxImages - images.count - (messageEdit?.images.count ?? 0), 0) }
@@ -95,6 +109,18 @@ final class TaskComposer {
     /// nothing to send.
     func offersStop(for actions: TaskActions) -> Bool {
         actions.contains(.interrupt) && !hasContent && !dictation.isActive && !isSubmittingDictation
+    }
+
+    func sendState(for item: HostTask?) -> ComposerSendState {
+        let isDelivering = item.map { item in
+            item.host.conversations.isSending(in: item.task.id)
+                || (item.host.conversations.tasksAwaitingAgent[item.task.id] != nil
+                    && !item.task.actions.contains(.interrupt))
+        } ?? false
+        return ComposerSendState(
+            isBusy: isSubmittingDictation || messageEdit?.isSubmitting == true || isQueueingPrompt || isDelivering,
+            offersStop: item.map { offersStop(for: $0.task.actions) } == true
+        )
     }
 
     /// Whether there's something to send, or a recording to transcribe and
@@ -175,9 +201,10 @@ final class TaskComposer {
         from sourceFrame: CGRect? = nil,
         mode: SendMode = .steer
     ) -> Bool {
-        guard !isSubmittingDictation else { return false }
+        guard sendState(for: item) != .sending else { return false }
         if dictation.isActive {
             let session = dictation.sessionID
+            provideFeedback(.send)
             isSubmittingDictation = true
             Task {
                 defer { isSubmittingDictation = false }
@@ -210,6 +237,7 @@ final class TaskComposer {
             return false
         }
         if mode == .queue, task.status.isWorking {
+            provideFeedback(.send)
             queue(text, images: images, to: item)
         } else {
             _ = send(text, images: images.map(\.data), to: item, animator: animator, from: sourceFrame)
@@ -222,7 +250,9 @@ final class TaskComposer {
     /// Has the prompt wait for the agent's turn to end. One the host turns
     /// down comes back to the composer, if it's still empty.
     private func queue(_ text: String, images: [ComposerImage], to item: HostTask) {
+        isQueueingPrompt = true
         Task {
+            defer { isQueueingPrompt = false }
             do {
                 try await item.host.queuePrompt(text, images: images.map(\.data), to: item.task.id)
             } catch {
@@ -261,6 +291,7 @@ final class TaskComposer {
     /// Stops the agent's turn. The prompt queued behind it comes back to the
     /// composer rather than starting the next turn.
     func stop(_ item: HostTask) {
+        provideFeedback(.stop)
         Task {
             do {
                 if let queued = try await item.host.interrupt(item.task.id) { restore(queued) }
@@ -280,6 +311,7 @@ final class TaskComposer {
     }
 
     private func send(_ text: String, images: [Data], to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> UUID {
+        provideFeedback(.send)
         let animationSource = sourceFrame ?? animator.sourceFrame?()
         animator.willSend()
         let promptID = item.host.sendPrompt(text, images: images, to: item.task.id)

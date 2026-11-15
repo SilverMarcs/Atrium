@@ -2,7 +2,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's model picker, named for the model and effort it runs with: a
-/// submenu of More on iPhone and iPad, and a menu in the composer's row on Mac.
+/// menu in the expanded composer, or a row in the new-chat pickers.
 struct TaskModelMenu: View {
   let provider: AgentProvider
   let selection: TaskModelSelection
@@ -23,6 +23,19 @@ struct TaskModelMenu: View {
           Image(systemName: "cpu")
         }
       } else if isComposerRow {
+        #if os(iOS)
+        ComposerControlLabel {
+          Label {
+            Text("Model")
+          } icon: {
+            Image(systemName: ComposerReasoningSymbol.name(for: selection.reasoningEffort))
+              .symbolRenderingMode(.palette)
+              .foregroundStyle(.blue, .secondary)
+          }
+            .labelStyle(.iconOnly)
+            .contentTransition(.symbolEffect(.replace))
+        }
+        #else
         ComposerMenuLabel {
           Text(name)
           if !detail.isEmpty {
@@ -30,6 +43,7 @@ struct TaskModelMenu: View {
               .foregroundStyle(.tertiary)
           }
         }
+        #endif
       } else {
         Label {
           Text([name, detail].filter { !$0.isEmpty }.joined(separator: " · "))

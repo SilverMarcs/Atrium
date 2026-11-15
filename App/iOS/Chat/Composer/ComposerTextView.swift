@@ -6,6 +6,7 @@ import SwiftUI
 /// The keyboard's Return adds a line. A hardware keyboard's Return sends,
 /// and Shift- or Option-Return adds a line.
 struct ComposerTextView: UIViewRepresentable {
+    let composer: TaskComposer
     @Binding var text: String
     /// Asks for focus, and follows it.
     @Binding var isFocused: Bool
@@ -30,11 +31,13 @@ struct ComposerTextView: UIViewRepresentable {
         let editor = ComposerEditor()
         editor.delegate = context.coordinator
         editor.text = text
+        composer.textEditor = editor
         pasteDelegate.configure(editor)
         return editor
     }
 
     func updateUIView(_ editor: ComposerEditor, context: Context) {
+        composer.textEditor = editor
         context.coordinator.text = $text
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
@@ -96,8 +99,17 @@ struct ComposerTextView: UIViewRepresentable {
 
 /// The text view behind `ComposerTextView`, with a placeholder, a single
 /// truncated line at rest, and Return-to-send on hardware keyboards.
-final class ComposerEditor: UITextView {
+final class ComposerEditor: UITextView, ComposerTextInserting {
     var onReturn: (() -> Void)?
+
+    func insertDictation(_ transcript: String, in draft: String) -> String? {
+        guard text == draft, markedTextRange == nil, isEditable else { return nil }
+        let insertion = ComposerDictationInsertion(transcript: transcript, draft: draft, selection: selectedRange)
+        selectedRange = insertion.range
+        insertText(insertion.text)
+        textDidChange()
+        return text
+    }
 
     var placeholder = "" {
         didSet {

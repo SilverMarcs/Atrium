@@ -21,15 +21,13 @@ struct HostsSheet: View {
                                 .tint(.red)
                         }
                     }
+                    NavigationLink(value: HostsRoute.pair) {
+                        Label("Pair New Host", systemImage: "plus")
+                    }
                 } header: {
                     Text("Paired Hosts")
                 } footer: {
                     Text("Tap a host to rename it on this iPhone.")
-                }
-                Section {
-                    NavigationLink(value: HostsRoute.pair) {
-                        Label("Pair New Host", systemImage: "plus")
-                    }
                 }
                 SendModeSettingsSection()
                 DictationSettingsSection()

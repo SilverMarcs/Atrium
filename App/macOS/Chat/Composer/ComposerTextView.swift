@@ -8,6 +8,7 @@ import SwiftUI
 /// `enterToSendChat` default makes Return send; Shift- or Option-Return then
 /// add a line.
 struct ComposerTextView: NSViewRepresentable {
+    let composer: TaskComposer
     @Binding var text: String
     /// Asks for focus, and follows it.
     @Binding var isFocused: Bool
@@ -31,6 +32,7 @@ struct ComposerTextView: NSViewRepresentable {
         let editor = ComposerEditor()
         editor.delegate = context.coordinator
         editor.string = text
+        composer.textEditor = editor
         editor.onFocusChange = { [coordinator = context.coordinator] focused in coordinator.focusDidChange(focused) }
 
         let scrollView = NSScrollView()
@@ -51,6 +53,7 @@ struct ComposerTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let editor = scrollView.documentView as? ComposerEditor else { return }
+        composer.textEditor = editor
         context.coordinator.text = $text
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
@@ -112,7 +115,14 @@ struct ComposerTextView: NSViewRepresentable {
 
 /// The text view behind `ComposerTextView`, with a placeholder, attachment
 /// pasting and Return-to-send.
-final class ComposerEditor: NSTextView {
+final class ComposerEditor: NSTextView, ComposerTextInserting {
+    func insertDictation(_ transcript: String, in draft: String) -> String? {
+        guard string == draft, !hasMarkedText(), isEditable else { return nil }
+        let insertion = ComposerDictationInsertion(transcript: transcript, draft: draft, selection: selectedRange())
+        insertText(insertion.text, replacementRange: insertion.range)
+        return string
+    }
+
     var onReturn: (() -> Void)?
     var onFocusChange: ((Bool) -> Void)?
     weak var pasteDelegate: ComposerPasteDelegate?

@@ -8,12 +8,11 @@ nonisolated enum ComposerBarPart {
     case cancelEdit
     case editor
     case dictation
-    case send
     /// The circle after the field at rest: Send, or Stop while the agent works.
     case action
-    /// The Mac's permission-mode menu, after the attachment button.
+    /// The permission-mode menu, after the attachment button.
     case permissions
-    /// The Mac's model menu, before dictation.
+    /// The model menu, before dictation.
     case model
 }
 
@@ -46,6 +45,7 @@ struct ComposerBarLayout: Layout {
 
     /// The system bottom bar's metrics, which the composer at rest matches.
     static let rowHeight: CGFloat = 48
+    static let menuControlSize: CGFloat = 44
     static let restingMargin: CGFloat = 28
     static let restingSpacing: CGFloat = 12
     /// Expanded, the panel nearly reaches the edges, as a focused search
@@ -70,7 +70,8 @@ struct ComposerBarLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 402
         guard isExpanded else { return CGSize(width: width, height: Self.rowHeight) }
-        return CGSize(width: width, height: editorHeight(in: width) + Self.rowHeight)
+        return CGSize(width: width, height: editorHeight(in: width) + Self.rowHeight
+                      + (menusNeedOwnRow(in: width, subviews: subviews) ? Self.rowHeight : 0))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -105,10 +106,20 @@ struct ComposerBarLayout: Layout {
         return ComposerEditor.expandedHeight(of: draft, width: panelWidth, maximumLines: ComposerTextView.maximumLines)
     }
 
-    /// A button's frame centered in a row-sized cell.
-    private func centered(_ size: CGSize, inCellAt x: CGFloat, y: CGFloat, width: CGFloat = rowHeight) -> CGRect {
-        CGRect(x: x + (width - size.width) / 2, y: y + (Self.rowHeight - size.height) / 2,
-               width: size.width, height: size.height)
+    /// At narrow iPad widths, editing can add enough controls to need a
+    /// second row. Keep every menu reachable instead of overlapping them.
+    private func menusNeedOwnRow(in width: CGFloat, subviews: Subviews) -> Bool {
+        #if os(iOS)
+        let parts: [ComposerBarPart] = [.permissions, .model]
+        let menus = parts.reduce(CGFloat.zero) { $0 + size(of: $1, in: subviews).width }
+        guard menus > 0 else { return false }
+        let buttons = (has(.attach, in: subviews) ? Self.rowHeight : 0)
+            + (has(.cancelEdit, in: subviews) ? Self.rowHeight : 0)
+            + Self.rowHeight + size(of: .dictation, in: subviews).width
+        return menus + buttons + Self.menuSpacing * 4 > width - Self.expandedMargin * 2
+        #else
+        return false
+        #endif
     }
 
     private func restingFrames(in bounds: CGRect, subviews: Subviews) -> [ComposerBarPart: CGRect] {
@@ -137,10 +148,10 @@ struct ComposerBarLayout: Layout {
             frames[.dictation] = CGRect(x: x, y: y + (row - dictation.height) / 2, width: dictation.width, height: dictation.height)
             editorEnd = x
         }
-        // Send waits, hidden, at the field's end.
-        let send = size(of: .send, in: subviews)
-        frames[.send] = centered(send, inCellAt: trailing - row, y: y)
         frames[.editor] = CGRect(x: leading, y: y, width: max(editorEnd - leading, 0), height: row)
+        // Hidden menus keep real positions in the bottom row, so expanding
+        // never animates them from the layout's origin.
+        frames.merge(menuFrames(in: bounds, subviews: subviews)) { _, menu in menu }
         return frames
     }
 
@@ -149,37 +160,54 @@ struct ComposerBarLayout: Layout {
         let leading = bounds.minX + Self.expandedMargin
         let trailing = bounds.maxX - Self.expandedMargin
         let editorHeight = editorHeight(in: bounds.width)
-        let top = bounds.maxY - row - editorHeight
+        let separateMenus = menusNeedOwnRow(in: bounds.width, subviews: subviews)
+        let menuHeight = separateMenus ? row : 0
+        let top = bounds.maxY - row - menuHeight - editorHeight
         let rowY = bounds.maxY - row
         var frames: [ComposerBarPart: CGRect] = [:]
 
-        frames[.panel] = CGRect(x: leading, y: top, width: trailing - leading, height: editorHeight + row)
+        frames[.panel] = CGRect(x: leading, y: top, width: trailing - leading, height: editorHeight + menuHeight + row)
         frames[.editor] = CGRect(x: leading, y: top, width: trailing - leading, height: editorHeight)
         frames[.attach] = CGRect(x: leading, y: rowY, width: row, height: row)
         let cancelX = has(.attach, in: subviews) ? leading + row : leading
         frames[.cancelEdit] = CGRect(x: cancelX, y: rowY, width: row, height: row)
 
-        // The action circle melts into the cell Send takes.
         let sendCell = trailing - row
-        frames[.send] = centered(size(of: .send, in: subviews), inCellAt: sendCell, y: rowY)
         frames[.action] = CGRect(x: sendCell, y: rowY, width: row, height: row)
         let dictation = size(of: .dictation, in: subviews)
         let dictationX = sendCell - dictation.width
         frames[.dictation] = CGRect(x: dictationX, y: rowY + (row - dictation.height) / 2,
                                     width: dictation.width, height: dictation.height)
 
+        frames.merge(menuFrames(in: bounds, subviews: subviews)) { _, menu in menu }
+        return frames
+    }
+
+    private func menuFrames(in bounds: CGRect, subviews: Subviews) -> [ComposerBarPart: CGRect] {
+        let row = Self.rowHeight
+        let leading = bounds.minX + Self.expandedMargin
+        let trailing = bounds.maxX - Self.expandedMargin
+        let rowY = bounds.maxY - row
+        let sendCell = trailing - row
+        let dictationX = sendCell - size(of: .dictation, in: subviews).width
+        let separateMenus = menusNeedOwnRow(in: bounds.width, subviews: subviews)
+        var frames: [ComposerBarPart: CGRect] = [:]
+
         // The menus take what they need from the room between the buttons,
         // the permission menu after the attachment and cancel buttons, and
-        // the model menu first, as its name says most.
+        // the model at the trailing end.
         var menusStart = has(.attach, in: subviews) ? leading + row : leading + Self.menuSpacing * 2
         if has(.cancelEdit, in: subviews) { menusStart += row }
-        let menusEnd = (has(.dictation, in: subviews) ? dictationX : sendCell) - Self.menuSpacing
+        if separateMenus { menusStart = leading + Self.menuSpacing * 2 }
+        let menusEnd = separateMenus ? trailing - Self.menuSpacing * 2
+            : (has(.dictation, in: subviews) ? dictationX : sendCell) - Self.menuSpacing
+        let menuY = separateMenus ? rowY - row : rowY
         let room = max(menusEnd - menusStart, 0)
         let model = fitted(.model, width: room, in: subviews)
-        frames[.model] = CGRect(x: menusEnd - model.width, y: rowY + (row - model.height) / 2,
+        frames[.model] = CGRect(x: menusEnd - model.width, y: menuY + (row - model.height) / 2,
                                 width: model.width, height: model.height)
         let permissions = fitted(.permissions, width: max(room - model.width - Self.menuSpacing * 2, 0), in: subviews)
-        frames[.permissions] = CGRect(x: menusStart, y: rowY + (row - permissions.height) / 2,
+        frames[.permissions] = CGRect(x: menusStart, y: menuY + (row - permissions.height) / 2,
                                       width: permissions.width, height: permissions.height)
         return frames
     }

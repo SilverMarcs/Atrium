@@ -4,7 +4,7 @@ import SwiftUI
 /// The model picker's items: fast mode, when the task's model offers it, then
 /// each model its provider lists, opening that model's reasoning efforts.
 /// Choosing an effort, or a model without any, switches the task's next turns
-/// to it. On Mac, the models are headed by how much of the context the
+/// to it. The models are headed by how much of the context the
 /// conversation uses, once its provider has said.
 struct TaskModelMenuItems: View {
   let selection: TaskModelSelection
@@ -31,8 +31,9 @@ struct TaskModelMenuItems: View {
               guard model != currentModel else { return }
               select(model, reasoningEffort: nil)
             } label: {
-              Text(model.name)
+              TaskModelOptionLabel(title: model.name, isSelected: model == currentModel)
             }
+            .accessibilityAddTraits(model == currentModel ? .isSelected : [])
           } else {
             Menu {
               Picker(
@@ -50,18 +51,17 @@ struct TaskModelMenuItems: View {
               .accessibilityLabel("Reasoning effort")
               .pickerStyle(.inline)
             } label: {
-              Text(model.name)
+              TaskModelOptionLabel(title: model.name, isSelected: model == currentModel)
             }
+            .accessibilityAddTraits(model == currentModel ? .isSelected : [])
           }
         }
       } header: {
-        #if os(macOS)
         if let percent = selection.contextUsedPercent {
           Text("\(percent)% context used")
         } else {
           Text("Model")
         }
-        #endif
       }
     }
     .disabled(!selection.canSelectModel)

@@ -23,7 +23,11 @@ final class ComposerDictation {
     private var recorder: AVAudioRecorder?
     private var operation: Task<Void, Never>?
 
-    func toggle(provider: any AudioTranscribing, append: @escaping @MainActor (String) -> Void) {
+    func toggle(
+        provider: any AudioTranscribing,
+        feedback: @escaping @MainActor (ComposerFeedback.Kind) -> Void,
+        append: @escaping @MainActor (String) -> Void
+    ) {
         guard !isBusy else { return }
         if isRecording, let recorder {
             finishRecording = nil
@@ -50,7 +54,7 @@ final class ComposerDictation {
             error = nil
             sessionID = UUID()
             finishRecording = { [weak self] in
-                self?.toggle(provider: provider, append: append)
+                self?.toggle(provider: provider, feedback: feedback, append: append)
             }
             isBusy = true
             operation = Task {
@@ -68,6 +72,9 @@ final class ComposerDictation {
                     #if os(iOS)
                     let session = AVAudioSession.sharedInstance()
                     try session.setCategory(.record, mode: .default)
+                    // Recording otherwise suppresses the microphone-ready and
+                    // Send haptics while the audio session is active.
+                    try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
                     try session.setActive(true)
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
@@ -80,6 +87,7 @@ final class ComposerDictation {
                     self.recorder = recorder
                     guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                     isRecording = true
+                    feedback(.recordingStarted)
                 } catch {
                     let wasCancelled = Task.isCancelled
                     cancel()

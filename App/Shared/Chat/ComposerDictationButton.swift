@@ -17,7 +17,11 @@ struct ComposerDictationButton: View {
     private static let inlineWidth: CGFloat = 44
     #endif
 
-    private var color: Color { composer.dictation.isRecording ? .accentColor : .secondary }
+    private var state: ComposerDictationButtonState {
+        ComposerDictationButtonState(isRecording: composer.dictation.isRecording,
+                                    isBusy: composer.dictation.isBusy, isSending: composer.isSubmittingDictation)
+    }
+    private var color: Color { state == .recording ? .accentColor : .secondary }
 
     var body: some View {
         if settings.isEnabled {
@@ -30,43 +34,47 @@ struct ComposerDictationButton: View {
                     Text("M")
                         .hidden()
                         .accessibilityHidden(true)
-                        .overlay { DictationSymbol(dictation: composer.dictation, scale: symbolScale) }
+                        .overlay { DictationSymbol(state: state, scale: symbolScale) }
                         .frame(width: Self.inlineWidth)
                         .padding(.vertical, 8)
                         .contentShape(.rect)
                 } else {
-                    DictationSymbol(dictation: composer.dictation, scale: symbolScale)
+                    DictationSymbol(state: state, scale: symbolScale)
                 }
             }
             .foregroundStyle(color)
             // Toolbar buttons take their color from the tint.
             .tint(color)
             .disabled(composer.dictation.isBusy || composer.isSubmittingDictation)
-            .accessibilityLabel(composer.dictation.isBusy ? "Transcribing" : composer.dictation.isRecording ? "Finish Dictation" : "Dictate")
-            .accessibilityValue(composer.dictation.isRecording ? "Recording" : composer.dictation.isBusy ? "Processing" : "Ready")
-            .help(composer.dictation.isRecording ? "Finish dictation and transcribe" : "Dictate a message")
+            .accessibilityLabel(state == .transcribing ? "Transcribing" : state == .recording ? "Finish Dictation" : "Dictate")
+            .accessibilityValue(state == .transcribing ? "Processing" : state == .recording ? "Recording" : "Ready")
+            .help(state == .recording ? "Finish dictation and transcribe" : "Dictate a message")
         }
     }
 }
 
 /// A waveform, or a spinner while the recording is transcribed.
 private struct DictationSymbol: View {
-    let dictation: ComposerDictation
+    let state: ComposerDictationButtonState
     let scale: Image.Scale
     @ScaledMetric(relativeTo: .body) private var size = 20
 
     var body: some View {
         Group {
-            if dictation.isBusy {
+            if state == .transcribing {
                 ProgressView()
                     .controlSize(.small)
-            } else {
-                Label(dictation.isRecording ? "Finish Dictation" : "Dictate", systemImage: "waveform")
+            } else if state == .recording {
+                Label("Finish Dictation", systemImage: "waveform")
                     .labelStyle(.iconOnly)
                     .imageScale(scale)
                     // The waveform ripples back and forth while it listens; a one-way
                     // sweep leaves every bar dim between passes.
-                    .symbolEffect(.variableColor.iterative.dimInactiveLayers.reversing, options: .repeat(.continuous), isActive: dictation.isRecording)
+                    .symbolEffect(.variableColor.iterative.dimInactiveLayers.reversing, options: .repeat(.continuous))
+            } else {
+                Label("Dictate", systemImage: "waveform")
+                    .labelStyle(.iconOnly)
+                    .imageScale(scale)
             }
         }
         .frame(width: size, height: size)

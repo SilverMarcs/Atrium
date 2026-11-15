@@ -1,8 +1,7 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The task's permission mode: a menu in the composer's row on Mac, a row
-/// below the model menu on iPhone and iPad, and a new-chat row.
+/// The task's permission mode in the composer's row or a new-chat row.
 /// A mode the chat switches to only by restarting asks first, with an alert
 /// its owner shows through `restartMode`, as a menu inside another menu can't.
 struct TaskPermissionMenu: View {
@@ -32,10 +31,17 @@ struct TaskPermissionMenu: View {
                     Image(systemName: symbol)
                 }
             } else if isComposerRow {
+                #if os(iOS)
+                ComposerControlLabel(isWarning: selection.mode == .fullAccess) {
+                    Label(title, systemImage: symbol)
+                        .labelStyle(.iconOnly)
+                }
+                #else
                 ComposerMenuLabel {
                     Image(systemName: symbol)
                     Text(title)
                 }
+                #endif
             } else {
                 Label(title, systemImage: symbol)
             }
