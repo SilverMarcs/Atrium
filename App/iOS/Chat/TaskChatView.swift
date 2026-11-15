@@ -194,7 +194,7 @@ struct TaskChatView: View {
             // Three times the gap between messages, so the last one reads as
             // the end of the timeline rather than running into the composer.
             // A new chat's pickers sit closer, as the composer's own settings.
-            .contentMargins(.bottom, newChatDraft == nil ? ChatMessageSpacing.standard * 3 : 16, for: .scrollContent)
+            .contentMargins(.bottom, newChatDraft == nil ? ChatMessageSpacing.standard * 3 : 15, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {

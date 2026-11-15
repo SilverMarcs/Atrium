@@ -1,5 +1,8 @@
 import AtriumProtocol
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// One native decision form for the host and companion.
 struct AgentInteractionSheet: View {
@@ -9,6 +12,11 @@ struct AgentInteractionSheet: View {
     @State private var drafts: [AgentQuestionDraft]
     @State private var isResponding = false
     @State private var error: String?
+    #if os(iOS)
+    @FocusState private var focusedQuestion: String?
+    @State private var isKeyboardVisible = false
+    @State private var pendingDecision: AgentDecision?
+    #endif
 
     init(request: AgentInteraction, respond: @escaping (AgentDecision) async throws -> Void) {
         self.request = request
@@ -69,6 +77,9 @@ struct AgentInteractionSheet: View {
                         }
                         if draft.question.isSecret {
                             SecureField("Your answer", text: $draft.text, prompt: Text("Your answer"))
+                                #if os(iOS)
+                                .focused($focusedQuestion, equals: draft.id)
+                                #endif
                                 #if os(macOS)
                                 .labelsHidden()
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,6 +91,9 @@ struct AgentInteractionSheet: View {
                                 prompt: Text(draft.question.options.isEmpty ? "Your answer" : "Another answer"),
                                 axis: .vertical
                             )
+                                #if os(iOS)
+                                .focused($focusedQuestion, equals: draft.id)
+                                #endif
                                 #if os(macOS)
                                 .labelsHidden()
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,6 +152,16 @@ struct AgentInteractionSheet: View {
         .frame(minWidth: 420, idealWidth: 520, minHeight: 300, idealHeight: 440)
         #else
         .presentationDetents([.medium, .large])
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            isKeyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+            isKeyboardVisible = false
+            if let decision = pendingDecision {
+                pendingDecision = nil
+                sendResponse(decision)
+            }
+        }
         #endif
         .interactiveDismissDisabled(request.supportsResponse || isResponding)
         .alert("Couldn’t Send Response", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -148,6 +172,19 @@ struct AgentInteractionSheet: View {
     private func submit(_ decision: AgentDecision) {
         guard !isResponding else { return }
         isResponding = true
+        #if os(iOS)
+        focusedQuestion = nil
+        if isKeyboardVisible {
+            // Responding can also remove the request and dismiss this sheet
+            // from its parent, so wait before sending the answer at all.
+            pendingDecision = decision
+            return
+        }
+        #endif
+        sendResponse(decision)
+    }
+
+    private func sendResponse(_ decision: AgentDecision) {
         Task {
             defer { isResponding = false }
             do { try await respond(decision); dismiss() }

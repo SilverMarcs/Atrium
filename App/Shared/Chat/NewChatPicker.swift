@@ -28,7 +28,7 @@ struct NewChatPicker: View {
         #if os(macOS)
         .menuIndicator(.hidden)
         .padding(.horizontal)
-        .padding(.bottom, 4)
+        .padding(.bottom, 12.5)
         #else
         // At the end of the timeline, within its margins.
         .padding(.leading, 16)
