@@ -41,6 +41,9 @@ final class HostDirectory {
     /// The last task shown, whose draft closes once another task is shown
     /// unless it's the new chat, and which the next new chat starts like.
     @ObservationIgnored private var lastShownTask: TaskRef?
+    /// The last task shown as it was then, so a new chat opened once it's
+    /// deleted still starts like it.
+    @ObservationIgnored private var lastShownSnapshot: WireTask?
     /// The draft last opened as the new chat, sent or not.
     private var newChatRef: TaskRef?
     @ObservationIgnored private var notificationDestination: TaskRef?
@@ -267,12 +270,20 @@ final class HostDirectory {
     /// it is, else one in the project this device last started a task in.
     @discardableResult
     func prepareNewChat() -> TaskRef? {
-        if let item = lastShownTask.flatMap(task), let ref = prepareNewChat(matching: item) { return ref }
+        if let item = lastShownTask.flatMap(lastShown), let ref = prepareNewChat(matching: item) { return ref }
         if let newChat { return newChat }
         let lastHost = UserDefaults.standard.string(forKey: HostClient.newTaskHostKey)
         guard let host = newChatHosts.first(where: { $0.id == lastHost }) ?? newChatHosts.first,
               let workspaceID = host.defaultWorkspaceID else { return nil }
         return prepareNewChat(in: WorkspaceRef(hostID: host.id, workspaceID: workspaceID))
+    }
+
+    /// The last task shown, or what it was if it's since been deleted.
+    private func lastShown(_ ref: TaskRef) -> HostTask? {
+        if let item = task(ref) { return item }
+        guard let host = host(ref.hostID), let snapshot = lastShownSnapshot,
+              host.resolvedTaskID(ref.taskID) == snapshot.id, !TaskDraft.isDraftID(snapshot.id) else { return nil }
+        return HostTask(host: host, task: snapshot)
     }
 
     /// The new chat like a task, as far as its host still offers what it
@@ -361,6 +372,7 @@ final class HostDirectory {
             // A draft the new chat has moved on from leaves nothing behind.
             if let last = lastShownTask, last != ref, last != newChatRef { host(last.hostID)?.closeDraft(last.taskID) }
             lastShownTask = ref
+            lastShownSnapshot = task(ref)?.task
         }
         publishActivity()
     }

@@ -68,6 +68,12 @@ struct CompanionRootView: View {
             }
             #endif
         }
+        .onChange(of: DetailPresence(ref: detailTask, isListed: detailTask.flatMap(hosts.task) != nil)) { old, new in
+            // Only the shown task leaving its host's list, not one that's
+            // still starting or a different task being opened.
+            guard let ref = new.ref, old.ref == ref, old.isListed, !new.isListed else { return }
+            detailTaskWasRemoved(ref)
+        }
         .onChange(of: hosts.hosts.map(\.id)) { _, ids in
             if let selected = selectedTask, !ids.contains(selected.hostID) { selectedTask = nil }
             if let last = lastSelectedTask, !ids.contains(last.hostID) { lastSelectedTask = nil }
@@ -95,6 +101,26 @@ struct CompanionRootView: View {
     private var detailTask: TaskRef? {
         selectedTask ?? lastSelectedTask
     }
+
+    /// The shown task was deleted. On iPad the detail column then shows the
+    /// new chat, as the Mac does, through the same placeholder that prepares
+    /// it. On iPhone the screen goes back to the list if it's in view, and
+    /// stays behind it otherwise until another task opens in it.
+    private func detailTaskWasRemoved(_ ref: TaskRef) {
+        if horizontalSizeClass == .compact {
+            if selectedTask == ref { selectedTask = nil }
+        } else {
+            selectedTask = nil
+            lastSelectedTask = nil
+            detailPath = []
+        }
+    }
+}
+
+/// The task the detail column shows, and whether its host still lists it.
+private struct DetailPresence: Equatable {
+    let ref: TaskRef?
+    let isListed: Bool
 }
 
 /// The screen a route pushes, in its project on its host.
