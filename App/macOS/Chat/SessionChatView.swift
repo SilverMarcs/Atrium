@@ -154,6 +154,7 @@ struct SessionChatView: View {
           ProgressView()
         }
       }
+      .font(.system(size: chatFontSize))
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
@@ -258,7 +259,6 @@ struct SessionChatView: View {
         ? { host.send(.task(id: task.id, action: .openTerminal)) } : nil
     ))
     .focusedSceneValue(\.latestPromptEdit, latestPromptEdit(rows: rows, actions: actions))
-    .font(.system(size: chatFontSize))
     .composerAttachmentPickers(composer)
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
