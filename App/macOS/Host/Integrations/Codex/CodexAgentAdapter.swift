@@ -1182,7 +1182,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         }
         defaultModel = defaultModel ?? defaultRow?["model"] as? String ?? defaultRow?["id"] as? String
         defaultReasoningEffort = defaultReasoningEffort ?? defaultRow?["defaultReasoningEffort"] as? String
-        titleModel = rows.first(where: { $0["model"] as? String == "gpt-5.6-luna" })?["model"] as? String
+        titleModel = rows.first(where: { $0["model"] as? String == "gpt-6-luna" })?["model"] as? String
         return models
     }
 
