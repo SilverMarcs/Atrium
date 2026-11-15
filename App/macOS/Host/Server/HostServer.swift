@@ -146,6 +146,11 @@ final class HostServer {
         integrations.onAttention = { [orchestrator] thread in
             if let target = orchestrator.attentionTarget(for: thread) { alert?(target) }
         }
+        orchestrator.onSettleItself = { [weak self] thread in
+            guard let self else { return }
+            sessions.settle(thread)
+            publishTasks(.tasks(tasksFeed.snapshot()))
+        }
         integrations.onThreadRemoved = { [orchestrator, queue] id in
             orchestrator.sessionRemoved(id)
             queue.remove(id)
@@ -282,6 +287,7 @@ final class HostServer {
             return .done
         case .caller(let candidates):
             guard connection.isLocalAgent else { return .done }
+            connection.callerCandidates = candidates
             connection.caller = await orchestrator.caller(among: candidates)
             return connection.caller.map { .task(id: $0) } ?? .done
         case .pairCommandLine(let device):
@@ -339,7 +345,16 @@ final class HostServer {
             return .done
         case .task(_, .openTerminal) where !connection.isLocal:
             return .hostOnly
+        case .task(let id, .settle) where connection.caller == id || connection.callerCandidates.contains(id):
+            // An agent settling its own session finishes its turn first.
+            guard integrations.threads.contains(where: { $0.id == id }) else { return .failed(message: "This task no longer exists.") }
+            orchestrator.settleWhenDone(id)
+            return .done
         case .task(let id, let action):
+            switch action {
+            case .settle, .restore: orchestrator.cancelSettling(id)
+            default: break
+            }
             let reply = await tasks.perform(action, onTask: id)
             // Reconcile optimistic client actions before acknowledging them.
             publishTasks(.tasks(tasksFeed.snapshot()))
@@ -352,6 +367,8 @@ final class HostServer {
             }
             return reply
         case .prompt(let taskID, let text, let images, let queueID):
+            // Anyone else's prompt takes the session back up, as it would once settled.
+            orchestrator.cancelSettling(taskID)
             let reply = if let caller = connection.caller {
                 await orchestrator.delegate(text, images: images, to: taskID, from: caller, queueID: queueID, using: tasks)
             } else {

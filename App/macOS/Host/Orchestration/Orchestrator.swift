@@ -39,6 +39,12 @@ final class Orchestrator {
     private var prompted: Set<String> = []
     /// Sessions whose first status since launch has been seen, to follow turns left running.
     private var observedSessions: Set<String> = []
+    /// Sessions whose own agent asked to settle them, which settle once they're done.
+    private var settlingThemselves: Set<String> = []
+    /// Those waiting out the moment a session must stay done.
+    private var settlingNow: Set<String> = []
+    /// Settles a session whose agent asked for it, once its turn is over.
+    var onSettleItself: ((AgentThread) -> Void)?
 
     init(integrations: AgentIntegrationStore, directory: URL) {
         self.integrations = integrations
@@ -195,6 +201,7 @@ final class Orchestrator {
 
     /// The session is gone: nothing reports to it or from it anymore.
     func sessionRemoved(_ id: String) {
+        settlingThemselves.remove(id)
         store.turns[id] = nil
         store.parents[id] = nil
         store.devices[id] = nil
@@ -207,6 +214,32 @@ final class Orchestrator {
     }
 
     // MARK: - Settling
+
+    /// A session's own agent asked to settle it. Settling at once would stop
+    /// the agent before it finishes its reply, and what the request leaves
+    /// behind, such as Claude reporting the finished command, would start a
+    /// turn that takes the session back up. So it settles once it's done.
+    func settleWhenDone(_ id: String) {
+        settlingThemselves.insert(id)
+        settleSoon()
+    }
+
+    /// Someone else prompted, settled or restored the session, which overrides its own request.
+    func cancelSettling(_ id: String) {
+        settlingThemselves.remove(id)
+    }
+
+    /// Settles a session that asked to once it has stayed done a moment, as
+    /// an agent can start its next turn right after one ends.
+    private func settleItself(_ id: String) async {
+        guard settlingNow.insert(id).inserted else { return }
+        defer { settlingNow.remove(id) }
+        try? await Task.sleep(for: Self.settleDelay)
+        // The session may have moved on meanwhile; it settles when it's done again.
+        guard settlingThemselves.contains(id), let thread = self.thread(id), isDone(thread) else { return }
+        settlingThemselves.remove(id)
+        onSettleItself?(thread)
+    }
 
     /// Settles after any change to a session's status, once the change is
     /// through and every session's status reads as reported.
@@ -224,6 +257,9 @@ final class Orchestrator {
     private func settle() {
         for (id, turn) in store.turns where turn.state == .running {
             if let thread = self.thread(id), isDone(thread) { Task { await complete(id) } }
+        }
+        for id in settlingThemselves {
+            if let thread = self.thread(id), isDone(thread) { Task { await settleItself(id) } }
         }
         let ready = store.turns.filter { $0.value.state == .finished || !newQuestions(from: $0.key).isEmpty }
         for requester in Set(ready.values.map(\.requester)) {

@@ -22,6 +22,9 @@ final class ServerConnection {
 
     /// The session the client runs in, for an agent's command-line client on this Mac.
     var caller: String?
+    /// The sessions the client says it runs in, working or not: one settling
+    /// itself from a command that outlives its turn isn't working anymore.
+    var callerCandidates: [String] = []
 
     var isAuthenticated: Bool { isLocal || device != nil }
     /// One of the agents this Mac runs, through its command-line client.

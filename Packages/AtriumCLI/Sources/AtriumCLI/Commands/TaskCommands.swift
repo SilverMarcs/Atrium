@@ -33,7 +33,12 @@ let taskCommands: [Command] = [
         guard !title.isEmpty else { throw CLIError(.invalidArgument, "The title is empty.") }
         return [.rename(title: title)]
     },
-    taskCommand("settle", summary: "Settle a session: move it out of the active list and stop its agent.") { _, _ in [.settle] },
+    taskCommand("settle", summary: "Settle a session: move it out of the active list and stop its agent.",
+                details: """
+                An agent settling its own session settles it once its turn ends, so run it as your last step, \
+                in the foreground and with no delay, then end your turn; the output has "settlesWhenTurnEnds": true. \
+                A prompt from anyone else before then keeps the session going, and one after brings it back.
+                """) { _, _ in [.settle] },
     taskCommand("restore", summary: "Bring a settled session back to the active list.") { _, _ in [.restore] },
     taskCommand("snooze", usage: "snooze <session> [--hours H]", summary: "Snooze a session for H hours (default 24).",
                 options: ["hours"]) { arguments, _ in
@@ -75,11 +80,11 @@ let taskCommands: [Command] = [
 /// A command that performs task-menu actions on one session, then prints
 /// {"action", "session"}, and for a fork the new session with {"forkedFrom"}.
 private func taskCommand(
-    _ name: String, usage: String? = nil, summary: String, positionals: Int = 1,
+    _ name: String, usage: String? = nil, summary: String, details: String = "", positionals: Int = 1,
     options: Set<String> = [], flags: Set<String> = [],
     actions: @escaping @MainActor (Arguments, WireTask) throws -> [TaskAction]
 ) -> Command {
-    Command(name: name, usage: usage ?? "\(name) <session>", summary: summary, details: "", options: options, flags: flags) { arguments in
+    Command(name: name, usage: usage ?? "\(name) <session>", summary: summary, details: details, options: options, flags: flags) { arguments in
         try arguments.allowPositionals(positionals)
         let selector = try arguments.required(0, "session")
         let options = try HostOptions(arguments)
@@ -96,7 +101,9 @@ private func taskCommand(
             let fork = try await waitUntil(host, timeout: options.connectTimeout) { host.task(created) }
             Output.write(TaskResult(action: name, session: fork.map(host.json), forkedFrom: host.json(host.task(task.id) ?? task)))
         } else {
-            Output.write(TaskResult(action: name, session: host.task(task.id).map(host.json)))
+            // The host settles the session this command runs in once its turn ends.
+            let isOwnSettle = name == "settle" && host.isLocal && (client.caller == task.id || Caller.candidates.contains(task.id))
+            Output.write(TaskResult(action: name, session: host.task(task.id).map(host.json), settlesWhenTurnEnds: isOwnSettle ? true : nil))
         }
         client.stop()
     }
@@ -107,4 +114,6 @@ private struct TaskResult: Encodable {
     /// The session as the host reports it now, or nil once it's deleted.
     var session: SessionJSON?
     var forkedFrom: SessionJSON?
+    /// Set when an agent settles its own session, which the host does once its turn ends.
+    var settlesWhenTurnEnds: Bool?
 }
