@@ -335,8 +335,8 @@ final class HostServer {
             return .icon(data: data)
         case .page(let taskID, let key):
             return await media.page(key, inTask: taskID)
-        case .image(let taskID, let path, let maxPixelSize):
-            return await media.image(path, maxPixelSize: maxPixelSize, inTask: taskID)
+        case .image(let taskID, let path, let maxPixelSize, let pageKey):
+            return await media.image(path, maxPixelSize: maxPixelSize, inTask: taskID, pageKey: pageKey)
         case .promptImage(let taskID, let messageID, let index, let maxPixelSize):
             return await media.promptImage(index, of: messageID, maxPixelSize: maxPixelSize, inTask: taskID)
         case .refreshTasks:

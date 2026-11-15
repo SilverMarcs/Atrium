@@ -559,9 +559,10 @@ public final class HostClient: Identifiable {
 
     /// An image an agent showed in a task's transcript, by the path it wrote,
     /// scaled to fit `maxPixelSize`, or nil if the host can't provide it.
-    public func image(taskID: String, path: String, maxPixelSize: Int) async -> Data? {
-        await media.value(for: "image/\(taskID)/\(maxPixelSize)/\(path)") { [weak self] in
-            guard case .image(let data) = await self?.fetchMedia(.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize)) else { return nil }
+    public func image(taskID: String, path: String, maxPixelSize: Int, pageKey: String? = nil) async -> Data? {
+        let scope = pageKey.map { "page:\($0)" } ?? "transcript"
+        return await media.value(for: "image/\(taskID)/\(scope)/\(maxPixelSize)/\(path)") { [weak self] in
+            guard case .image(let data) = await self?.fetchMedia(.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize, pageKey: pageKey)) else { return nil }
             return data
         }
     }

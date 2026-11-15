@@ -43,7 +43,7 @@ final class LoadedChatPages {
         recent.append(id)
         // A page that couldn't load tries again when it comes back into view.
         if let entry = loaded[id], entry.key == page.key, entry.model.phase != .unavailable { return }
-        let model = ChatPageModel(media: media, openURL: openURL)
+        let model = ChatPageModel(page: page, media: media, openURL: openURL)
         loaded[id] = Entry(key: page.key, model: model)
         while recent.count > Self.loadedLimit {
             unload(recent.removeFirst())

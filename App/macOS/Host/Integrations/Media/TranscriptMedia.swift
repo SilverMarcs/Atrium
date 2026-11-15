@@ -2,13 +2,14 @@ import AtriumProtocol
 import Foundation
 
 /// What each task's transcript has shown since Atrium started: the pages its
-/// agent made and the images on this Mac it points to, in Markdown or in those
-/// pages. Clients may fetch only these, so an agent showing a file outside its
-/// project, such as a screenshot in /tmp, is what lets them load it.
+/// agent made, their image scopes, and the images on this Mac it points to in
+/// Markdown or HTML. Pages may assemble filenames within their image folders;
+/// other requests may fetch only the individual images the transcript shows.
 @MainActor
 final class TranscriptMedia {
     private var pageKeys: [String: Set<String>] = [:]
     private var imagePaths: [String: Set<String>] = [:]
+    private var pageImages: [String: [String: PageImageScope]] = [:]
 
     /// The absolute path a source names: `~/` is the home folder, and a relative
     /// path starts at the task's directory. `..` and `.` are resolved, so a path
@@ -41,7 +42,9 @@ final class TranscriptMedia {
                 // A key names the page's content, so its images are read once.
                 guard let key = page.key, !keys.contains(key), let html = ChatPages.html(forKey: key) else { continue }
                 keys.insert(key)
-                paths.formUnion(Self.imagePaths(inPage: html, directory: thread.directory))
+                let images = Self.imagePaths(inPage: html, directory: thread.directory)
+                paths.formUnion(images)
+                pageImages[thread.id, default: [:]][key] = PageImageScope(html: html, directory: thread.directory, imagePaths: images)
             case .tools, .report:
                 continue
             }
@@ -59,9 +62,14 @@ final class TranscriptMedia {
         imagePaths[taskID]?.contains(path) == true
     }
 
+    func shows(image canonicalPath: String, onPage key: String, in taskID: String) -> Bool {
+        pageImages[taskID]?[key]?.allows(canonicalPath: canonicalPath) == true
+    }
+
     func forget(_ taskID: String) {
         pageKeys[taskID] = nil
         imagePaths[taskID] = nil
+        pageImages[taskID] = nil
     }
 
     private nonisolated static func hostPaths(_ sources: [String], directory: String) -> [String] {

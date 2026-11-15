@@ -17,8 +17,8 @@ nonisolated struct ChatMedia: Equatable, Sendable {
     }
 
     /// A file on the host, scaled to fit `maxPixelSize`.
-    func image(atPath path: String, maxPixelSize: Int) async -> Data? {
-        await host.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize)
+    func image(atPath path: String, maxPixelSize: Int, pageKey: String? = nil) async -> Data? {
+        await host.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize, pageKey: pageKey)
     }
 
     /// An image on the host as a URL, for views that load images by URL.

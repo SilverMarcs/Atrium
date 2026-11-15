@@ -45,8 +45,28 @@ struct ProviderCompatibilityChecks {
         try check(received.providers.filter(\.isAvailable).map { $0.provider.rawValue } == ["codex", "claude"],
                   "Legacy client receives only the host's remaining providers")
         try olderHost()
+        try pageImageRequests()
         try retainedThreads()
         print("Provider compatibility checks passed")
+    }
+
+    static func pageImageRequests() throws {
+        let request = AtriumProtocol.ClientFrame(id: 9, request:
+            .image(taskID: "codex:one", path: "/tmp/image.png", maxPixelSize: 2048, pageKey: "page"))
+        let old = try LegacyAtriumProtocol.HostCodec.decode(LegacyAtriumProtocol.ClientFrame.self,
+            from: AtriumProtocol.HostCodec.encode(request))
+        guard case .image(let taskID, let path, let size) = old.request else {
+            throw Failure(message: "Older hosts must still decode image requests")
+        }
+        try check(taskID == "codex:one" && path == "/tmp/image.png" && size == 2048,
+                  "A page key must not change fields understood by an older host")
+        let legacy = LegacyAtriumProtocol.ClientFrame(id: 10, request:
+            .image(taskID: "codex:one", path: "/tmp/image.png", maxPixelSize: 2048))
+        let current = try AtriumProtocol.HostCodec.decode(AtriumProtocol.ClientFrame.self,
+            from: LegacyAtriumProtocol.HostCodec.encode(legacy))
+        guard case .image(_, _, _, nil) = current.request else {
+            throw Failure(message: "Older clients must retain image access without a page key")
+        }
     }
 
     static func olderHost() throws {

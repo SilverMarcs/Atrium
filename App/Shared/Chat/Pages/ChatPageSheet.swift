@@ -41,7 +41,7 @@ struct ChatPageSheet: View {
         .presentationSizing(.page)
         .task {
             guard model == nil else { return }
-            let model = ChatPageModel(media: media, openURL: openURL, inSheet: true)
+            let model = ChatPageModel(page: page, media: media, openURL: openURL, inSheet: true)
             self.model = model
             await model.load(page)
         }

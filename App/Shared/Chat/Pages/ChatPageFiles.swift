@@ -13,11 +13,13 @@ nonisolated struct ChatPageFiles: URLSchemeHandler {
     static let maxPixelSize = 2048
 
     let media: ChatMedia
+    let pageKey: String?
     /// Where the page itself loads from: the task's directory, in Atrium's scheme.
     let baseURL: URL
 
-    init(media: ChatMedia) {
+    init(media: ChatMedia, pageKey: String?) {
         self.media = media
+        self.pageKey = pageKey
         var components = URLComponents()
         components.scheme = Self.scheme
         components.host = "task"
@@ -35,7 +37,7 @@ nonisolated struct ChatPageFiles: URLSchemeHandler {
         AsyncThrowingStream { continuation in
             let task = Task {
                 guard let url = request.url, let path = path(for: url),
-                      let data = await MediaSource.host(path: path).imageData(from: media, maxPixelSize: Self.maxPixelSize) else {
+                      let data = await media.image(atPath: path, maxPixelSize: Self.maxPixelSize, pageKey: pageKey) else {
                     continuation.finish(throwing: URLError(.fileDoesNotExist))
                     return
                 }

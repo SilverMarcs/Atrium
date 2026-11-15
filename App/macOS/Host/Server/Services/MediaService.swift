@@ -29,13 +29,23 @@ final class MediaService {
         return .page(html: html)
     }
 
-    func image(_ path: String, maxPixelSize: Int, inTask taskID: String) async -> HostReply {
+    func image(_ path: String, maxPixelSize: Int, inTask taskID: String, pageKey: String? = nil) async -> HostReply {
         guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
             return .failed(message: "This task no longer exists.")
         }
-        let file = TranscriptMedia.resolve(path, in: thread.directory)
-        if !integrations.media.shows(image: file, in: taskID) { await reread(thread) }
-        guard integrations.media.shows(image: file, in: taskID) else {
+        let resolved = TranscriptMedia.resolve(path, in: thread.directory)
+        let file: String
+        let allowed: Bool
+        if let pageKey {
+            if !integrations.media.shows(page: pageKey, in: taskID) { await reread(thread) }
+            file = PageImageScope.canonicalPath(resolved)
+            allowed = integrations.media.shows(image: file, onPage: pageKey, in: taskID)
+        } else {
+            file = resolved
+            if !integrations.media.shows(image: file, in: taskID) { await reread(thread) }
+            allowed = integrations.media.shows(image: file, in: taskID)
+        }
+        guard allowed else {
             return .failed(message: "That image isn’t part of this chat.")
         }
         guard let data = await TranscriptImage.display(at: URL(filePath: file), maxPixelSize: maxPixelSize) else {

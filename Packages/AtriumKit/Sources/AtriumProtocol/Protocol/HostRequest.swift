@@ -30,8 +30,10 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case page(taskID: String, key: String)
     /// Fetches an image an agent showed in a task's transcript, by the path it
     /// wrote: absolute, `~/`, or relative to the task's directory. Images wider
-    /// or taller than `maxPixelSize` come back scaled down to fit it.
-    case image(taskID: String, path: String, maxPixelSize: Int)
+    /// or taller than `maxPixelSize` come back scaled down to fit it. Pages
+    /// include their key to use that page's image folders, even for paths
+    /// JavaScript assembles at runtime. Omitted by Markdown and older clients.
+    case image(taskID: String, path: String, maxPixelSize: Int, pageKey: String? = nil)
     /// Fetches an image attached to a prompt in a task's transcript as it was
     /// sent, rather than the preview the transcript carries, by the prompt's
     /// message ID and the image's place among its images. Images wider or

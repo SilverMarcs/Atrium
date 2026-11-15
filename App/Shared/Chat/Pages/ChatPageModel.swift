@@ -24,8 +24,8 @@ final class ChatPageModel {
 
     /// A page in a sheet scrolls sideways on a screen narrower than the reply
     /// it was written for.
-    init(media: ChatMedia?, openURL: OpenURLAction, inSheet: Bool = false) {
-        files = media.map(ChatPageFiles.init)
+    init(page: TranscriptPage, media: ChatMedia?, openURL: OpenURLAction, inSheet: Bool = false) {
+        files = media.map { ChatPageFiles(media: $0, pageKey: page.key) }
         var configuration = WebPage.Configuration()
         configuration.websiteDataStore = .nonPersistent()
         if let files, let scheme = URLScheme(ChatPageFiles.scheme) {
