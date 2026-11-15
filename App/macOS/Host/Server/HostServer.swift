@@ -108,8 +108,7 @@ final class HostServer {
         let bridge = AgentBridgeServer()
         let instructions = ChatInstructions(settings: integrationSettings)
         integrations = AgentIntegrationStore(adapters: [
-            CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions),
-            JcodeAgentAdapter(instructions: instructions)
+            CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions)
         ], settings: integrationSettings)
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)

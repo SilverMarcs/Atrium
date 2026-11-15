@@ -95,7 +95,7 @@ final class AgentIntegrationStore {
         activity = defaults.data(forKey: "integration.threadActivity")
             .flatMap { try? JSONDecoder().decode([String: ThreadActivity].self, from: $0) } ?? [:]
         let savedThreads = defaults.data(forKey: "integration.retainedThreads")
-            .flatMap { try? JSONDecoder().decode([AgentThread].self, from: $0) } ?? []
+            .flatMap { try? JSONDecoder().decode(RetainedAgentThreads.self, from: $0).threads } ?? []
         threads = savedThreads.compactMap { saved in
             var thread = saved
             if settledThreadIDs.contains(thread.id) { thread.status = .stopped }
@@ -211,9 +211,6 @@ final class AgentIntegrationStore {
     }
 
     func deletionMessage(for provider: AgentProvider) -> String {
-        if provider == .jcode {
-            return "Jcode can’t delete chats, so this archives the chat in Jcode: it leaves every list and its history stays on this Mac. Open tasks for it will be stopped."
-        }
         let scope = adapters[provider]?.capabilities.contains(.deleteDescendants) == true
             ? "This permanently deletes this thread and any child threads it created."
             : "This permanently deletes this thread and its associated agent history."

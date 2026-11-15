@@ -15,7 +15,6 @@ struct AgentCLIInstallation {
         async let output = IntegrationProcess.run(provider.rawValue, arguments: ["--version"])
         let path = String(decoding: try await location, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         let text = String(decoding: try await output, as: UTF8.self)
-        // Jcode writes its version as "v0.99.1".
         let words = text.split(whereSeparator: \.isWhitespace).map { $0.hasPrefix("v") ? $0.dropFirst() : $0 }
         guard let version = words.first(where: { $0.first?.isNumber == true }) else {
             throw IntegrationError(message: "Couldn’t read the installed \(provider.name) version.")
@@ -25,13 +24,6 @@ struct AgentCLIInstallation {
 
     static func installation(_ provider: AgentProvider, version: String, executable: URL) throws -> Self {
         let components = executable.pathComponents
-        // Jcode's installer keeps its builds in its own home, and `jcode update` replaces them.
-        if provider == .jcode {
-            guard let url = URL(string: "https://api.github.com/repos/1jehuang/jcode/releases/latest") else {
-                throw IntegrationError(message: "Invalid update address.")
-            }
-            return Self(version: version, updateCommand: "jcode", updateArguments: ["update"], versionURL: url, versionKeys: ["tag_name"])
-        }
         let package = provider == .codex ? "@openai/codex" : "@anthropic-ai/claude-code"
         var command = provider.rawValue
         var arguments = ["update"]

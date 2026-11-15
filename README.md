@@ -29,6 +29,8 @@ Work across projects with native chat, a command runner, an editor, and a Git in
 
 Every Mac running Atrium is a host. The host alone touches projects, Git, files and the agent integrations; everything else, including the Mac's own window, is a client of it. The Mac's UI talks to its own host in process, and to other hosts (another Mac's Atrium) through the same end-to-end encrypted relay the iOS app uses. Clients stay connected to all their hosts at once and show every host's tasks in one list, which the host menu filters. Commands run on their host, a conversation opens in a terminal only on its own host, and files on another host are read-only.
 
+Clients offer the agents their host reports as available, so hosts can retire a provider without requiring every client to update first. Retired-provider requests from an older client fail without disconnecting it; saved threads for other providers are preserved. Updated clients also ignore unsupported-provider rows from older hosts while keeping their supported tasks.
+
 Turn on remote access in Settings → Remote, then scan the pairing QR code with an iPhone, paste the pairing link into Settings → Remote on another Mac, or pass it to `atrium pair` on another computer.
 
 ## What Atrium tells agents
