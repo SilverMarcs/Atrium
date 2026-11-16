@@ -6,6 +6,9 @@ import SwiftUI
 struct TaskRow: View {
     let item: HostTask
     var showsHost = false
+    /// Whether its composer is recording, which iOS carries on with while
+    /// the chat is closed.
+    var isDictating = false
 
     var body: some View {
         let task = item.task
@@ -21,7 +24,8 @@ struct TaskRow: View {
             hasUnreadResult: task.hasUnreadResult,
             isSettled: task.isSettled,
             snoozedUntil: task.isSettled ? nil : task.snoozedUntil,
-            pullRequest: task.pullRequests.mostPressing
+            pullRequest: task.pullRequests.mostPressing,
+            isDictating: isDictating
         ) {
             WorkspaceIcon(item.workspace, on: item.host, size: 13, relativeTo: .subheadline)
         }

@@ -1,8 +1,32 @@
 import AVFoundation
 import Foundation
 #if os(iOS)
+import ActivityKit
 import UIKit
 #endif
+
+/// The microphone makes one recording at a time, whichever composer it's for.
+/// On iOS that recording carries on while its chat is closed or the app is in
+/// the background, so the task list shows where it is.
+@MainActor
+@Observable
+final class DictationMicrophone {
+    static let shared = DictationMicrophone()
+
+    /// The dictation recording, or starting to, if any.
+    fileprivate(set) var owner: ComposerDictation?
+
+    /// Whether this dictation is the one recording.
+    func isRecording(_ dictation: ComposerDictation) -> Bool {
+        owner === dictation && dictation.isRecording
+    }
+
+    /// Finishes the recording and transcribes it into its draft, as its
+    /// Live Activity's Finish button does.
+    func finishRecording() {
+        owner?.finishAndTranscribe()
+    }
+}
 
 @MainActor
 @Observable
@@ -22,6 +46,25 @@ final class ComposerDictation {
     private var finishRecording: (() -> Void)?
     private var recorder: AVAudioRecorder?
     private var operation: Task<Void, Never>?
+    /// Finishes a recording that reaches `maximumDuration`.
+    @ObservationIgnored private var limit: Task<Void, Never>?
+    #if os(iOS)
+    @ObservationIgnored private var activity: Activity<DictationActivityAttributes>?
+    @ObservationIgnored private var interruptionObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    #endif
+
+    private var microphone: DictationMicrophone { .shared }
+
+    /// A recording finishes on its own after this long, and is transcribed
+    /// into the draft like one finished by hand.
+    static let maximumDuration = Duration.seconds(4 * 60)
+
+    /// Stops recording and transcribes what was recorded into the draft.
+    func finishAndTranscribe() {
+        guard isRecording else { return }
+        finishRecording?()
+    }
 
     func toggle(
         provider: any AudioTranscribing,
@@ -35,12 +78,19 @@ final class ComposerDictation {
             recorder.stop()
             self.recorder = nil
             isRecording = false
-            deactivateAudio()
+            recordingEnded()
             isBusy = true
+            #if os(iOS)
+            // Leaving the app right after finishing still gets the transcript.
+            beginBackgroundTask()
+            #endif
             operation = Task {
                 defer {
                     try? FileManager.default.removeItem(at: url)
                     isBusy = false
+                    #if os(iOS)
+                    endBackgroundTask()
+                    #endif
                 }
                 do {
                     let text = try await provider.transcribe(audio: url)
@@ -53,6 +103,7 @@ final class ComposerDictation {
         } else {
             error = nil
             sessionID = UUID()
+            takeMicrophone()
             finishRecording = { [weak self] in
                 self?.toggle(provider: provider, feedback: feedback, append: append)
             }
@@ -76,6 +127,7 @@ final class ComposerDictation {
                     // Send haptics while the audio session is active.
                     try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
                     try session.setActive(true)
+                    observeInterruptions()
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
                     let recorder = try AVAudioRecorder(url: url, settings: [
@@ -87,6 +139,7 @@ final class ComposerDictation {
                     self.recorder = recorder
                     guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                     isRecording = true
+                    recordingStarted()
                     feedback(.recordingStarted)
                 } catch {
                     let wasCancelled = Task.isCancelled
@@ -120,12 +173,116 @@ final class ComposerDictation {
         }
         recorder = nil
         isRecording = false
-        deactivateAudio()
+        recordingEnded()
     }
 
-    private func deactivateAudio() {
+    private func recordingStarted() {
+        let session = sessionID
+        limit = Task { [weak self] in
+            try? await Task.sleep(for: Self.maximumDuration)
+            guard let self, !Task.isCancelled, sessionID == session else { return }
+            finishAndTranscribe()
+        }
         #if os(iOS)
+        startActivity()
+        #endif
+    }
+
+    private func recordingEnded() {
+        limit?.cancel()
+        limit = nil
+        #if os(iOS)
+        endActivity()
+        #endif
+        releaseMicrophone()
+    }
+
+    /// Another composer's recording ends where this one starts: one still
+    /// recording is transcribed into its own draft, one still starting is
+    /// dropped.
+    private func takeMicrophone() {
+        if let other = microphone.owner, other !== self {
+            if other.isRecording { other.finishRecording?() } else { other.cancel() }
+        }
+        microphone.owner = self
+    }
+
+    /// Only the recording composer gives up the audio session, so another
+    /// composer's cancel can't stop its recording.
+    private func releaseMicrophone() {
+        guard microphone.owner === self else { return }
+        microphone.owner = nil
+        #if os(iOS)
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+            self.interruptionObserver = nil
+        }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
     }
+
+    #if os(iOS)
+    /// A call, Siri or another app's recording pauses the recorder; it picks
+    /// up in the same file once the system says it can.
+    private func observeInterruptions() {
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            let info = notification.userInfo
+            guard let type = info?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: type) == .ended,
+                  let options = info?[AVAudioSessionInterruptionOptionKey] as? UInt,
+                  AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) else { return }
+            MainActor.assumeIsolated { self?.resumeAfterInterruption() }
+        }
+    }
+
+    private func resumeAfterInterruption() {
+        guard isRecording, let recorder, !recorder.isRecording else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        recorder.record()
+    }
+
+    /// Shows the recording on the Lock Screen and in the Dynamic Island, where
+    /// it can be finished from outside the app.
+    private func startActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let start = Date.now
+        let end = start.addingTimeInterval(TimeInterval(Self.maximumDuration.components.seconds))
+        activity = try? Activity.request(
+            attributes: DictationActivityAttributes(startedAt: start, endsBy: end),
+            content: ActivityContent(state: DictationActivityAttributes.ContentState(), staleDate: end)
+        )
+    }
+
+    private func endActivity() {
+        guard let activity else { return }
+        self.activity = nil
+        Task { await activity.end(nil, dismissalPolicy: .immediate) }
+    }
+
+    /// Ends activities left by a recording the app didn't get to finish,
+    /// as when the system ended it.
+    static func endLeftoverActivities() async {
+        for activity in Activity<DictationActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    private func beginBackgroundTask() {
+        endBackgroundTask()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Transcribe Dictation") { [weak self] in
+            MainActor.assumeIsolated { self?.endBackgroundTask() }
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+    #endif
 }

@@ -141,9 +141,8 @@ struct TaskDetailScreen: View {
             // task list leaves it to be shown when it's opened.
             if hosts.visibleTask == oldRef { hosts.setVisibleTask(newRef) }
             guard oldRef.hostID != newRef.hostID || host?.drafts[oldRef.taskID]?.taskID != newRef.taskID else { return }
-            let previous = hosts.composer(for: oldRef)
-            previous.dictation.cancel()
-            previous.isFocused = false
+            // A recording carries on, to finish when its task opens again.
+            hosts.composer(for: oldRef).isFocused = false
             sendAnimator.cancelAll()
             hosts.releaseComposer(for: oldRef)
         }

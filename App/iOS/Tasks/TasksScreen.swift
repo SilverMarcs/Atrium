@@ -137,7 +137,7 @@ struct TasksScreen: View {
 
     private func rows(_ tasks: [HostTask]) -> some View {
         ForEach(tasks) { item in
-            TaskRow(item: item, showsHost: hosts.showsHostNames)
+            TaskRow(item: item, showsHost: hosts.showsHostNames, isDictating: hosts.isDictating(in: item.id))
                 .tag(item.id)
                 .contextMenu {
                     TaskContextMenu(state: item.menuState) { perform($0, on: item) }

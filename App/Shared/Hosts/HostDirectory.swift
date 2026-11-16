@@ -187,11 +187,21 @@ final class HostDirectory {
         return composer
     }
 
-    /// Forgets a composer that's left the screen with nothing in it.
+    /// Forgets a composer that's left the screen with nothing in it, and no
+    /// recording still to land in it.
     func releaseComposer(for ref: TaskRef) {
         let key = Self.composerKey(ref)
-        guard let composer = composers[key], !composer.hasContent, composer.messageEdit == nil else { return }
+        guard let composer = composers[key], !composer.hasContent, composer.messageEdit == nil,
+              !composer.dictation.isActive, !composer.isSubmittingDictation else { return }
         composers[key] = nil
+    }
+
+    /// Whether the task's composer is recording, open or not.
+    func isDictating(in ref: TaskRef) -> Bool {
+        // Observes the microphone, so a row updates when any recording
+        // starts or ends, including one whose composer came after the row.
+        guard let owner = DictationMicrophone.shared.owner else { return false }
+        return composers[Self.composerKey(ref)]?.dictation === owner && DictationMicrophone.shared.isRecording(owner)
     }
 
     /// Performs a task menu action that needs no confirmation. Rename and

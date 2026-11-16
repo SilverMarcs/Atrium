@@ -14,6 +14,10 @@ struct AtriumiOSApp: App {
                 .environment(hosts)
                 .onOpenURL(prefersInApp: true)
                 .task {
+                    // Nothing records at launch.
+                    await ComposerDictation.endLeftoverActivities()
+                }
+                .task {
                     hosts.start()
                     #if DEBUG
                     await hosts.applyDebugLaunch()

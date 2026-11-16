@@ -14,6 +14,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
     let isSettled: Bool
     let snoozedUntil: Date?
     var pullRequest: PullRequest? = nil
+    var isDictating = false
     @ViewBuilder let projectIcon: ProjectIcon
 
     var body: some View {
@@ -23,6 +24,10 @@ struct TaskRowContent<ProjectIcon: View>: View {
                     .lineLimit(1)
 
                 Spacer()
+
+                if isDictating {
+                    DictatingIndicator()
+                }
 
                 TaskStatusIndicator(status: status, hasUnreadResult: hasUnreadResult, isSettled: isSettled)
                     .controlSize(.mini)
@@ -58,5 +63,17 @@ struct TaskRowContent<ProjectIcon: View>: View {
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 1)
+    }
+}
+
+/// The composer's recording waveform, for a chat that's recording while closed.
+private struct DictatingIndicator: View {
+    var body: some View {
+        Label("Dictating", systemImage: "waveform")
+            .labelStyle(.iconOnly)
+            .font(.caption)
+            .foregroundStyle(.tint)
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers.reversing, options: .repeat(.continuous))
+            .help("Dictating")
     }
 }

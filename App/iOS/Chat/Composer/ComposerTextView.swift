@@ -32,13 +32,13 @@ struct ComposerTextView: UIViewRepresentable {
         let editor = ComposerEditor()
         editor.delegate = context.coordinator
         editor.text = text
-        composer.textEditor = editor
+        context.coordinator.bind(editor, to: composer)
         pasteDelegate.configure(editor)
         return editor
     }
 
     func updateUIView(_ editor: ComposerEditor, context: Context) {
-        composer.textEditor = editor
+        context.coordinator.bind(editor, to: composer)
         context.coordinator.text = $text
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
@@ -73,11 +73,23 @@ struct ComposerTextView: UIViewRepresentable {
         var text: Binding<String>
         var isFocused: Binding<Bool>
         var isEditing: Binding<Bool>
+        /// The composer the editor shows. The chat screen keeps its editor
+        /// when another task opens, so a recording still on its way to the
+        /// task it left lands in that task's draft, not in this editor.
+        private weak var composer: TaskComposer?
 
         init(text: Binding<String>, isFocused: Binding<Bool>, isEditing: Binding<Bool>) {
             self.text = text
             self.isFocused = isFocused
             self.isEditing = isEditing
+        }
+
+        func bind(_ editor: ComposerEditor, to composer: TaskComposer) {
+            if let previous = self.composer, previous !== composer, previous.textEditor === editor {
+                previous.textEditor = nil
+            }
+            self.composer = composer
+            composer.textEditor = editor
         }
 
         func textViewDidChange(_ textView: UITextView) {
