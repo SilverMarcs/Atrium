@@ -47,8 +47,6 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Atrium connects directly to your Macs on the same network instead of going through the relay.</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

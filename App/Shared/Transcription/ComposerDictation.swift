@@ -1,7 +1,6 @@
 import AVFoundation
 import Foundation
 #if os(iOS)
-import ActivityKit
 import UIKit
 #endif
 
@@ -19,12 +18,6 @@ final class DictationMicrophone {
     /// Whether this dictation is the one recording.
     func isRecording(_ dictation: ComposerDictation) -> Bool {
         owner === dictation && dictation.isRecording
-    }
-
-    /// Finishes the recording and transcribes it into its draft, as its
-    /// Live Activity's Finish button does.
-    func finishRecording() {
-        owner?.finishAndTranscribe()
     }
 }
 
@@ -49,7 +42,6 @@ final class ComposerDictation {
     /// Finishes a recording that reaches `maximumDuration`.
     @ObservationIgnored private var limit: Task<Void, Never>?
     #if os(iOS)
-    @ObservationIgnored private var activity: Activity<DictationActivityAttributes>?
     @ObservationIgnored private var interruptionObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var backgroundTask = UIBackgroundTaskIdentifier.invalid
     #endif
@@ -61,7 +53,7 @@ final class ComposerDictation {
     static let maximumDuration = Duration.seconds(4 * 60)
 
     /// Stops recording and transcribes what was recorded into the draft.
-    func finishAndTranscribe() {
+    private func finishAndTranscribe() {
         guard isRecording else { return }
         finishRecording?()
     }
@@ -183,17 +175,11 @@ final class ComposerDictation {
             guard let self, !Task.isCancelled, sessionID == session else { return }
             finishAndTranscribe()
         }
-        #if os(iOS)
-        startActivity()
-        #endif
     }
 
     private func recordingEnded() {
         limit?.cancel()
         limit = nil
-        #if os(iOS)
-        endActivity()
-        #endif
         releaseMicrophone()
     }
 
@@ -244,32 +230,6 @@ final class ComposerDictation {
         guard isRecording, let recorder, !recorder.isRecording else { return }
         try? AVAudioSession.sharedInstance().setActive(true)
         recorder.record()
-    }
-
-    /// Shows the recording on the Lock Screen and in the Dynamic Island, where
-    /// it can be finished from outside the app.
-    private func startActivity() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let start = Date.now
-        let end = start.addingTimeInterval(TimeInterval(Self.maximumDuration.components.seconds))
-        activity = try? Activity.request(
-            attributes: DictationActivityAttributes(startedAt: start, endsBy: end),
-            content: ActivityContent(state: DictationActivityAttributes.ContentState(), staleDate: end)
-        )
-    }
-
-    private func endActivity() {
-        guard let activity else { return }
-        self.activity = nil
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
-    }
-
-    /// Ends activities left by a recording the app didn't get to finish,
-    /// as when the system ended it.
-    static func endLeftoverActivities() async {
-        for activity in Activity<DictationActivityAttributes>.activities {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
     }
 
     private func beginBackgroundTask() {
