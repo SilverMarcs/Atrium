@@ -23,15 +23,12 @@ final class TaskComposer {
 
     /// The unfinished slash name at the start of the draft, while the user is choosing a skill.
     var skillQuery: String? {
-        guard draft.first == "/" else { return nil }
-        let name = draft.dropFirst()
-        guard !name.contains(where: \.isWhitespace) else { return nil }
-        return String(name)
+        ComposerSkillQuery.parse(draft)
     }
 
     func matchingSkills(in skills: [AgentSkill]) -> [AgentSkill] {
         guard let skillQuery else { return [] }
-        return skills.filter { skillQuery.isEmpty || $0.name.localizedStandardContains(skillQuery) }
+        return skills.filter { $0.name.localizedStandardContains(skillQuery) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 

@@ -555,6 +555,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     }
 
     private func listedSkills(in directory: String) async throws -> [(name: String, description: String, path: String)] {
+        try await connect()
         let data = try await request("skills/list", params: ["cwds": [directory]])
         let response = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let entries = response?["data"] as? [[String: Any]] ?? []

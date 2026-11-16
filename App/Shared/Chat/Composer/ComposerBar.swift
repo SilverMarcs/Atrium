@@ -69,7 +69,7 @@ struct ComposerBar: View {
         composer.sendState(for: item) == .stop ? .stop : .send
     }
     private var skillLoadKey: String {
-        guard let item else { return "" }
+        guard let item, composer.skillQuery != nil else { return "" }
         return "\(item.host.id)/\(item.task.id)/\(item.task.provider.rawValue)/\(item.task.workspaceID?.uuidString ?? "")"
     }
 
@@ -259,12 +259,18 @@ struct ComposerBar: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .modifier(ComposerHaptics(composer: composer, item: item))
         .task(id: skillLoadKey) {
-            guard let item else { skills = []; return }
+            guard let item, composer.skillQuery != nil else {
+                skills = []
+                skillLoadFailed = false
+                isLoadingSkills = false
+                return
+            }
             skills = []
             skillLoadFailed = false
             isLoadingSkills = true
             defer { isLoadingSkills = false }
             do { skills = try await item.host.skills(for: item.task) }
+            catch is CancellationError { }
             catch { skillLoadFailed = true }
         }
         .onChange(of: composer.skillQuery) { _, query in
