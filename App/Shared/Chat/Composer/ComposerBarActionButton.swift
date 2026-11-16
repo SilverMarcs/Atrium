@@ -44,6 +44,8 @@ struct ComposerBarActionButton: View {
                         ProgressView()
                             .controlSize(isExpanded ? .small : .regular)
                             .tint(.white)
+                            // AppKit's spinner follows its appearance, ignoring tint.
+                            .environment(\.colorScheme, .dark)
                     }
                 }
                 .contentShape(.circle)

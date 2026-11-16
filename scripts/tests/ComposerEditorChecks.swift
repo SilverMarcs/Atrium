@@ -49,6 +49,38 @@ enum ComposerEditorChecks {
         try check(editor.string == before, "A rejected insertion must leave the editor unchanged")
         editor.isEditable = false
         try check(editor.insertDictation("locked", in: before) == nil, "Do not change an editor while saving")
+        editor.isEditable = true
+        window.makeFirstResponder(editor)
+        var sends = 0
+        editor.onReturn = { sends += 1 }
+        for keyCode: UInt16 in [36, 76] {
+            let event = try returnEvent(keyCode: keyCode, modifiers: .command, window: window)
+            try check(editor.performKeyEquivalent(with: event), "Command-Return and Command-Enter must be handled by the focused editor")
+        }
+        try check(sends == 2, "Each send shortcut must submit exactly once")
+        try check(editor.string == before, "Sending must not insert a newline")
+        for modifiers: NSEvent.ModifierFlags in [[], .shift, .option, [.command, .shift], [.command, .option], [.command, .control]] {
+            _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: modifiers, window: window))
+        }
+        try check(sends == 2, "Other Return combinations must not trigger the send shortcut")
+        editor.isEditable = false
+        _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
+        try check(sends == 2, "A locked editor must not send")
+        editor.isEditable = true
+        window.makeFirstResponder(nil)
+        _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
+        try check(sends == 2, "An unfocused editor must not send")
         print("Native composer editor checks passed")
+    }
+
+    static func returnEvent(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, window: NSWindow) throws -> NSEvent {
+        let characters = keyCode == 76 ? "\u{3}" : "\r"
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                                          timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                          characters: characters, charactersIgnoringModifiers: characters,
+                                          isARepeat: false, keyCode: keyCode) else {
+            throw Failure(message: "Could not create keyboard event")
+        }
+        return event
     }
 }

@@ -326,6 +326,19 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
 
     // MARK: - Return
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Handle the shortcut before NSTextView consumes it as a text command.
+        // The button's SwiftUI shortcut still works when the editor isn't focused.
+        if isFirstResponder, isEditable, !hasMarkedText(),
+           event.keyCode == 36 || event.keyCode == 76,
+           event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+           let onReturn {
+            onReturn()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func insertNewline(_ sender: Any?) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         if UserDefaults.standard.bool(forKey: "enterToSendChat"),
