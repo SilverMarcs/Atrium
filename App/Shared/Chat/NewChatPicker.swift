@@ -19,10 +19,6 @@ struct NewChatPicker: View {
             NewChatProjectPicker(hosts: hosts, host: host, draft: draft)
             NewChatCheckoutPicker(host: host, draft: draft)
             NewChatAgentPicker(host: host, draft: draft)
-            #if os(macOS)
-            NewChatModelPicker(host: host, draft: draft)
-            NewChatPermissionPicker(host: host, draft: draft)
-            #endif
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)

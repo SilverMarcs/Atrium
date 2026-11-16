@@ -110,7 +110,7 @@ struct SessionChatView: View {
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
       .environment(flights)
       .scrollEdgeEffectHidden(true, for: .bottom)
-      .scrollEdgeEffectHidden(false, for: .top)
+      .scrollEdgeEffectHidden(TaskDraft.isDraftID(task.id), for: .top)
       .scrollEdgeEffectStyle(.soft, for: .top)
       .defaultScrollAnchor(.bottom, for: .initialOffset)
       // Only the reader scrolling decides whether the timeline stays pinned.

@@ -2,14 +2,13 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's model picker, named for the model and effort it runs with: a
-/// menu in the expanded composer, or a row in the new-chat pickers.
+/// menu in the expanded composer or a task toolbar.
 struct TaskModelMenu: View {
   let provider: AgentProvider
   let selection: TaskModelSelection
   let models: [AgentModel]
   let perform: (TaskAction) -> Void
   var isComposerRow = false
-  var isNewChatRow = false
 
   private var showsContextUsage: Bool {
     #if os(iOS)
@@ -28,11 +27,7 @@ struct TaskModelMenu: View {
         selection: selection, models: models, showsContextUsage: showsContextUsage, perform: perform
       )
     } label: {
-      if isNewChatRow {
-        NewChatPickerLabel(title: [name, detail].filter { !$0.isEmpty }.joined(separator: " · ")) {
-          Image(systemName: "cpu")
-        }
-      } else if isComposerRow {
+      if isComposerRow {
         #if os(iOS)
         ComposerControlLabel {
           Label {

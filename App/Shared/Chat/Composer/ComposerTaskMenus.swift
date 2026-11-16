@@ -33,16 +33,10 @@ struct ComposerPermissionMenu: View {
 }
 
 extension HostTask {
-    /// Whether the composer offers the chat's model and permission menus:
-    /// side chats run with their parent's settings. Only Mac new chats keep
-    /// their model and permission pickers above the composer.
+    /// Side chats run with their parent's settings; ordinary chats and drafts
+    /// offer their model and permission menus in the composer.
     var offersComposerMenus: Bool {
-        guard !task.isSubagent, !task.isSideChat else { return false }
-        #if os(macOS)
-        return !TaskDraft.isDraftID(task.id)
-        #else
-        return true
-        #endif
+        !task.isSubagent && !task.isSideChat
     }
 }
 
