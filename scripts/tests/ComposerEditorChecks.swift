@@ -59,17 +59,22 @@ enum ComposerEditorChecks {
         }
         try check(sends == 2, "Each send shortcut must submit exactly once")
         try check(editor.string == before, "Sending must not insert a newline")
+        for keyCode: UInt16 in [36, 76] {
+            window.sendEvent(try returnEvent(keyCode: keyCode, modifiers: .command, window: window))
+        }
+        try check(sends == 4, "Command-Return and Command-Enter delivered through the window must send once each")
+        try check(editor.string == before, "Window-delivered send shortcuts must not insert a newline")
         for modifiers: NSEvent.ModifierFlags in [[], .shift, .option, [.command, .shift], [.command, .option], [.command, .control]] {
             _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: modifiers, window: window))
         }
-        try check(sends == 2, "Other Return combinations must not trigger the send shortcut")
+        try check(sends == 4, "Other Return combinations must not trigger the send shortcut")
         editor.isEditable = false
         _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
-        try check(sends == 2, "A locked editor must not send")
+        try check(sends == 4, "A locked editor must not send")
         editor.isEditable = true
         window.makeFirstResponder(nil)
         _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
-        try check(sends == 2, "An unfocused editor must not send")
+        try check(sends == 4, "An unfocused editor must not send")
         print("Native composer editor checks passed")
     }
 

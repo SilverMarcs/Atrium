@@ -327,8 +327,20 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
     // MARK: - Return
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        // Handle the shortcut before NSTextView consumes it as a text command.
-        // The button's SwiftUI shortcut still works when the editor isn't focused.
+        // AppKit can offer the shortcut here before delivering a key-down.
+        if sendIfShortcut(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // A focused text view can receive the key-down without being asked
+        // for its key equivalent first.
+        if sendIfShortcut(event) { return }
+        super.keyDown(with: event)
+    }
+
+    private func sendIfShortcut(_ event: NSEvent) -> Bool {
+        // The button's SwiftUI shortcut handles focus outside the editor.
         if isFirstResponder, isEditable, !hasMarkedText(),
            event.keyCode == 36 || event.keyCode == 76,
            event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
@@ -336,7 +348,7 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
             onReturn()
             return true
         }
-        return super.performKeyEquivalent(with: event)
+        return false
     }
 
     override func insertNewline(_ sender: Any?) {
