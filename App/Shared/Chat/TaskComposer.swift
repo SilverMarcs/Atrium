@@ -131,14 +131,12 @@ final class TaskComposer {
         actions.contains(.interrupt) && !hasContent && !dictation.isActive && !isSubmittingDictation
     }
 
+    /// Busy only while the draft itself isn't ready: a recording being
+    /// transcribed, an edit or a queued prompt on its way. A prompt already
+    /// sent is the timeline's to show, so Send stays ready for the next.
     func sendState(for item: HostTask?) -> ComposerSendState {
-        let isDelivering = item.map { item in
-            item.host.conversations.isSending(in: item.task.id)
-                || (item.host.conversations.tasksAwaitingAgent[item.task.id] != nil
-                    && !item.task.actions.contains(.interrupt))
-        } ?? false
-        return ComposerSendState(
-            isBusy: isSubmittingDictation || messageEdit?.isSubmitting == true || isQueueingPrompt || isDelivering,
+        ComposerSendState(
+            isBusy: isSubmittingDictation || messageEdit?.isSubmitting == true || isQueueingPrompt,
             offersStop: item.map { offersStop(for: $0.task.actions) } == true
         )
     }

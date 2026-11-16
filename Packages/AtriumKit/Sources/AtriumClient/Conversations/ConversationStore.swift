@@ -146,10 +146,6 @@ public final class ConversationStore {
     return status
   }
 
-  public func isSending(in taskID: String) -> Bool {
-    pendingPrompts[taskID]?.contains { $0.state == .sending } == true
-  }
-
   /// Recognizes prompts by their position after an anchor, including image-only
   /// prompts and providers that normalize the text stored in their transcripts.
   @discardableResult

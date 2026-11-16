@@ -313,7 +313,6 @@ struct SessionChatView: View {
   /// Sends with nothing else animating; the sent bubble flies in on its own
   /// from the composer's editor.
   private func send(_ composer: TaskComposer, from frame: CGRect?, mode: SendMode) -> Bool {
-    guard !conversation.isSending(in: task.id) else { return false }
     var transaction = Transaction(animation: nil)
     transaction.disablesAnimations = true
     return withTransaction(transaction) { composer.submit(to: item, animator: flights, from: frame, mode: mode) }
