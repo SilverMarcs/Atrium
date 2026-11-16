@@ -1,7 +1,7 @@
 import Foundation
 
-/// The files Codex threads changed, read from the file changes their rollouts
-/// record, off the main actor.
+/// The files Codex threads changed and the repositories their commands
+/// worked in, read from their rollouts off the main actor.
 actor CodexRolloutEdits {
     private var scans: [String: JSONLines.Scan<AgentEdits>] = [:]
 
@@ -15,9 +15,30 @@ actor CodexRolloutEdits {
                 Self.record(data[line], into: &edits)
                 return true
             }
+            JSONLines.forEachLine(containing: Self.commandMarker, in: data, range, newestFirst: false) { line in
+                Self.recordCommand(data[line], into: &edits)
+                return true
+            }
         }
         scans[path] = scan
         return scan.state
+    }
+
+    private static let commandMarker = #""item":{"type":"CommandExecution""#
+
+    /// A finished command, with the output that says what it opened.
+    private static func recordCommand(_ line: Data, into edits: inout AgentEdits) {
+        guard AgentShellCommand.mightMatter(String(decoding: line, as: UTF8.self)),
+              let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+              let item = (record["payload"] as? [String: Any])?["item"] as? [String: Any],
+              item["type"] as? String == "CommandExecution",
+              let output = item["aggregated_output"] as? String,
+              let date = (record["timestamp"] as? String)
+                .flatMap({ try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) }) else { return }
+        let directory = (item["cwd"] as? String).map { URL(string: $0)?.path(percentEncoded: false) ?? $0 }
+        let command = (item["command"] as? [String]).map { AgentShellCommand(arguments: $0, directory: directory) }
+            ?? (item["command"] as? String).map { AgentShellCommand($0, directory: directory) }
+        if let command { edits.record(command, output: output, at: date) }
     }
 
     /// Forgets the rollouts of threads deleted since.

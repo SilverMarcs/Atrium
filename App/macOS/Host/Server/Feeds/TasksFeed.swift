@@ -97,7 +97,11 @@ final class TasksFeed: TopicFeed {
         // Stopping a session stops everything working for it, so it can be stopped while only they work.
         if hasWorkingDescendants { menu.allowed.insert(.interrupt) }
         let project = project(for: thread)
-        let checkouts = checkouts(of: thread, subagents: subagents, in: project)
+        var edits = thread.edits ?? AgentEdits()
+        for subagent in subagents {
+            if let theirs = subagent.edits { edits.merge(theirs) }
+        }
+        let checkouts = checkouts(of: thread, edits: edits, in: project)
         let isSettled = integrations.settledThreadIDs.contains(thread.id)
         return WireTask(
             id: thread.id,
@@ -126,7 +130,8 @@ final class TasksFeed: TopicFeed {
             changedCheckouts: checkouts.changed,
             // Settled tasks and ones untouched for days keep the pull requests they have.
             pullRequests: pullRequests.pullRequests(
-                for: thread.id, checkouts: checkouts.changed, firstChanges: checkouts.firstChanges, updatedAt: thread.updatedAt,
+                for: thread.id, opened: edits.pullRequests, checkouts: checkouts.changed,
+                firstChanges: checkouts.firstChanges, updatedAt: thread.updatedAt,
                 isActive: !isSettled && thread.updatedAt > .now.addingTimeInterval(-3 * 86_400)),
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
                 ?? orchestrator.origin(of: thread),
@@ -170,15 +175,11 @@ final class TasksFeed: TopicFeed {
     /// first changed files in each repository, as far as its edits go back.
     /// Changes to other projects' repositories or to files outside any are
     /// left out.
-    private func checkouts(of thread: AgentThread, subagents: [AgentThread], in project: Workspace?)
+    private func checkouts(of thread: AgentThread, edits: AgentEdits, in project: Workspace?)
         -> (current: TaskCheckout?, changed: [TaskCheckout], firstChanges: [URL: Date]) {
         let folder = project.map { URL(filePath: $0.directory, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath() }
         func inProject(_ checkout: TaskCheckout) -> Bool {
             folder.map { $0.contains(checkout.repository) || checkout.repository.contains($0) } ?? false
-        }
-        var edits = thread.edits ?? AgentEdits()
-        for subagent in subagents {
-            if let theirs = subagent.edits { edits.merge(theirs) }
         }
         var changed: [TaskCheckout] = []
         var firstChanges: [URL: Date] = [:]

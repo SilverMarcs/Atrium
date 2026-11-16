@@ -16,6 +16,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -strict-concurrency=c
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentReadState.swift" \
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentContextUsage.swift" \
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentEdits.swift" \
+  "$ROOT/App/macOS/Host/Integrations/Contracts/AgentShellCommand.swift" \
   "$ROOT/App/macOS/Host/Integrations/Media/ChatPages.swift" \
   "$ROOT/App/macOS/Host/Integrations/Media/TranscriptMedia.swift" \
   "$ROOT/App/macOS/Host/Integrations/Media/PageImageScope.swift" \

@@ -52,7 +52,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         var worktreeDirectory: String?
         /// The folder the newest record was written in.
         var cwd: String?
-        var edits = AgentEdits()
+        var edits = EditScan()
         var activity: Date?
         var reply: Reply?
         var permissionMode: String?
@@ -80,7 +80,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             isFastMode: latest.reply?.speed.map { $0 == "fast" },
             permissionMode: ClaudePermissions.mode(latest.permissionMode),
             contextTokens: latest.reply?.contextTokens,
-            edits: latest.edits,
+            edits: latest.edits.edits,
             currentDirectory: latest.cwd
         )
     }
@@ -217,4 +217,11 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     private static func object(_ line: Substring) -> [String: Any]? {
         (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
     }
+}
+
+/// What a transcript's edit tools and shell commands changed, as read so far,
+/// and the commands still waiting for the results that say what they opened.
+nonisolated struct EditScan: Equatable, Sendable {
+    var edits = AgentEdits()
+    var commands: [String: AgentShellCommand] = [:]
 }

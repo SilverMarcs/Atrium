@@ -30,7 +30,7 @@ actor ClaudeSessionHistory {
     /// The newest records found in each transcript.
     private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
     /// The edits found in each subagent's transcript.
-    private var editScans: [URL: JSONLines.Scan<AgentEdits>] = [:]
+    private var editScans: [URL: JSONLines.Scan<EditScan>] = [:]
     /// Transcripts' conversations up to a prompt some turns back, so a reload
     /// reads only the turns after it. Claude only appends records, so the chain
     /// behind a record never changes: one holds for as long as its prompt stays
@@ -167,10 +167,10 @@ actor ClaudeSessionHistory {
 
     /// Brings a subagent's edits up to date, reading only what was appended since the last scan.
     private func subagentEdits(at url: URL, stamp: Stamp) -> AgentEdits {
-        var scan = editScans[url] ?? JSONLines.Scan(AgentEdits())
+        var scan = editScans[url] ?? JSONLines.Scan(EditScan())
         try? scan.read(url, size: stamp.size) { data, range, edits in Self.recordEdits(in: data, range, into: &edits) }
         editScans[url] = scan
-        return scan.state
+        return scan.state.edits
     }
 
     /// Claude ends a stopped turn with an interruption notice as its last prompt.
@@ -474,20 +474,50 @@ actor ClaudeSessionHistory {
         (#""name":"NotebookEdit","input":{"#, #""notebook_path":""#),
     ]
 
-    /// Records the files the edit tool calls among the lines in `range`
-    /// changed, each at the time of its record. Claude repeats calls in
-    /// records of requests, which have no time and are skipped. `range`
-    /// starts a line.
-    private static func recordEdits(in data: Data, _ range: Range<Int>, into edits: inout AgentEdits) {
+    /// What edit tools and shell commands changed among the lines in `range`,
+    /// each at the time of its record. Claude repeats calls in records of
+    /// requests, which have no time and are skipped. `range` starts a line.
+    private static func recordEdits(in data: Data, _ range: Range<Int>, into scan: inout EditScan) {
         for tool in editTools {
             JSONLines.forEachLine(containing: tool.call, in: data, range, newestFirst: false) { line in
                 guard let call = JSONLines.position(of: tool.call, in: data, line),
                       let path = JSONLines.string(after: tool.path, in: data, call..<line.upperBound),
                       let date = JSONLines.string(after: timestampMarker, in: data, line)
                         .flatMap({ try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) }) else { return true }
-                edits.record(file: path, at: date)
+                scan.edits.record(file: path, at: date)
                 return true
             }
+        }
+        recordCommands(in: data, range, into: &scan)
+    }
+
+    private static let shellCall = #""name":"Bash","input":{"command":""#
+    private static let toolResultMarker = #""tool_use_id":""#
+
+    /// Reads the shell commands among the lines in `range` that might commit,
+    /// push or open a pull request, and records each once its result, which
+    /// can come in a later read, names what it opened.
+    private static func recordCommands(in data: Data, _ range: Range<Int>, into scan: inout EditScan) {
+        JSONLines.forEachLine(containing: shellCall, in: data, range, newestFirst: false) { line in
+            guard let call = JSONLines.position(of: shellCall, in: data, line),
+                  let id = JSONLines.string(after: #""id":""#, in: data, line.lowerBound..<call, last: true),
+                  JSONLines.position(of: timestampMarker, in: data, line) != nil,
+                  let script = JSONLines.string(after: shellCall, in: data, line),
+                  AgentShellCommand.mightMatter(script) else { return true }
+            scan.commands[id] = AgentShellCommand(script, directory: JSONLines.string(after: cwdMarker, in: data, line, last: true))
+            return true
+        }
+        guard !scan.commands.isEmpty else { return }
+        JSONLines.forEachLine(containing: toolResultMarker, in: data, range, newestFirst: false) { line in
+            guard let id = JSONLines.string(after: toolResultMarker, in: data, line), let command = scan.commands[id],
+                  let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                  let result = record["toolUseResult"],
+                  let date = (record["timestamp"] as? String)
+                    .flatMap({ try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) }) else { return true }
+            let output = (result as? [String: Any])?["stdout"] as? String ?? result as? String ?? ""
+            scan.edits.record(command, output: output, at: date)
+            scan.commands[id] = nil
+            return !scan.commands.isEmpty
         }
     }
 
