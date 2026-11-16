@@ -4,6 +4,13 @@ import Foundation
 extension HostClient {
     // MARK: - Prompts
 
+    public func skills(for task: WireTask) async throws -> [AgentSkill] {
+        guard case .skills(let skills) = try await request(.skills(taskID: task.id, provider: task.provider, workspaceID: task.workspaceID)) else {
+            throw HostClientError.unexpectedReply
+        }
+        return skills
+    }
+
     /// Sends a prompt to a task's agent, showing it in the timeline at once.
     /// A failed send stays there with a retry button instead of an alert.
     /// - Returns: The ID of the prompt's row in the timeline.

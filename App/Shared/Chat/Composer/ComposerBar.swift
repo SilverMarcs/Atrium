@@ -28,6 +28,10 @@ struct ComposerBar: View {
     @State private var editorFrame = CGRect.zero
     @State private var width: CGFloat = 0
     @State private var keyboardCloseTask: Task<Void, Never>?
+    @State private var skills: [AgentSkill] = []
+    @State private var isLoadingSkills = false
+    @State private var skillLoadFailed = false
+    @State private var showsSkillPopover = false
     #if os(iOS)
     @State private var menusReady = false
     #endif
@@ -64,6 +68,10 @@ struct ComposerBar: View {
     private var action: ComposerBarActionButton.Action {
         composer.sendState(for: item) == .stop ? .stop : .send
     }
+    private var skillLoadKey: String {
+        guard let item else { return "" }
+        return "\(item.host.id)/\(item.task.id)/\(item.task.provider.rawValue)/\(item.task.workspaceID?.uuidString ?? "")"
+    }
 
     var body: some View {
         @Bindable var composer = composer
@@ -77,7 +85,6 @@ struct ComposerBar: View {
             if !composer.images.isEmpty {
                 ComposerAttachmentStrip(composer: composer)
             }
-
             ZStack {
                 // The container lets the attachment button's circle melt into
                 // the field's glass as it grows.
@@ -163,8 +170,32 @@ struct ComposerBar: View {
                         isExpanded: isExpanded,
                         isEditable: !isSubmittingEdit,
                         pasteDelegate: composer.pasteDelegate,
+                        onSkillReturn: {
+                            guard composer.skillQuery != nil,
+                                  let first = composer.matchingSkills(in: skills).first else { return false }
+                            showsSkillPopover = false
+                            composer.selectSkill(first)
+                            return true
+                        },
                         onReturn: send
                     )
+                    .popover(isPresented: $showsSkillPopover, arrowEdge: .top) {
+                        ComposerSkillSuggestions(
+                            matches: composer.matchingSkills(in: skills), hasSkills: !skills.isEmpty,
+                            isLoading: isLoadingSkills, failed: skillLoadFailed,
+                            select: { skill in
+                                showsSkillPopover = false
+                                composer.selectSkill(skill)
+                                Task {
+                                    try? await Task.sleep(for: TaskComposer.contextMenuDismissalDelay)
+                                    composer.isFocused = true
+                                }
+                            }
+                        )
+                        #if os(iOS)
+                        .presentationCompactAdaptation(.popover)
+                        #endif
+                    }
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
 
@@ -227,6 +258,23 @@ struct ComposerBar: View {
         .animation(.smooth(duration: 0.25), value: expandedEditorHeight)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .modifier(ComposerHaptics(composer: composer, item: item))
+        .task(id: skillLoadKey) {
+            guard let item else { skills = []; return }
+            skills = []
+            skillLoadFailed = false
+            isLoadingSkills = true
+            defer { isLoadingSkills = false }
+            do { skills = try await item.host.skills(for: item.task) }
+            catch { skillLoadFailed = true }
+        }
+        .onChange(of: composer.skillQuery) { _, query in
+            showsSkillPopover = item != nil && composer.isFocused && query != nil
+        }
+        .onChange(of: composer.isFocused) { _, focused in
+            if focused, item != nil, composer.skillQuery != nil {
+                showsSkillPopover = true
+            }
+        }
         .onChange(of: composer.messageEdit?.id) { _, id in
             editFocusTask?.cancel()
             guard id != nil else { return }

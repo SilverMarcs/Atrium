@@ -43,6 +43,7 @@ protocol AgentProviderAdapter: AnyObject {
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage]
     /// Images are local files attached to the prompt.
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws
+    func skills(in directory: String) async throws -> [AgentSkill]
     /// The original images of a prompt, to show or send again, as its message
     /// ID or `editTarget` names it.
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data]

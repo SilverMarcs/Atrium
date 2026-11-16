@@ -95,6 +95,18 @@ struct TaskService {
         }
     }
 
+    func skills(forTask id: String, provider: AgentProvider, workspaceID: UUID?) async -> HostReply {
+        do {
+            if let thread = integrations.threads.first(where: { $0.id == id }) {
+                return .skills(try await integrations.skills(for: thread))
+            }
+            guard let workspaceID, let workspace = workspaces.workspaces.first(where: { $0.id == workspaceID }) else {
+                return .failed(message: "This task or project no longer exists.")
+            }
+            return .skills(try await integrations.skills(provider: provider, directory: workspace.directory))
+        } catch { return .failed(message: error.localizedDescription) }
+    }
+
     private func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async -> HostReply {
         do {
             try await sessions.changeSettings(change, of: thread)

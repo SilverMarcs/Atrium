@@ -20,6 +20,26 @@ final class TaskComposer {
             else { ordinaryDraft = newValue }
         }
     }
+
+    /// The unfinished slash name at the start of the draft, while the user is choosing a skill.
+    var skillQuery: String? {
+        guard draft.first == "/" else { return nil }
+        let name = draft.dropFirst()
+        guard !name.contains(where: \.isWhitespace) else { return nil }
+        return String(name)
+    }
+
+    func matchingSkills(in skills: [AgentSkill]) -> [AgentSkill] {
+        guard let skillQuery else { return [] }
+        return skills.filter { skillQuery.isEmpty || $0.name.localizedStandardContains(skillQuery) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    func selectSkill(_ skill: AgentSkill) {
+        guard skillQuery != nil else { return }
+        draft = "/\(skill.name) "
+    }
+
     private(set) var isSubmittingDictation = false
     private(set) var isQueueingPrompt = false
     private(set) var feedback: ComposerFeedback?

@@ -509,6 +509,13 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await openConversation(thread)
         let questionIDs = Set(conversations[thread.sessionID]?.pendingQuestions.map(\.itemID) ?? [])
         var input: [[String: Any]] = images.map { ["type": "localImage", "path": $0.path(percentEncoded: false)] }
+        let visibleText = ForkHandoff.request(in: text) ?? text
+        if visibleText.first == "$" || visibleText.first == "/" {
+            let name = String(visibleText.dropFirst().prefix(while: { !$0.isWhitespace }))
+            if let skill = (try? await listedSkills(in: thread.directory))?.first(where: { $0.name == name }) {
+                input.append(["type": "skill", "name": skill.name, "path": skill.path])
+            }
+        }
         if !text.isEmpty { input.append(["type": "text", "text": text, "text_elements": []]) }
         // A steered turn keeps its settings; any chosen ones wait for the next turn.
         let isSteered = if let turnID = try await activeTurnID(of: thread.sessionID) {
@@ -541,6 +548,24 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let typed = ForkHandoff.request(in: text) ?? text
         let request = RelayedMessage.relay(in: typed)?.body ?? typed
         generateTitleIfNeeded(for: thread, prompt: request.isEmpty ? "Discuss an attached image" : request)
+    }
+
+    func skills(in directory: String) async throws -> [AgentSkill] {
+        try await listedSkills(in: directory).map { AgentSkill(name: $0.name, description: $0.description) }
+    }
+
+    private func listedSkills(in directory: String) async throws -> [(name: String, description: String, path: String)] {
+        let data = try await request("skills/list", params: ["cwds": [directory]])
+        let response = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let entries = response?["data"] as? [[String: Any]] ?? []
+        let listed = entries.flatMap { $0["skills"] as? [[String: Any]] ?? [] }
+        return listed.compactMap { value in
+            guard value["enabled"] as? Bool == true,
+                  let name = value["name"] as? String, !name.isEmpty,
+                  let path = value["path"] as? String, !path.isEmpty else { return nil }
+            let interface = value["interface"] as? [String: Any]
+            return (name, interface?["shortDescription"] as? String ?? value["description"] as? String ?? "", path)
+        }
     }
 
     /// Adds input to a running turn.

@@ -18,6 +18,7 @@ struct ComposerTextView: UIViewRepresentable {
     let isExpanded: Bool
     let isEditable: Bool
     let pasteDelegate: ComposerPasteDelegate
+    let onSkillReturn: () -> Bool
     let onReturn: () -> Void
 
     /// The tallest the editor grows before it scrolls.
@@ -42,6 +43,7 @@ struct ComposerTextView: UIViewRepresentable {
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
         editor.onReturn = onReturn
+        editor.onSkillReturn = onSkillReturn
         editor.placeholder = placeholder
         editor.isEditable = isEditable
         editor.isExpanded = isExpanded
@@ -85,6 +87,12 @@ struct ComposerTextView: UIViewRepresentable {
             }
         }
 
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            guard text == "\n", textView.markedTextRange == nil,
+                  let editor = textView as? ComposerEditor else { return true }
+            return editor.onSkillReturn?() != true
+        }
+
         func textViewDidBeginEditing(_ textView: UITextView) {
             isEditing.wrappedValue = true
             if !isFocused.wrappedValue { isFocused.wrappedValue = true }
@@ -101,6 +109,7 @@ struct ComposerTextView: UIViewRepresentable {
 /// truncated line at rest, and Return-to-send on hardware keyboards.
 final class ComposerEditor: UITextView, ComposerTextInserting {
     var onReturn: (() -> Void)?
+    var onSkillReturn: (() -> Bool)?
 
     func insertDictation(_ transcript: String, in draft: String) -> String? {
         guard text == draft, markedTextRange == nil, isEditable else { return nil }
@@ -315,6 +324,7 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if sendsOnReturn(presses) {
+            if onSkillReturn?() == true { return }
             onReturn?()
             return
         }

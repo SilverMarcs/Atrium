@@ -271,7 +271,9 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // A chat without hooks still takes the prompt; its turn shows from history once saved.
         let hasHooks = try await hasHooks(jobID: id) ? true : await connectHooks(to: thread, jobID: id)
         let references = images.map { PromptAttachments.reference(to: $0) }
-        let prompt = (references + (text.isEmpty ? [] : [text])).joined(separator: "\n")
+        // Claude recognizes a skill only when its slash command begins the prompt.
+        let prompt = (text.first == "/" ? [text] + references : references + (text.isEmpty ? [] : [text]))
+            .joined(separator: "\n")
         let outgoingPrompt = ClaudeOutgoingPrompt(wireText: prompt, displayText: text, images: images.compactMap { TranscriptImage.thumbnail(at: $0) })
         let isSteering = withStatus(thread).status == .processing
         if hasHooks { outgoing[thread.sessionID, default: []].append(outgoingPrompt) }
@@ -290,6 +292,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             catch { Logger(subsystem: "Atrium", category: "Claude").debug("Steering failed: \(error.localizedDescription)") }
         }
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now)))
+    }
+
+    func skills(in directory: String) async throws -> [AgentSkill] {
+        await ClaudeSkills.list(directory: directory, configDirectory: configDirectory)
     }
 
     /// A prompt's message ID is also its `editTarget`. Rewinding and forking

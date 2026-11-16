@@ -19,6 +19,7 @@ struct ComposerTextView: NSViewRepresentable {
     let isExpanded: Bool
     let isEditable: Bool
     let pasteDelegate: ComposerPasteDelegate
+    let onSkillReturn: () -> Bool
     let onReturn: () -> Void
 
     /// The tallest the editor grows before it scrolls.
@@ -58,6 +59,7 @@ struct ComposerTextView: NSViewRepresentable {
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
         editor.onReturn = onReturn
+        editor.onSkillReturn = onSkillReturn
         editor.pasteDelegate = pasteDelegate
         editor.placeholder = placeholder
         editor.isEditable = isEditable
@@ -124,6 +126,7 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
     }
 
     var onReturn: (() -> Void)?
+    var onSkillReturn: (() -> Bool)?
     var onFocusChange: ((Bool) -> Void)?
     weak var pasteDelegate: ComposerPasteDelegate?
 
@@ -341,6 +344,7 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
 
     override func insertNewline(_ sender: Any?) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+        if modifiers.isDisjoint(with: [.shift, .option]), onSkillReturn?() == true { return }
         if UserDefaults.standard.bool(forKey: "enterToSendChat"),
            modifiers.isDisjoint(with: [.shift, .option, .command]) {
             onReturn?()

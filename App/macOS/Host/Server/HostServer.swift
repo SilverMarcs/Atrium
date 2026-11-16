@@ -376,6 +376,8 @@ final class HostServer {
             publishTasks(.tasks(tasksFeed.snapshot()))
             feeds[.transcript(taskID: taskID)]?.refresh()
             return reply
+        case .skills(let taskID, let provider, let workspaceID):
+            return await tasks.skills(forTask: taskID, provider: provider, workspaceID: workspaceID)
         case .interrupt(let taskID):
             guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
                 return .failed(message: "This task no longer exists.")

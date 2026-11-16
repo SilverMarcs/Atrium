@@ -959,6 +959,14 @@ final class AgentIntegrationStore {
         }
     }
 
+    func skills(for thread: AgentThread) async throws -> [AgentSkill] {
+        try await availableAdapter(for: thread.provider).skills(in: thread.directory)
+    }
+
+    func skills(provider: AgentProvider, directory: String) async throws -> [AgentSkill] {
+        try await availableAdapter(for: provider).skills(in: directory)
+    }
+
     /// An image attached to a prompt as it was sent, by the prompt's message ID
     /// and the image's place among its images. A fork keeps only the previews
     /// of the prompts it inherited from the other provider.

@@ -41,6 +41,8 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int)
     case refreshTasks
     case task(id: String, action: TaskAction)
+    /// Skills for a task, or for a new chat's provider and project before the task exists.
+    case skills(taskID: String, provider: AgentProvider, workspaceID: UUID?)
     /// Creates a task in a project, in its folder as it is unless `checkout` says otherwise.
     /// A command-line client's task is listed under whoever started it, the
     /// session it runs in or else its device, unless it's `standalone`: then

@@ -10,6 +10,7 @@ public nonisolated enum HostReply: Codable, Sendable {
     case sharedHosts([SharedHost])
     /// The task a compose or side chat created, or the session a caller runs in.
     case task(id: String)
+    case skills([AgentSkill])
     /// The task a fork created, with the original images of the prompt it
     /// was forked before, so a client can put that prompt in its composer.
     case forked(taskID: String, images: [Data])
