@@ -11,6 +11,18 @@ struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
+            if item.task.workspaceID != nil {
+                Section {
+                    ScratchPadButton(isPresented: $showingScratchPad)
+                } header: {
+                    if let percent = item.task.contextUsedPercent {
+                        Text("\(percent)% context used")
+                    } else {
+                        Text("Context usage")
+                    }
+                }
+                Divider()
+            }
             if !item.task.pullRequests.isEmpty {
                 Section("Pull Requests") {
                     PullRequestButtons(pullRequests: item.task.pullRequests)
@@ -19,7 +31,6 @@ struct TaskMoreMenu: View {
             if let workspaceID = item.task.workspaceID {
                 Section {
                     ProjectLinks(workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID))
-                    ScratchPadButton(isPresented: $showingScratchPad)
                 } header: {
                     // The branch or worktree the project's pages show.
                     if let title = item.host.scope(for: workspaceID).title {
