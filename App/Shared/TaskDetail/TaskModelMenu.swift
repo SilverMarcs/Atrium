@@ -11,12 +11,22 @@ struct TaskModelMenu: View {
   var isComposerRow = false
   var isNewChatRow = false
 
+  private var showsContextUsage: Bool {
+    #if os(iOS)
+    !isComposerRow
+    #else
+    true
+    #endif
+  }
+
   var body: some View {
     let name = models.model(running: selection.model)?.name ?? selection.model ?? "Model"
     let detail = selection.reasoningEffort.map(AgentModel.effortName) ?? ""
 
     Menu {
-      TaskModelMenuItems(selection: selection, models: models, perform: perform)
+      TaskModelMenuItems(
+        selection: selection, models: models, showsContextUsage: showsContextUsage, perform: perform
+      )
     } label: {
       if isNewChatRow {
         NewChatPickerLabel(title: [name, detail].filter { !$0.isEmpty }.joined(separator: " · ")) {
