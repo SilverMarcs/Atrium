@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A prompt's text in its bubble. A prompt another agent wrote is gray rather
-/// than tinted, so the user's own stand out. The Mac flies a copy of it in
+/// than tinted, so the user's own stand out. Both platforms fly a copy of it in
 /// when it's sent.
 struct PromptBubble: View {
     let text: String

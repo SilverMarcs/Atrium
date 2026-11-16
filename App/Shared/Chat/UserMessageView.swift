@@ -21,7 +21,7 @@ struct UserMessageView: View {
     #else
     /// Finds this bubble's flight, if it was just sent. A bubble that can't
     /// have one (nil) skips the effect and never observes flights.
-    var sendFlight: ((PromptSendAnimator) -> PromptSendFlight?)?
+    var sendFlight: ((PromptFlights) -> PromptFlight?)?
     #endif
     @Environment(\.chatMedia) private var media
     @State private var viewedImages: ViewedImages?
@@ -63,7 +63,7 @@ struct UserMessageView: View {
                 #if os(macOS)
                 .modifier(PromptFlightTarget(rowID: flightRowID))
                 #else
-                .modifier(PromptSendEffect(flight: sendFlight))
+                .modifier(PromptFlightTarget(flight: sendFlight))
                 #endif
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 #if os(macOS)

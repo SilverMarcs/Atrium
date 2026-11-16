@@ -10,16 +10,6 @@ struct ComposerHaptics: ViewModifier {
     let composer: TaskComposer
     let item: HostTask?
 
-    private struct FailedPrompts: Equatable {
-        let task: TaskRef?
-        let ids: Set<UUID>
-    }
-
-    private var failedPrompts: FailedPrompts {
-        let prompts = item.map { $0.host.conversations.pendingPrompts[$0.task.id] ?? [] } ?? []
-        return FailedPrompts(task: item?.id, ids: Set(prompts.filter { $0.state == .failed }.map(\.id)))
-    }
-
     func body(content: Content) -> some View {
         content
             #if os(iOS)
@@ -28,9 +18,6 @@ struct ComposerHaptics: ViewModifier {
             }
             .sensoryFeedback(.error, trigger: composer.dictation.error) { _, error in isEnabled && error != nil }
             .sensoryFeedback(.error, trigger: item?.host.actionError) { _, error in isEnabled && error != nil }
-            .sensoryFeedback(.error, trigger: failedPrompts) { old, new in
-                isEnabled && old.task == new.task && !new.ids.subtracting(old.ids).isEmpty
-            }
             #endif
     }
 

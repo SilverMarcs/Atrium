@@ -11,6 +11,8 @@ public final class ConversationStore {
   public let pendingPrompts = KeyedState<[PendingPrompt]>()
   public let tasksAwaitingAgent = KeyedState<UUID>()
   @ObservationIgnored private var deliveries: [UUID: Task<Void, Never>] = [:]
+  /// Takes a prompt that couldn't be sent back to its task's composer, with why.
+  @ObservationIgnored var onReturn: ((_ prompt: PendingPrompt, _ taskID: String, _ reason: String?) -> Void)?
   private let confirmedRowIDs = KeyedState<[String: String]>()
   private let acknowledgementTimeout: Duration
 
@@ -29,19 +31,6 @@ public final class ConversationStore {
     pendingPrompts[taskID, default: []].append(prompt)
     tasksAwaitingAgent[taskID] = prompt.id
     return prompt
-  }
-
-  func prepareRetry(_ id: UUID, in taskID: String) {
-    let anchor = newestUserMessageID(in: taskID)
-    let expected = nextExpectedUserMessageCount(for: taskID)
-    update(id, in: taskID) {
-      $0.state = .sending
-      $0.failureMessage = nil
-      $0.isOverdue = false
-      $0.anchorUserMessageID = anchor
-      $0.expectedUserMessagesAfterAnchor = expected
-    }
-    tasksAwaitingAgent[taskID] = id
   }
 
   /// One delivery lifecycle for both transports. Expiry is a delivery deadline,
@@ -64,8 +53,7 @@ public final class ConversationStore {
         try await self.awaitTranscript(id, in: taskID, status: status)
       } catch {
         if !Task.isCancelled {
-          self?.markFailed(id, in: taskID, message: error.localizedDescription)
-          self?.stopAwaitingAgent(for: taskID, after: id)
+          self?.giveBack(id, in: taskID, reason: error.localizedDescription)
         }
       }
       self?.deliveries[id] = nil
@@ -119,16 +107,19 @@ public final class ConversationStore {
     pendingPrompts[taskID] = prompts
   }
 
-  func markFailed(_ id: UUID, in taskID: String, message: String? = nil) {
+  /// Takes a prompt that couldn't be sent out of the timeline and hands it
+  /// back to be sent again from the composer.
+  func giveBack(_ id: UUID, in taskID: String, reason: String? = nil) {
     guard var prompts = pendingPrompts[taskID],
       let index = prompts.firstIndex(where: { $0.id == id })
     else { return }
-    prompts[index].state = .failed
-    prompts[index].failureMessage = message
-    for later in prompts.indices.dropFirst(index + 1) where prompts[later].state != .failed {
+    let prompt = prompts.remove(at: index)
+    for later in prompts.indices.dropFirst(index) {
       prompts[later].expectedUserMessagesAfterAnchor -= 1
     }
-    pendingPrompts[taskID] = prompts
+    pendingPrompts[taskID] = prompts.isEmpty ? nil : prompts
+    stopAwaitingAgent(for: taskID, after: id)
+    onReturn?(prompt, taskID, reason)
   }
 
   func stopAwaitingAgent(for taskID: String, after id: UUID) {
@@ -151,7 +142,7 @@ public final class ConversationStore {
     if tasksAwaitingAgent[taskID] != nil && status != .waiting { return .processing }
     // A provider may report worker startup as processing before any turn exists.
     if status == .processing, transcripts[taskID]?.isEmpty != false,
-       pendingPrompts[taskID]?.contains(where: { $0.state != .failed }) != true { return .idle }
+       pendingPrompts[taskID]?.isEmpty != false { return .idle }
     return status
   }
 
@@ -166,7 +157,7 @@ public final class ConversationStore {
     let messages = transcripts[taskID] ?? []
     let prompts = pendingPrompts[taskID] ?? []
     var confirmations: [PromptConfirmation] = []
-    for prompt in prompts where prompt.state != .failed {
+    for prompt in prompts {
       guard let message = messages.prompt(prompt.expectedUserMessagesAfterAnchor, after: prompt.anchorUserMessageID)
       else { continue }
       confirmations.append(PromptConfirmation(promptID: prompt.id, messageID: message.id))
@@ -225,6 +216,6 @@ public final class ConversationStore {
   }
 
   private func nextExpectedUserMessageCount(for taskID: String) -> Int {
-    (pendingPrompts[taskID]?.filter { $0.state != .failed }.count ?? 0) + 1
+    (pendingPrompts[taskID]?.count ?? 0) + 1
   }
 }

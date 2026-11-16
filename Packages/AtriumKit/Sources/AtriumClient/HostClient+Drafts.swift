@@ -157,7 +157,7 @@ extension HostClient {
                 // says what to change before retrying.
                 if case HostClientError.rejected(let message) = error { actionError = message }
                 for prompt in conversations.pendingPrompts[draft.id] ?? [] where prompt.state == .sending {
-                    conversations.markFailed(prompt.id, in: draft.id)
+                    conversations.giveBack(prompt.id, in: draft.id)
                 }
                 conversations.tasksAwaitingAgent[draft.id] = nil
             }

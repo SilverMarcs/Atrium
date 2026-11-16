@@ -13,7 +13,7 @@ struct TaskDetailScreen: View {
     @State private var showingScratchPad = false
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
-    @State private var sendAnimator = PromptSendAnimator()
+    @State private var sendAnimator = PromptFlights()
     @AppStorage(SendMode.key) private var sendMode = SendMode.steer
 
     private var host: HostClient? { hosts.host(ref.hostID) }

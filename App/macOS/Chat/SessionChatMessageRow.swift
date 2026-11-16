@@ -37,13 +37,6 @@ struct SessionChatMessageRow: View, Equatable {
           edit: isRewindable ? PromptAction(isEnabled: { [message] in actions.isEditEnabled(message.id) }, perform: { [message] in actions.edit(message) }) : nil,
           fork: isRewindable ? PromptAction(isEnabled: actions.isForkEnabled, perform: { [message] in actions.fork(message) }) : nil,
           flightRowID: message.id.hasPrefix("pending-") ? message.id : nil)
-        if let pendingPrompt, pendingPrompt.state == .failed {
-          if let error = pendingPrompt.failureMessage { Text(error).font(.caption).foregroundStyle(.red) }
-          Button("Retry", systemImage: "arrow.clockwise") { actions.retry(pendingPrompt.id) }
-            .font(.caption)
-            .buttonStyle(.borderless)
-            .tint(.red)
-        }
         if queuedPrompt != nil {
           QueuedPromptFooter(
             edit: queuedPrompt?.isFromAgent == true ? nil : actions.editQueued,
@@ -70,7 +63,6 @@ struct PromptActions: Equatable {
   var edit: @MainActor (TranscriptMessage) -> Void = { _ in }
   var isForkEnabled: @MainActor () -> Bool = { false }
   var fork: @MainActor (TranscriptMessage) -> Void = { _ in }
-  var retry: @MainActor (UUID) -> Void = { _ in }
   /// Takes the queued prompt back into the composer.
   var editQueued: @MainActor () -> Void = {}
   /// Sends the queued prompt immediately as a steer.

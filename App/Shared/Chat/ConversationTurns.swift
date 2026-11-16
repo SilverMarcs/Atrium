@@ -21,7 +21,7 @@ struct ConversationTurns {
         // A prompt on its way that isn't a steer starts a new turn, so the one
         // before it has finished, even once the agent starts on that prompt.
         let isRunning = (status == .processing || status == .waiting)
-            && !pendingPrompts.contains { !$0.isSteer && $0.state != .failed }
+            && !pendingPrompts.contains { !$0.isSteer }
         let start = isRunning ? messages.lastIndex { $0.role == .user && !$0.isSteer } ?? 0 : messages.endIndex
         let running = messages[start...]
         self.messages = Self.fold(messages[..<start]) + running

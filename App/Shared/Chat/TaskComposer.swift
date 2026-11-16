@@ -295,8 +295,8 @@ final class TaskComposer {
         }
     }
 
-    /// Sends the waiting prompt through the ordinary steering path. A failed
-    /// send stays in the timeline with Retry, including its original images.
+    /// Sends the waiting prompt through the ordinary steering path. One the
+    /// host doesn't take comes back to the composer with its images.
     func sendQueuedPromptNow(of item: HostTask) {
         Task {
             do {
@@ -325,9 +325,15 @@ final class TaskComposer {
     /// of anything already there.
     private func restore(_ prompt: (text: String, images: [Data])) {
         if messageEdit?.isSubmitting != true { messageEdit = nil }
-        draft = QueuedPrompt.joined(draft, to: prompt.text)
-        images = prompt.images.map { ComposerImage(data: $0) } + images
+        takeBack(prompt.text, images: prompt.images)
         focusRequestID = UUID()
+    }
+
+    /// Puts a prompt that couldn't be sent back in the draft, ahead of
+    /// anything typed since, to send again.
+    func takeBack(_ text: String, images: [Data]) {
+        draft = QueuedPrompt.joined(draft, to: text)
+        self.images = images.map { ComposerImage(data: $0) } + self.images
     }
 
     private func send(_ text: String, images: [Data], to item: HostTask, animator: any PromptSendAnimating, from sourceFrame: CGRect?) -> UUID {
@@ -335,7 +341,7 @@ final class TaskComposer {
         let animationSource = sourceFrame ?? animator.sourceFrame?()
         animator.willSend()
         let promptID = item.host.sendPrompt(text, images: images, to: item.task.id)
-        animator.begin(promptID, text: text, from: animationSource)
+        animator.begin(promptID, text: text, hasImages: !images.isEmpty, from: animationSource)
         return promptID
     }
 }

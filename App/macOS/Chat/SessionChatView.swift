@@ -96,6 +96,8 @@ struct SessionChatView: View {
           .coordinateSpace(.named(TurnFill.coordinateSpace))
           .modifier(ReplyPrefetch(rows: rows, liveIDs: turns.liveIDs))
           .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
+          // Only across: the rows' frame in the window moves with every scrolled frame.
+          .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: { flights.rowsMaxX = $0 }
           .background { TimelineScrollViewFinder(flights: flights) }
           .padding(.horizontal, 16)
           .padding(.top, 4)
@@ -130,6 +132,8 @@ struct SessionChatView: View {
       .onScrollGeometryChange(for: CGSize.self, of: \.containerSize) { _, size in
         anchorSpace.noteViewport(size)
       }
+      // Where a sent prompt is held, which its copy flies to before its row lays out.
+      .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { flights.timelineTop = $0 }
       // Content growing below a pinned timeline (a streaming reply, the
       // working indicator) carries it along; content shrinking under it, as a
       // finished reply folds or the lazy stack measures rows it had
@@ -287,7 +291,6 @@ struct SessionChatView: View {
         guard let task = host.displayedTask(taskID) else { return }
         hosts.fork(HostTask(host: host, task: task), into: task.provider, before: message)
       },
-      retry: { [host, taskID = task.id] id in host.retryPrompt(id, in: taskID) },
       editQueued: { [host, taskID = task.id] in
         guard let task = host.displayedTask(taskID) else { return }
         composer.editQueuedPrompt(of: HostTask(host: host, task: task))

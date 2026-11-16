@@ -118,6 +118,7 @@ public final class HostClient: Identifiable {
         localName = name
         loopback = connection
         authentication = .none
+        takeBackUnsentPrompts()
     }
 
     /// A host reached through the relay.
@@ -128,6 +129,17 @@ public final class HostClient: Identifiable {
         localName = host.hostName
         loopback = nil
         self.authentication = authentication
+        takeBackUnsentPrompts()
+    }
+
+    /// A prompt the host didn't take goes back to its task's composer, and
+    /// the reason shows.
+    private func takeBackUnsentPrompts() {
+        conversations.onReturn = { [weak self] prompt, taskID, reason in
+            guard let self else { return }
+            if let reason { actionError = reason }
+            connections?.delegate?.host(self, didGiveBack: prompt, to: taskID)
+        }
     }
 
     public var name: String { pairedHost?.displayName ?? customLocalName ?? hello?.hostName ?? localName }

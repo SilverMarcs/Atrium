@@ -30,6 +30,10 @@ final class PromptFlights: PromptSendAnimating {
   @ObservationIgnored weak var scrollView: NSScrollView?
   /// How wide the timeline's rows are, which sizes the copy before its row lays out.
   @ObservationIgnored var rowWidth: CGFloat = 0
+  /// Where the timeline's rows end, in window coordinates.
+  @ObservationIgnored var rowsMaxX: CGFloat = 0
+  /// The top of the timeline, below the toolbar, in window coordinates.
+  @ObservationIgnored var timelineTop: CGFloat = 0
   @ObservationIgnored private var flights: [String: Flight] = [:]
   @ObservationIgnored private weak var overlay: FlightOverlayView?
   /// The timeline as it was just before the latest send.
@@ -63,6 +67,8 @@ final class PromptFlights: PromptSendAnimating {
     let bubble: PromptBubbleCopy
     let layer = CALayer()
     var destination: CGRect?
+    /// Flying to where the row will be held, until the scroll for it lands.
+    var awaitsRoom = false
     var isLaunching = false
     var isFlying = false
     var expiry: Task<Void, Never>?
@@ -83,14 +89,17 @@ final class PromptFlights: PromptSendAnimating {
     snapshot = reduceMotion ? nil : snapshotTimeline()
   }
 
-  func begin(_ promptID: PendingPrompt.ID, text: String, from frame: CGRect?) {
+  func begin(_ promptID: PendingPrompt.ID, text: String, hasImages: Bool, from frame: CGRect?) {
     guard !text.isEmpty, !reduceMotion else { return }
-    begin("pending-\(promptID.uuidString)", bubble: PromptBubbleCopy(text: text, fontSize: fontSize), from: frame)
+    begin("pending-\(promptID.uuidString)", bubble: PromptBubbleCopy(text: text, fontSize: fontSize),
+          heldAtTop: !hasImages, from: frame)
   }
 
-  /// Shows a copy of the prompt's bubble over the composer at once, before the
-  /// timeline has laid out its row, and hides the row's own bubble.
-  func begin(_ rowID: String, bubble: PromptBubbleCopy, from source: CGRect?) {
+  /// Shows a copy of the prompt's bubble over the composer, and hides the
+  /// row's own bubble. One held at the top of the timeline flies there at
+  /// once, and follows its row once the timeline has laid it out; any other
+  /// waits for the row.
+  func begin(_ rowID: String, bubble: PromptBubbleCopy, heldAtTop: Bool, from source: CGRect?) {
     guard let source, source.width > 0, let overlay = overlayView(),
           let image = render(bubble, width: rowWidth - Self.bubbleInset, in: overlay) else { return }
     let flight = Flight(source: source, bubble: bubble)
@@ -110,7 +119,29 @@ final class PromptFlights: PromptSendAnimating {
       guard !Task.isCancelled else { return }
       self?.land(rowID)
     }
+    if heldAtTop, rowsMaxX > 0 {
+      // Its top as far below the toolbar as a held prompt's row puts it.
+      let size = flight.layer.bounds.size
+      flight.awaitsRoom = true
+      fly(rowID, to: CGRect(
+        x: rowsMaxX - size.width, y: timelineTop + ChatMessageSpacing.standard, width: size.width, height: size.height))
+      // The row follows once the timeline has scrolled for it, or shortly
+      // if it never asks to.
+      Task { [weak self] in
+        try? await Task.sleep(for: .milliseconds(250))
+        guard let self, room == nil else { return }
+        follow(rowID)
+      }
+      return
+    }
     // The row may have laid out before the composer handed the prompt over.
+    if let frame = laidOut[rowID] { noteDestination(rowID, frame: frame) }
+  }
+
+  /// A copy flying to where its row will be held goes on to where the row is.
+  private func follow(_ rowID: String) {
+    guard let flight = flights[rowID], flight.awaitsRoom else { return }
+    flight.awaitsRoom = false
     if let frame = laidOut[rowID] { noteDestination(rowID, frame: frame) }
   }
 
@@ -118,7 +149,7 @@ final class PromptFlights: PromptSendAnimating {
   func noteDestination(_ rowID: String, frame: CGRect) {
     guard isSending || flights[rowID] != nil else { return }
     laidOut[rowID] = frame
-    guard let flight = flights[rowID], frame.width > 0 else { return }
+    guard let flight = flights[rowID], frame.width > 0, !flight.awaitsRoom else { return }
     let previous = flight.destination
     flight.destination = frame
     if flight.isFlying, let previous, previous != frame {
@@ -139,7 +170,8 @@ final class PromptFlights: PromptSendAnimating {
   /// the prompt's row. SwiftUI puts back a scroll it applies in the update
   /// that lays the row out, for a few frames, which showed the timeline
   /// where it was and the prompt low on screen before it jumped up again.
-  /// The copy waits for the scroll, so it flies straight to where the row ends up.
+  /// A copy flying to where its row is held follows the row once it lands;
+  /// any other waits for it, so it flies straight to where the row ends up.
   func makeRoom(by scroll: @escaping () -> Void) {
     room = .waiting(scroll)
     roomDeadline?.cancel()
@@ -170,7 +202,15 @@ final class PromptFlights: PromptSendAnimating {
     roomDeadline?.cancel()
     roomDeadline = nil
     for (rowID, flight) in flights {
-      if let frame = flight.destination { noteDestination(rowID, frame: frame) }
+      if flight.awaitsRoom {
+        // Once the update the scroll lands in has laid the row out there.
+        Task { [weak self] in
+          await Task.yield()
+          self?.follow(rowID)
+        }
+      } else if let frame = flight.destination {
+        noteDestination(rowID, frame: frame)
+      }
     }
   }
 
@@ -265,6 +305,13 @@ final class PromptFlights: PromptSendAnimating {
         flight.layer.bounds = CGRect(origin: .zero, size: destination.size)
       }
     }
+    fly(rowID, to: destination)
+  }
+
+  private func fly(_ rowID: String, to destination: CGRect) {
+    guard let flight = flights[rowID] else { return }
+    flight.destination = destination
+    flight.isLaunching = true
     let move = CASpringAnimation(perceptualDuration: Self.response, bounce: Self.bounce)
     move.keyPath = "position"
     move.fromValue = NSValue(point: flight.layer.position)

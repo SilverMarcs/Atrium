@@ -7,17 +7,15 @@ public nonisolated struct PendingPrompt: Identifiable, Equatable, Sendable {
         case sending
         /// The host took it; it stays until the transcript shows it.
         case sent
-        case failed
     }
 
-    /// Also the prompt's key, so retrying it can't prompt the agent twice.
+    /// Also the prompt's key, so the host can't prompt the agent with it twice.
     /// A queued prompt's, once its host sends it, so it keeps its bubble.
     public var id = UUID()
     public let text: String
     /// Attached images, as the JPEG data sent to the host.
     public var images: [Data] = []
     public var state: State = .sending
-    public var failureMessage: String?
     /// The newest user message in the transcript when this was sent.
     public var anchorUserMessageID: String?
     /// How many user messages the transcript will hold after the anchor once

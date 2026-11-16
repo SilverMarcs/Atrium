@@ -5,6 +5,9 @@ import SwiftUI
 /// A task's conversation, scrolled to the latest message, with the agent's state below it.
 struct TaskChatView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(PromptFlights.self) private var flights
     let item: HostTask
     @Environment(TaskComposer.self) private var composer
     @Environment(HostDirectory.self) private var hosts
@@ -77,7 +80,7 @@ struct TaskChatView: View {
                             .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.historyMessages[index - 1].role : nil))
                         }
                         ForEach(sections.historyPendingPrompts.enumerated(), id: \.element.id) { index, prompt in
-                            PendingPromptView(prompt: prompt, item: item)
+                            PendingPromptView(prompt: prompt)
                                 .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.historyMessages.last?.role))
                         }
                         if sections.hasTurn {
@@ -106,7 +109,7 @@ struct TaskChatView: View {
                                     .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.turnMessages[index - 1].role : nil))
                                 }
                                 ForEach(sections.turnPendingPrompts.enumerated(), id: \.element.id) { index, prompt in
-                                    PendingPromptView(prompt: prompt, item: item)
+                                    PendingPromptView(prompt: prompt)
                                         .padding(.top, ChatMessageSpacing.before(.user, after: index > 0 ? .user : sections.turnMessages.last?.role))
                                 }
                                 if let queuedPrompt {
@@ -156,7 +159,9 @@ struct TaskChatView: View {
                             .accessibilityHidden(true)
                     }
                     .id(timelineID)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
                 }
+                .background { TimelineScrollViewFinder(flights: flights) }
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
                 .followsComposerOnKeyboard { [host, anchorSpace, composer, taskID = task.id] in
@@ -196,7 +201,6 @@ struct TaskChatView: View {
             // A new chat's pickers sit closer, as the composer's own settings.
             .contentMargins(.bottom, newChatDraft == nil ? ChatMessageSpacing.standard * 3 : 15, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
-            .showsSendFlightsUnclipped()
             .scrollsOnComposerFocus {
                 // A reader who scrolled more than a screen back through the
                 // conversation, or is still scrolling, stays where they are.
@@ -215,8 +219,11 @@ struct TaskChatView: View {
                 // use the normal new-row count check to establish this anchor.
                 scrollPolicy.noteSend()
                 anchorSpace.anchorID = "pending-" + id.uuidString
-                scrollToLatest(with: proxy, holdingPrompt: true)
+                holdLatestPrompt(with: proxy)
             }
+            .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
+            .onChange(of: dynamicTypeSize, initial: true) { flights.dynamicTypeSize = dynamicTypeSize }
+            .onChange(of: colorScheme, initial: true) { flights.colorScheme = colorScheme }
             // Another task, or a transcript arriving for the first time, opens
             // at its newest message, pinned. The scroll view itself is kept
             // rather than recreated with a new identity, so the keyboard
@@ -258,7 +265,7 @@ struct TaskChatView: View {
                 let sentFromHere = newTracker.lastID?.hasPrefix("pending-") == true
                 if isNewPrompt, sentFromHere || anchorSpace.anchorID != nil {
                     anchorSpace.anchorID = newestPromptID
-                    scrollToLatest(with: proxy, holdingPrompt: true)
+                    holdLatestPrompt(with: proxy)
                     return
                 }
                 guard oldTracker.lastID != nil else { return }
@@ -274,6 +281,11 @@ struct TaskChatView: View {
                 // where they are, as they do while a reply streams.
                 guard pin.isPinned, !pin.isReaderScrolling else { return }
                 scrollToLatest(with: proxy)
+            }
+            // The jump that makes room for a sent prompt slides on the render server.
+            .onScrollGeometryChange(for: CGFloat.self, of: \.contentOffset.y) { old, new in
+                guard !pin.isReaderScrolling else { return }
+                flights.noteScroll(by: new - old)
             }
             // Only the reader scrolling decides whether the timeline stays
             // pinned. Checking the position as content grows would unpin it
@@ -409,6 +421,14 @@ struct TaskChatView: View {
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
             proxy.scrollTo(id, anchor: .bottom)
         }
+    }
+
+    /// Holds the latest prompt at the top of the timeline. A prompt just sent
+    /// from here jumps there, and its copy and the content slide on the
+    /// render server instead.
+    private func holdLatestPrompt(with proxy: ScrollViewProxy) {
+        guard flights.isSending else { return scrollToLatest(with: proxy, holdingPrompt: true) }
+        flights.makeRoom { scrollToLatest(with: proxy, holdingPrompt: true, animated: false) }
     }
 
     /// Scrolls to the newest message: to the prompt held at the top, while

@@ -38,13 +38,6 @@ extension HostClient {
         return (text, images)
     }
 
-    /// Sends a failed prompt again. It keeps its key, so if the host did get
-    /// it the first time, the agent doesn't get it twice.
-    public func retryPrompt(_ id: UUID, in taskID: String) {
-        conversations.prepareRetry(id, in: taskID)
-        deliver(id, to: taskID)
-    }
-
     /// Stops the agent's turn.
     /// - Returns: The prompt that was queued behind the turn, for the
     ///   composer, with its images as they were sent.

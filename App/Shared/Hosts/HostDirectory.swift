@@ -473,6 +473,10 @@ extension HostDirectory: HostConnectionsDelegate {
         pendingTask = destination
     }
 
+    func host(_ host: HostClient, didGiveBack prompt: PendingPrompt, to taskID: String) {
+        composer(for: TaskRef(hostID: host.id, taskID: taskID)).takeBack(prompt.text, images: prompt.images)
+    }
+
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft) {
         host.rememberNewTask(draft)
         // The new chat's composer carries on as the task's, and the next new

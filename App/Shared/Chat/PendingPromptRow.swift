@@ -2,23 +2,14 @@
 import AtriumClient
 import SwiftUI
 
-/// Both clients show delivery and retry in the same bubble that later gets confirmed.
+/// The bubble a prompt on its way shows in, which later gets confirmed. One
+/// the host doesn't take goes back to the composer.
 struct PendingPromptRow: View {
     let prompt: PendingPrompt
-    let retry: () -> Void
-    var sendFlight: ((PromptSendAnimator) -> PromptSendFlight?)?
+    var sendFlight: ((PromptFlights) -> PromptFlight?)?
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            UserMessageView(text: prompt.text, images: prompt.images, sendFlight: sendFlight)
-            if prompt.state == .failed {
-                if let error = prompt.failureMessage { Text(error).font(.caption).foregroundStyle(.red) }
-                Button("Retry", systemImage: "arrow.clockwise", action: retry)
-                    .font(.caption)
-                    .buttonStyle(.borderless)
-                    .tint(.red)
-            }
-        }
+        UserMessageView(text: prompt.text, images: prompt.images, sendFlight: sendFlight)
     }
 }
 #endif

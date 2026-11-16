@@ -204,6 +204,8 @@ public protocol HostConnectionsDelegate: AnyObject {
     func hostDidLoadTasks(_ host: HostClient)
     /// A host created a draft's task for its first prompt.
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft)
+    /// A host couldn't take a prompt, which goes back to its task's composer.
+    func host(_ host: HostClient, didGiveBack prompt: PendingPrompt, to taskID: String)
     /// Whether a draft is on screen, which keeps it standing in for its task.
     func host(_ host: HostClient, isShowingDraft draftID: String) -> Bool
     /// A host was forgotten, by the user or because it revoked this device.
