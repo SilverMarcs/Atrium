@@ -23,6 +23,7 @@ xcrun swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentReadState.swift" \
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentContextUsage.swift" \
   "$ROOT/App/macOS/Host/Integrations/Contracts/AgentEdits.swift" \
+  "$ROOT/App/macOS/Host/Integrations/Contracts/AgentShellCommand.swift" \
   "$ROOT/App/macOS/Host/Integrations/RetainedAgentThreads.swift" \
   "$ROOT/scripts/tests/ProviderCompatibilityChecks.swift" -o "$WORK/checks"
 "$WORK/checks"
