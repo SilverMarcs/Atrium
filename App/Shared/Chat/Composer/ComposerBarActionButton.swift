@@ -51,7 +51,11 @@ struct ComposerBarActionButton: View {
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
+        #if os(macOS)
+        .disabled(!isEnabled || isBusy)
+        #else
         .allowsHitTesting(isEnabled && !isBusy)
+        #endif
         .accessibilityLabel(isBusy ? "Sending" : title)
         .accessibilityValue(!isEnabled && !isBusy ? "Unavailable" : "")
         .help(isBusy ? "Sending" : title)

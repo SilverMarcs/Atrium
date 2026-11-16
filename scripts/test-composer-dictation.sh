@@ -17,6 +17,7 @@ xcrun swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
 xcrun swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
   "$ROOT/App/Shared/Chat/ComposerDictationInsertion.swift" \
   "$ROOT/App/Shared/Chat/ComposerTextInserting.swift" \
+  "$ROOT/App/Shared/Chat/Composer/ComposerBarActionButton.swift" \
   "$ROOT/App/macOS/Chat/Composer/ComposerTextView.swift" \
   "$ROOT/scripts/tests/ComposerEditorChecks.swift" \
   -o "$WORK/editor-checks"

@@ -13,6 +13,23 @@ final class ComposerPasteDelegate {
     func paste(from pasteboard: NSPasteboard, into editor: NSTextView) -> Bool { false }
 }
 
+enum ComposerBarLayout { static let rowHeight: CGFloat = 48 }
+
+@MainActor @Observable final class ShortcutState { var canSend = false }
+
+struct ShortcutCheckView: View {
+    let state: ShortcutState
+    let send: () -> Void
+
+    var body: some View {
+        ComposerBarActionButton(
+            action: .send, isExpanded: true, isEditing: false,
+            isEnabled: state.canSend, isBusy: false, perform: send
+        )
+        .frame(width: 100, height: 60)
+    }
+}
+
 @main
 @MainActor
 enum ComposerEditorChecks {
@@ -54,28 +71,42 @@ enum ComposerEditorChecks {
         var sends = 0
         editor.onReturn = { sends += 1 }
         for keyCode: UInt16 in [36, 76] {
-            let event = try returnEvent(keyCode: keyCode, modifiers: .command, window: window)
-            try check(editor.performKeyEquivalent(with: event), "Command-Return and Command-Enter must be handled by the focused editor")
-        }
-        try check(sends == 2, "Each send shortcut must submit exactly once")
-        try check(editor.string == before, "Sending must not insert a newline")
-        for keyCode: UInt16 in [36, 76] {
             window.sendEvent(try returnEvent(keyCode: keyCode, modifiers: .command, window: window))
         }
-        try check(sends == 4, "Command-Return and Command-Enter delivered through the window must send once each")
-        try check(editor.string == before, "Window-delivered send shortcuts must not insert a newline")
+        try check(sends == 2, "Command-Return and Command-Enter delivered through the window must send once each")
+        try check(editor.string == before, "Send shortcuts must not insert a newline")
         for modifiers: NSEvent.ModifierFlags in [[], .shift, .option, [.command, .shift], [.command, .option], [.command, .control]] {
-            _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: modifiers, window: window))
+            window.sendEvent(try returnEvent(keyCode: 36, modifiers: modifiers, window: window))
         }
-        try check(sends == 4, "Other Return combinations must not trigger the send shortcut")
+        try check(sends == 2, "Other Return combinations must not trigger the send shortcut")
         editor.isEditable = false
-        _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
-        try check(sends == 4, "A locked editor must not send")
+        window.sendEvent(try returnEvent(keyCode: 36, modifiers: .command, window: window))
+        try check(sends == 2, "A locked editor must not send")
         editor.isEditable = true
         window.makeFirstResponder(nil)
-        _ = editor.performKeyEquivalent(with: try returnEvent(keyCode: 36, modifiers: .command, window: window))
-        try check(sends == 4, "An unfocused editor must not send")
+        window.sendEvent(try returnEvent(keyCode: 36, modifiers: .command, window: window))
+        try check(sends == 2, "An unfocused editor must not send")
+        try checkSendButtonShortcut()
         print("Native composer editor checks passed")
+    }
+
+    static func checkSendButtonShortcut() throws {
+        NSApp.finishLaunching()
+        var buttonSends = 0
+        let state = ShortcutState()
+        let view = NSHostingView(rootView: ShortcutCheckView(state: state, send: { buttonSends += 1 }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 60),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        state.canSend = true
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+
+        let event = try returnEvent(keyCode: 36, modifiers: .command, window: window)
+        NSApp.sendEvent(event)
+        try check(buttonSends == 1, "The Send button shortcut must activate after an empty draft gains text")
     }
 
     static func returnEvent(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, window: NSWindow) throws -> NSEvent {
