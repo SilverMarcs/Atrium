@@ -33,10 +33,20 @@ struct MarkdownText: View {
             .markdownImageLoader(id: media.map { "\($0.host.id)/\($0.taskID)" } ?? "") { [media] source in
                 await MediaSource(source)?.imageData(from: media, maxPixelSize: Self.imagePixelSize)
             }
-            .onMarkdownImageTap { source in
-                viewedImage = MediaSource(source)?.url(in: media).map { ViewedImages(urls: [$0]) }
+            .onMarkdownImageTap { tap in
+                viewedImage = ViewedImages(tap, in: media)
             }
             .transaction { $0.animation = nil }
             .imageViewer($viewedImage, namespace: namespace)
+    }
+}
+
+extension ViewedImages {
+    /// The tapped image and the rest of its gallery, to swipe between,
+    /// leaving out any that can't load. Nil if the tapped one can't.
+    @MainActor init?(_ tap: MarkdownImageTap, in media: ChatMedia?) {
+        let urls = tap.images.map { MediaSource($0.source)?.url(in: media) }
+        guard urls[tap.index] != nil else { return nil }
+        self.init(urls: urls.compactMap(\.self), startIndex: urls[..<tap.index].count { $0 != nil })
     }
 }
