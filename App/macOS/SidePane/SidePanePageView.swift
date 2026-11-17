@@ -44,36 +44,19 @@ struct SidePanePageView: View {
     }
 }
 
-/// The pane's controls, together in the toolbar above it.
-struct SidePanePageControls: View {
+/// The pane's download menu, in the toolbar above it.
+struct SidePanePageDownloadMenu: View {
     let page: SidePanePage
-    let close: () -> Void
-
-    /// About as wide as the controls themselves, so their item never squeezes them.
-    static let minimumWidth: CGFloat = 120
-    /// The height of the toolbar's own glass buttons, which these sit among.
-    private static let height: CGFloat = 36
 
     var body: some View {
-        HStack(spacing: 16) {
-            Button("Close", systemImage: "xmark", action: close)
-            Menu {
-                Button("Download HTML", systemImage: "chevron.left.forwardslash.chevron.right") { page.download(.html) }
-                Button("Download PNG", systemImage: "photo") { page.download(.png) }
-            } label: {
-                Label("Download", systemImage: page.downloader.savedFormat == nil ? "arrow.down.circle" : "checkmark")
-                    .contentTransition(.symbolEffect(.replace))
-            }
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .disabled(!page.isLoaded)
+        Menu {
+            Button("Download HTML", systemImage: "chevron.left.forwardslash.chevron.right") { page.download(.html) }
+            Button("Download PNG", systemImage: "photo") { page.download(.png) }
+        } label: {
+            Label("Download", systemImage: page.downloader.savedFormat == nil ? "arrow.down" : "checkmark")
+                .contentTransition(.symbolEffect(.replace))
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .menuStyle(.button)
-        .imageScale(.large)
-        .padding(.horizontal)
-        .frame(height: Self.height)
-        .glassEffect(.regular.interactive(), in: .capsule)
+        .menuIndicator(.hidden)
+        .disabled(!page.isLoaded)
     }
 }
