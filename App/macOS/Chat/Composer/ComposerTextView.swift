@@ -327,6 +327,13 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
         super.paste(sender)
     }
 
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), isEditable, pasteDelegate?.canPaste(from: .general) == true {
+            return true
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
     // MARK: - Return
 
     override func keyDown(with event: NSEvent) {

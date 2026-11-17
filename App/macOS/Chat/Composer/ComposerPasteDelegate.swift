@@ -16,12 +16,7 @@ final class ComposerPasteDelegate {
     /// were any. Anything else is left for the editor to paste as text.
     func paste(from pasteboard: NSPasteboard, into editor: NSTextView) -> Bool {
         guard let composer else { return false }
-        let items = (pasteboard.pasteboardItems ?? []).filter { item in
-            if let url = Self.fileURL(from: item) {
-                return ComposerPasteContent.supports(url)
-            }
-            return Self.imageType(of: item) != nil
-        }
+        let items = Self.attachableItems(on: pasteboard)
         guard !items.isEmpty else { return false }
         Task { [weak editor] in
             for item in items {
@@ -61,6 +56,21 @@ final class ComposerPasteDelegate {
             }
         }
         return true
+    }
+
+    /// Whether the pasteboard holds images or files to attach. A plain-text
+    /// editor only enables Paste for text, so a screenshot alone needs this.
+    func canPaste(from pasteboard: NSPasteboard) -> Bool {
+        composer != nil && !Self.attachableItems(on: pasteboard).isEmpty
+    }
+
+    private static func attachableItems(on pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        (pasteboard.pasteboardItems ?? []).filter { item in
+            if let url = fileURL(from: item) {
+                return ComposerPasteContent.supports(url)
+            }
+            return imageType(of: item) != nil
+        }
     }
 
     private static func imageType(of item: NSPasteboardItem) -> NSPasteboard.PasteboardType? {
