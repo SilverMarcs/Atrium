@@ -106,7 +106,11 @@ private struct SidePane: ViewModifier {
                 ToolbarSpacer(.fixed, placement: .primaryAction)
                 ToolbarSpacer(.fixed, placement: .primaryAction)
                 ToolbarItemGroup(placement: .primaryAction) {
-                    Button("Close", systemImage: "xmark") { app.sidePanes.close(for: item.id) }
+                    Button("Close", systemImage: "xmark") {
+                        // Closing takes this button out of the toolbar, which
+                        // can crash AppKit while it's still handling the click.
+                        Task { app.sidePanes.close(for: item.id) }
+                    }
                     SidePanePageDownloadMenu(page: page)
                 }
                 ToolbarItem(placement: .primaryAction) {
