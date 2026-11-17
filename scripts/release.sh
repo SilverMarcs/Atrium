@@ -257,6 +257,7 @@ xcodebuild \
   -destination 'generic/platform=macOS' \
   -archivePath "$ARCHIVE_PATH" \
   COMPILATION_CACHE_ENABLE_CACHING=YES \
+  COMPILER_INDEX_STORE_ENABLE=NO \
   -allowProvisioningUpdates \
   -quiet \
   archive
@@ -267,6 +268,8 @@ xcodebuild -exportArchive \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$EXPORT_PLIST" \
+  COMPILATION_CACHE_ENABLE_CACHING=YES \
+  COMPILER_INDEX_STORE_ENABLE=NO \
   -allowProvisioningUpdates \
   -quiet
 

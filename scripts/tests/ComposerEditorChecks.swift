@@ -10,7 +10,9 @@ final class TaskComposer {
 
 @MainActor
 final class ComposerPasteDelegate {
+    var hasAttachment = false
     func paste(from pasteboard: NSPasteboard, into editor: NSTextView) -> Bool { false }
+    func canPaste(from pasteboard: NSPasteboard) -> Bool { hasAttachment }
 }
 
 enum ComposerBarLayout { static let rowHeight: CGFloat = 48 }
@@ -68,6 +70,14 @@ enum ComposerEditorChecks {
         try check(editor.insertDictation("locked", in: before) == nil, "Do not change an editor while saving")
         editor.isEditable = true
         window.makeFirstResponder(editor)
+        let pasteDelegate = ComposerPasteDelegate()
+        editor.pasteDelegate = pasteDelegate
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(NSTextView.paste(_:)), keyEquivalent: "")
+        pasteDelegate.hasAttachment = true
+        try check(editor.validateUserInterfaceItem(pasteItem), "Paste must be enabled for an attachment-only pasteboard")
+        editor.isEditable = false
+        try check(!editor.validateUserInterfaceItem(pasteItem), "Paste must remain disabled while the editor is locked")
+        editor.isEditable = true
         var sends = 0
         editor.onReturn = { sends += 1 }
         for keyCode: UInt16 in [36, 76] {
