@@ -10,9 +10,9 @@ struct ComposerAttachmentThumbnail: View {
     let remove: () -> Void
 
     #if os(macOS)
-    private static let size: CGFloat = 80
+    static let size: CGFloat = 80
     #else
-    private static let size: CGFloat = 64
+    static let size: CGFloat = 64
     #endif
 
     var body: some View {
@@ -34,13 +34,22 @@ struct ComposerAttachmentThumbnail: View {
         .accessibilityLabel("Attached image")
         .accessibilityHint("Opens the image full size")
         .overlay(alignment: .topTrailing) {
-            Button("Remove", systemImage: "xmark.circle.fill", action: remove)
-                .labelStyle(.iconOnly)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, .black.opacity(0.6))
-                .buttonStyle(.plain)
-                .padding(4)
+            ComposerAttachmentRemoveButton(action: remove)
         }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// The button in the corner of something attached to the draft that removes it.
+struct ComposerAttachmentRemoveButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button("Remove", systemImage: "xmark.circle.fill", action: action)
+            .labelStyle(.iconOnly)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .black.opacity(0.6))
+            .buttonStyle(.plain)
+            .padding(4)
     }
 }

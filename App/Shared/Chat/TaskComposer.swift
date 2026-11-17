@@ -51,6 +51,36 @@ final class TaskComposer {
         }
     }
 
+    private var ordinaryQuotes: [ComposerQuote] = []
+    /// Passages of the chat quoted with a reply, sent ahead of the draft.
+    /// An edit doesn't take them, so they wait in the ordinary draft.
+    var quotes: [ComposerQuote] { messageEdit == nil ? ordinaryQuotes : [] }
+    /// The quote whose reply is being written or changed in its sheet.
+    var editedQuote: ComposerQuote?
+
+    /// Whether quotes or images sit above the composer.
+    var hasAttachments: Bool { !quotes.isEmpty || !images.isEmpty }
+
+    /// Starts a quote of `text`, to reply to in its sheet.
+    func quote(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, messageEdit == nil else { return }
+        editedQuote = ComposerQuote(text: text)
+    }
+
+    /// Adds a new quote, or keeps a changed reply.
+    func save(_ quote: ComposerQuote) {
+        if let index = ordinaryQuotes.firstIndex(where: { $0.id == quote.id }) {
+            ordinaryQuotes[index] = quote
+        } else {
+            ordinaryQuotes.append(quote)
+        }
+    }
+
+    func remove(_ quote: ComposerQuote) {
+        ordinaryQuotes.removeAll { $0.id == quote.id }
+    }
+
     /// Why an image or item couldn't be attached, until it's been shown.
     var attachmentError: String?
 
@@ -117,9 +147,9 @@ final class TaskComposer {
 
     var remainingImageSlots: Int { max(Self.maxImages - images.count - (messageEdit?.images.count ?? 0), 0) }
 
-    /// Whether there's a prompt or an image to send.
+    /// Whether there's a prompt, a quote or an image to send.
     var hasContent: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty || messageEdit?.images.isEmpty == false
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasAttachments || messageEdit?.images.isEmpty == false
     }
 
     /// Whether Send stands in for Stop: the agent is working and there's
@@ -243,7 +273,7 @@ final class TaskComposer {
             return false
         }
         guard hasContent else { return false }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = ComposerQuote.prompt(quoting: quotes, draft: draft)
         let task = item.task
         guard task.actions.contains(.prompt) else {
             item.host.actionError = task.status == .waiting
@@ -259,6 +289,7 @@ final class TaskComposer {
         }
         draft = ""
         images = []
+        ordinaryQuotes = []
         return true
     }
 

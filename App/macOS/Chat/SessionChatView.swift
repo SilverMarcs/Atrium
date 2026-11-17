@@ -272,6 +272,7 @@ struct SessionChatView: View {
     ))
     .focusedSceneValue(\.latestPromptEdit, latestPromptEdit(rows: rows, actions: actions))
     .composerAttachmentPickers(composer)
+    .composerQuoting(composer, isEnabled: !task.isSubagent)
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
     .environment(composer)

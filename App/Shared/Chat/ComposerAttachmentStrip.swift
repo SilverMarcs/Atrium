@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The images attached to the draft, each opening full size when tapped, with
-/// a button to remove it.
+/// The quotes and images attached to the draft: a quote opens its reply when
+/// tapped, an image opens full size, and each has a button to remove it.
 struct ComposerAttachmentStrip: View {
     let composer: TaskComposer
     /// Where the first image starts, to line it up with the prompt field
@@ -14,6 +14,13 @@ struct ComposerAttachmentStrip: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack {
+                ForEach(composer.quotes) { quote in
+                    ComposerQuoteThumbnail(quote: quote) {
+                        composer.editedQuote = quote
+                    } remove: {
+                        withAnimation { composer.remove(quote) }
+                    }
+                }
                 ForEach(composer.images.enumerated(), id: \.element.id) { index, image in
                     ComposerAttachmentThumbnail(image: image) {
                         viewedImages = ViewedImages(draft: composer.images, startIndex: index)

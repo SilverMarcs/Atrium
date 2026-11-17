@@ -113,6 +113,7 @@ struct TaskDetailScreen: View {
             }
         }
         .composerAttachmentPickers(composer)
+        .composerQuoting(composer, isEnabled: item?.task.isSubagent != true)
         .composerDropHandler(composer, isEnabled: item?.task.actions.contains(.attachImages) == true)
         .composerDictationLifecycle(composer)
         .environment(composer)

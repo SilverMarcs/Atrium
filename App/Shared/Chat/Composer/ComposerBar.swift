@@ -82,7 +82,7 @@ struct ComposerBar: View {
             if let edit = composer.messageEdit {
                 ConversationEditContent(edit: edit)
             }
-            if !composer.images.isEmpty {
+            if composer.hasAttachments {
                 ComposerAttachmentStrip(composer: composer)
             }
             ZStack {
