@@ -15,12 +15,7 @@ extension PermissionMode {
         case .supervised: "hand.raised"
         case .acceptEdits: "pencil.line"
         case .auto: "checkmark.shield"
-        case .fullAccess:
-            #if os(iOS)
-            "exclamationmark.shield"
-            #else
-            "lock.open"
-            #endif
+        case .fullAccess: "exclamationmark.shield"
         }
     }
 }

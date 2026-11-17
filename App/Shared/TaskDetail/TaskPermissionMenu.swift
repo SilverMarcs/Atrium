@@ -32,10 +32,12 @@ struct TaskPermissionMenu: View {
                         .labelStyle(.iconOnly)
                 }
                 #else
-                ComposerMenuLabel {
-                    Image(systemName: symbol)
-                    Text(title)
-                }
+                Label(title, systemImage: symbol)
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .foregroundStyle(selection.mode == .fullAccess ? .orange : .secondary)
+                    .frame(width: ComposerBarLayout.menuControlSize, height: ComposerBarLayout.menuControlSize)
+                    .contentShape(.circle)
                 #endif
             } else {
                 Label(title, systemImage: symbol)
