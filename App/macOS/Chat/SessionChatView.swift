@@ -14,8 +14,8 @@ struct SessionChatView: View {
   @State private var turnFill = TurnFill()
   @State private var scrollPolicy = ConversationScrollPolicy()
   @State private var flights = PromptFlights()
-  /// The width the replies wrap at, which waits for the window to settle.
-  @State private var timelineWidth = SettledTimelineWidth()
+  /// The width the replies wrap at, which follows the window a few times a second.
+  @State private var timelineWidth = TimelineWrapWidth()
   @State private var links = ChatLinkOpener()
   /// Opens the chat's pages in the pane beside it.
   @State private var pagePresenter = ChatPagePresenter()
@@ -104,7 +104,7 @@ struct SessionChatView: View {
           .padding(.horizontal, 16)
           .padding(.top, 4)
           .frame(maxWidth: SessionChatLayout.maximumWidth)
-          .settledTimelineWidth(timelineWidth)
+          .timelineWrapWidth(timelineWidth)
         }
       }
       .onScrollGeometryChange(for: CGFloat.self, of: \.containerSize.width) { _, width in
