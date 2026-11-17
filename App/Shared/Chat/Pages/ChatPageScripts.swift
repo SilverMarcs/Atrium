@@ -2,10 +2,8 @@ import Foundation
 
 /// What every page an agent shows runs before its own content: the theme and
 /// classes Atrium's instructions describe to agents, what makes its tabs and
-/// tooltips work, and a report of the page's height.
+/// tooltips work.
 enum ChatPageScripts {
-    static let heightMessage = "atriumPageHeight"
-
     /// Atrium's green leads; the other series hues sit beside it without competing.
     private static let variables = """
         :root{color-scheme:light dark;accent-color:var(--primary);--radius:10px;
@@ -76,23 +74,5 @@ enum ChatPageScripts {
         var v=document.createElement("meta");v.name="viewport";v.content="width=device-width,initial-scale=1";\
         var s=document.createElement("style");s.textContent=\(String(reflecting: variables + components));\
         document.documentElement.append(v,s);\(behaviors)})();
-        """
-
-    /// A sheet keeps the page from squeezing below about the narrowest reply
-    /// width it was written for; on iPhone it overflows instead, and scrolls
-    /// both ways. Runs after `theme`, so it wins over it.
-    static let sheet = """
-        (function(){var s=document.createElement("style");s.textContent="html{min-width:600px}";\
-        document.documentElement.append(s);})();
-        """
-
-    /// Content sets a page's height, so the frame can fit it without scrolling inside.
-    static let height = """
-        (function(){var last=0;\
-        function report(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);\
-        if(h!==last){last=h;window.webkit.messageHandlers.\(heightMessage).postMessage(h);}}\
-        var o=new ResizeObserver(report);o.observe(document.documentElement);\
-        document.addEventListener("DOMContentLoaded",function(){if(document.body)o.observe(document.body);report();});\
-        window.addEventListener("load",report);})();
         """
 }

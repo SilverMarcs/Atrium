@@ -1,10 +1,10 @@
 import AtriumProtocol
 import SwiftUI
 
-/// A page an agent showed in its reply: inline at the reply's width on Mac and
-/// iPad, and on iPhone a button that opens it in a sheet, where it has room.
-/// A version a later turn revised shrinks to a row, so only the latest one is
-/// shown in full. While the agent is still writing it, a placeholder stands in.
+/// A page an agent showed in its reply, as a card that opens it where it has
+/// room: beside the chat on Mac, and in a sheet on iPhone and iPad. A version
+/// a later turn revised shrinks to a row. While the agent is still writing
+/// it, a placeholder stands in.
 struct ChatPageView: View {
     let page: TranscriptPage
     /// The block that shows the page.
@@ -14,18 +14,8 @@ struct ChatPageView: View {
     var body: some View {
         if page.key == nil {
             ChatPagePlaceholder(title: page.title)
-        } else if isEarlierVersion {
-            ChatPageButton(page: page, isEarlierVersion: true)
         } else {
-            #if os(iOS)
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                ChatPageButton(page: page)
-            } else {
-                ChatPageFrame(page: page, id: id)
-            }
-            #else
-            ChatPageFrame(page: page, id: id)
-            #endif
+            ChatPageButton(page: page, id: id, isEarlierVersion: isEarlierVersion)
         }
     }
 }

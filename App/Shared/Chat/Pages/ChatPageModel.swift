@@ -16,15 +16,11 @@ final class ChatPageModel {
 
     let webPage: WebPage
     private(set) var phase = Phase.loading
-    /// The page's height as it lays out, once it has.
-    private(set) var contentHeight: CGFloat?
     /// Where the page's own images come from; without a task, the page is unavailable.
     private let files: ChatPageFiles?
     private var html: String?
 
-    /// A page in a sheet scrolls sideways on a screen narrower than the reply
-    /// it was written for.
-    init(page: TranscriptPage, media: ChatMedia?, openURL: OpenURLAction, inSheet: Bool = false) {
+    init(page: TranscriptPage, media: ChatMedia?, openURL: OpenURLAction) {
         files = media.map { ChatPageFiles(media: $0, pageKey: page.key) }
         var configuration = WebPage.Configuration()
         configuration.websiteDataStore = .nonPersistent()
@@ -33,15 +29,8 @@ final class ChatPageModel {
         }
         let scripts = WKUserContentController()
         scripts.addUserScript(WKUserScript(source: ChatPageScripts.theme, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        scripts.addUserScript(WKUserScript(source: ChatPageScripts.height, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        if inSheet {
-            scripts.addUserScript(WKUserScript(source: ChatPageScripts.sheet, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
         configuration.userContentController = scripts
         webPage = WebPage(configuration: configuration, navigationDecider: ChatPageNavigation(document: files?.baseURL, openURL: openURL))
-        let reporter = ChatPageHeightReporter()
-        scripts.add(reporter, name: ChatPageScripts.heightMessage)
-        reporter.onHeight = { [weak self] in self?.contentHeight = $0 }
     }
 
     func load(_ page: TranscriptPage) async {
@@ -54,9 +43,8 @@ final class ChatPageModel {
         phase = .loaded
     }
 
-    /// A page without a doctype lays out in quirks mode, where it's at least as
-    /// tall as the view showing it. It would then report that view's height
-    /// rather than its own, including while it's kept loaded off screen.
+    /// A page without a doctype would lay out in quirks mode, which the
+    /// styles Atrium gives it aren't written for.
     private static func standardsMode(_ html: String) -> String {
         let start = html.trimmingPrefix(while: \.isWhitespace).prefix(9)
         return start.lowercased() == "<!doctype" ? html : "<!doctype html>\n" + html
@@ -99,15 +87,5 @@ private struct ChatPageNavigation: WebPage.NavigationDeciding {
         }
         if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") { openURL(url) }
         return .cancel
-    }
-}
-
-/// Holds its model weakly, since the page's scripts keep their handlers.
-private final class ChatPageHeightReporter: NSObject, WKScriptMessageHandler {
-    var onHeight: ((CGFloat) -> Void)?
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let height = message.body as? Double, height > 0 else { return }
-        onHeight?(height)
     }
 }

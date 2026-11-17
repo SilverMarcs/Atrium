@@ -1,16 +1,23 @@
 import AtriumProtocol
 import SwiftUI
 
-/// Opens a page an agent showed in a sheet: a card for screens too narrow to
-/// show it inline, or a compact row for a version a later turn revised.
+/// Opens a page an agent showed beside the chat on Mac, or else in a sheet:
+/// a card, or a compact row for a version a later turn revised.
 struct ChatPageButton: View {
     let page: TranscriptPage
+    /// The block that shows the page.
+    let id: String
     var isEarlierVersion = false
+    @Environment(\.chatPagePresenter) private var presenter
     @State private var isPresented = false
 
     var body: some View {
         Button {
-            isPresented = true
+            if let presenter {
+                presenter(page, id: id)
+            } else {
+                isPresented = true
+            }
         } label: {
             if isEarlierVersion {
                 HStack(spacing: 6) {

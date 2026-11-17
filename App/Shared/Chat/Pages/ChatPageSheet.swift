@@ -15,7 +15,7 @@ struct ChatPageSheet: View {
             Group {
                 if let model, model.phase != .unavailable {
                     WebView(model.webPage)
-                        // Pages leave out side margins inline; here they scroll with the page.
+                        // Pages leave out their own side margins; these scroll with the page.
                         .safeAreaPadding(.horizontal)
                         .webViewContentBackground(.hidden)
                         .scrollBounceBehavior(.basedOnSize)
@@ -41,7 +41,7 @@ struct ChatPageSheet: View {
         .presentationSizing(.page)
         .task {
             guard model == nil else { return }
-            let model = ChatPageModel(page: page, media: media, openURL: openURL, inSheet: true)
+            let model = ChatPageModel(page: page, media: media, openURL: openURL)
             self.model = model
             await model.load(page)
         }

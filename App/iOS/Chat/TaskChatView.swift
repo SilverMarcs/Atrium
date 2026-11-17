@@ -17,8 +17,6 @@ struct TaskChatView: View {
     /// Counts the tasks the timeline has shown. Each starts a new lazy stack,
     /// which otherwise sizes the rows it hasn't measured from the last task's.
     @State private var timelineID = 0
-    /// The pages the task's agents showed, which the timeline keeps loaded as it scrolls.
-    @State private var pages = LoadedChatPages()
 
     private static let bottomID = "bottom"
     private static let footerID = "footer"
@@ -190,7 +188,6 @@ struct TaskChatView: View {
             }
             // Pages and images agents show in replies load from the task's host.
             .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
-            .environment(pages)
             .environment(\.earlierPageIDs, turns.earlierPageIDs)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
@@ -248,7 +245,6 @@ struct TaskChatView: View {
                 if scrollPolicy.observe(from: oldTracker, to: newTracker, preservingTurn: preservesTurn) {
                     if !continuesConversation {
                         timelineID += 1
-                        pages = LoadedChatPages()
                     }
                     pin = TimelinePin()
                     anchorSpace.reset()

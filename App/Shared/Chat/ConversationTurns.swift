@@ -16,6 +16,9 @@ struct ConversationTurns {
     let liveIDs: Set<String>
     /// Pages a later page with the same title revised, by block ID.
     let earlierPageIDs: Set<String>
+    /// The last page in the newest turn's reply, so a page an agent just
+    /// showed can open somewhere bigger as it arrives.
+    let newestPage: ChatPageBlock?
 
     init(messages: [TranscriptMessage], pendingPrompts: [PendingPrompt], status: AgentThreadStatus) {
         // A prompt on its way that isn't a steer starts a new turn, so the one
@@ -27,6 +30,23 @@ struct ConversationTurns {
         self.messages = Self.fold(messages[..<start]) + running
         liveIDs = Set(running.filter { $0.role == .assistant }.map(\.id))
         earlierPageIDs = Self.earlierPages(in: messages)
+        newestPage = Self.newestPage(in: messages)
+    }
+
+    private static func newestPage(in messages: [TranscriptMessage]) -> ChatPageBlock? {
+        for message in messages.reversed() {
+            switch message.role {
+            case .user where message.isSteer:
+                continue
+            case .user:
+                return nil
+            case .assistant:
+                if let block = message.blocks.last(where: { $0.page != nil }), let page = block.page {
+                    return ChatPageBlock(page: page, id: block.id)
+                }
+            }
+        }
+        return nil
     }
 
     /// An agent revises a page by showing it again in full, usually under the
@@ -69,4 +89,10 @@ struct ConversationTurns {
         }
         return folded
     }
+}
+
+/// A page an agent showed, with the block that shows it.
+struct ChatPageBlock: Equatable {
+    let page: TranscriptPage
+    let id: String
 }

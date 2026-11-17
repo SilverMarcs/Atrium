@@ -2,7 +2,8 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's chat, on this Mac or a paired host, above its editor.
+/// A task's chat, on this Mac or a paired host, above its editor and beside
+/// the pages its agents show.
 struct TaskDetailView: View {
     let item: HostTask
     @Environment(AppModel.self) private var app
@@ -18,14 +19,15 @@ struct TaskDetailView: View {
             // A new chat's task keeps its draft's timeline once the host creates it.
             .id(app.hosts.screenID(for: item.id))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task(id: task.hasUnreadResult) {
-                // Viewing a finished task reads it, on whichever host it's on.
-                if task.hasUnreadResult { item.host.send(.task(id: task.id, action: .viewed)) }
-            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let project {
                     BottomSheetView(project: project)
                 }
+            }
+            .sidePane(for: item)
+            .task(id: task.hasUnreadResult) {
+                // Viewing a finished task reads it, on whichever host it's on.
+                if task.hasUnreadResult { item.host.send(.task(id: task.id, action: .viewed)) }
             }
             .toolbar {
                 TaskDetailToolbar(item: item, showingScratchPad: $showingScratchPad)
