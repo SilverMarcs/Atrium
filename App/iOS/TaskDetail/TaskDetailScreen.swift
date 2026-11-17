@@ -31,6 +31,15 @@ struct TaskDetailScreen: View {
     private var item: HostTask? { hosts.task(resolvedRef) }
     private var task: WireTask? { item?.task }
 
+    private var composerPrompt: String {
+        guard let item, !TaskDraft.isDraftID(item.task.id) else { return "Ask anything…" }
+        let task = item.task
+        let hasConversation = item.host.conversations.transcripts[task.id]?.isEmpty == false
+            || item.host.conversations.pendingPrompts[task.id]?.isEmpty == false
+            || task.queuedPrompt != nil
+        return hasConversation ? "Ask \(task.provider.name)" : "Ask anything…"
+    }
+
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
     private var newChatPlacement: ToolbarItemPlacement { isPhone ? .primaryAction : .navigation }
 
@@ -109,7 +118,7 @@ struct TaskDetailScreen: View {
         // A subagent answers only to its own agent, so it has no composer.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if item?.task.isSubagent != true {
-                ComposerBar(item: item, prompt: "Ask anything…", submit: sendDraft)
+                ComposerBar(item: item, prompt: composerPrompt, submit: sendDraft)
             }
         }
         .composerAttachmentPickers(composer)
