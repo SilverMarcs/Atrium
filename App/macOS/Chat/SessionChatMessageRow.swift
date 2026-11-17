@@ -31,6 +31,7 @@ struct SessionChatMessageRow: View, Equatable {
       VStack(alignment: .trailing, spacing: 6) {
         UserMessageView(
           text: message.blocks.compactMap(\.text).joined(separator: "\n"),
+          questionAnswers: message.questionAnswers,
           images: pendingPrompt?.images ?? message.images ?? [],
           messageID: pendingPrompt == nil ? message.id : nil,
           isFromAgent: message.relay != nil || queuedPrompt?.isFromAgent == true,

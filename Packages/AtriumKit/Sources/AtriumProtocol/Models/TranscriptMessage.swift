@@ -15,6 +15,8 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
     /// Small previews, rather than full image payloads, for local and companion
     /// history. `HostRequest.promptImage` fetches each one as it was sent.
     public var images: [Data]? = nil
+    /// Present a question response as a question and answer within its bubble.
+    public var questionAnswers: [TranscriptQuestionAnswer]? = nil
     /// Provider-native rewind boundary. Nil for messages that cannot be edited independently.
     public var editTarget: String? = nil
     /// Sent while the agent was working, so it joined that turn rather than starting one.
@@ -27,6 +29,7 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
         role: Role,
         blocks: [TranscriptBlock],
         images: [Data]? = nil,
+        questionAnswers: [TranscriptQuestionAnswer]? = nil,
         editTarget: String? = nil,
         isSteer: Bool = false,
         relay: TranscriptRelay? = nil
@@ -35,6 +38,7 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
         self.role = role
         self.blocks = blocks
         self.images = images
+        self.questionAnswers = questionAnswers
         self.editTarget = editTarget
         self.isSteer = isSteer
         self.relay = relay

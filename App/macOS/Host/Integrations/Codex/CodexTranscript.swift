@@ -8,6 +8,7 @@ nonisolated enum CodexTranscript {
     /// Each turn's messages are its own, so turns can be turned into messages apart.
     static func messages(fromTurns turns: some Sequence<[String: Any]>) -> [TranscriptMessage] {
         var messages: [TranscriptMessage] = []
+        var pendingQuestions: [AgentQuestion] = []
         for turn in turns {
             guard let turnID = turn["id"] as? String else { continue }
             var segment = 0
@@ -30,6 +31,9 @@ nonisolated enum CodexTranscript {
                     let text = (item["content"] as? [[String: Any]] ?? [])
                         .compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
                         .joined(separator: "\n")
+                    let questionAnswers = CodexQuestionReply.answers(in: text, to: pendingQuestions)
+                    let displayText = questionAnswers?.map { $0.question + "\n" + $0.answer }.joined(separator: "\n\n") ?? text
+                    pendingQuestions.removeAll()
                     let images = (item["content"] as? [[String: Any]] ?? []).compactMap { content -> Data? in
                         if content["type"] as? String == "localImage", let path = content["path"] as? String {
                             return TranscriptImage.thumbnail(at: URL(filePath: path))
@@ -41,14 +45,15 @@ nonisolated enum CodexTranscript {
                         }
                         return nil
                     }
-                    if !text.isEmpty || !images.isEmpty {
-                        messages.append(TranscriptMessage(id: id, role: .user, blocks: text.isEmpty ? [] : [.text(text, id: id)], images: images.isEmpty ? nil : images, editTarget: editTarget, isSteer: isSteer))
+                    if !displayText.isEmpty || !images.isEmpty {
+                        messages.append(TranscriptMessage(id: id, role: .user, blocks: displayText.isEmpty ? [] : [.text(displayText, id: id)], images: images.isEmpty ? nil : images, questionAnswers: questionAnswers, editTarget: editTarget, isSteer: isSteer))
                     }
                 } else if let report = report(in: item) {
                     // A subagent reporting back is input to the agent, not part of its reply.
                     flushAssistant()
                     messages.append(TranscriptMessage(id: id, role: .user, blocks: [], relay: report))
                 } else if item["type"] as? String == "agentMessage" {
+                    if let question = CodexAsyncQuestion(item: item) { pendingQuestions += question.questions }
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
                 } else if let image = generatedImage(in: item) {
                     blocks.append(.text(image, id: id))

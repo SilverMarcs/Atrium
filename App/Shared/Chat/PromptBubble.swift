@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 /// A prompt's text in its bubble. A prompt another agent wrote is gray rather
@@ -5,12 +6,29 @@ import SwiftUI
 /// when it's sent.
 struct PromptBubble: View {
     let text: String
+    var questionAnswers: [TranscriptQuestionAnswer]?
     var isFromAgent = false
     /// The app's accent, which an off-screen render doesn't pick up by itself.
     var accent: Color = .accentColor
 
     var body: some View {
-        ExpandableText(text: text)
+        Group {
+            if let questionAnswers, !questionAnswers.isEmpty {
+                VStack(alignment: .leading) {
+                    ForEach(questionAnswers.enumerated(), id: \.offset) { _, item in
+                        VStack(alignment: .leading) {
+                            Text(item.question)
+                                .foregroundStyle(.secondary)
+                            Text(item.answer)
+                                .bold()
+                        }
+                    }
+                }
+                .textSelection(.enabled)
+            } else {
+                ExpandableText(text: text)
+            }
+        }
             #if os(macOS)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)

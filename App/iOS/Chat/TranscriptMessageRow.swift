@@ -13,6 +13,7 @@ struct TranscriptMessageRow: View {
         case .user:
             UserMessageView(
                 text: message.blocks.compactMap(\.text).joined(separator: "\n"),
+                questionAnswers: message.questionAnswers,
                 images: message.images ?? [],
                 messageID: message.id,
                 isFromAgent: message.relay != nil,

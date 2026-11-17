@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -7,6 +8,7 @@ import AppKit
 /// copy, and how a just-sent bubble flies in differ by platform.
 struct UserMessageView: View {
     let text: String
+    var questionAnswers: [TranscriptQuestionAnswer]?
     var images: [Data] = []
     /// The prompt in its task's transcript, whose images open as they were
     /// sent from its host, rather than as the previews the transcript carries.
@@ -54,7 +56,7 @@ struct UserMessageView: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
             if !text.isEmpty {
-                PromptBubble(text: text, isFromAgent: isFromAgent)
+                PromptBubble(text: text, questionAnswers: questionAnswers, isFromAgent: isFromAgent)
                 // Menu sits on the bubble itself so iOS lifts just the bubble, not the full-width row.
                 #if os(iOS)
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 20))
