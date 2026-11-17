@@ -53,6 +53,37 @@ extension PullRequest {
         return parts.joined(separator: " · ")
     }
 
+    /// The number as "#1657". Interpolating the number into a localized
+    /// string key would group it as "#1,657".
+    var numberText: String { "#\(number)" }
+
+    /// Menu titles wrap at this many characters a line.
+    static let menuTitleLineLength = 35
+
+    /// The number and title for a menu item, wrapped onto two lines at most,
+    /// ending in "…" when the title runs longer. Menus don't wrap on their own.
+    var menuTitle: String {
+        let words = [numberText] + title.split(whereSeparator: \.isWhitespace).map(String.init)
+        var lines: [String] = []
+        var line = ""
+        var shown = 0
+        for word in words {
+            if line.isEmpty {
+                line = word
+            } else if line.count + 1 + word.count <= Self.menuTitleLineLength {
+                line += " " + word
+            } else {
+                lines.append(line)
+                if lines.count == 2 { break }
+                line = word
+            }
+            shown += 1
+        }
+        if lines.count < 2 { lines.append(line) }
+        if shown < words.count { lines[lines.count - 1] += "…" }
+        return lines.joined(separator: "\n")
+    }
+
     /// The repository's name without its owner.
     var repositoryName: String { repository.split(separator: "/").last.map(String.init) ?? repository }
 
@@ -81,7 +112,7 @@ struct PullRequestIndicator: View {
     var body: some View {
         Image(systemName: pullRequest.systemImage)
             .foregroundStyle(tint)
-            .help("#\(pullRequest.number) \(pullRequest.summary)")
+            .help("\(pullRequest.numberText) \(pullRequest.summary)")
     }
 
     private var tint: Color {

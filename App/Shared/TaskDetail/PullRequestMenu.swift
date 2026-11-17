@@ -14,7 +14,7 @@ struct PullRequestMenu: View {
             }
             #if os(macOS)
             .menuIndicator(.hidden)
-            .help("#\(lead.number): \(lead.summary)")
+            .help("\(lead.numberText): \(lead.summary)")
             #endif
         }
     }
@@ -34,7 +34,7 @@ struct PullRequestButtons: View {
             Button {
                 openURL(pullRequest.url)
             } label: {
-                Label("#\(pullRequest.number) \(pullRequest.title)", systemImage: pullRequest.systemImage)
+                Label(pullRequest.menuTitle, systemImage: pullRequest.systemImage)
                 Text(namesRepository ? "\(pullRequest.repositoryName) · \(pullRequest.detail)" : pullRequest.detail)
             }
         }
@@ -43,9 +43,11 @@ struct PullRequestButtons: View {
         // comes up, and the rest are dropped.
         if pullRequests.count > 1 {
             Divider()
-            Button("Open All", systemImage: "arrow.up.forward.app") {
+            Button("Open All", systemImage: "arrow.up.right") {
                 for pullRequest in pullRequests { openURL(pullRequest.url) }
             }
+            // Mac menus leave out item icons unless asked for.
+            .labelStyle(.titleAndIcon)
         }
         #endif
     }
