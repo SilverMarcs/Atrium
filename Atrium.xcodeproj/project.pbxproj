@@ -600,7 +600,7 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = App/macOS/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Atrium;
+				INFOPLIST_KEY_CFBundleDisplayName = Diffs;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -619,7 +619,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.3.65;
 				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Diffs;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -663,7 +663,7 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = App/macOS/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Atrium;
+				INFOPLIST_KEY_CFBundleDisplayName = Diffs;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -682,7 +682,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.3.65;
 				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Diffs;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -723,7 +723,7 @@
 				);
 				MARKETING_VERSION = 1.3.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = Atrium;
+				PRODUCT_NAME = Diffs;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -756,7 +756,7 @@
 				);
 				MARKETING_VERSION = 1.3.8;
 				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium;
-				PRODUCT_NAME = Atrium;
+				PRODUCT_NAME = Diffs;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
