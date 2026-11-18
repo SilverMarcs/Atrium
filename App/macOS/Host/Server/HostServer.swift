@@ -78,6 +78,7 @@ final class HostServer {
     @ObservationIgnored private let queue: PromptQueue
     @ObservationIgnored private let media: MediaService
     @ObservationIgnored private let pullRequests: PullRequestTracker
+    @ObservationIgnored private let secrets: SecretRequests
     /// What Settings → Integrations turns on, which stays with this Mac's host.
     @ObservationIgnored let integrationSettings = IntegrationSettings()
     @ObservationIgnored private let tasksFeed: TasksFeed
@@ -115,6 +116,7 @@ final class HostServer {
         queue = PromptQueue(integrations: integrations, file: bridge.storage.appending(path: "queued-prompts.json"))
         media = MediaService(integrations: integrations)
         pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
+        secrets = SecretRequests(integrations: integrations)
         tasksFeed = TasksFeed(
             integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue,
             pullRequests: pullRequests)
@@ -173,6 +175,7 @@ final class HostServer {
     }
 
     func disconnect(_ connection: ServerConnection) {
+        secrets.connectionClosed(connection.id)
         NotificationRouting.shared.remove(connectionID: connection.id)
         connections[connection.id] = nil
         pruneFeeds()
@@ -299,6 +302,12 @@ final class HostServer {
         case .sharedHosts(let device, let known):
             guard connection.isLocalAgent else { return .hostOnly }
             return .sharedHosts(await shareHosts?(device, Set(known)) ?? [])
+        case .requestSecret(let label, let reason, let link, let timeout):
+            guard connection.isLocalAgent else { return .hostOnly }
+            guard let caller = connection.caller else {
+                return .failed(message: "Only an agent Atrium runs on this Mac can ask for a secret, in its own chat.")
+            }
+            return await secrets.request(label: label, reason: reason, link: link, timeout: timeout, forTask: caller, connection: connection.id)
         case .unsupported:
             return .unsupported
         case .activity(let activity):

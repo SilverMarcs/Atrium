@@ -7,6 +7,9 @@ public nonisolated struct AgentQuestion: Codable, Sendable, Hashable, Identifiab
     public var allowsMultiple: Bool = false
     public var isSecret: Bool = false
     public var optionDescriptions: [String: String] = [:]
+    /// Markdown shown under the question, such as what a secret is for and a
+    /// link to where it's found.
+    public var note: String?
 
     public init(
         id: String,
@@ -14,7 +17,8 @@ public nonisolated struct AgentQuestion: Codable, Sendable, Hashable, Identifiab
         options: [String],
         allowsMultiple: Bool = false,
         isSecret: Bool = false,
-        optionDescriptions: [String: String] = [:]
+        optionDescriptions: [String: String] = [:],
+        note: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -22,5 +26,6 @@ public nonisolated struct AgentQuestion: Codable, Sendable, Hashable, Identifiab
         self.allowsMultiple = allowsMultiple
         self.isSecret = isSecret
         self.optionDescriptions = optionDescriptions
+        self.note = note
     }
 }

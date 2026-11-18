@@ -3,7 +3,7 @@ import Foundation
 
 @main
 enum Atrium {
-    static let commands: [Command] = readCommands + promptCommands + taskCommands + hostCommands
+    static let commands: [Command] = readCommands + promptCommands + taskCommands + secretCommands + hostCommands
 
     static func main() async {
         var arguments = Array(CommandLine.arguments.dropFirst())

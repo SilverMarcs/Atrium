@@ -58,6 +58,9 @@ final class AgentIntegrationStore {
     /// Drafts set aside by settling, so restoring the thread brings them back.
     @ObservationIgnored private var settledDrafts: [String: AgentThread] = [:]
     @ObservationIgnored private var stopTasks: [String: Task<Void, Never>] = [:]
+    /// What answers each request the host itself shows, such as one for a
+    /// secret, rather than an agent's provider. Nil when it's withdrawn.
+    @ObservationIgnored private var hostResponders: [String: (AgentDecision?) -> Void] = [:]
     @ObservationIgnored private var snoozeTask: Task<Void, Never>?
     /// When each provider's models are next listed: model catalogs rarely change.
     @ObservationIgnored private var modelsRefreshDates: [AgentProvider: Date] = [:]
@@ -145,7 +148,7 @@ final class AgentIntegrationStore {
         modelsRefreshDates[provider] = nil
         adapters[provider]?.setEnabled(isAvailable)
         if !isAvailable {
-            interactions.removeAll { $0.taskID.hasPrefix(provider.rawValue + ":") }
+            removeInteractions { $0.taskID.hasPrefix(provider.rawValue + ":") }
             for index in threads.indices where threads[index].provider == provider {
                 threads[index].status = .unknown
             }
@@ -232,7 +235,7 @@ final class AgentIntegrationStore {
     }
 
     private func removeDeletedThread(_ id: String) {
-        interactions.removeAll { $0.taskID == id }
+        removeInteractions { $0.taskID == id }
         guard deletedThreadIDs.insert(id).inserted else { return }
         for sideChat in threads where sideChat.sideChatParentID == id {
             Task { await endSideChat(sideChat) }
@@ -873,8 +876,49 @@ final class AgentIntegrationStore {
               let thread = threads.first(where: { $0.id == request.taskID }) else {
             throw IntegrationError(message: "This request has already been answered or cancelled.")
         }
+        if let responder = hostResponders.removeValue(forKey: request.id) {
+            interactions.removeAll { $0.id == request.id }
+            return responder(decision)
+        }
         try await availableAdapter(for: thread.provider).respond(to: request.id, with: decision)
         interactions.removeAll { $0.id == request.id }
+    }
+
+    /// Shows a request the host itself makes in its task's chat, as an agent's
+    /// question shows, and alerts the user as for one, until it's answered or
+    /// withdrawn. False when the task is gone.
+    func present(_ request: AgentInteraction, respond: @escaping (AgentDecision?) -> Void) -> Bool {
+        guard let thread = threads.first(where: { $0.id == request.taskID }), !deletedThreadIDs.contains(thread.id) else { return false }
+        hostResponders[request.id] = respond
+        interactions.removeAll { $0.id == request.id }
+        interactions.append(request)
+        if !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil {
+            var waiting = thread
+            waiting.status = .waiting
+            onAttention?(waiting)
+        }
+        return true
+    }
+
+    /// Takes back a request the host showed, without answering it.
+    func withdraw(_ id: String) {
+        guard let responder = hostResponders.removeValue(forKey: id) else { return }
+        interactions.removeAll { $0.id == id }
+        responder(nil)
+    }
+
+    /// Whether a task waits on a request the host showed, which its agent
+    /// doesn't report as waiting.
+    func isWaitingOnHost(_ taskID: String) -> Bool {
+        interactions.contains { $0.taskID == taskID && hostResponders[$0.id] != nil }
+    }
+
+    /// Drops requests, telling the host's own they were withdrawn.
+    private func removeInteractions(where shouldRemove: (AgentInteraction) -> Bool) {
+        for request in interactions where shouldRemove(request) {
+            hostResponders.removeValue(forKey: request.id)?(nil)
+        }
+        interactions.removeAll(where: shouldRemove)
     }
 
     /// The conversation as apps show it. Prompts another agent wrote show as

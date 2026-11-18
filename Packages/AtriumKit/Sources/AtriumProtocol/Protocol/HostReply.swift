@@ -25,6 +25,8 @@ public nonisolated enum HostReply: Codable, Sendable {
     case image(data: Data)
     case git(GitReply)
     case files(FileReply)
+    /// How the user answered a secret request.
+    case secret(SecretAnswer)
     /// A reply this client doesn't know, from a newer host.
     case unknown
 

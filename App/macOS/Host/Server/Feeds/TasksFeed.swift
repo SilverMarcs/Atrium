@@ -107,7 +107,9 @@ final class TasksFeed: TopicFeed {
             id: thread.id,
             title: thread.title,
             provider: thread.provider,
-            status: thread.status,
+            // An agent waiting on a request the host showed, such as for a
+            // secret, still reports it's working.
+            status: integrations.isWaitingOnHost(thread.id) ? .waiting : thread.status,
             // A task in a linked worktree is named for its project, not the worktree's folder.
             projectName: project?.name ?? thread.projectName,
             path: thread.directory,

@@ -59,6 +59,7 @@ Standard output carries exactly one JSON document per command, or one JSON objec
 - **No duplicate prompts.** Every `start` and `send` has an ID (`--id`, any UUID; generated when omitted and printed as `id`). The host performs each ID once per device for a day, so after exit status 5 the same command with the same `--id` returns the first result instead of prompting again.
 - **Queued follow-ups.** `send` to a session that's working queues the prompt for after its current turn, added to any prompt the same sender queued, and prints `"queued": true`; `--wait` then waits for the turn the prompt starts. `--steer` joins the turn under way instead.
 - **Approvals.** `respond <session> --allow` or `--decline` answers a tool approval; `--answer` answers questions. An agent can finish a task unattended, or report back what only the user can answer.
+- **Secrets.** An agent Atrium runs on the Mac asks for a token or password with `secret --label L --reason R`. Its chat shows a secure question; the answer goes to an owner-only file, deleted after a day, whose path is printed, so the value never enters the conversation.
 - **Concurrency.** Commands can run at once, such as a long `follow` beside `send` and `respond`.
 
 ```sh

@@ -12,10 +12,16 @@ nonisolated enum AgentInstructions {
         case pages
         /// Handing work to other sessions with the `atrium` command.
         case orchestrator
+        /// Asking the user for secrets with `atrium secret`. It needs the
+        /// command, so chats get it while the Orchestrator is on.
+        case secrets
     }
 
     static func text(_ blocks: Set<Block>) -> String {
-        [base, blocks.contains(.pages) ? pages : nil, blocks.contains(.orchestrator) ? orchestrator : nil]
+        [
+            base, blocks.contains(.pages) ? pages : nil, blocks.contains(.orchestrator) ? orchestrator : nil,
+            blocks.contains(.secrets) ? secrets : nil,
+        ]
             .compactMap(\.self).joined(separator: "\n\n")
     }
 
@@ -60,6 +66,12 @@ nonisolated enum AgentInstructions {
 
         When the user asks you to consult several models, start one session per model they name (or a mix from `atrium models` if they don't), each with the same self-contained brief, asking for its own approach without editing files, then end your turn. Ask one to clarify with `atrium send` when its idea is unclear. Then weigh the ideas, combine the best of them, and continue the user's request with that, saying which ideas you took from whom.
         """
+
+    private static let secrets = """
+        ## Secrets
+
+        When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Run `atrium secret --label "<what it is>" --reason "<what it's for and where to find it>"` as soon as you need it, adding `--url` for its sign-in or setup page, with a tool timeout over 10 minutes. It waits while the user answers in a private question, then prints `{"status":"saved","file":"<path>"}`, an owner-only file holding the value, or `declined` or `timed_out` as the status. Read the file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Ask for one secret per command, and don't ask again after the user declines.
+        """
 }
 
 /// The instruction blocks each chat Atrium runs was created with, by task ID.
@@ -87,7 +99,7 @@ final class ChatInstructions {
     var forNewChat: Set<AgentInstructions.Block> {
         var blocks: Set<AgentInstructions.Block> = []
         if settings.isVisualizationsEnabled { blocks.insert(.pages) }
-        if settings.isOrchestratorEnabled { blocks.insert(.orchestrator) }
+        if settings.isOrchestratorEnabled { blocks.formUnion([.orchestrator, .secrets]) }
         return blocks
     }
 

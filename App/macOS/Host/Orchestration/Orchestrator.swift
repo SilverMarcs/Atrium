@@ -324,7 +324,10 @@ final class Orchestrator {
     /// Questions a delegated agent waits on that the session that asked hasn't had yet.
     private func newQuestions(from id: String) -> [AgentInteraction] {
         let asked = store.turns[id]?.askedIDs ?? []
-        return integrations.interactions.filter { $0.taskID == id && !$0.questions.isEmpty && !asked.contains($0.id) }
+        // A secret is the user's to give, never another agent's.
+        return integrations.interactions.filter {
+            $0.taskID == id && !$0.questions.isEmpty && !asked.contains($0.id) && !SecretRequests.isRequest($0.id)
+        }
     }
 
     // MARK: - Reporting back

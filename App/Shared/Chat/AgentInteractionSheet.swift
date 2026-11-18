@@ -31,7 +31,7 @@ struct AgentInteractionSheet: View {
                     Section { Text(request.detail).textSelection(.enabled) }
                 }
                 ForEach($drafts) { $draft in
-                    Section(draft.question.title) {
+                    Section {
                         if draft.question.allowsMultiple {
                             ForEach(draft.question.options, id: \.self) { option in
                                 Toggle(isOn: Binding(
@@ -102,12 +102,18 @@ struct AgentInteractionSheet: View {
                                     if !draft.question.allowsMultiple, !draft.text.isEmpty { draft.selections.removeAll() }
                                 }
                         }
+                    } header: {
+                        Text(draft.question.title)
+                    } footer: {
+                        if let note = draft.question.note, !note.isEmpty {
+                            QuestionNote(markdown: note)
+                        }
                     }
                 }
 
             }
             .formStyle(.grouped)
-            .navigationTitle("Question")
+            .navigationTitle(!drafts.isEmpty && drafts.allSatisfy(\.question.isSecret) ? "Secret" : "Question")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if request.supportsResponse {
@@ -190,5 +196,14 @@ struct AgentInteractionSheet: View {
             do { try await respond(decision); dismiss() }
             catch { self.error = error.localizedDescription }
         }
+    }
+}
+
+/// What a question is for, with any links in it, under the question.
+private struct QuestionNote: View {
+    let markdown: String
+
+    var body: some View {
+        Text((try? AttributedString(markdown: markdown, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(markdown))
     }
 }
