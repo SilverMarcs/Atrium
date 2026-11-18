@@ -48,6 +48,15 @@ struct ContentView: View {
                     .inspectorColumnWidth(min: 240, ideal: 240, max: 360)
             } else {
                 ContentUnavailableView("No Inspector", systemImage: "sidebar.right")
+                    // Keeps the inspector's toolbar section, and its button, without a project.
+                    .toolbar {
+                        ToolbarSpacer(.flexible)
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Inspector", systemImage: "sidebar.trailing") {
+                                app.showingInspector.toggle()
+                            }
+                        }
+                    }
             }
         }
         // The selected project's Git status and commands back the inspector,

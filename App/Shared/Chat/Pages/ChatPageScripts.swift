@@ -25,11 +25,12 @@ enum ChatPageScripts {
         --popover-foreground:var(--foreground);--viz-series-1:var(--primary)}
         """
 
-    /// Goes in first, so the page's own styles win over it.
+    /// Goes in first, so the page's own styles win over it, except its
+    /// background: the page sits on the window's own, whatever it paints.
     private static let components = """
         html{font:-apple-system-body;font-family:var(--font-sans);color:var(--foreground);
-        background:transparent;-webkit-text-size-adjust:100%;padding:4px 0}
-        body{margin:0}code,kbd,pre,samp{font-family:var(--font-mono)}
+        -webkit-text-size-adjust:100%;padding:4px 0}
+        html,body{background:transparent!important}body{margin:0}code,kbd,pre,samp{font-family:var(--font-mono)}
         h1,h2,h3{font-weight:500;line-height:1.3;margin:0 0 .5em}h1{font-size:1.4em}h2{font-size:1.2em}h3{font-size:1.05em}
         p{margin:0 0 .75em}a{color:var(--accent-foreground)}b,strong,th{font-weight:500}
         .card{background:var(--card);color:var(--card-foreground);border-radius:var(--radius);padding:16px}

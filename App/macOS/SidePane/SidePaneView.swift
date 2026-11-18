@@ -34,11 +34,14 @@ private struct SidePane: ViewModifier {
     @State private var detailMaxX: CGFloat = 0
     /// Where the toolbar laid out the blank item.
     @State private var blankFrame: CGRect?
-    /// How far the blank item ends from the pane's trailing edge, with the
-    /// inspector shown and hidden. It doesn't depend on the blank item's
-    /// width, so learning it settles. Guessed wide until measured, since
-    /// items too wide for the toolbar go into its overflow menu.
-    @State private var trailingInsets: [Bool: CGFloat] = [true: 20, false: 110]
+    /// How far the blank item ends from the pane's trailing edge, for each
+    /// set of items after it. It doesn't depend on the blank item's width,
+    /// so learning it settles, and coming back to a chat finds it learned.
+    @State private var trailingInsets: [TrailingItems: CGFloat] = [:]
+    /// The last inset learned with the inspector shown and hidden, for a
+    /// project not seen yet. Guessed wide until measured, since items too
+    /// wide for the toolbar go into its overflow menu.
+    @State private var latestInsets: [Bool: CGFloat] = [true: 20, false: 110]
 
     private static let minimumWidth: CGFloat = 320
     private static let minimumChatWidth: CGFloat = 360
@@ -91,7 +94,7 @@ private struct SidePane: ViewModifier {
         // Learns from where the toolbar settles: while it's moving things, as
         // the inspector opens or closes, the blank item's frame and the
         // inspector's state can belong to different layouts.
-        .task(id: ToolbarLayout(blankFrame: blankFrame, isShowingInspector: app.showingInspector)) {
+        .task(id: ToolbarLayout(blankFrame: blankFrame, trailingItems: trailingItems)) {
             guard (try? await Task.sleep(for: .milliseconds(400))) != nil else { return }
             learnTrailingInset()
         }
@@ -124,9 +127,18 @@ private struct SidePane: ViewModifier {
         }
     }
 
+    private var trailingItems: TrailingItems {
+        TrailingItems(isShowingInspector: app.showingInspector,
+                      isShowingSidebar: app.sidebarVisibility != .detailOnly,
+                      project: item.task.workspaceID.map { WorkspaceRef(hostID: item.host.id, workspaceID: $0) })
+    }
+
     /// The blank item's width that puts the pane's buttons just past its edge.
+    /// The items after it never end inside the pane, so a stale inset can't
+    /// stretch it past the pane and push the pane's buttons over the chat.
     private var blankWidth: CGFloat {
-        let end = detailMaxX - (trailingInsets[app.showingInspector] ?? 0)
+        let inset = trailingInsets[trailingItems] ?? latestInsets[app.showingInspector] ?? 0
+        let end = detailMaxX - max(0, inset)
         return max(0, (end - Self.controlsWidth - Self.controlsInset - paneMinX).rounded(.down))
     }
 
@@ -134,11 +146,12 @@ private struct SidePane: ViewModifier {
     /// under a point, which come and go as the toolbar snaps to pixels.
     private func learnTrailingInset() {
         guard detailMaxX > 0, let blankFrame, blankFrame.width > 0 else { return }
-        // The toolbar's part over the chat and pane can reach a little past them.
-        let inset = (detailMaxX - blankFrame.maxX).rounded()
-        guard abs(inset) < 400 else { return }
-        if abs(inset - (trailingInsets[app.showingInspector] ?? 0)) >= 1 {
-            trailingInsets[app.showingInspector] = inset
+        let inset = max(0, (detailMaxX - blankFrame.maxX).rounded())
+        guard inset < 400 else { return }
+        let items = trailingItems
+        latestInsets[items.isShowingInspector] = inset
+        if abs(inset - (trailingInsets[items] ?? .infinity)) >= 1 {
+            trailingInsets[items] = inset
         }
     }
 
@@ -163,10 +176,18 @@ private struct SidePane: ViewModifier {
     }
 }
 
-/// Where the toolbar put the blank item, with the inspector shown or hidden.
+/// What decides the toolbar items after the pane's: the inspector's, which
+/// differ by project, and the sidebar's, which join the chat's when it's hidden.
+private struct TrailingItems: Hashable {
+    let isShowingInspector: Bool
+    let isShowingSidebar: Bool
+    let project: WorkspaceRef?
+}
+
+/// Where the toolbar put the blank item, before the items after it.
 private struct ToolbarLayout: Equatable {
     let blankFrame: CGRect?
-    let isShowingInspector: Bool
+    let trailingItems: TrailingItems
 }
 
 /// What the pane loads: the page it shows, in the chat it's beside.
