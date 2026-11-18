@@ -7,6 +7,8 @@ struct TranscriptMessageRow: View {
     let isStreaming: Bool
     var edit: PromptAction?
     var fork: PromptAction?
+    /// Forks the chat through a finished reply.
+    var forkReply: (() -> Void)?
 
     var body: some View {
         switch message.role {
@@ -22,7 +24,7 @@ struct TranscriptMessageRow: View {
                 sendFlight: { [id = message.id] in $0.flight(forConfirmed: id) }
             )
         case .assistant:
-            AssistantMessageView(blocks: message.blocks, isStreaming: isStreaming)
+            AssistantMessageView(blocks: message.blocks, isStreaming: isStreaming, fork: forkReply)
         }
     }
 }

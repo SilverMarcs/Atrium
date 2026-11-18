@@ -38,6 +38,8 @@ struct SessionChatView: View {
       messages: conversation.displayMessages(for: task.id), pendingPrompts: prompts, status: task.status)
     let rows = conversation.rows(for: task.id, turns: turns, queued: task.queuedPrompt)
     let footerStatus = conversation.footerStatus(for: task.id, status: item.progressStatus)
+    let replyForks = task.actions.contains(.fork)
+      ? ReplyForkPoint.points(in: rows.map(\.message), liveIDs: turns.liveIDs) : [:]
     // A queued prompt hasn't started a turn yet.
     let queuedRowID = rows.last?.queuedPrompt == nil ? nil : rows.last?.id
     let newestPromptID = rows.last { $0.message.role == .user && $0.queuedPrompt == nil }?.id
@@ -61,7 +63,8 @@ struct SessionChatView: View {
                 isStreaming: turns.liveIDs.contains(row.id),
                 isRewindable: row.pendingPrompt == nil && row.message.editTarget != nil,
                 pendingPrompt: row.pendingPrompt,
-                queuedPrompt: row.queuedPrompt
+                queuedPrompt: row.queuedPrompt,
+                replyFork: replyForks[row.id]
               )
               .equatable()
               // The first message has the usual gap above it too, so held at
@@ -302,6 +305,10 @@ struct SessionChatView: View {
       fork: { [host, hosts = app.hosts, taskID = task.id] message in
         guard let task = host.displayedTask(taskID) else { return }
         hosts.fork(HostTask(host: host, task: task), into: task.provider, before: message)
+      },
+      forkAfter: { [host, hosts = app.hosts, taskID = task.id] point in
+        guard let task = host.displayedTask(taskID) else { return }
+        hosts.fork(HostTask(host: host, task: task), into: task.provider, after: point)
       },
       editQueued: { [host, taskID = task.id] in
         guard let task = host.displayedTask(taskID) else { return }

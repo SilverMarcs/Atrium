@@ -56,6 +56,9 @@ struct TaskChatView: View {
         let sections = TimelineSections(messages: turns.messages, pendingPrompts: pendingPrompts, anchorID: anchorID)
         let editEnabled = task.actions.contains(.editMessage) && pendingPrompts.isEmpty
         let forkEnabled = task.actions.contains(.fork)
+        let replyForks = forkEnabled
+            ? ReplyForkPoint.points(in: turns.messages, liveIDs: turns.liveIDs, hasLaterPrompts: !pendingPrompts.isEmpty || queuedPrompt != nil)
+            : [:]
         // The last row that shows anything, which a jump to the end is
         // checked against.
         let endRowID = footerStatus == .processing || footerStatus == .waiting
@@ -73,7 +76,8 @@ struct TaskChatView: View {
                                 edit: message.editTarget != nil
                                     ? PromptAction(isEnabled: { editEnabled && composer.canBeginEditing(message.id) }, perform: { composer.beginEditing(message, in: item) }) : nil,
                                 fork: message.editTarget != nil
-                                    ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
+                                    ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil,
+                                forkReply: replyForks[message.id].map { point in { hosts.fork(item, into: task.provider, after: point) } }
                             )
                             .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.historyMessages[index - 1].role : nil))
                         }
@@ -102,7 +106,8 @@ struct TaskChatView: View {
                                         edit: message.editTarget != nil
                                             ? PromptAction(isEnabled: { editEnabled && composer.canBeginEditing(message.id) }, perform: { composer.beginEditing(message, in: item) }) : nil,
                                         fork: message.editTarget != nil
-                                            ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil
+                                            ? PromptAction(isEnabled: { forkEnabled }, perform: { hosts.fork(item, into: task.provider, before: message) }) : nil,
+                                        forkReply: replyForks[message.id].map { point in { hosts.fork(item, into: task.provider, after: point) } }
                                     )
                                     .padding(.top, ChatMessageSpacing.before(message.role, after: index > 0 ? sections.turnMessages[index - 1].role : nil))
                                 }

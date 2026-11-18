@@ -6,11 +6,17 @@ import SwiftUI
 /// Once finished, only its closing text stays and every step before it folds.
 /// The chip only opens when there is
 /// folded text to read or an agent reported back. Pages the agent showed sit
-/// between the chip and the text.
+/// between the chip and the text. Once finished, Copy and Fork sit below it.
 struct AssistantMessageView: View {
     let blocks: [TranscriptBlock]
     let isStreaming: Bool
+    /// Forks the chat through this reply; nil where it can't be forked.
+    var fork: (() -> Void)?
     @Environment(\.earlierPageIDs) private var earlierPageIDs
+    #if os(macOS)
+    /// Written here, read only by the actions, so hovering doesn't redraw the reply.
+    @State private var hover = ReplyHover()
+    #endif
 
     var body: some View {
         let reply = AssistantReply(blocks: blocks, isStreaming: isStreaming)
@@ -30,8 +36,19 @@ struct AssistantMessageView: View {
             if let text = reply.text {
                 MarkdownText(text: text)
             }
+            if !isStreaming, reply.text != nil || fork != nil {
+                #if os(macOS)
+                ReplyActions(text: reply.text, fork: fork, hover: hover)
+                #else
+                ReplyActions(text: reply.text, fork: fork)
+                #endif
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(macOS)
+        .contentShape(.rect)
+        .onHover { [hover] in hover.isHovered = $0 }
+        #endif
         #if os(iOS)
         .animation(.default, value: isStreaming)
         #endif

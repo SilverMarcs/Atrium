@@ -1,8 +1,5 @@
 import AtriumProtocol
 import SwiftUI
-#if os(macOS)
-import AppKit
-#endif
 
 /// A prompt in the timeline: its images and its bubble. Only padding, desktop
 /// copy, and how a just-sent bubble flies in differ by platform.
@@ -111,14 +108,7 @@ private struct PromptContextMenu: View {
                 .disabled(!fork.isEnabled())
         }
         if !text.isEmpty {
-            Button("Copy", systemImage: "doc.on.doc") {
-                #if os(macOS)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                #else
-                UIPasteboard.general.string = text
-                #endif
-            }
+            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(text) }
         }
     }
 }

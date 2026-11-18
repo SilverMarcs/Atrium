@@ -235,10 +235,20 @@ final class HostDirectory {
     /// of its prompts has that prompt in its composer, as each provider puts
     /// back a prompt it goes back to.
     func fork(_ item: HostTask, into provider: AgentProvider, before message: TranscriptMessage? = nil) {
+        fork(item, into: provider, before: message?.editTarget, prompt: message)
+    }
+
+    /// Forks the chat through a finished reply and opens the fork, its
+    /// composer left empty.
+    func fork(_ item: HostTask, into provider: AgentProvider, after point: ReplyForkPoint) {
+        fork(item, into: provider, before: point.editTarget, prompt: nil)
+    }
+
+    private func fork(_ item: HostTask, into provider: AgentProvider, before editTarget: String?, prompt message: TranscriptMessage?) {
         let host = item.host
         Task {
             guard case .forked(let id, let images) = await host.perform(
-                .task(id: item.task.id, action: .fork(into: provider, before: message?.editTarget))
+                .task(id: item.task.id, action: .fork(into: provider, before: editTarget))
             ) else { return }
             let ref = TaskRef(hostID: host.id, taskID: id)
             if let message {

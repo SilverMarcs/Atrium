@@ -16,11 +16,14 @@ struct SessionChatMessageRow: View, Equatable {
   let pendingPrompt: PendingPrompt?
   /// Set on the prompt waiting for the agent's turn to end.
   var queuedPrompt: QueuedPrompt?
+  /// Where a fork through this reply ends, for a finished reply that can be forked.
+  var replyFork: ReplyForkPoint?
   @Environment(\.promptActions) private var actions
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.isStreaming == rhs.isStreaming && lhs.isRewindable == rhs.isRewindable
-      && lhs.pendingPrompt == rhs.pendingPrompt && lhs.queuedPrompt == rhs.queuedPrompt && lhs.message == rhs.message
+      && lhs.pendingPrompt == rhs.pendingPrompt && lhs.queuedPrompt == rhs.queuedPrompt
+      && lhs.replyFork == rhs.replyFork && lhs.message == rhs.message
   }
 
   var body: some View {
@@ -46,7 +49,9 @@ struct SessionChatMessageRow: View, Equatable {
       }
     case .assistant:
       VStack(alignment: .leading, spacing: 8) {
-        AssistantMessageView(blocks: message.blocks, isStreaming: isStreaming)
+        AssistantMessageView(
+          blocks: message.blocks, isStreaming: isStreaming,
+          fork: replyFork.map { point in { actions.forkAfter(point) } })
       }
       .contentShape(.rect)
       .transaction { $0.animation = nil }
@@ -64,6 +69,8 @@ struct PromptActions: Equatable {
   var edit: @MainActor (TranscriptMessage) -> Void = { _ in }
   var isForkEnabled: @MainActor () -> Bool = { false }
   var fork: @MainActor (TranscriptMessage) -> Void = { _ in }
+  /// Forks the chat through a finished reply.
+  var forkAfter: @MainActor (ReplyForkPoint) -> Void = { _ in }
   /// Takes the queued prompt back into the composer.
   var editQueued: @MainActor () -> Void = {}
   /// Sends the queued prompt immediately as a steer.
