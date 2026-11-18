@@ -1,5 +1,5 @@
 {
-  "originHash" : "fee31c70b2d81b43538a2993de66d654909e3262f5fa85e4f7dd6f04a02d1b83",
+  "originHash" : "05cdc60a46785e7c5e9b4cb684e7d0f6e685ba2da392d7ea8b97d3376d35c7ad",
   "pins" : [
     {
       "identity" : "highlightr",
@@ -88,7 +88,7 @@
       "location" : "https://github.com/SilverMarcs/SwiftMarkdownView",
       "state" : {
         "branch" : "main",
-        "revision" : "d938967162b616d3607b985f75ac7885c425c98b"
+        "revision" : "b82618e170381af24fc67f76bca091ea2e4e99ad"
       }
     },
     {
