@@ -5,25 +5,24 @@ import Foundation
 let secretCommands: [Command] = [
     Command(
         name: "secret",
-        usage: "secret --label L --reason R [--url U] [--timeout S]",
+        usage: "secret --label L --reason R [--url U]",
         summary: "Ask the user for a secret, such as a token or password, without it entering the chat.",
         details: """
               --label L     What the secret is, as the question's title, such as "Stripe test secret key".
               --reason R    What it's for and where the user finds it.
               --url U       The page where the user gets it or signs in for it, shown as a link.
-              --timeout S   Seconds to wait for the user's answer (default 600, at most 3600).
 
             For an agent Atrium runs on this Mac: the question shows in its own chat, on the Mac and the user's \
-            other devices, with a secure field, and the command waits for the answer. Ask for one secret per \
-            command. Run it with a tool timeout longer than --timeout.
+            other devices, with a secure field, and the command waits up to 9 minutes for the answer. Ask for one \
+            secret per command. Run it with a tool timeout of 10 minutes.
 
             Prints {"status": "saved", "file"}: an owner-only file holding the value, deleted after a day. Read it \
             only inside the command that needs it, as in `tool login --token "$(cat <file>)"`, and never print, log \
             or copy its contents. {"status": "declined"} means the user chose not to give it: don't ask again. \
-            {"status": "timed_out"}, exiting with status 6, means no answer came in time; ask again only if it's \
+            {"status": "timed_out"}, exiting with status 6, means no answer came within 9 minutes; ask again only if it's \
             still needed.
             """,
-        options: ["label", "reason", "url", "timeout"]
+        options: ["label", "reason", "url"]
     ) { arguments in
         try arguments.allowPositionals(0)
         guard let label = arguments.value("label")?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty else {
@@ -38,7 +37,6 @@ let secretCommands: [Command] = [
             }
             return url
         }
-        let timeout = min(Int(try arguments.number("timeout") ?? 600), 3600)
         let options = try HostOptions(arguments)
         let client = Client()
         let host = try await client.host(options.host, timeout: options.connectTimeout)
@@ -50,8 +48,8 @@ let secretCommands: [Command] = [
             throw CLIError(.rejected, "Atrium didn’t find the session this runs in. Only an agent Atrium runs on this Mac can ask for a secret.")
         }
         let reply = try await client.perform(
-            .requestSecret(label: label, reason: reason, link: link, timeout: timeout), on: host,
-            timeout: .seconds(timeout + 30)
+            .requestSecret(label: label, reason: reason, link: link), on: host,
+            timeout: SecretAnswer.wait + .seconds(30)
         )
         client.stop()
         switch reply {

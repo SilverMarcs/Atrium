@@ -12,7 +12,6 @@ import OSLog
 /// command gives up waiting or its connection closes.
 @MainActor
 final class SecretRequests {
-    static let maxTimeout = 3600
     private static let idPrefix = "secret:"
     private static let questionID = "value"
     private static let lifetime: TimeInterval = 24 * 60 * 60
@@ -34,7 +33,7 @@ final class SecretRequests {
     }
 
     /// Shows the request in the task's chat and waits for the user's answer.
-    func request(label: String, reason: String, link: URL?, timeout: Int, forTask taskID: String, connection: UUID) async -> HostReply {
+    func request(label: String, reason: String, link: URL?, forTask taskID: String, connection: UUID) async -> HostReply {
         let id = Self.idPrefix + UUID().uuidString
         var note = reason
         if let link, ["http", "https"].contains(link.scheme?.lowercased()) {
@@ -50,7 +49,7 @@ final class SecretRequests {
                 return continuation.resume(returning: nil)
             }
             let expiry = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(min(max(timeout, 1), Self.maxTimeout)))
+                try? await Task.sleep(for: SecretAnswer.wait)
                 guard !Task.isCancelled else { return }
                 self?.integrations.withdraw(id)
             }

@@ -302,12 +302,12 @@ final class HostServer {
         case .sharedHosts(let device, let known):
             guard connection.isLocalAgent else { return .hostOnly }
             return .sharedHosts(await shareHosts?(device, Set(known)) ?? [])
-        case .requestSecret(let label, let reason, let link, let timeout):
+        case .requestSecret(let label, let reason, let link):
             guard connection.isLocalAgent else { return .hostOnly }
             guard let caller = connection.caller else {
                 return .failed(message: "Only an agent Atrium runs on this Mac can ask for a secret, in its own chat.")
             }
-            return await secrets.request(label: label, reason: reason, link: link, timeout: timeout, forTask: caller, connection: connection.id)
+            return await secrets.request(label: label, reason: reason, link: link, forTask: caller, connection: connection.id)
         case .unsupported:
             return .unsupported
         case .activity(let activity):

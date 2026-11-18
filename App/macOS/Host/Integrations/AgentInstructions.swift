@@ -70,7 +70,7 @@ nonisolated enum AgentInstructions {
     private static let secrets = """
         ## Secrets
 
-        When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Run `atrium secret --label "<what it is>" --reason "<what it's for and where to find it>"` as soon as you need it, adding `--url` for its sign-in or setup page, with a tool timeout over 10 minutes. It waits while the user answers in a private question, then prints `{"status":"saved","file":"<path>"}`, an owner-only file holding the value, or `declined` or `timed_out` as the status. Read the file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Ask for one secret per command, and don't ask again after the user declines.
+        When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Run `atrium secret --label "<what it is>" --reason "<what it's for and where to find it>"` as soon as you need it, adding `--url` for its sign-in or setup page, with a tool timeout of 10 minutes. It waits up to 9 minutes while the user answers in a private question, then prints `{"status":"saved","file":"<path>"}`, an owner-only file holding the value, or `declined` or `timed_out` as the status. Read the file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Ask for one secret per command, and don't ask again after the user declines.
         """
 }
 

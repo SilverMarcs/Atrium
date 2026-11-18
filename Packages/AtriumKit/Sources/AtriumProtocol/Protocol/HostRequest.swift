@@ -21,10 +21,10 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// Asks the user for a secret, such as a token or password, for the
     /// session the command-line client runs in. Its chat shows the question
     /// with a secure field. The host saves the answer to an owner-only file
-    /// and replies with its path once the user answers, declines or `timeout`
-    /// seconds pass, so the value never enters the conversation. Only the
+    /// and replies with its path once the user answers, declines or
+    /// `SecretAnswer.wait` passes, so the value never enters the conversation. Only the
     /// agents on the Mac itself may ask.
-    case requestSecret(label: String, reason: String, link: URL?, timeout: Int)
+    case requestSecret(label: String, reason: String, link: URL?)
     /// Whether this client is in the foreground and which task it shows.
     case activity(ClientActivity)
     /// Where the host sends this phone's task alerts. Sent after each authentication.
