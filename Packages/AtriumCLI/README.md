@@ -29,6 +29,8 @@ atrium --version
 swift build --package-path Packages/AtriumCLI -c release
 ```
 
+To cross-compile it for Linux on a Mac, set `ATRIUM_LINUX=1`, which adds the packages that stand in for CryptoKit and Network: `ATRIUM_LINUX=1 swift build --package-path Packages/AtriumCLI -c release --swift-sdk aarch64-swift-linux-musl`.
+
 On the Mac, turn on remote access in Atrium Settings → Remote and copy the pairing link. Each link pairs one device and is replaced once used:
 
 ```sh

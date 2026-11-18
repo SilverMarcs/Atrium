@@ -101,8 +101,9 @@ build_cli() {
   mkdir -p "$out"
   for arch in "${CLI_ARCHS[@]}"; do
     local args=(--package-path Packages/AtriumCLI -c release --swift-sdk "$arch-swift-linux-musl" -Xlinker --strip-all)
-    swiftly run swift build "${args[@]}" "+$SWIFT_LINUX"
-    bin="$(swiftly run swift build "${args[@]}" --show-bin-path "+$SWIFT_LINUX")"
+    # AtriumKit declares its Linux packages only for a Linux build.
+    ATRIUM_LINUX=1 swiftly run swift build "${args[@]}" "+$SWIFT_LINUX"
+    bin="$(ATRIUM_LINUX=1 swiftly run swift build "${args[@]}" --show-bin-path "+$SWIFT_LINUX")"
     tar -C "$bin" -czf "$out/atrium-linux-$arch.tar.gz" atrium
   done
   git checkout --quiet -- "$stamp"
