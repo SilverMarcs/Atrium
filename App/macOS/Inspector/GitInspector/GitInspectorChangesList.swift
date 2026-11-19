@@ -4,6 +4,7 @@ import SwiftUI
 struct GitInspectorChangesList: View {
     @Bindable var state: GitInspectorState
     @Environment(\.openWindow) private var openWindow
+    @Environment(AppModel.self) private var app
 
     private var project: Project { state.project }
 
@@ -199,6 +200,7 @@ struct GitInspectorChangesList: View {
         switch action {
         case .showInFileTree(let url):
             project.reveal(url)
+            app.showInspector(.files, in: project)
         case .commit:
             // Commit is handled by the commit area; ignore from list-side menus.
             break

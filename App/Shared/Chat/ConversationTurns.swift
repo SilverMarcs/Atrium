@@ -29,7 +29,7 @@ struct ConversationTurns {
         let running = messages[start...]
         self.messages = Self.fold(messages[..<start]) + running
         liveIDs = Set(running.filter { $0.role == .assistant }.map(\.id))
-        earlierPageIDs = Self.earlierPages(in: messages)
+        earlierPageIDs = Set(Self.pageVersions(in: messages).flatMap { $0.dropLast() }.map(\.id))
         newestPage = Self.newestPage(in: messages)
     }
 
@@ -49,17 +49,21 @@ struct ConversationTurns {
         return nil
     }
 
-    /// An agent revises a page by showing it again in full, usually under the
-    /// same title, so every version but the last one with a title is earlier.
-    private static func earlierPages(in messages: [TranscriptMessage]) -> Set<String> {
-        var latest: [String: String] = [:]
-        var earlier: Set<String> = []
+    /// Each page the chat showed, most recently shown first, with its versions
+    /// oldest first. An agent revises a page by showing it again in full,
+    /// usually under the same title.
+    static func pageVersions(in messages: [TranscriptMessage]) -> [[ChatPageBlock]] {
+        var versions: [String: [ChatPageBlock]] = [:]
+        var order: [String] = []
         for block in messages.lazy.filter({ $0.role == .assistant }).flatMap(\.blocks) {
-            guard let page = block.page else { continue }
+            // A page still being written has no key yet.
+            guard let page = block.page, page.key != nil else { continue }
             let title = page.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if let previous = latest.updateValue(block.id, forKey: title) { earlier.insert(previous) }
+            versions[title, default: []].append(ChatPageBlock(page: page, id: block.id))
+            order.removeAll { $0 == title }
+            order.append(title)
         }
-        return earlier
+        return order.reversed().compactMap { versions[$0] }
     }
 
     private static func fold(_ messages: ArraySlice<TranscriptMessage>) -> [TranscriptMessage] {

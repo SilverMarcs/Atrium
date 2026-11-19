@@ -103,32 +103,28 @@ struct AppCommands: Commands {
 
             CommandMenu("Inspector") {
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .files
+                    app.showInspector(.files)
                 } label: {
                     Label("Files Navigator", systemImage: "folder")
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .git
+                    app.showInspector(.git)
                 } label: {
                     Label("Git Navigator", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                 }
                 .keyboardShortcut("2", modifiers: .command)
 
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .search
+                    app.showInspector(.search)
                 } label: {
                     Label("Search Navigator", systemImage: "magnifyingglass")
                 }
                 .keyboardShortcut("3", modifiers: .command)
 
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .commands
+                    app.showInspector(.commands)
                 } label: {
                     Label("Command Runner", systemImage: "apple.terminal")
                 }
@@ -162,8 +158,7 @@ struct AppCommands: Commands {
                 Divider()
 
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .search
+                    app.showInspector(.search)
                     app.selectedProject?.search.searchFocusTrigger += 1
                 } label: {
                     Label("Find in Files", systemImage: "doc.text.magnifyingglass")
@@ -171,8 +166,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .shift])
 
                 Button {
-                    app.showingInspector = true
-                    app.selectedProject?.selectedTab = .files
+                    app.showInspector(.files)
                     app.selectedProject?.fileTree.searchFocusTrigger += 1
                 } label: {
                     Label("Go to File", systemImage: "doc.text.magnifyingglass")

@@ -43,21 +43,7 @@ struct ContentView: View {
             isSearchFocused = true
         }
         .inspector(isPresented: $app.showingInspector) {
-            if let project = app.selectedProject {
-                InspectorView(project: project)
-                    .inspectorColumnWidth(min: 240, ideal: 240, max: 360)
-            } else {
-                ContentUnavailableView("No Inspector", systemImage: "sidebar.right")
-                    // Keeps the inspector's toolbar section, and its button, without a project.
-                    .toolbar {
-                        ToolbarSpacer(.flexible)
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Inspector", systemImage: "sidebar.trailing") {
-                                app.showingInspector.toggle()
-                            }
-                        }
-                    }
-            }
+            InspectorView(item: app.selectedTask, project: app.selectedProject)
         }
         // The selected project's Git status and commands back the inspector,
         // the editor's change markers and the Run command alike.
@@ -81,7 +67,7 @@ struct ContentView: View {
             #if DEBUG
             // Development builds can show an inspector tab at launch: files, git, search or commands.
             if let tab = ProcessInfo.processInfo.environment["ATRIUM_DEBUG_TAB"].flatMap(InspectorTab.init(debugName:)) {
-                app.selectedProject?.selectedTab = tab
+                app.showInspector(tab)
             }
             #endif
         }

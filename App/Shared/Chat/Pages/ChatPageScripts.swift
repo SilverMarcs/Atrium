@@ -48,14 +48,20 @@ enum ChatPageScripts {
         .tabs [role=tab]{font:inherit;font-size:.9em;color:var(--muted-foreground);background:none;border:0;border-radius:999px;padding:4px 14px}
         .tabs [role=tab][aria-selected=true]{color:var(--foreground);background:var(--popover);box-shadow:0 1px 2px rgb(0 0 0/.12)}
         [role=tabpanel][hidden]{display:none}
+        [data-symbol]{display:inline-block;width:1em;height:1em;vertical-align:-.125em;background:currentColor;
+        -webkit-mask:var(--atrium-symbol) center/contain no-repeat;mask:var(--atrium-symbol) center/contain no-repeat}
         .atrium-tooltip{position:fixed;z-index:100;pointer-events:none;max-width:240px;padding:4px 8px;
         font-size:.85em;color:var(--popover-foreground);background:var(--popover);border-radius:6px;
         box-shadow:0 2px 8px rgb(0 0 0/.18)}
         """
 
-    /// Tabs switch their panels and `data-tooltip` shows on hover or tap,
-    /// so pages need no script of their own for either.
+    /// Tabs switch their panels, `data-tooltip` shows on hover or tap and
+    /// `data-symbol` draws its SF Symbol, so pages need no script of their own.
     private static let behaviors = """
+        function symbols(){document.querySelectorAll("[data-symbol]").forEach(function(el){
+        el.style.setProperty("--atrium-symbol",'url("atrium-symbol:'+encodeURIComponent(el.dataset.symbol)+'")');});}
+        document.addEventListener("DOMContentLoaded",symbols);
+        new MutationObserver(symbols).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["data-symbol"]});
         document.addEventListener("click",function(e){
         var tab=e.target.closest&&e.target.closest("[role=tab]"),list=tab&&tab.closest("[role=tablist]");if(!list)return;
         list.querySelectorAll("[role=tab]").forEach(function(t){var on=t===tab,p=document.getElementById(t.getAttribute("aria-controls"));

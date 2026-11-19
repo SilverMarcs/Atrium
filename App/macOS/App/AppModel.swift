@@ -19,8 +19,8 @@ final class AppModel {
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true
-    /// What each chat shows beside it.
-    let sidePanes = SidePanes()
+    /// The page each chat has open in the inspector.
+    let inspectorPages = InspectorPages()
     /// Bumped to put the cursor in the sidebar's filter field.
     var sidebarSearchFocusRequest = 0
     /// A running command the user asked to run again, awaiting confirmation.

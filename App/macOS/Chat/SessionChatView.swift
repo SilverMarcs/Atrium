@@ -247,8 +247,8 @@ struct SessionChatView: View {
       .onChange(of: NewestPage(taskID: task.id, isLoaded: transcript != nil, page: turns.newestPage), initial: true) { _, newest in
         guard newest.isLoaded, !TaskDraft.isDraftID(newest.taskID) else { return }
         let ref = TaskRef(hostID: host.id, taskID: newest.taskID)
-        if app.sidePanes.noteNewestPage(newest.page, in: ref), let page = newest.page {
-          app.showInSidePane(.page(page), for: ref)
+        if app.inspectorPages.noteNewestPage(newest.page, in: ref), let page = newest.page {
+          app.showPage(page, for: ref)
         }
       }
       .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }
@@ -284,7 +284,7 @@ struct SessionChatView: View {
     .environment(\.openURL, links.action)
     .onChange(of: project?.id, initial: true) { links.project = project }
     .onChange(of: item.id, initial: true) { _, ref in
-      pagePresenter.present = { [app] in app.showInSidePane(.page($0), for: ref) }
+      pagePresenter.present = { [app] in app.showPage($0, for: ref) }
     }
   }
 

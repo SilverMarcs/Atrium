@@ -1,11 +1,11 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The page the pane shows, loaded once for its web view and for the pane's
-/// controls in the toolbar.
+/// The page the inspector shows, loaded once for its web view and for the
+/// controls under it.
 @MainActor
 @Observable
-final class SidePanePage {
+final class InspectorPage {
     private(set) var model: ChatPageModel?
     private(set) var page: TranscriptPage?
     let downloader = ChatPageDownloader()

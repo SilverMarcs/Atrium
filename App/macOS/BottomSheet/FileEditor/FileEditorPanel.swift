@@ -12,6 +12,7 @@ struct FileEditorPanel: View {
     @State private var gutterDiff: GutterDiffResult = .empty
     @State private var showingPreview = false
     @Environment(\.editorFontSize) private var editorFontSize
+    @Environment(AppModel.self) private var app
 
     private var panel: EditorPanel { project.editor }
     private var path: String { fileURL.filePath }
@@ -76,7 +77,10 @@ struct FileEditorPanel: View {
                     .help("Open in Default App")
             }
 
-            Button("Show in File Tree", systemImage: "folder") { project.reveal(fileURL) }
+            Button("Show in File Tree", systemImage: "folder") {
+                project.reveal(fileURL)
+                app.showInspector(.files, in: project)
+            }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .keyboardShortcut("j", modifiers: [.command, .shift])

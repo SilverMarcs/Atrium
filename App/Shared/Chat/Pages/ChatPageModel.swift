@@ -27,6 +27,9 @@ final class ChatPageModel {
         if let files, let scheme = URLScheme(ChatPageFiles.scheme) {
             configuration.urlSchemeHandlers[scheme] = files
         }
+        if let scheme = URLScheme(ChatPageSymbols.scheme) {
+            configuration.urlSchemeHandlers[scheme] = ChatPageSymbols()
+        }
         let scripts = WKUserContentController()
         scripts.addUserScript(WKUserScript(source: ChatPageScripts.theme, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         configuration.userContentController = scripts

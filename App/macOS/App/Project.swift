@@ -79,11 +79,10 @@ final class Project: Identifiable {
         host.toggle(command, in: workspaceID)
     }
 
-    /// Opens a file in the editor, showing the files tab with it selected.
+    /// Selects a file in the file tree, which the caller then shows.
     func reveal(_ url: URL) {
         scope.include(url)
         fileTree.reveal(url)
-        selectedTab = .files
     }
 
     /// Opens a link from chat or a command's output when it names a file in the project.
