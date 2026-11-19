@@ -58,6 +58,7 @@ struct ComposerTextView: NSViewRepresentable {
         context.coordinator.text = $text
         context.coordinator.isFocused = $isFocused
         context.coordinator.isEditing = $isEditing
+        context.coordinator.composer = composer
         editor.onReturn = onReturn
         editor.onSkillReturn = onSkillReturn
         editor.pasteDelegate = pasteDelegate
@@ -93,6 +94,7 @@ struct ComposerTextView: NSViewRepresentable {
         var text: Binding<String>
         var isFocused: Binding<Bool>
         var isEditing: Binding<Bool>
+        weak var composer: TaskComposer?
 
         init(text: Binding<String>, isFocused: Binding<Bool>, isEditing: Binding<Bool>) {
             self.text = text
@@ -108,6 +110,12 @@ struct ComposerTextView: NSViewRepresentable {
             }
         }
 
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let editor = notification.object as? ComposerEditor, !editor.hasMarkedText() else { return }
+            let selection = editor.selectedRange()
+            if composer?.selection != selection { composer?.selection = selection }
+        }
+
         func focusDidChange(_ focused: Bool) {
             if isEditing.wrappedValue != focused { isEditing.wrappedValue = focused }
             if isFocused.wrappedValue != focused { isFocused.wrappedValue = focused }
@@ -118,6 +126,12 @@ struct ComposerTextView: NSViewRepresentable {
 /// The text view behind `ComposerTextView`, with a placeholder, attachment
 /// pasting and Return-to-send.
 final class ComposerEditor: NSTextView, ComposerTextInserting {
+    func replace(_ range: NSRange, with text: String, in draft: String) -> String? {
+        guard string == draft, !hasMarkedText(), isEditable else { return nil }
+        insertText(text, replacementRange: range)
+        return string
+    }
+
     func insertDictation(_ transcript: String, in draft: String) -> String? {
         guard string == draft, !hasMarkedText(), isEditable else { return nil }
         let insertion = ComposerDictationInsertion(transcript: transcript, draft: draft, selection: selectedRange())

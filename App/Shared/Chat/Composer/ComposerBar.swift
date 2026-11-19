@@ -34,6 +34,9 @@ struct ComposerBar: View {
     @State private var showsSkillPopover = false
     #if os(iOS)
     @State private var menusReady = false
+    #else
+    /// The skill menu at the editor's /, kept with the editor it follows.
+    @State private var skillMenu = ComposerSkillMenu()
     #endif
 
     /// Whether the editor has focus. It follows the editor rather than the
@@ -71,6 +74,14 @@ struct ComposerBar: View {
     private var skillLoadKey: String {
         guard let item, composer.skillQuery != nil else { return "" }
         return "\(item.host.id)/\(item.task.id)/\(item.task.provider.rawValue)/\(item.task.workspaceID?.uuidString ?? "")"
+    }
+
+    /// Why the skill suggestions list none, if they don't.
+    private var skillStatus: String? {
+        if isLoadingSkills { return "Loading Skills…" }
+        if skillLoadFailed { return "Skills Unavailable" }
+        if skills.isEmpty { return "No Skills Available" }
+        return composer.matchingSkills(in: skills).isEmpty ? "No Matching Skills" : nil
     }
 
     var body: some View {
@@ -179,23 +190,16 @@ struct ComposerBar: View {
                         },
                         onReturn: send
                     )
-                    .popover(isPresented: $showsSkillPopover, arrowEdge: .top) {
-                        ComposerSkillSuggestions(
-                            matches: composer.matchingSkills(in: skills), hasSkills: !skills.isEmpty,
-                            isLoading: isLoadingSkills, failed: skillLoadFailed,
-                            select: { skill in
-                                showsSkillPopover = false
-                                composer.selectSkill(skill)
-                                Task {
-                                    try? await Task.sleep(for: TaskComposer.contextMenuDismissalDelay)
-                                    composer.isFocused = true
-                                }
-                            }
-                        )
-                        #if os(iOS)
-                        .presentationCompactAdaptation(.popover)
-                        #endif
-                    }
+                    #if os(macOS)
+                    .composerSkillMenu(
+                        skillMenu, composer: composer, isPresented: $showsSkillPopover,
+                        skills: composer.matchingSkills(in: skills), status: skillStatus,
+                        select: { skill in
+                            showsSkillPopover = false
+                            composer.selectSkill(skill)
+                        }
+                    )
+                    #endif
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
 
@@ -239,6 +243,22 @@ struct ComposerBar: View {
             }
         }
         #if os(iOS)
+        // The skill suggestions rest just above the composer, over the
+        // timeline, without changing the composer's height.
+        .overlay(alignment: .top) {
+            if showsSkillPopover, isEditing {
+                ComposerSkillSuggestions(
+                    skills: composer.matchingSkills(in: skills), status: skillStatus,
+                    select: { skill in
+                        showsSkillPopover = false
+                        composer.selectSkill(skill)
+                        composer.isFocused = true
+                    }
+                )
+                .padding(.horizontal, ComposerBarLayout.expandedMargin)
+                .alignmentGuide(.top) { $0[.bottom] + ComposerBarLayout.expandedMargin }
+            }
+        }
         // At rest the bar sits a little into the home indicator's margin, as
         // the system bottom bar does; above the keyboard it keeps clear.
         .padding(.bottom, isExpanded ? ComposerBarLayout.expandedMargin : -6)

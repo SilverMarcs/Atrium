@@ -52,6 +52,7 @@ struct ComposerTextView: UIViewRepresentable {
         if editor.text != text, editor.markedTextRange == nil {
             editor.text = text
             editor.textDidChange()
+            context.coordinator.textViewDidChangeSelection(editor)
         }
         // Focus changes from outside UIKit land after this update, so they
         // don't run inside SwiftUI's view update.
@@ -99,6 +100,10 @@ struct ComposerTextView: UIViewRepresentable {
             }
         }
 
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if composer?.selection != textView.selectedRange { composer?.selection = textView.selectedRange }
+        }
+
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard text == "\n", textView.markedTextRange == nil,
                   let editor = textView as? ComposerEditor else { return true }
@@ -128,6 +133,14 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
         let insertion = ComposerDictationInsertion(transcript: transcript, draft: draft, selection: selectedRange)
         selectedRange = insertion.range
         insertText(insertion.text)
+        textDidChange()
+        return text
+    }
+
+    func replace(_ range: NSRange, with replacement: String, in draft: String) -> String? {
+        guard text == draft, markedTextRange == nil, isEditable else { return nil }
+        selectedRange = range
+        insertText(replacement)
         textDidChange()
         return text
     }

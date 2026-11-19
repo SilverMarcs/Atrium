@@ -21,20 +21,27 @@ final class TaskComposer {
         }
     }
 
-    /// The unfinished slash name at the start of the draft, while the user is choosing a skill.
-    var skillQuery: String? {
-        ComposerSkillQuery.parse(draft)
+    /// The editor's selection in the draft, as it reports it.
+    var selection: NSRange?
+
+    /// The slash name being typed at the caret, while the user is choosing a skill.
+    var skillQuery: ComposerSkillQuery? {
+        ComposerSkillQuery(draft: draft, selection: selection)
     }
 
+    /// Every skill for a bare /, else those whose names contain what's typed.
     func matchingSkills(in skills: [AgentSkill]) -> [AgentSkill] {
-        guard let skillQuery else { return [] }
-        return skills.filter { $0.name.localizedStandardContains(skillQuery) }
+        guard let name = skillQuery?.name else { return [] }
+        return skills.filter { name.isEmpty || $0.name.localizedStandardContains(name) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// Replaces the slash name being typed with `skill`'s, the caret after it.
     func selectSkill(_ skill: AgentSkill) {
-        guard skillQuery != nil else { return }
-        draft = "/\(skill.name) "
+        guard let query = skillQuery else { return }
+        let replacement = "/\(skill.name) "
+        draft = textEditor?.replace(query.range, with: replacement, in: draft)
+            ?? (draft as NSString).replacingCharacters(in: query.range, with: replacement)
     }
 
     private(set) var isSubmittingDictation = false
