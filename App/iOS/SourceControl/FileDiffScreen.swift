@@ -8,7 +8,12 @@ struct FileDiffScreen: View {
     @State private var source: SourceControl
     @State private var loader = DiffLoadModel()
     /// The loaded hunks, kept so their highlighting survives redraws.
-    @State private var hunks: [(header: String, listing: CodeListing)] = []
+    @State private var hunks: [FileDiffHunk] = []
+    @AppStorage(DiffLayout.key) private var defaultLayout = DiffLayout.unified
+    /// This screen's layout once switched in its toolbar; nil follows Settings.
+    @State private var chosenLayout: DiffLayout?
+
+    private var layout: DiffLayout { chosenLayout ?? defaultLayout }
     private let reference: GitDiffReference
 
     init(host: HostClient, workspaceID: UUID, file: GitChangedFile, repository: URL, isStaged: Bool) {
@@ -34,7 +39,7 @@ struct FileDiffScreen: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            ForEach(hunks, id: \.listing.id) { DiffHunkView(header: $0.header, listing: $0.listing) }
+                            ForEach(hunks) { DiffHunkView(hunk: $0, layout: layout) }
                         }
                         .padding(.vertical, 8)
                     }
@@ -48,6 +53,14 @@ struct FileDiffScreen: View {
         .navigationTitle(file.name)
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            if !FileTypes.isImage(file.fileURL.path) {
+                ToolbarItem(placement: .primaryAction) {
+                    Toggle("Side by Side", systemImage: "rectangle.split.2x1", isOn: Binding(
+                        get: { layout == .sideBySide },
+                        set: { chosenLayout = $0 ? .sideBySide : .unified }
+                    ))
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink(value: Route.file(source.workspace, path: file.fileURL.path(percentEncoded: false))) {
                     Label("Open File", systemImage: "arrow.up.forward.square")
@@ -61,8 +74,6 @@ struct FileDiffScreen: View {
     private func load() async {
         await loader.reloadInPlace(reference, from: source)
         guard case .text(_, let presentation) = loader.phase else { return }
-        hunks = (presentation?.hunks ?? []).map { hunk in
-            (hunk.header, CodeListing(lines: CodeLine.lines(of: hunk), fileName: file.name))
-        }
+        hunks = (presentation?.hunks ?? []).map { FileDiffHunk($0, fileName: file.name) }
     }
 }

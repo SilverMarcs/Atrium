@@ -29,6 +29,154 @@ final class DiffScrollAnchor {
     func currentNewFileLine() -> Int? { provider?() }
 }
 
+/// Which column of a side-by-side diff an editor shows, and the link that
+/// keeps it level with the other one.
+struct DiffColumn {
+    enum Side { case old, new }
+    let side: Side
+    let link: DiffColumnLink
+}
+
+/// Links the two columns of a side-by-side diff. They scroll together, and
+/// each row is as tall as its taller side: a line that wraps onto more rows
+/// on one side is padded below its text on the other, so every row's old and
+/// new lines start level. The padding lives in the layout, as paragraph
+/// spacing this delegate supplies, so re-highlighting the text keeps it.
+final class DiffColumnLink: NSObject, NSLayoutManagerDelegate {
+    private weak var old: EditorTextView?
+    private weak var new: EditorTextView?
+    /// Each column's row starts and the padding below each row, by layout manager.
+    private var rows: [ObjectIdentifier: Rows] = [:]
+    private var isSyncingScroll = false
+    private var isAlignmentScheduled = false
+    /// The new column's first change, scrolled to once the rows first line up.
+    private var pendingFirstChange: Int?
+
+    private struct Rows {
+        var starts: [Int]
+        var padding: [CGFloat]
+    }
+
+    func attach(_ textView: EditorTextView, as side: DiffColumn.Side) {
+        switch side {
+        case .old: old = textView
+        case .new: new = textView
+        }
+        textView.layoutManager?.delegate = self
+    }
+
+    func scrollToFirstChangeOnceAligned(_ line: Int?) {
+        pendingFirstChange = line
+    }
+
+    func didScroll(_ source: NSScrollView) {
+        guard !isSyncingScroll else { return }
+        isSyncingScroll = true
+        defer { isSyncingScroll = false }
+        let origin = source.contentView.bounds.origin
+        for scrollView in [old, new].compactMap({ $0?.enclosingScrollView }) where scrollView !== source {
+            let clipView = scrollView.contentView
+            guard clipView.bounds.origin != origin else { continue }
+            let target = NSRect(origin: origin, size: clipView.bounds.size)
+            clipView.setBoundsOrigin(clipView.constrainBoundsRect(target).origin)
+            scrollView.reflectScrolledClipView(clipView)
+        }
+    }
+
+    /// Lines up the rows again once the current pass is over, as after a
+    /// column's text, font or width changes. Requests in one pass coalesce.
+    func setNeedsAlignment() {
+        guard !isAlignmentScheduled else { return }
+        isAlignmentScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            isAlignmentScheduled = false
+            alignRows()
+        }
+    }
+
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        paragraphSpacingAfterGlyphAt glyphIndex: Int,
+        withProposedLineFragmentRect rect: NSRect
+    ) -> CGFloat {
+        guard let rows = rows[ObjectIdentifier(layoutManager)] else { return 0 }
+        let character = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        var low = 0, high = rows.starts.count
+        while low < high {
+            let middle = (low + high) / 2
+            if rows.starts[middle] <= character { low = middle + 1 } else { high = middle }
+        }
+        return low > 0 ? rows.padding[low - 1] : 0
+    }
+
+    private func alignRows() {
+        guard let old, let new,
+              let oldHeights = naturalHeights(of: old), let newHeights = naturalHeights(of: new),
+              oldHeights.count == newHeights.count
+        else { return }
+        pad(old, toMatch: newHeights, own: oldHeights)
+        pad(new, toMatch: oldHeights, own: newHeights)
+        if let line = pendingFirstChange {
+            pendingFirstChange = nil
+            new.scrollToLine(max(line - 3, 1))
+        }
+        // Padding changes the columns' heights, which can move either one.
+        if let scrollView = new.enclosingScrollView {
+            didScroll(scrollView)
+        }
+    }
+
+    /// How tall each row's text is in `textView`, without its padding.
+    private func naturalHeights(of textView: EditorTextView) -> [CGFloat]? {
+        guard let layoutManager = textView.layoutManager, let container = textView.textContainer else { return nil }
+        let id = ObjectIdentifier(layoutManager)
+        let text = textView.string as NSString
+        var starts = [0]
+        for index in 0..<text.length where text.character(at: index) == 0x0A {
+            starts.append(index + 1)
+        }
+        // New text: its layout used padding meant for other rows.
+        if let current = rows[id], current.starts != starts {
+            rows[id] = nil
+            layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: text.length), actualCharacterRange: nil)
+        }
+
+        layoutManager.ensureLayout(for: container)
+        var heights = [CGFloat](repeating: 0, count: starts.count)
+        var row = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: layoutManager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
+            let character = layoutManager.characterIndexForGlyph(at: glyphs.location)
+            while row + 1 < starts.count, starts[row + 1] <= character { row += 1 }
+            heights[row] += rect.height
+        }
+        if text.length == 0 || text.character(at: text.length - 1) == 0x0A {
+            heights[starts.count - 1] = layoutManager.extraLineFragmentRect.height
+        }
+        if let padding = rows[id]?.padding {
+            for row in heights.indices { heights[row] -= padding[row] }
+        } else {
+            rows[id] = Rows(starts: starts, padding: Array(repeating: 0, count: starts.count))
+        }
+        return heights
+    }
+
+    private func pad(_ textView: EditorTextView, toMatch other: [CGFloat], own: [CGFloat]) {
+        guard let layoutManager = textView.layoutManager, var current = rows[ObjectIdentifier(layoutManager)] else { return }
+        let length = (textView.string as NSString).length
+        for row in own.indices {
+            let padding = max(other[row] - own[row], 0).rounded()
+            guard abs(current.padding[row] - padding) > 0.5 else { continue }
+            current.padding[row] = padding
+            let start = current.starts[row]
+            let end = row + 1 < current.starts.count ? current.starts[row + 1] : length
+            layoutManager.invalidateLayout(forCharacterRange: NSRange(location: start, length: end - start), actualCharacterRange: nil)
+        }
+        rows[ObjectIdentifier(layoutManager)] = current
+        textView.needsDisplay = true
+    }
+}
+
 struct CodeTextEditor: NSViewRepresentable {
     private enum Mode {
         case editable(gutterDiff: GutterDiffResult, highlightRequest: HighlightRequest?)
@@ -56,11 +204,17 @@ struct CodeTextEditor: NSViewRepresentable {
     /// Diff mode: receives the closure that reports the diff's current top
     /// line so the header's "Open File" button can read it. Nil in edit mode.
     private let diffScrollAnchor: DiffScrollAnchor?
+    /// Diff mode: the column of a side-by-side diff shown. Its lines always
+    /// wrap, and only the new column has the minimap.
+    private var column: DiffColumn?
     @Environment(\.editorFontSize) private var fontSize
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("editorWrapLines") private var wrapLines: Bool = true
 
     private var isDark: Bool { colorScheme == .dark }
+    private var wrapsLines: Bool { column != nil || wrapLines }
+    private var showsMinimap: Bool { column?.side != .old }
+    private var minimapWidth: CGFloat { showsMinimap ? EditorTextViewConstants.minimapWidth : 0 }
 
     init(
         text: Binding<String>,
@@ -93,8 +247,10 @@ struct CodeTextEditor: NSViewRepresentable {
         reference: GitDiffReference,
         hunkTarget: HunkTarget,
         scrollAnchor: DiffScrollAnchor? = nil,
+        column: DiffColumn? = nil,
         onReload: @escaping () async -> Void
     ) {
+        self.column = column
         text = nil
         documentID = nil
         self.fileExtension = fileExtension
@@ -167,6 +323,8 @@ struct CodeTextEditor: NSViewRepresentable {
         context.coordinator.minimap = minimap
 
         scrollView.contentView.postsBoundsChangedNotifications = true
+        minimap.isHidden = !showsMinimap
+        if let column { column.link.attach(textView, as: column.side) }
         context.coordinator.installScrollObserver(
             name: NSView.boundsDidChangeNotification,
             object: scrollView.contentView
@@ -208,7 +366,6 @@ struct CodeTextEditor: NSViewRepresentable {
     fileprivate func runLayoutPass(container: NSView, coordinator: Coordinator, fromSwiftUI: Bool = false) {
         guard let textView = coordinator.textView else { return }
         let bounds = container.bounds
-        let minimapWidth = EditorTextViewConstants.minimapWidth
 
         let scrollViewFrame = NSRect(
             x: 0,
@@ -236,7 +393,7 @@ struct CodeTextEditor: NSViewRepresentable {
         // `scrollViewFrame.width > 0` guard passes even when bounds.width is
         // 0.
         guard let minimap = coordinator.minimap else { return }
-        let minimumWidth = EditorTextViewConstants.minimapWidth + 2 * textView.textContainerInset.width
+        let minimumWidth = minimapWidth + 2 * textView.textContainerInset.width
         let geometryUsable = bounds.width >= minimumWidth
 
         if geometryUsable {
@@ -263,12 +420,16 @@ struct CodeTextEditor: NSViewRepresentable {
         let layoutManager = textContainer.layoutManager
         let scrollViewHeight = coordinator.scrollView?.contentSize.height ?? 0
 
-        let stateChanged = coordinator.lastWrapLines != wrapLines
+        let stateChanged = coordinator.lastWrapLines != wrapsLines
         let widthChanged = coordinator.lastWrapContentWidth != contentWidth
-        coordinator.lastWrapLines = wrapLines
+            || coordinator.lastWrapInset != textView.textContainerInset.width
+            || coordinator.lastWrapFontSize != fontSize
+        coordinator.lastWrapLines = wrapsLines
         coordinator.lastWrapContentWidth = contentWidth
+        coordinator.lastWrapInset = textView.textContainerInset.width
+        coordinator.lastWrapFontSize = fontSize
 
-        if wrapLines {
+        if wrapsLines {
             let inset = textView.textContainerInset.width * 2
             let containerWidth = max(0, contentWidth - inset)
             textView.minSize = NSSize(width: 0, height: scrollViewHeight)
@@ -315,6 +476,7 @@ struct CodeTextEditor: NSViewRepresentable {
             layoutManager.ensureLayout(for: textContainer)
             textView.needsLayout = true
             textView.needsDisplay = true
+            column?.link.setNeedsAlignment()
         }
     }
 
@@ -352,12 +514,7 @@ struct CodeTextEditor: NSViewRepresentable {
         // the visible area until something forces a fresh setAttributedString
         // (e.g. the rehighlight after typing a character) — which is the
         // first-time-bottom-sheet-expansion gutter cut-off.
-        let gutterInset: CGFloat
-        switch mode {
-        case .editable: gutterInset = EditorTextViewConstants.gutterWidth
-        case .diff: gutterInset = EditorTextViewConstants.diffGutterWidth
-        }
-        textView.textContainerInset = NSSize(width: gutterInset, height: 4)
+        applyGutter(to: textView)
     }
 
     private func updateSharedTextView(_ textView: EditorTextView) {
@@ -365,6 +522,25 @@ struct CodeTextEditor: NSViewRepresentable {
         textView.editorFontSize = fontSize
         textView.lineNumberFontSize = fontSize - 1
         textView.fileExtension = fileExtension
+        applyGutter(to: textView)
+    }
+
+    /// Makes the gutter as wide as this text's longest line number needs.
+    private func applyGutter(to textView: EditorTextView) {
+        let width: CGFloat
+        switch mode {
+        case .editable:
+            let lineCount = (text?.wrappedValue.utf8.count { $0 == UInt8(ascii: "\n") } ?? 0) + 1
+            textView.lineNumberDigits = String(lineCount).count
+            width = textView.gutterWidth
+        case .diff(let presentation, _, _, _, _):
+            let largest = presentation.lineNumbers.values.lazy.map { max($0.old ?? 0, $0.new ?? 0) }.max() ?? 0
+            textView.lineNumberDigits = String(largest).count
+            width = textView.diffGutterWidth
+        }
+        if textView.textContainerInset.width != width {
+            textView.textContainerInset = NSSize(width: width, height: 4)
+        }
     }
 
     private func configureMode(textView: EditorTextView, minimap: EditorMinimap, coordinator: Coordinator) {
@@ -376,11 +552,12 @@ struct CodeTextEditor: NSViewRepresentable {
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticTextReplacementEnabled = false
             textView.isAutomaticSpellingCorrectionEnabled = false
-            textView.textContainerInset = NSSize(width: EditorTextViewConstants.gutterWidth, height: 4)
             textView.delegate = coordinator
             textView.gutterDiff = gutterDiff
+            textView.isDiffMode = false
             textView.diffLineKinds = [:]
             textView.diffLineNumbers = [:]
+            textView.diffFillerLines = []
             textView.diffGutterClickHandler = nil
             textView.hunkTarget = hunkTarget
             textView.gutterDiffReloadHandler = onReloadFromDisk
@@ -427,11 +604,12 @@ struct CodeTextEditor: NSViewRepresentable {
         case .diff(let presentation, let hunks, let reference, let hunkTarget, let onReload):
             textView.isEditable = false
             textView.allowsUndo = false
-            textView.textContainerInset = NSSize(width: EditorTextViewConstants.diffGutterWidth, height: 4)
             textView.delegate = nil
             textView.gutterDiff = .empty
+            textView.isDiffMode = true
             textView.diffLineKinds = presentation.lineKinds
             textView.diffLineNumbers = presentation.lineNumbers
+            textView.diffFillerLines = presentation.fillerLines
 
             coordinator.presentation = presentation
             coordinator.hunks = hunks
@@ -444,24 +622,29 @@ struct CodeTextEditor: NSViewRepresentable {
                 coordinator?.handleGutterClick(renderLine: renderLine, at: point)
             }
 
-            let lineKinds = presentation.lineKinds
             coordinator.applyHighlight(
                 source: presentation.string,
                 fileExtension: fileExtension,
                 fontSize: fontSize,
                 isDark: isDark,
                 preserveSelection: false,
-                postProcess: { _, storage in
-                    Self.applyInlineHighlights(to: storage, lineKinds: lineKinds)
+                postProcess: { [link = column?.link] _, storage in
+                    Self.applyInlineHighlights(to: storage, presentation: presentation)
+                    link?.setNeedsAlignment()
                 }
             )
             coordinator.lastIsDark = isDark
 
-            coordinator.updateMinimapMarkers(lineKinds: presentation.lineKinds, text: presentation.string)
+            coordinator.updateMinimapMarkers(lineKinds: Self.minimapLineKinds(of: presentation), text: presentation.string)
 
-            Task { @MainActor in
-                if let firstLine = presentation.firstChangedLine {
-                    textView.scrollToLine(max(firstLine - 3, 1))
+            if let column {
+                // Rows are padded level after layout; scroll once they are.
+                if column.side == .new { column.link.scrollToFirstChangeOnceAligned(presentation.firstChangedLine) }
+            } else {
+                Task { @MainActor in
+                    if let firstLine = presentation.firstChangedLine {
+                        textView.scrollToLine(max(firstLine - 3, 1))
+                    }
                 }
             }
 
@@ -512,10 +695,11 @@ struct CodeTextEditor: NSViewRepresentable {
             // (allowsUndo = false) switching back to editable would otherwise
             // leave undo disabled — edits work but Cmd+Z does nothing.
             textView.allowsUndo = true
-            textView.textContainerInset = NSSize(width: EditorTextViewConstants.gutterWidth, height: 4)
             textView.gutterDiff = gutterDiff
+            textView.isDiffMode = false
             textView.diffLineKinds = [:]
             textView.diffLineNumbers = [:]
+            textView.diffFillerLines = []
             textView.diffGutterClickHandler = nil
             textView.hunkTarget = hunkTarget
             textView.gutterDiffReloadHandler = onReloadFromDisk
@@ -572,10 +756,11 @@ struct CodeTextEditor: NSViewRepresentable {
         case .diff(let presentation, let hunks, let reference, let hunkTarget, let onReload):
             textView.isEditable = false
             textView.allowsUndo = false
-            textView.textContainerInset = NSSize(width: EditorTextViewConstants.diffGutterWidth, height: 4)
             textView.gutterDiff = .empty
+            textView.isDiffMode = true
             textView.diffLineKinds = presentation.lineKinds
             textView.diffLineNumbers = presentation.lineNumbers
+            textView.diffFillerLines = presentation.fillerLines
 
             let referenceChanged = coordinator.reference != reference
             coordinator.presentation = presentation
@@ -586,7 +771,6 @@ struct CodeTextEditor: NSViewRepresentable {
             coordinator.buildHunkLookup()
 
             if textView.string != presentation.string || colorSchemeChanged {
-                let lineKinds = presentation.lineKinds
                 coordinator.applyHighlight(
                     source: presentation.string,
                     fileExtension: fileExtension,
@@ -594,138 +778,41 @@ struct CodeTextEditor: NSViewRepresentable {
                     isDark: isDark,
                     preserveSelection: false,
                     preserveScroll: !referenceChanged,
-                    postProcess: { _, storage in
-                        Self.applyInlineHighlights(to: storage, lineKinds: lineKinds)
+                    postProcess: { [link = column?.link] _, storage in
+                        Self.applyInlineHighlights(to: storage, presentation: presentation)
+                        link?.setNeedsAlignment()
                     }
                 )
             }
 
-            coordinator.updateMinimapMarkers(lineKinds: presentation.lineKinds, text: presentation.string)
+            coordinator.updateMinimapMarkers(lineKinds: Self.minimapLineKinds(of: presentation), text: presentation.string)
         }
 
         coordinator.lastDocumentID = documentID
         coordinator.lastIsDark = isDark
     }
 
-    private static func applyInlineHighlights(to textStorage: NSTextStorage?, lineKinds: [Int: GitDiffLineKind]) {
-        guard let textStorage else { return }
+    private static func applyInlineHighlights(to textStorage: NSTextStorage?, presentation: GitDiffPresentation) {
+        guard let textStorage, textStorage.length > 0 else { return }
         let text = textStorage.string as NSString
-        guard text.length > 0 else { return }
-
         var lineStarts: [Int] = [0]
         for i in 0..<text.length where text.character(at: i) == 0x0A {
             lineStarts.append(i + 1)
         }
-
-        let lineCount = lineStarts.count
-
-        func lineContent(_ lineIndex: Int) -> String {
-            guard lineIndex < lineStarts.count else { return "" }
-            let start = lineStarts[lineIndex]
-            let end: Int
-            if lineIndex + 1 < lineStarts.count {
-                end = lineStarts[lineIndex + 1] - 1
-            } else {
-                end = text.length
-            }
-            guard end > start else { return "" }
-            return text.substring(with: NSRange(location: start, length: end - start))
-        }
-
-        var i = 1
-        while i <= lineCount {
-            guard lineKinds[i] == .removed else {
-                i += 1
-                continue
-            }
-
-            let removedStart = i
-            while i <= lineCount && lineKinds[i] == .removed {
-                i += 1
-            }
-            let removedEnd = i
-
-            guard i <= lineCount && lineKinds[i] == .added else { continue }
-            let addedStart = i
-            while i <= lineCount && lineKinds[i] == .added {
-                i += 1
-            }
-            let addedEnd = i
-
-            let pairCount = min(removedEnd - removedStart, addedEnd - addedStart)
-            for pairIndex in 0..<pairCount {
-                let removedLineIndex = removedStart + pairIndex - 1
-                let addedLineIndex = addedStart + pairIndex - 1
-                guard removedLineIndex < lineStarts.count, addedLineIndex < lineStarts.count else { continue }
-
-                let oldLine = lineContent(removedLineIndex)
-                let newLine = lineContent(addedLineIndex)
-                let (oldRange, newRange) = inlineDiffRanges(old: oldLine, new: newLine)
-
-                if let oldRange {
-                    let range = NSRange(
-                        location: lineStarts[removedLineIndex] + oldRange.lowerBound,
-                        length: oldRange.upperBound - oldRange.lowerBound
-                    )
-                    if range.upperBound <= textStorage.length {
-                        textStorage.addAttribute(
-                            .backgroundColor,
-                            value: NSColor.systemRed.withAlphaComponent(0.22),
-                            range: range
-                        )
-                    }
-                }
-
-                if let newRange {
-                    let range = NSRange(
-                        location: lineStarts[addedLineIndex] + newRange.lowerBound,
-                        length: newRange.upperBound - newRange.lowerBound
-                    )
-                    if range.upperBound <= textStorage.length {
-                        textStorage.addAttribute(
-                            .backgroundColor,
-                            value: NSColor.systemGreen.withAlphaComponent(0.22),
-                            range: range
-                        )
-                    }
-                }
-            }
+        for (line, change) in presentation.inlineChanges where line - 1 < lineStarts.count {
+            guard let kind = presentation.lineKinds[line] else { continue }
+            let range = NSRange(location: lineStarts[line - 1] + change.lowerBound, length: change.count)
+            guard range.upperBound <= textStorage.length else { continue }
+            textStorage.addAttribute(.backgroundColor, value: kind.color.withAlphaComponent(0.22), range: range)
         }
     }
 
-    private static func inlineDiffRanges(old: String, new: String) -> (Range<Int>?, Range<Int>?) {
-        let oldCharacters = Array(old.utf16)
-        let newCharacters = Array(new.utf16)
-
-        var prefixLength = 0
-        let minimumLength = min(oldCharacters.count, newCharacters.count)
-        while prefixLength < minimumLength && oldCharacters[prefixLength] == newCharacters[prefixLength] {
-            prefixLength += 1
-        }
-
-        let maximumSuffixLength = min(
-            oldCharacters.count - prefixLength,
-            newCharacters.count - prefixLength
-        )
-        var suffixLength = 0
-        while suffixLength < maximumSuffixLength {
-            let oldIndex = oldCharacters.count - 1 - suffixLength
-            let newIndex = newCharacters.count - 1 - suffixLength
-            guard oldCharacters[oldIndex] == newCharacters[newIndex] else { break }
-            suffixLength += 1
-        }
-
-        let oldDiffEnd = oldCharacters.count - suffixLength
-        let newDiffEnd = newCharacters.count - suffixLength
-        let oldLength = oldDiffEnd - prefixLength
-        let newLength = newDiffEnd - prefixLength
-        if oldLength <= 0 && newLength <= 0 {
-            return (nil, nil)
-        }
-
-        let oldRange = oldLength > 0 ? prefixLength..<oldDiffEnd : nil
-        let newRange = newLength > 0 ? prefixLength..<newDiffEnd : nil
-        return (oldRange, newRange)
+    /// The minimap's marks: each changed line, and in a side-by-side column
+    /// each blank, which stands for a line the other column removed or added.
+    private static func minimapLineKinds(of presentation: GitDiffPresentation) -> [Int: GitDiffLineKind] {
+        var kinds = presentation.lineKinds
+        for line in presentation.fillerLines { kinds[line] = .removed }
+        return kinds
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -741,6 +828,8 @@ struct CodeTextEditor: NSViewRepresentable {
         var lastDocumentID: AnyHashable?
         var lastWrapLines: Bool?
         var lastWrapContentWidth: CGFloat?
+        var lastWrapInset: CGFloat?
+        var lastWrapFontSize: CGFloat?
         var lastIsDark: Bool?
         /// This editor's own undo history. The window's would outlive the
         /// text it was recorded against, as files are switched or reloaded.
@@ -917,6 +1006,7 @@ struct CodeTextEditor: NSViewRepresentable {
             ) { [weak self] _ in
                 guard let self, let scrollView = self.scrollView else { return }
                 self.minimap?.updateViewport(from: scrollView)
+                self.parent.column?.link.didScroll(scrollView)
             }
         }
 

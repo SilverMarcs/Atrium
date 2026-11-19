@@ -24,6 +24,7 @@ struct GeneralSettingsView: View {
 
             Section {
                 Toggle("Wrap long lines", isOn: $editorWrapLines)
+                DiffLayoutPicker()
             } header: {
                 Text("Editor")
             }

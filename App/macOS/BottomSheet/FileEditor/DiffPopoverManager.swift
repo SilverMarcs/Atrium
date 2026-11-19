@@ -9,7 +9,7 @@ enum DiffPopoverPresenter {
         hunkTarget: HunkTarget?,
         onReload: (() async -> Void)?
     ) {
-        let gutterWidth = EditorTextViewConstants.gutterWidth
+        let gutterWidth = textView.gutterWidth
         let currentLines = textView.string.components(separatedBy: "\n")
         var popoverLines: [SharedDiffLine] = []
 

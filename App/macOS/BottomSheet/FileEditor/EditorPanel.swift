@@ -38,6 +38,10 @@ final class EditorPanel {
     /// roughly the same place the diff was scrolled to.
     var pendingScrollLine: Int?
 
+    /// How this panel lays out diffs once switched in its header; nil follows
+    /// the default in Settings.
+    var diffLayout: DiffLayout?
+
     var showUnsavedAlert: Bool { pendingContent != nil }
     var canGoBack: Bool { !backStack.isEmpty }
     var canGoForward: Bool { !forwardStack.isEmpty }

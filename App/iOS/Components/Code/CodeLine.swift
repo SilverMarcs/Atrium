@@ -6,6 +6,8 @@ struct CodeLine: Identifiable {
     var text: String
     /// Whether a diff adds or removes the line; nil for context and file lines.
     var kind: GitDiffLineKind?
+    /// A blank standing in for the other column's line in a side-by-side diff.
+    var isFiller = false
 
     /// A file's lines, numbered from one.
     static func lines(of text: String) -> [CodeLine] {
@@ -28,6 +30,22 @@ struct CodeLine: Identifiable {
                 kind: line.kind
             )
         }
+    }
+
+    /// A diff hunk's old lines and new lines, row for row, with blanks
+    /// wherever one side has more lines than the other.
+    static func sideBySideLines(of hunk: DiffHunk) -> (old: [CodeLine], new: [CodeLine]) {
+        let rows = SideBySideDiff.rows(of: hunk.lines, kind: \.kind)
+        func column(_ line: (SideBySideDiff.Row<DiffHunkLine>) -> DiffHunkLine?, number: (DiffHunkLine) -> Int?) -> [CodeLine] {
+            rows.enumerated().map { index, row in
+                guard let line = line(row) else {
+                    // A space, so the blank row is as tall as the others.
+                    return CodeLine(id: index, text: " ", isFiller: true)
+                }
+                return CodeLine(id: index, number: number(line), text: displayed(line.content[...]), kind: line.kind)
+            }
+        }
+        return (column(\.old, number: \.oldLineNumber), column(\.new, number: \.newLineNumber))
     }
 
     /// Tabs become spaces, so every line is as wide as its characters.

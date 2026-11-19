@@ -1,24 +1,22 @@
 import AppKit
 
 enum EditorTextViewConstants {
-    static let gutterWidth: CGFloat = 48
     static let markerBarWidth: CGFloat = 3
     static let foldColumnWidth: CGFloat = 12
     static let minimapWidth: CGFloat = 16
 
-    /// Right edge x of the line number column. Shared between editor and
-    /// diff modes so the line numbers visually align in the same horizontal
-    /// strip from the left edge regardless of which mode is active. Anything
-    /// to the right of this (git markers, fold column) is mode-specific.
-    static let lineNumberEndX: CGFloat = 26
+    /// Right edge x of the line number column when numbers have two digits.
+    /// Shared between editor and diff modes so the line numbers line up in
+    /// the same strip whichever mode is active; the gutter grows from here
+    /// for longer numbers (`EditorTextView.lineNumberEndX`).
+    static let twoDigitLineNumberEndX: CGFloat = 26
 
-    /// Left edge x of the git/diff marker bar. Shared between editor and
-    /// diff modes so the colored bar sits at the same horizontal position
-    /// regardless of which mode is active.
-    static let markerBarX: CGFloat = 30
-
-    // Diff mode gutter layout (single line number, no fold column)
-    static let diffGutterWidth: CGFloat = 36
+    /// Gap from the numbers' right edge to the git/diff marker bar.
+    static let markerBarGap: CGFloat = 4
+    /// Room right of the numbers in each mode's gutter: the marker bar and
+    /// fold column in the editor, the marker bar alone in a diff.
+    static let editorGutterTrailing: CGFloat = 22
+    static let diffGutterTrailing: CGFloat = 10
 }
 
 // MARK: - Editor Text View with Gutter
@@ -31,7 +29,9 @@ final class EditorTextView: NSTextView {
     // Diff mode
     var diffLineKinds: [Int: GitDiffLineKind] = [:]
     var diffLineNumbers: [Int: GitDiffLineNumbers] = [:]
-    var isDiffMode: Bool { !diffLineKinds.isEmpty }
+    /// Blank lines standing in for the other column's lines in a side-by-side diff.
+    var diffFillerLines: Set<Int> = []
+    var isDiffMode = false
     var diffGutterClickHandler: ((Int, NSPoint) -> Void)?
     var hunkTarget: HunkTarget?
     var gutterDiffReloadHandler: (() async -> Void)?
@@ -39,6 +39,21 @@ final class EditorTextView: NSTextView {
 
     var editorFontSize: CGFloat = 12
     var lineNumberFontSize: CGFloat = 11
+
+    /// Digits in the longest line number shown, at least two. The gutter is
+    /// as wide as they need, so 100+ and 1000+ line files keep the same
+    /// margin left of their numbers as short ones.
+    var lineNumberDigits = 2
+
+    /// Right edge x of the line numbers.
+    var lineNumberEndX: CGFloat {
+        let digitWidth = ("0" as NSString).size(withAttributes: [.font: lineNumberFont]).width
+        return EditorTextViewConstants.twoDigitLineNumberEndX + CGFloat(max(lineNumberDigits - 2, 0)) * digitWidth
+    }
+
+    var markerBarX: CGFloat { lineNumberEndX + EditorTextViewConstants.markerBarGap }
+    var gutterWidth: CGFloat { lineNumberEndX + EditorTextViewConstants.editorGutterTrailing }
+    var diffGutterWidth: CGFloat { lineNumberEndX + EditorTextViewConstants.diffGutterTrailing }
 
     /// Whether the view is currently rendering with a dark appearance. Used by
     /// `toggleFold` and the post-edit re-highlight so syntax colors stay in sync
@@ -548,7 +563,15 @@ final class EditorTextView: NSTextView {
     // MARK: - Diff Mode Background
 
     private func drawDiffBackground(in rect: NSRect, layoutManager: NSLayoutManager, textContainer: NSTextContainer) {
-        let constants = EditorTextViewConstants.self
+        let diffGutterWidth = diffGutterWidth
+        let markerBarX = markerBarX
+        let markerBarWidth = EditorTextViewConstants.markerBarWidth
+        let lineNumberEndX = lineNumberEndX
+        // A side-by-side row padded to its taller side has a taller fragment
+        // than its text: center the number on the text's line instead.
+        let textLineHeight = layoutManager.defaultLineHeight(
+            for: font ?? NSFont.monospacedSystemFont(ofSize: editorFontSize, weight: .regular)
+        )
         let containerOrigin = textContainerOrigin
         let text = string as NSString
         guard text.length > 0 else { return }
@@ -567,7 +590,7 @@ final class EditorTextView: NSTextView {
             startLineNumber = preText.components(separatedBy: "\n").count
         }
 
-        let bgWidth = max(bounds.width, enclosingScrollView?.contentSize.width ?? bounds.width) - constants.diffGutterWidth
+        let bgWidth = max(bounds.width, enclosingScrollView?.contentSize.width ?? bounds.width) - diffGutterWidth
 
         var lineNumber = startLineNumber
         var charIndex = visibleCharRange.location
@@ -577,6 +600,7 @@ final class EditorTextView: NSTextView {
             let lineRange = text.lineRange(for: NSRange(location: charIndex, length: 0))
             let lineKind = diffLineKinds[lineNumber]
             let lineNums = diffLineNumbers[lineNumber]
+            let isFiller = diffFillerLines.contains(lineNumber)
 
             var firstFragmentRect: NSRect?
             enumerateLineFragmentRects(
@@ -591,13 +615,18 @@ final class EditorTextView: NSTextView {
 
                 if firstFragmentRect == nil { firstFragmentRect = fragmentRect }
 
+                if isFiller {
+                    NSColor.labelColor.withAlphaComponent(0.035).setFill()
+                    NSRect(x: 0, y: fragmentRect.minY, width: bgWidth + diffGutterWidth, height: fragmentRect.height).fill()
+                }
+
                 guard let kind = lineKind else { return }
 
                 // Line background tint — fill across full content width per fragment.
                 let bgColor = kind.color.withAlphaComponent(0.12)
                 bgColor.setFill()
                 NSRect(
-                    x: constants.diffGutterWidth,
+                    x: diffGutterWidth,
                     y: fragmentRect.minY,
                     width: bgWidth,
                     height: fragmentRect.height
@@ -609,28 +638,29 @@ final class EditorTextView: NSTextView {
                 NSRect(
                     x: 0,
                     y: fragmentRect.minY,
-                    width: constants.diffGutterWidth,
+                    width: diffGutterWidth,
                     height: fragmentRect.height
                 ).fill()
 
                 // Marker bar per fragment.
                 kind.color.setFill()
                 NSRect(
-                    x: constants.markerBarX,
+                    x: markerBarX,
                     y: fragmentRect.minY,
-                    width: constants.markerBarWidth,
+                    width: markerBarWidth,
                     height: fragmentRect.height
                 ).fill()
             }
 
             // Draw the line number once on the first visual fragment.
             if let firstRect = firstFragmentRect {
-                let yCenter = firstRect.minY + (firstRect.height - ("0" as NSString).size(withAttributes: lineNumAttrs).height) / 2
+                let lineHeight = min(firstRect.height, textLineHeight)
+                let yCenter = firstRect.minY + (lineHeight - ("0" as NSString).size(withAttributes: lineNumAttrs).height) / 2
                 let lineNum = lineNums?.new ?? lineNums?.old
                 if let num = lineNum {
                     let str = "\(num)" as NSString
                     let size = str.size(withAttributes: lineNumAttrs)
-                    str.draw(at: NSPoint(x: constants.lineNumberEndX - size.width, y: yCenter), withAttributes: lineNumAttrs)
+                    str.draw(at: NSPoint(x: lineNumberEndX - size.width, y: yCenter), withAttributes: lineNumAttrs)
                 }
             }
 
@@ -677,7 +707,7 @@ final class EditorTextView: NSTextView {
     // MARK: - Editor Mode Background
 
     private func drawEditorBackground(in rect: NSRect, layoutManager: NSLayoutManager, textContainer: NSTextContainer) {
-        let gutterWidth = EditorTextViewConstants.gutterWidth
+        let gutterWidth = gutterWidth
         let markerBarWidth = EditorTextViewConstants.markerBarWidth
         let foldColWidth = EditorTextViewConstants.foldColumnWidth
         let containerOrigin = textContainerOrigin
@@ -687,7 +717,7 @@ final class EditorTextView: NSTextView {
             .font: lineNumberFont,
             .foregroundColor: NSColor.secondaryLabelColor,
         ]
-        let lineNumEndX = EditorTextViewConstants.lineNumberEndX
+        let lineNumEndX = lineNumberEndX
 
         if text.length == 0 {
             var fragmentRect = layoutManager.extraLineFragmentRect
@@ -725,7 +755,7 @@ final class EditorTextView: NSTextView {
             startLineNumber = preText.components(separatedBy: "\n").count
         }
 
-        let markerBarX = EditorTextViewConstants.markerBarX
+        let markerBarX = markerBarX
         let foldCenterX = gutterWidth - foldColWidth / 2
 
         let cursorLine = currentCursorLine
@@ -969,7 +999,7 @@ final class EditorTextView: NSTextView {
 
         // Diff mode gutter click
         if isDiffMode {
-            guard localPoint.x < EditorTextViewConstants.diffGutterWidth else {
+            guard localPoint.x < diffGutterWidth else {
                 super.mouseDown(with: event)
                 return
             }
@@ -988,7 +1018,7 @@ final class EditorTextView: NSTextView {
             return
         }
 
-        let gutterWidth = EditorTextViewConstants.gutterWidth
+        let gutterWidth = gutterWidth
         let foldColStart = gutterWidth - EditorTextViewConstants.foldColumnWidth
 
         // Only intercept clicks in the gutter area

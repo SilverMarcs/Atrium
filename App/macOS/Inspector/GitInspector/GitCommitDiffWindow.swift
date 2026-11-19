@@ -21,6 +21,11 @@ struct GitCommitDiffWindow: View {
     @State private var isLoading = false
     @State private var selection: GitChangedFile?
     @State private var loadError: String?
+    @AppStorage(DiffLayout.key) private var defaultLayout = DiffLayout.unified
+    /// This window's layout once switched in its toolbar; nil follows Settings.
+    @State private var chosenLayout: DiffLayout?
+
+    private var layout: DiffLayout { chosenLayout ?? defaultLayout }
 
     private var shortHash: String {
         String(item.hash.prefix(7))
@@ -56,9 +61,20 @@ struct GitCommitDiffWindow: View {
             .navigationSplitViewColumnWidth(min: 240, ideal: 3000, max: 420)
         } detail: {
             if let selection, let project = app.project(item.project) {
-                DiffBodyView(reference: reference(for: selection), project: project, loader: diffLoader)
+                DiffBodyView(reference: reference(for: selection), project: project, loader: diffLoader, layout: layout)
                     .navigationTitle(selection.fileURL.lastPathComponent)
                     .navigationSubtitle(selection.repositoryRelativePath)
+                    .toolbar {
+                        if !selection.fileURL.isPreviewableImage {
+                            ToolbarItem(placement: .primaryAction) {
+                                Toggle("Side by Side", systemImage: "rectangle.split.2x1", isOn: Binding(
+                                    get: { layout == .sideBySide },
+                                    set: { chosenLayout = $0 ? .sideBySide : .unified }
+                                ))
+                                .help(layout == .sideBySide ? "Show Unified Diff" : "Show Side by Side")
+                            }
+                        }
+                    }
             } else if !files.isEmpty {
                 ContentUnavailableView(
                     "Select a File",

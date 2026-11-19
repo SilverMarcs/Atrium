@@ -30,6 +30,9 @@ struct HostsSheet: View {
                     Text("Tap a host to rename it on this iPhone.")
                 }
                 SendModeSettingsSection()
+                Section {
+                    DiffLayoutPicker()
+                }
                 DictationSettingsSection()
             }
             .navigationTitle("Hosts")
