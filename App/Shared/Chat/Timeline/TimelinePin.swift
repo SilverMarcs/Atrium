@@ -19,6 +19,10 @@ final class TimelinePin {
     /// A programmatic scroll is on its way, through offsets it doesn't rest at.
     var isAnimatingScroll = false
     /// Where the timeline was last laid out against the offsets it can rest at.
-    var restingPlace = TimelineRestingRange.Place.within
+    var resting = TimelineRestingRange()
+    /// The layout the timeline was last put back into its resting range in.
+    var correctedLayout: TimelineRestingRange.Layout?
+    /// How many times it's been put back since the main run loop last turned.
+    var correctionsThisTurn = 0
     #endif
 }

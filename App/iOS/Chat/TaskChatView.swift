@@ -317,6 +317,7 @@ struct TaskChatView: View {
                     // A scroll on its way only rests once it lands.
                     if pin.isAnimatingScroll {
                         pin.isAnimatingScroll = false
+                        pin.correctedLayout = nil
                         restoreRestingPlace(firstRowID: firstRowID, with: proxy)
                     }
                     guard pin.isReaderScrolling else { return }
@@ -353,7 +354,7 @@ struct TaskChatView: View {
             .onScrollGeometryChange(for: TimelineRestingRange.self) { geometry in
                 TimelineRestingRange(geometry)
             } action: { _, range in
-                pin.restingPlace = range.place
+                pin.resting = range
                 restoreRestingPlace(firstRowID: firstRowID, with: proxy)
             }
             // Content growing below a pinned timeline (a streaming reply, the
@@ -403,8 +404,21 @@ struct TaskChatView: View {
     /// end, or, when the reader left the end and it's above its top, at its
     /// first row.
     private func restoreRestingPlace(firstRowID: String?, with proxy: ScrollViewProxy) {
-        guard !pin.isReaderScrolling, !pin.isAnimatingScroll, composer.messageEdit == nil else { return }
-        switch pin.restingPlace {
+        guard !pin.isReaderScrolling, !pin.isAnimatingScroll, composer.messageEdit == nil,
+              pin.resting.place != .within else { return }
+        // Putting it back again while its layout stays the same lands it where
+        // it went the last time. A chat popped with the keyboard up is laid out
+        // against the keyboard's inset but sized without it, so the end it's
+        // put back to is past the end it's checked against, and the timeline
+        // went back and forth without end, freezing the app. However else it
+        // happens, it's put back at most a few times in one layout pass.
+        guard pin.resting.layout != pin.correctedLayout, pin.correctionsThisTurn < 4 else { return }
+        pin.correctedLayout = pin.resting.layout
+        if pin.correctionsThisTurn == 0 {
+            Task { @MainActor [pin] in pin.correctionsThisTurn = 0 }
+        }
+        pin.correctionsThisTurn += 1
+        switch pin.resting.place {
         case .within:
             break
         case .beforeTop where !pin.isPinned:

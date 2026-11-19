@@ -11,11 +11,20 @@ struct TimelineRestingRange: Equatable {
         case pastEnd
     }
 
+    /// What the range is measured from. Putting the timeline back again
+    /// while none of it changes lands it where it went the last time.
+    struct Layout: Equatable {
+        var top: CGFloat = 0
+        var contentHeight: CGFloat = 0
+        var containerHeight: CGFloat = 0
+        var bottomInset: CGFloat = 0
+    }
+
     let place: Place
-    /// The offset and the top it's measured against. SwiftUI can move both
-    /// while the timeline stays outside, which is checked again each time.
+    /// The layout and the offset. SwiftUI can move both while the timeline
+    /// stays outside, which is checked again each time.
+    let layout: Layout
     private let offset: CGFloat
-    private let top: CGFloat
 
     /// How far outside counts, beyond rounding.
     private static let tolerance: CGFloat = 2
@@ -34,6 +43,17 @@ struct TimelineRestingRange: Equatable {
         }
         // Moves within the range don't need checking.
         self.offset = place == .within ? 0 : offset
-        self.top = place == .within ? 0 : top
+        layout = place == .within ? Layout() : Layout(
+            top: top,
+            contentHeight: geometry.contentSize.height,
+            containerHeight: geometry.containerSize.height,
+            bottomInset: geometry.contentInsets.bottom
+        )
+    }
+
+    init() {
+        place = .within
+        layout = Layout()
+        offset = 0
     }
 }
