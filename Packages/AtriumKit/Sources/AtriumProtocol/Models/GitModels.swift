@@ -126,23 +126,6 @@ public nonisolated struct GitLogEntry: Codable, Equatable, Identifiable, Sendabl
     }
 }
 
-public nonisolated struct GitStashEntry: Codable, Equatable, Hashable, Identifiable, Sendable {
-    public var index: Int
-    public var hash: String
-    public var branch: String?
-    public var message: String
-    public var date: Date?
-
-    public init(index: Int, hash: String, branch: String? = nil, message: String, date: Date? = nil) {
-        self.index = index
-        self.hash = hash
-        self.branch = branch
-        self.message = message
-        self.date = date
-    }
-    public var id: String { hash }
-}
-
 public nonisolated struct GitChangedFile: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var fileURL: URL
     public var repositoryRelativePath: String
@@ -161,11 +144,6 @@ public nonisolated struct GitChangedFile: Codable, Equatable, Hashable, Identifi
 public nonisolated enum PullPreservingResult: String, Codable, Equatable, Sendable {
     case clean
     case wouldConflict
-}
-
-public nonisolated enum GitBranchSyncResult: String, Codable, Sendable {
-    case alreadyUpToDate
-    case synced
 }
 
 public nonisolated struct GitBranchInfo: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -198,19 +176,22 @@ public nonisolated struct GitBranchInfo: Codable, Equatable, Hashable, Identifia
 public nonisolated struct GitBranchListing: Codable, Equatable, Sendable {
     public var branches: [GitBranchInfo] = []
     public var worktrees: [GitWorktreeInfo] = []
+    /// The default branch merges are checked against, e.g. "main".
     public var mergeTarget: String?
-    public var mergedDetachedHeads: Set<String> = []
+    /// Linked worktrees whose commits are all in the default branch and that
+    /// have no uncommitted changes.
+    public var mergedWorktrees: Set<URL> = []
 
     public init(
         branches: [GitBranchInfo] = [],
         worktrees: [GitWorktreeInfo] = [],
         mergeTarget: String? = nil,
-        mergedDetachedHeads: Set<String> = []
+        mergedWorktrees: Set<URL> = []
     ) {
         self.branches = branches
         self.worktrees = worktrees
         self.mergeTarget = mergeTarget
-        self.mergedDetachedHeads = mergedDetachedHeads
+        self.mergedWorktrees = mergedWorktrees
     }
 
     public var linkedWorktrees: [GitWorktreeInfo] { worktrees.filter { !$0.isMain && !$0.isBare } }
@@ -226,8 +207,7 @@ public nonisolated struct GitBranchListing: Codable, Equatable, Sendable {
     }
 
     public func isMerged(_ worktree: GitWorktreeInfo) -> Bool {
-        if let branch = branch(for: worktree) { return branch.isMergedIntoDefaultBranch }
-        return worktree.head.map { mergedDetachedHeads.contains($0) } ?? false
+        mergedWorktrees.contains(worktree.path)
     }
 
     public func deletionUnavailableReason(for branch: GitBranchInfo) -> String? {
@@ -244,14 +224,12 @@ public nonisolated enum GitDiffStage: Hashable, Codable, Sendable {
     case staged
     case unstaged
     case commit(hash: String)
-    case range(base: String, head: String)
 
     public var displayName: String {
         switch self {
             case .staged: "Staged Changes"
             case .unstaged: "Changes"
             case .commit(let hash): "Commit \(String(hash.prefix(7)))"
-            case .range(let base, let head): "\(base) → \(head)"
         }
     }
 }

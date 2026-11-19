@@ -14,21 +14,16 @@ final class GitInspectorState {
     var commitMessage = ""
     var showNewBranchSheet = false
     var newBranchName = ""
-    var showStashAlert = false
-    var stashMessage = ""
     var unpushedExpanded = true
     var stagedExpanded = true
     var unstagedExpanded = true
-    var showStashConflictAlert = false
     var showRenameCommitAlert = false
     var renameCommitMessage = ""
     var showUndoLastCommitAlert = false
-    var showSyncWithBranchSheet = false
     var showCommitLogSheet = false
     /// The repository the branch sheet manages while it's shown. Kept as it
     /// was opened, so the sheet stays put while the status reloads under it.
     var branchListSnapshot: GitRepositoryStatus?
-    var showStashListSheet = false
 
     init(project: Project) {
         self.project = project
@@ -66,33 +61,6 @@ final class GitInspectorState {
         project.scope.showWorktree(worktree.isMain ? nil : worktree.path, of: snapshot.mainRepositoryURL)
     }
 
-    /// Reconciles inspector navigation after the branch manager changes a checkout.
-    func finishBranchOperation(mainRepositoryURL: URL, didConvert: Bool) {
-        guard didConvert else { return }
-        project.scope.showWorktree(nil, of: mainRepositoryURL)
-    }
-
-    func confirmStashAll() {
-        guard let snapshot = currentSnapshot else { return }
-        let message = stashMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty else { return }
-        Task {
-            await model.stashAll(message: message, in: snapshot)
-            stashMessage = ""
-        }
-    }
-
-    func applyLatestStash() {
-        guard let snapshot = currentSnapshot else { return }
-        Task {
-            guard await model.canApplyStashCleanly(snapshot) else {
-                showStashConflictAlert = true
-                return
-            }
-            await model.applyLatestStash(snapshot)
-        }
-    }
-
     func undoLastCommit() {
         guard let snapshot = currentSnapshot else { return }
         Task { await model.undoLastCommit(snapshot) }
@@ -106,16 +74,6 @@ final class GitInspectorState {
             await model.amendCommitMessage(message, in: snapshot)
             renameCommitMessage = ""
         }
-    }
-
-    func syncWithBranch(_ branch: String) {
-        guard let snapshot = currentSnapshot else { return }
-        Task { await model.rebase(snapshot, onto: branch) }
-    }
-
-    func syncWithRemote() {
-        guard let snapshot = currentSnapshot else { return }
-        Task { await model.syncWithRemote(snapshot) }
     }
 
     func fetch() {

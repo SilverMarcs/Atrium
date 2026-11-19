@@ -3,7 +3,7 @@ import AtriumProtocol
 import Foundation
 import Observation
 
-/// Owns the branch sheet's state and operation → inspector refresh → reload sequence.
+/// Owns the branch sheet's state and its delete → inspector refresh → reload sequence.
 @MainActor
 @Observable
 final class GitBranchListModel {
@@ -16,8 +16,7 @@ final class GitBranchListModel {
     private(set) var forceableAction: GitBranchAction?
     private var isPerforming = false
     private var loadRevision = 0
-    private var repositoryRootURL: URL
-    private let mainRepositoryURL: URL
+    private let repositoryRootURL: URL
     private let inspector: GitInspectorState
 
     var isBusy: Bool { isLoading || isPerforming || inspector.model.isBusy }
@@ -37,12 +36,11 @@ final class GitBranchListModel {
 
     init(snapshot: GitRepositoryStatus, inspector: GitInspectorState) {
         repositoryRootURL = snapshot.repositoryRootURL
-        mainRepositoryURL = snapshot.mainRepositoryURL
         self.inspector = inspector
     }
 
-    private func git(_ operation: GitOperation, in repository: URL? = nil) async throws -> GitReply {
-        try await inspector.project.git(operation, in: repository ?? repositoryRootURL)
+    private func git(_ operation: GitOperation) async throws -> GitReply {
+        try await inspector.project.git(operation, in: repositoryRootURL)
     }
 
     func load() async {
@@ -66,8 +64,6 @@ final class GitBranchListModel {
         switch action {
         case .deleteBranch(let branch): listing.deletionUnavailableReason(for: branch)
         case .deleteWorktree(let worktree): worktree.deletionUnavailableReason
-        case .convertWorktree(let worktree):
-            worktree.deletionUnavailableReason ?? (worktree.branch == nil ? "A detached worktree has no branch to convert." : nil)
         }
     }
 
@@ -93,9 +89,8 @@ final class GitBranchListModel {
         guard !isBusy, unavailableReason(for: action) == nil else { return }
         pendingAction = nil
         forceableAction = nil
-        let isConversion = if case .convertWorktree = action { true } else { false }
         let retry = force ? nil : forceRetry(for: action)
-        await perform(returningToMain: isConversion, forceRetry: retry) {
+        await perform(forceRetry: retry) {
             switch action {
             case .deleteBranch(let branch):
                 _ = try await self.git(.deleteBranch(name: branch.name, force: force || !branch.isMergedIntoCurrentBranch))
@@ -103,37 +98,8 @@ final class GitBranchListModel {
             case .deleteWorktree(let worktree):
                 _ = try await self.git(.deleteWorktree(worktree.path, force: force))
                 return "Deleted worktree \(worktree.displayName)"
-            case .convertWorktree(let worktree):
-                _ = try await self.git(.convertWorktree(worktree.path))
-                self.repositoryRootURL = self.mainRepositoryURL
-                return "Converted worktree to branch \(worktree.branch ?? worktree.displayName)"
             }
         }
-    }
-
-    func sync(_ branch: GitBranchInfo) async {
-        guard !isBusy, let upstream = branch.upstream else { return }
-        await perform {
-            guard case .sync(let result) = try await self.git(.syncBranch(local: branch.name, upstream: upstream)) else {
-                throw HostClientError.unexpectedReply
-            }
-            return result == .alreadyUpToDate ? "'\(branch.name)' is already up to date with upstream."
-                : "Synced '\(branch.name)' with upstream successfully."
-        }
-    }
-
-    func merge(_ source: GitBranchInfo, into target: GitBranchInfo) async {
-        guard !isBusy, !target.isRemote, source.id != target.id else { return }
-        await perform {
-            _ = try await self.git(.mergeBranch(source: source, target: target), in: self.mainRepositoryURL)
-            return "Merged \(source.name) into \(target.name)"
-        }
-    }
-
-    func comparison(for branch: GitBranchInfo) -> GitCommitDiffSheetItem? {
-        guard !branch.isCurrent, let head = listing.currentBranchName else { return nil }
-        return GitCommitDiffSheetItem(project: inspector.project.id, range: GitBranchRange(base: branch.name, head: head),
-                                      message: "Committed changes only", repositoryRootURL: repositoryRootURL)
     }
 
     /// The delete to offer again with force if this attempt fails, when
@@ -142,27 +108,22 @@ final class GitBranchListModel {
         switch action {
         case .deleteBranch(let branch): branch.isMergedIntoCurrentBranch ? action : nil
         case .deleteWorktree: action
-        case .convertWorktree: nil
         }
     }
 
-    private func perform(returningToMain: Bool = false, forceRetry: GitBranchAction? = nil,
-                         _ operation: () async throws -> String) async {
+    private func perform(forceRetry: GitBranchAction?, _ operation: () async throws -> String) async {
         isPerforming = true
         actionError = nil
         inspector.model.successMessage = nil
-        var didConvert = false
         defer { isPerforming = false }
         await inspector.model.withBusyState {
             do {
                 self.inspector.model.successMessage = try await operation()
-                didConvert = returningToMain
             } catch {
                 self.actionError = error.localizedDescription
                 self.forceableAction = forceRetry
             }
             await self.load()
-            self.inspector.finishBranchOperation(mainRepositoryURL: self.mainRepositoryURL, didConvert: didConvert)
         }
     }
 }

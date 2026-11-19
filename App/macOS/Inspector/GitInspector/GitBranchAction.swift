@@ -5,21 +5,12 @@ import Foundation
 enum GitBranchAction {
     case deleteBranch(GitBranchInfo)
     case deleteWorktree(GitWorktreeInfo)
-    case convertWorktree(GitWorktreeInfo)
 
     var title: String {
         switch self {
         case .deleteBranch: "Delete Unmerged Branch?"
         case .deleteWorktree: "Delete Worktree?"
-        case .convertWorktree: "Convert to Branch?"
         }
-    }
-
-    var buttonTitle: String { isDestructive ? "Delete" : "Convert" }
-
-    var isDestructive: Bool {
-        if case .convertWorktree = self { return false }
-        return true
     }
 
     var message: String {
@@ -32,8 +23,6 @@ enum GitBranchAction {
             } else {
                 "This removes the folder at \(worktree.path.path). Detached commits not saved on a branch may become unreachable. Worktrees with uncommitted changes cannot be deleted."
             }
-        case .convertWorktree(let worktree):
-            "This switches the main checkout to \"\(worktree.branch ?? "")\" and removes the worktree folder at \(worktree.path.path). The branch and its commits are kept. Both checkouts must have no uncommitted changes."
         }
     }
 }

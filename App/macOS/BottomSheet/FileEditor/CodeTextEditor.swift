@@ -1035,7 +1035,6 @@ struct CodeTextEditor: NSViewRepresentable {
 
             guard let hunkIndex, hunkIndex < hunks.count else { return }
             if case .commit = reference.stage { return }
-            if case .range = reference.stage { return }
 
             showContextMenu(for: hunks[hunkIndex], reference: reference, at: point, in: textView)
         }
@@ -1063,7 +1062,7 @@ struct CodeTextEditor: NSViewRepresentable {
                 unstageItem.representedObject = hunk
                 menu.addItem(unstageItem)
 
-            case .commit, .range:
+            case .commit:
                 return
             }
 

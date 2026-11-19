@@ -2,42 +2,15 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// What a diff window shows: a commit's, a stash's, or a branch comparison's
-/// changes, in a project on one of the hosts.
+/// What a diff window shows: a commit's changes, in a project on one of the
+/// hosts.
 struct GitCommitDiffSheetItem: Identifiable, Hashable, Codable {
     let project: WorkspaceRef
     let hash: String
     let message: String
     let repositoryRootURL: URL
-    /// When set, this represents a stash: its files and diffs come from the stash ref.
-    var stashIndex: Int?
-    /// When set, this compares the committed contents of two branches.
-    /// `hash` carries head; `message` carries the title text.
-    var range: GitBranchRange?
 
-    var id: String {
-        if let range { return "range:\(range.base)..\(range.head)" }
-        if let stashIndex { return "stash:\(stashIndex)" }
-        return hash
-    }
-
-    init(project: WorkspaceRef, hash: String, message: String, repositoryRootURL: URL, stashIndex: Int? = nil) {
-        self.project = project
-        self.hash = hash
-        self.message = message
-        self.repositoryRootURL = repositoryRootURL
-        self.stashIndex = stashIndex
-    }
-
-    init(project: WorkspaceRef, range: GitBranchRange, message: String, repositoryRootURL: URL) {
-        self.init(project: project, hash: range.head, message: message, repositoryRootURL: repositoryRootURL)
-        self.range = range
-    }
-}
-
-struct GitBranchRange: Hashable, Codable {
-    var base: String
-    var head: String
+    var id: String { hash }
 }
 
 struct GitCommitDiffWindow: View {
@@ -53,12 +26,6 @@ struct GitCommitDiffWindow: View {
         String(item.hash.prefix(7))
     }
 
-    private var navTitle: String {
-        if let range = item.range {
-            return "\(range.base) → \(range.head)"
-        }
-        return "Changes in \(shortHash)"
-    }
 
     var body: some View {
         NavigationSplitView {
@@ -76,7 +43,7 @@ struct GitCommitDiffWindow: View {
                     ContentUnavailableView(
                         "No Changes",
                         systemImage: "doc.richtext",
-                        description: Text(item.range == nil ? "Nothing to show here." : "These branches have the same committed contents.")
+                        description: Text("Nothing to show here.")
                     )
                 } else {
                     List(files, id: \.self, selection: $selection) { file in
@@ -100,7 +67,7 @@ struct GitCommitDiffWindow: View {
                 )
             }
         }
-        .navigationTitle(navTitle)
+        .navigationTitle("Changes in \(shortHash)")
         .navigationSubtitle(item.message)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 900, minHeight: 560)
@@ -130,17 +97,11 @@ struct GitCommitDiffWindow: View {
     }
 
     private func reference(for file: GitChangedFile) -> GitDiffReference {
-        let stage: GitDiffStage
-        if let range = item.range {
-            stage = .range(base: range.base, head: range.head)
-        } else {
-            stage = .commit(hash: item.hash)
-        }
-        return GitDiffReference(
+        GitDiffReference(
             repositoryRootURL: item.repositoryRootURL,
             fileURL: file.fileURL,
             repositoryRelativePath: file.repositoryRelativePath,
-            stage: stage,
+            stage: .commit(hash: item.hash),
             kind: file.kind
         )
     }
@@ -154,14 +115,7 @@ struct GitCommitDiffWindow: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let operation: GitOperation = if let range = item.range {
-                .rangeFiles(base: range.base, head: range.head)
-            } else if let stashIndex = item.stashIndex {
-                .stashFiles(index: stashIndex)
-            } else {
-                .commitFiles(hash: item.hash)
-            }
-            guard case .files(let loaded) = try await project.git(operation, in: item.repositoryRootURL) else {
+            guard case .files(let loaded) = try await project.git(.commitFiles(hash: item.hash), in: item.repositoryRootURL) else {
                 throw HostClientError.unexpectedReply
             }
             files = loaded

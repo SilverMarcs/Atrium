@@ -14,34 +14,22 @@ public nonisolated enum GitOperation: Codable, Sendable {
     case pull
     case pullPreservingChanges
     case pullRebase
-    /// Fetches, then rebases onto the remote side of a branch.
-    case rebase(onto: String)
     case fetch
     /// Fetches unless the repository was fetched recently, quietly.
     case fetchIfStale
     case switchBranch(String)
     case createBranch(String)
-    case stash(message: String?)
-    case canApplyStash
-    case popStash
-    case stashes
-    case applyStash(index: Int)
-    case dropStash(index: Int)
-    case stashFiles(index: Int)
+    /// Stashes every change, untracked files too, before a branch switch.
+    case stash
     case undoLastCommit
     case amendMessage(String)
     case log(limit: Int)
     case commitFiles(hash: String)
-    case rangeFiles(base: String, head: String)
     case branches
-    case mergeBranch(source: GitBranchInfo, target: GitBranchInfo)
     case deleteBranch(name: String, force: Bool)
     /// Deletes a linked worktree and its branch; `force` also discards its modified and untracked files.
     case deleteWorktree(URL, force: Bool)
-    case convertWorktree(URL)
-    case syncBranch(local: String, upstream: String)
     case hasUncommittedChanges
-    case remoteURL
     case applyPatch(String, reverse: Bool, cached: Bool)
     /// A file's diff, as hunks and with full context.
     case diff(GitDiffReference)
@@ -53,8 +41,7 @@ public nonisolated enum GitOperation: Codable, Sendable {
     /// Whether the operation can change what `git status` reports.
     public var changesStatus: Bool {
         switch self {
-        case .canApplyStash, .stashes, .stashFiles, .log, .commitFiles, .rangeFiles, .branches,
-             .hasUncommittedChanges, .remoteURL, .diff, .imageDiff, .gutterDiff, .fetchIfStale:
+        case .log, .commitFiles, .branches, .hasUncommittedChanges, .diff, .imageDiff, .gutterDiff, .fetchIfStale:
             false
         default:
             true
@@ -68,10 +55,8 @@ public nonisolated enum GitReply: Codable, Sendable {
     case flag(Bool)
     case files([GitChangedFile])
     case log([GitLogEntry])
-    case stashes([GitStashEntry])
     case branches(GitBranchListing)
     case pull(PullPreservingResult)
-    case sync(GitBranchSyncResult)
     /// Unified diff text, by hunks and with full context.
     case diff(hunks: String, fullContext: String)
     case images(old: Data?, new: Data?)

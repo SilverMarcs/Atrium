@@ -151,7 +151,6 @@ actor GitRepository {
             case .unstaged: ""
             case .staged: "HEAD"
             case .commit(let hash): "\(hash)~1"
-            case .range(let base, _): base
             }
             old = try? await self.fileData(at: path, ref: ref, repositoryRootURL: root)
         }
@@ -163,8 +162,6 @@ actor GitRepository {
                 new = (try? await self.fileData(at: path, ref: "", repositoryRootURL: root)) ?? (try? Data(contentsOf: reference.fileURL))
             case .commit(let hash):
                 new = try? await self.fileData(at: path, ref: hash, repositoryRootURL: root)
-            case .range(_, let head):
-                new = try? await self.fileData(at: path, ref: head, repositoryRootURL: root)
             }
         }
         return (old, new)
@@ -215,10 +212,6 @@ actor GitRepository {
         try await self.executor.execute(GitPushSetUpstreamCommand(branch: branch), at: repositoryRootURL)
     }
 
-    func remoteURL(at repositoryRootURL: URL) async throws -> String {
-        try await self.executor.execute(GitRemoteURLCommand(), at: repositoryRootURL)
-    }
-
     func pull(at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitPullCommand(), at: repositoryRootURL)
     }
@@ -260,10 +253,6 @@ actor GitRepository {
         try await self.executor.execute(GitPullRebaseCommand(), at: repositoryRootURL)
     }
 
-    func rebaseBranch(_ branch: String, at repositoryRootURL: URL) async throws {
-        try await self.executor.execute(GitRebaseBranchCommand(branch: branch), at: repositoryRootURL)
-    }
-
     func fetch(at repositoryRootURL: URL) async throws {
         lastFetchAttempts[repositoryRootURL.standardizedFileURL.resolvingSymlinksInPath()] = Date()
         try await self.executor.execute(GitFetchCommand(), at: repositoryRootURL)
@@ -279,50 +268,6 @@ actor GitRepository {
         try await self.fetch(at: repositoryRootURL)
     }
 
-    func syncBranchWithUpstream(localBranch: String, upstreamBranch: String, at repositoryRootURL: URL) async throws -> GitBranchSyncResult {
-        let parts = upstreamBranch.split(separator: "/", maxSplits: 1)
-        guard parts.count == 2 else {
-            throw GitError.commandFailed(
-                command: "syncBranchWithUpstream",
-                message: "Invalid upstream branch format: \(upstreamBranch)"
-            )
-        }
-        let remote = String(parts[0])
-        let remoteBranch = String(parts[1])
-
-        // 1. Fetch remote branch
-        try await self.executor.execute(GitFetchBranchCommand(remote: remote, branch: remoteBranch), at: repositoryRootURL)
-
-        // 2. Query hashes
-        let localHash = try await self.executor.execute(GitRevParseCommand(ref: localBranch), at: repositoryRootURL)
-        let remoteHash = try await self.executor.execute(GitRevParseCommand(ref: upstreamBranch), at: repositoryRootURL)
-
-        if localHash == remoteHash {
-            return .alreadyUpToDate
-        }
-
-        // 3. Find common ancestor
-        let mergeBase = try await self.executor.execute(GitMergeBaseCommand(ref1: localBranch, ref2: upstreamBranch), at: repositoryRootURL)
-
-        if mergeBase == localHash {
-            // Fast-forward is possible!
-            try await self.executor.execute(GitUpdateRefCommand(localBranch: localBranch, targetCommit: remoteHash), at: repositoryRootURL)
-            return .synced
-        } else if mergeBase == remoteHash {
-            // Local is ahead of remote (already contains all remote changes)
-            throw GitError.commandFailed(
-                command: "syncBranchWithUpstream",
-                message: "Local branch '\(localBranch)' is ahead of remote '\(upstreamBranch)' and already contains all upstream commits."
-            )
-        } else {
-            // Diverged
-            throw GitError.commandFailed(
-                command: "syncBranchWithUpstream",
-                message: "Local branch '\(localBranch)' and remote '\(upstreamBranch)' have diverged. You must checkout the branch and merge or rebase manually."
-            )
-        }
-    }
-
     func commitLog(at repositoryRootURL: URL, limit: Int = 200) async throws -> [GitLogEntry] {
         try await self.executor.execute(GitLogCommand(limit: limit), at: repositoryRootURL)
     }
@@ -334,19 +279,6 @@ actor GitRepository {
             let fileURL = repositoryRootURL.appending(path: entry.path).standardizedFileURL
             return GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: kind)
         }
-    }
-
-    func changedFiles(base: String, head: String, at repositoryRootURL: URL) async throws -> [GitChangedFile] {
-        let entries = try await self.executor.execute(GitRangeFilesCommand(base: base, head: head), at: repositoryRootURL)
-        return entries.compactMap { entry in
-            guard let kind = Self.changeKindFromDiffTreeStatus(entry.status) else { return nil }
-            let fileURL = repositoryRootURL.appending(path: entry.path).standardizedFileURL
-            return GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: kind)
-        }
-    }
-
-    func rangeAheadBehind(base: String, head: String, at repositoryRootURL: URL) async throws -> (ahead: Int, behind: Int) {
-        try await self.executor.execute(GitRangeAheadBehindCommand(base: base, head: head), at: repositoryRootURL)
     }
 
     func switchBranch(to branch: String, at repositoryRootURL: URL) async throws {
@@ -374,31 +306,6 @@ actor GitRepository {
         try await self.executor.execute(GitStashCommand(), at: repositoryRootURL)
     }
 
-    func stashAll(message: String, at repositoryRootURL: URL) async throws {
-        try await self.executor.execute(GitStashWithMessageCommand(message: message), at: repositoryRootURL)
-    }
-
-    func canStashApplyCleanly(at repositoryRootURL: URL) async -> Bool {
-        do {
-            let diffData = try await self.executor.runRawData(
-                arguments: ["stash", "show", "-p"],
-                at: repositoryRootURL
-            )
-            let result = try await self.executor.run(
-                arguments: ["apply", "--check"],
-                stdinData: diffData,
-                at: repositoryRootURL
-            )
-            return result.exitCode == 0
-        } catch {
-            return false
-        }
-    }
-
-    func stashPop(at repositoryRootURL: URL) async throws {
-        try await self.executor.execute(GitStashPopCommand(), at: repositoryRootURL)
-    }
-
     // MARK: - Branch Management
 
     func allBranchesDetailed(at repositoryRootURL: URL) async throws -> GitBranchListing {
@@ -413,61 +320,53 @@ actor GitRepository {
         let worktrees = try await worktreeTask
         let target = try await targetTask
         let currentMerged = Set(try await currentMergedTask)
-        let defaultMerged: Set<String>
-        if let target {
-            defaultMerged = Set(try await executor.execute(
-                GitMergedBranchesRawCommand(target: target.ref, includeRemotes: true), at: repositoryRootURL
-            ))
-        } else {
-            defaultMerged = []
+
+        // Work merged into the local default branch counts before it's pushed,
+        // and work merged on the remote counts before it's pulled.
+        let remoteTarget = target.flatMap { target in
+            target.ref.hasPrefix("refs/remotes/") ? String(target.ref.dropFirst("refs/remotes/".count)) : nil
         }
-        let targetName = target.map {
-            $0.ref.hasPrefix("refs/remotes/") ? String($0.ref.dropFirst("refs/remotes/".count)) : $0.branch
+        let localTarget = target.flatMap { target in local.contains { $0.name == target.branch } ? target.branch : nil }
+        let mergeTargets = [localTarget.map { "refs/heads/\($0)" }, remoteTarget.map { "refs/remotes/\($0)" }].compactMap { $0 }
+        var defaultMerged: Set<String> = []
+        for ref in mergeTargets {
+            defaultMerged.formUnion(try await executor.execute(
+                GitMergedBranchesRawCommand(target: ref, includeRemotes: true), at: repositoryRootURL
+            ))
         }
         let branches = local.map {
             GitBranchInfo(name: $0.name, isCurrent: $0.isCurrent, upstream: $0.upstream,
                           isMergedIntoCurrentBranch: currentMerged.contains($0.name),
-                          isMergedIntoDefaultBranch: $0.name != target?.branch && defaultMerged.contains($0.name))
+                          isMergedIntoDefaultBranch: $0.name != localTarget && defaultMerged.contains($0.name))
         } + remote.map {
             GitBranchInfo(name: $0, isCurrent: false, upstream: nil, isRemote: true,
-                          isMergedIntoDefaultBranch: $0 != targetName && defaultMerged.contains($0))
+                          isMergedIntoDefaultBranch: $0 != remoteTarget && defaultMerged.contains($0))
         }
-        var mergedDetachedHeads: Set<String> = []
-        if let target {
-            for head in Set(worktrees.filter { $0.isDetached }.compactMap(\.head)) {
-                let result = try await executor.runWithExitCode(
-                    arguments: ["merge-base", "--is-ancestor", head, target.ref], at: repositoryRootURL
-                )
-                guard result.exitCode == 0 || result.exitCode == 1 else {
-                    throw GitError.commandFailed(command: "git merge-base", message: result.stderr)
-                }
-                if result.exitCode == 0 { mergedDetachedHeads.insert(head) }
-            }
+
+        // A worktree is merged once its commit is in the default branch and it
+        // has nothing uncommitted: a fresh worktree with edits isn't merged yet.
+        var mergedWorktrees: Set<URL> = []
+        for worktree in worktrees where !worktree.isMain && !worktree.isBare && worktree.branch != localTarget {
+            guard let head = worktree.head,
+                  try await isAncestor(head, ofAny: mergeTargets, at: repositoryRootURL),
+                  try await executor.execute(GitStatusCommand(), at: worktree.path).entries.isEmpty else { continue }
+            mergedWorktrees.insert(worktree.path)
         }
-        return GitBranchListing(branches: branches, worktrees: worktrees, mergeTarget: targetName,
-                                mergedDetachedHeads: mergedDetachedHeads)
+        return GitBranchListing(branches: branches, worktrees: worktrees, mergeTarget: localTarget ?? remoteTarget,
+                                mergedWorktrees: mergedWorktrees)
     }
 
-    /// Merge in the destination checkout, keeping the source worktree untouched.
-    func mergeBranch(_ source: GitBranchInfo, into target: GitBranchInfo, at root: URL) async throws {
-        guard !target.isRemote, source.id != target.id else { return }
-        let checkouts = try await worktrees(at: root)
-        let destination = checkouts.first { $0.branch == target.name }
-        guard let checkout = destination ?? checkouts.first(where: { $0.isMain && !$0.isBare }) else {
-            throw GitError.commandFailed(command: "git merge", message: "No destination checkout is available.")
+    private func isAncestor(_ commit: String, ofAny refs: [String], at repositoryRootURL: URL) async throws -> Bool {
+        for ref in refs {
+            let result = try await executor.runWithExitCode(
+                arguments: ["merge-base", "--is-ancestor", commit, ref], at: repositoryRootURL
+            )
+            guard result.exitCode == 0 || result.exitCode == 1 else {
+                throw GitError.commandFailed(command: "git merge-base", message: result.stderr)
+            }
+            if result.exitCode == 0 { return true }
         }
-        let status = try await executor.execute(GitStatusCommand(), at: checkout.path)
-        guard status.entries.isEmpty else {
-            throw GitError.commandFailed(command: "git merge", message: "Commit or stash changes in the destination checkout before merging.")
-        }
-        if destination == nil {
-            try await executor.execute(GitSwitchCommand(branch: target.name), at: checkout.path)
-        }
-        let ref = "refs/\(source.isRemote ? "remotes" : "heads")/\(source.name)"
-        let result = try await executor.runWithExitCode(arguments: ["merge", "--no-edit", "--", ref], at: checkout.path)
-        guard result.exitCode == 0 else {
-            throw GitError.commandFailed(command: "git merge", message: "Merge into \(target.name) at \(checkout.path.path) failed. Resolve conflicts or abort the merge there. \(result.stderr)")
-        }
+        return false
     }
 
     func deleteBranch(_ name: String, force: Bool, at repositoryRootURL: URL) async throws {
@@ -506,34 +405,6 @@ actor GitRepository {
         }
     }
 
-    func convertWorktreeToBranch(at worktreeURL: URL, in repositoryRootURL: URL) async throws {
-        let worktrees = try await self.worktrees(at: repositoryRootURL)
-        let worktree = try removableWorktree(at: worktreeURL, from: worktrees)
-        guard let branch = worktree.branch,
-              let main = worktrees.first(where: { $0.isMain && !$0.isBare }),
-              let previousRef = main.branch ?? main.head else {
-            throw GitError.commandFailed(command: "git switch", message: "Conversion requires a branch and a main checkout.")
-        }
-        for root in [worktree.path, main.path] {
-            let status = try await self.executor.execute(GitStatusCommand(), at: root)
-            guard status.entries.isEmpty else {
-                throw GitError.commandFailed(command: "git switch", message: "Commit or stash changes in both the worktree and main checkout before converting.")
-            }
-        }
-        try await self.executor.execute(GitSwitchCommand(branch: branch, ignoreOtherWorktrees: true), at: main.path)
-        do {
-            try await removeWorktree(worktree, at: main.path)
-        } catch {
-            let removalError = error
-            do {
-                try await self.executor.execute(GitSwitchCommand(branch: previousRef, detach: main.branch == nil), at: main.path)
-            } catch {
-                throw GitError.commandFailed(command: "git switch", message: "The worktree could not be removed and the main checkout could not be restored. \(removalError.localizedDescription) \(error.localizedDescription)")
-            }
-            throw removalError
-        }
-    }
-
     private func removableWorktree(at worktreeURL: URL, from worktrees: [GitWorktreeInfo]) throws -> GitWorktreeInfo {
         let resolvedURL = worktreeURL.standardizedFileURL.resolvingSymlinksInPath()
         guard let worktree = worktrees.first(where: {
@@ -556,29 +427,6 @@ actor GitRepository {
             var info = info
             info.isCurrent = info.path.standardizedFileURL.resolvingSymlinksInPath() == resolvedRoot
             return info
-        }
-    }
-
-    // MARK: - Stash Management
-
-    func stashList(at repositoryRootURL: URL) async throws -> [GitStashEntry] {
-        try await self.executor.execute(GitStashListCommand(), at: repositoryRootURL)
-    }
-
-    func dropStash(index: Int, at repositoryRootURL: URL) async throws {
-        try await self.executor.execute(GitStashDropAtCommand(index: index), at: repositoryRootURL)
-    }
-
-    func applyStash(index: Int, at repositoryRootURL: URL) async throws {
-        try await self.executor.execute(GitStashApplyAtCommand(index: index), at: repositoryRootURL)
-    }
-
-    func stashChangedFiles(index: Int, at repositoryRootURL: URL) async throws -> [GitChangedFile] {
-        let entries = try await self.executor.execute(GitStashChangedFilesCommand(index: index), at: repositoryRootURL)
-        return entries.compactMap { entry in
-            guard let kind = Self.changeKindFromDiffTreeStatus(entry.status) else { return nil }
-            let fileURL = repositoryRootURL.appending(path: entry.path).standardizedFileURL
-            return GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: kind)
         }
     }
 
@@ -894,13 +742,6 @@ private struct GitPushSetUpstreamCommand: GitCommand {
     func parse(output: String) throws { }
 }
 
-private struct GitRemoteURLCommand: GitCommand {
-    var arguments: [String] { ["remote", "get-url", "origin"] }
-    func parse(output: String) throws -> String {
-        output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
 struct GitPullCommand: GitCommand {
     var arguments: [String] { ["pull"] }
     func parse(output: String) throws { }
@@ -908,12 +749,6 @@ struct GitPullCommand: GitCommand {
 
 private struct GitPullRebaseCommand: GitCommand {
     var arguments: [String] { ["pull", "--rebase"] }
-    func parse(output: String) throws { }
-}
-
-private struct GitRebaseBranchCommand: GitCommand {
-    let branch: String
-    var arguments: [String] { ["rebase", branch] }
     func parse(output: String) throws { }
 }
 
@@ -936,14 +771,7 @@ private struct GitLocalBranchesCommand: GitCommand {
 
 private struct GitSwitchCommand: GitCommand {
     let branch: String
-    var ignoreOtherWorktrees = false
-    var detach = false
-    var arguments: [String] {
-        var arguments = ["switch"]
-        if ignoreOtherWorktrees { arguments.append("--ignore-other-worktrees") }
-        if detach { arguments.append("--detach") }
-        return arguments + [branch]
-    }
+    var arguments: [String] { ["switch", branch] }
     func parse(output: String) throws { }
 }
 
@@ -973,12 +801,6 @@ private struct GitAmendMessageCommand: GitCommand {
 
 private struct GitStashCommand: GitCommand {
     var arguments: [String] { ["stash", "--include-untracked"] }
-    func parse(output: String) throws { }
-}
-
-private struct GitStashWithMessageCommand: GitCommand {
-    let message: String
-    var arguments: [String] { ["stash", "push", "--include-untracked", "-m", message] }
     func parse(output: String) throws { }
 }
 
@@ -1112,43 +934,6 @@ private struct GitCommitFilesCommand: GitCommand {
     }
 }
 
-private struct GitRangeFilesCommand: GitCommand {
-    let base: String
-    let head: String
-
-    var arguments: [String] {
-        ["diff", "--name-status", base, head, "--"]
-    }
-
-    func parse(output: String) throws -> [(status: Character, path: String)] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\t")
-            guard parts.count >= 2, let status = parts[0].first else { return nil }
-            let path = String(parts.last!)
-            return (status: status, path: path)
-        }
-    }
-}
-
-private struct GitRangeAheadBehindCommand: GitCommand {
-    let base: String
-    let head: String
-
-    var arguments: [String] {
-        ["rev-list", "--left-right", "--count", "\(base)...\(head)"]
-    }
-
-    func parse(output: String) throws -> (ahead: Int, behind: Int) {
-        let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\t", omittingEmptySubsequences: true)
-            .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count == 2 else { return (0, 0) }
-        return (ahead: parts[1], behind: parts[0])
-    }
-}
-
 private struct GitRemoteBranchesRawCommand: GitCommand {
     var arguments: [String] {
         ["for-each-ref", "--format=%(refname:short)%00%(symref)", "refs/remotes"]
@@ -1256,79 +1041,6 @@ enum GitWorktreeParser {
     }
 }
 
-private struct GitStashListCommand: GitCommand {
-    var arguments: [String] {
-        // %gd → stash@{N}, %H full hash, %gs reflog subject, %aI iso date
-        ["stash", "list", "--format=%gd%x1f%H%x1f%gs%x1f%aI"]
-    }
-
-    func parse(output: String) throws -> [GitStashEntry] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let fallbackFormatter = ISO8601DateFormatter()
-        fallbackFormatter.formatOptions = [.withInternetDateTime]
-
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\u{1f}", omittingEmptySubsequences: false).map(String.init)
-            guard parts.count >= 4 else { return nil }
-            let ref = parts[0]
-            // ref looks like "stash@{3}"
-            guard let openIdx = ref.firstIndex(of: "{"), let closeIdx = ref.firstIndex(of: "}") else { return nil }
-            let indexString = ref[ref.index(after: openIdx)..<closeIdx]
-            guard let index = Int(indexString) else { return nil }
-            let hash = parts[1]
-            let reflogSubject = parts[2]
-            // reflogSubject typical: "WIP on main: abcdef1 commit message" or "On main: My message"
-            var branch: String?
-            var message = reflogSubject
-            if let colonIdx = reflogSubject.firstIndex(of: ":") {
-                let head = String(reflogSubject[..<colonIdx])
-                let tail = reflogSubject[reflogSubject.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces)
-                if head.hasPrefix("WIP on ") {
-                    branch = String(head.dropFirst("WIP on ".count))
-                } else if head.hasPrefix("On ") {
-                    branch = String(head.dropFirst("On ".count))
-                }
-                message = tail
-            }
-            let date = formatter.date(from: parts[3]) ?? fallbackFormatter.date(from: parts[3])
-            return GitStashEntry(index: index, hash: hash, branch: branch, message: message, date: date)
-        }
-    }
-}
-
-private struct GitStashDropAtCommand: GitCommand {
-    let index: Int
-    var arguments: [String] { ["stash", "drop", "stash@{\(index)}"] }
-    func parse(output: String) throws { }
-}
-
-private struct GitStashApplyAtCommand: GitCommand {
-    let index: Int
-    var arguments: [String] { ["stash", "apply", "--index", "stash@{\(index)}"] }
-    func parse(output: String) throws { }
-}
-
-private struct GitStashChangedFilesCommand: GitCommand {
-    let index: Int
-    var arguments: [String] {
-        ["stash", "show", "--name-status", "stash@{\(index)}"]
-    }
-
-    func parse(output: String) throws -> [(status: Character, path: String)] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\t")
-            guard parts.count >= 2, let status = parts[0].first else { return nil }
-            let path = String(parts.last!)
-            return (status: status, path: path)
-        }
-    }
-}
-
 // MARK: - Status Parser
 
 /// Parses `git status --branch --porcelain=v2 -z` output.
@@ -1424,38 +1136,4 @@ enum GitStatusParser {
         guard let start = pathStart else { return nil }
         return GitStatusEntry(path: String(token[start...]), indexStatus: indexStatus, workTreeStatus: workTreeStatus)
     }
-}
-
-// MARK: - Sync Non-Current Branch Commands
-
-
-struct GitFetchBranchCommand: GitCommand {
-    let remote: String
-    let branch: String
-    var arguments: [String] { ["fetch", remote, branch] }
-    func parse(output: String) throws {}
-}
-
-struct GitRevParseCommand: GitCommand {
-    let ref: String
-    var arguments: [String] { ["rev-parse", ref] }
-    func parse(output: String) throws -> String {
-        output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-struct GitMergeBaseCommand: GitCommand {
-    let ref1: String
-    let ref2: String
-    var arguments: [String] { ["merge-base", ref1, ref2] }
-    func parse(output: String) throws -> String {
-        output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-struct GitUpdateRefCommand: GitCommand {
-    let localBranch: String
-    let targetCommit: String
-    var arguments: [String] { ["update-ref", "refs/heads/\(localBranch)", targetCommit] }
-    func parse(output: String) throws {}
 }

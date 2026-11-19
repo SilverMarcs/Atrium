@@ -97,17 +97,8 @@ final class SourceControl {
         }
     }
 
-    func syncWithRemote(_ snapshot: GitRepositoryStatus) async {
+    private func syncWithRemote(_ snapshot: GitRepositoryStatus) async {
         await perform(.pullRebase, in: snapshot, success: "Synced with remote")
-    }
-
-    func rebase(_ snapshot: GitRepositoryStatus, onto branch: String) async {
-        await perform(.rebase(onto: branch), in: snapshot, success: "Rebased onto \(branch)")
-    }
-
-    func remoteURL(_ snapshot: GitRepositoryStatus) async -> String? {
-        guard case .text(let url) = await run(.remoteURL, in: snapshot.repositoryRootURL) else { return nil }
-        return url
     }
 
     func commitLog(_ snapshot: GitRepositoryStatus, limit: Int = 200) async -> [GitLogEntry] {
@@ -143,7 +134,7 @@ final class SourceControl {
         await perform(.createBranch(name), in: snapshot, success: "Created branch \(name)")
     }
 
-    // MARK: - Commits and stashes
+    // MARK: - Commits
 
     func undoLastCommit(_ snapshot: GitRepositoryStatus) async {
         await perform(.undoLastCommit, in: snapshot, success: "Last commit undone")
@@ -151,32 +142,6 @@ final class SourceControl {
 
     func amendCommitMessage(_ message: String, in snapshot: GitRepositoryStatus) async {
         await perform(.amendMessage(message), in: snapshot, success: "Commit renamed")
-    }
-
-    func stashAll(message: String, in snapshot: GitRepositoryStatus) async {
-        await perform(.stash(message: message), in: snapshot, success: "Changes stashed")
-    }
-
-    func canApplyStashCleanly(_ snapshot: GitRepositoryStatus) async -> Bool {
-        guard case .flag(let canApply) = await run(.canApplyStash, in: snapshot.repositoryRootURL) else { return false }
-        return canApply
-    }
-
-    func applyLatestStash(_ snapshot: GitRepositoryStatus) async {
-        await perform(.popStash, in: snapshot, success: "Stash applied")
-    }
-
-    func stashList(_ snapshot: GitRepositoryStatus) async -> [GitStashEntry] {
-        guard case .stashes(let stashes) = await run(.stashes, in: snapshot.repositoryRootURL) else { return [] }
-        return stashes
-    }
-
-    func applyStash(index: Int, in snapshot: GitRepositoryStatus) async {
-        await perform(.applyStash(index: index), in: snapshot, success: "Stash applied")
-    }
-
-    func dropStash(index: Int, in snapshot: GitRepositoryStatus) async {
-        await perform(.dropStash(index: index), in: snapshot, success: "Stash dropped")
     }
 
     // MARK: - Prompts
@@ -194,7 +159,7 @@ final class SourceControl {
                 untracked: files.filter { $0.kind == .untracked }.map(\.repositoryRelativePath)
             ), in: snapshot)
         case .stashAndSwitch(let branch, let repository, _):
-            guard await perform(.stash(message: nil), in: repository) else { return }
+            guard await perform(.stash, in: repository) else { return }
             await switchBranch(to: branch, at: repository)
         case .publish(let snapshot):
             await publish(snapshot)

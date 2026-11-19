@@ -24,18 +24,6 @@ struct GitInspectorView: View {
                 initializeView
             }
         }
-        .alert("Stash All Changes", isPresented: $state.showStashAlert) {
-            TextField("Stash name", text: $state.stashMessage)
-            Button("Stash") {
-                state.confirmStashAll()
-            }
-            Button("Cancel", role: .cancel) { state.stashMessage = "" }
-        } message: {
-            Text("Stash all staged, unstaged, and untracked changes.")
-        }
-        .sheet(isPresented: $state.showSyncWithBranchSheet) {
-            SyncWithBranchSheet(state: state)
-        }
         .sheet(isPresented: $state.showCommitLogSheet) {
             GitCommitLogSheet(state: state)
         }
@@ -46,9 +34,6 @@ struct GitInspectorView: View {
             if let snapshot = state.branchListSnapshot {
                 GitBranchListSheet(snapshot: snapshot, state: state)
             }
-        }
-        .sheet(isPresented: $state.showStashListSheet) {
-            GitStashListSheet(state: state)
         }
         .alert("Undo Last Commit?", isPresented: $state.showUndoLastCommitAlert) {
             Button("Undo", role: .confirm) {
@@ -66,11 +51,6 @@ struct GitInspectorView: View {
             Button("Cancel", role: .cancel) { state.renameCommitMessage = "" }
         } message: {
             Text("Enter a new message for the latest commit.")
-        }
-        .alert("Cannot Apply Stash", isPresented: $state.showStashConflictAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The stash cannot be applied cleanly because it conflicts with your current changes. Commit or discard your changes first, then try again.")
         }
         .alert("New Branch", isPresented: $state.showNewBranchSheet) {
             TextField("Branch name", text: $state.newBranchName)

@@ -3,7 +3,6 @@ import SwiftUI
 
 struct GitBranchListSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openWindow) private var openWindow
     private let state: GitInspectorState
     @State private var model: GitBranchListModel
 
@@ -36,13 +35,9 @@ struct GitBranchListSheet: View {
                                 ForEach(model.listing.localBranches) { branch in
                                     GitBranchRow(name: branch.name, icon: "arrow.triangle.branch",
                                                  isCurrent: branch.isCurrent, isMerged: branch.isMergedIntoDefaultBranch)
-                                    .contextMenu { GitBranchMenu(branch: branch, model: model, onCompare: compare) }
+                                    .contextMenu { deleteButton(for: .deleteBranch(branch)) }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        if model.unavailableReason(for: .deleteBranch(branch)) == nil {
-                                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                                Task { await model.request(.deleteBranch(branch)) }
-                                            }
-                                        }
+                                        deleteButton(for: .deleteBranch(branch))
                                     }
                                 }
                             }
@@ -53,33 +48,9 @@ struct GitBranchListSheet: View {
                                     GitBranchRow(name: worktree.branch ?? "Detached · \(worktree.head?.prefix(7) ?? "")",
                                                  subtitle: worktree.path.path(percentEncoded: false), icon: "folder",
                                                  isCurrent: worktree.isCurrent, isMerged: model.listing.isMerged(worktree))
-                                    .contextMenu {
-                                        if let branch = model.listing.branch(for: worktree) {
-                                            GitBranchMenu(branch: branch, model: model, onCompare: compare)
-                                        }
-                                        if !worktree.isCurrent {
-                                            if worktree.branch != nil {
-                                                Button("Convert to Branch", systemImage: "arrow.triangle.branch") {
-                                                    Task { await model.request(.convertWorktree(worktree)) }
-                                                }
-                                                .disabled(model.unavailableReason(for: .convertWorktree(worktree)) != nil)
-                                                .help(model.unavailableReason(for: .convertWorktree(worktree))
-                                                      ?? "Keep this branch in the main checkout and remove its worktree folder")
-                                            }
-                                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                                Task { await model.request(.deleteWorktree(worktree)) }
-                                            }
-                                            .disabled(model.unavailableReason(for: .deleteWorktree(worktree)) != nil)
-                                            .help(model.unavailableReason(for: .deleteWorktree(worktree))
-                                                  ?? "Delete the worktree folder and its local branch")
-                                        }
-                                    }
+                                    .contextMenu { deleteButton(for: .deleteWorktree(worktree)) }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        if model.unavailableReason(for: .deleteWorktree(worktree)) == nil {
-                                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                                Task { await model.request(.deleteWorktree(worktree)) }
-                                            }
-                                        }
+                                        deleteButton(for: .deleteWorktree(worktree))
                                     }
                                 }
                             }
@@ -89,7 +60,6 @@ struct GitBranchListSheet: View {
                                 ForEach(model.listing.remoteBranches) { branch in
                                     GitBranchRow(name: branch.name, icon: "cloud", isCurrent: false,
                                                  isMerged: branch.isMergedIntoDefaultBranch)
-                                    .contextMenu { GitBranchMenu(branch: branch, model: model, onCompare: compare) }
                                 }
                             }
                         }
@@ -109,7 +79,7 @@ struct GitBranchListSheet: View {
         .frame(width: 420, height: 440)
         .task(id: state.model.repositories) { await model.load() }
         .alert(model.pendingAction?.title ?? "Confirm", isPresented: $model.isConfirming, presenting: model.pendingAction) { action in
-            Button(action.buttonTitle, role: action.isDestructive ? .destructive : .confirm) {
+            Button("Delete", role: .destructive) {
                 Task { await model.confirm(action) }
             }
             Button("Cancel", role: .cancel) { model.isConfirming = false }
@@ -128,9 +98,13 @@ struct GitBranchListSheet: View {
         }
     }
 
-    private func compare(_ branch: GitBranchInfo) {
-        guard let item = model.comparison(for: branch) else { return }
-        openWindow(value: item)
-        dismiss()
+    /// Deletes a branch or worktree, or nothing when it can't be deleted.
+    @ViewBuilder
+    private func deleteButton(for action: GitBranchAction) -> some View {
+        if model.unavailableReason(for: action) == nil {
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                Task { await model.request(action) }
+            }
+        }
     }
 }
