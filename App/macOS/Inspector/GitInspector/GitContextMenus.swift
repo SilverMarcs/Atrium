@@ -68,8 +68,7 @@ struct GitCommitContextMenu: View {
         }
 
         Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(commit.hash, forType: .string)
+            Pasteboard.copy(commit.hash)
         } label: {
             Label("Copy Commit Hash", systemImage: "doc.on.doc")
         }

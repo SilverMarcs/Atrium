@@ -22,13 +22,6 @@ enum SyntaxHighlighter {
     }()
 
     struct Theme {
-        var keyword = NSColor.systemPink
-        var string = NSColor.systemRed
-        var comment = NSColor.systemGreen
-        var number = NSColor.systemBlue
-        var type = NSColor.systemTeal
-        var preprocessor = NSColor.systemOrange
-        var background = NSColor.textBackgroundColor
         var foreground = NSColor.labelColor
         var font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
     }

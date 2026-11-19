@@ -87,18 +87,10 @@ extension HostClient {
             if !draft.isCreating, draft.taskID == nil { createTask(from: draft) }
             return
         }
-        conversations.deliver(id, to: taskID, using: self) { [weak self] in
+        conversations.deliver(id, to: taskID) { prompt in
+            try await self.submitPrompt(prompt.text, images: prompt.images, to: taskID, key: prompt.id)
+        } status: { [weak self] in
             self?.task(taskID)?.status
         }
-    }
-}
-
-extension HostClient: ConversationTransport {
-    func deliverPrompt(_ prompt: PendingPrompt, to taskID: String) async throws {
-        try await submitPrompt(prompt.text, images: prompt.images, to: taskID, key: prompt.id)
-    }
-
-    func interruptConversation(taskID: String) async throws {
-        _ = try await request(.interrupt(taskID: taskID))
     }
 }

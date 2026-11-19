@@ -32,15 +32,6 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
         case .commands: "terminal"
         }
     }
-
-    var selectedIcon: String {
-        switch self {
-        case .files: "folder.fill"
-        case .search: "magnifyingglass.circle.fill"
-        case .git: "point.topleft.down.curvedto.point.bottomright.up.fill"
-        case .commands: "terminal.fill"
-        }
-    }
 }
 
 /// A selection value paired with the identity of the per-project state that

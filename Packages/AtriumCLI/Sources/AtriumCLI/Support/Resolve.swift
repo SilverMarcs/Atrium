@@ -58,7 +58,9 @@ func readPrompt(_ argument: String?) throws -> String {
 
 /// Loads JPEG images to attach to a prompt, which is the format hosts accept.
 func readImages(_ paths: [String]) throws -> [Data] {
-    guard paths.count <= 10 else { throw CLIError(.invalidArgument, "Attach up to 10 images at a time.") }
+    guard paths.count <= HostProtocol.maxPromptImages else {
+        throw CLIError(.invalidArgument, "Attach up to \(HostProtocol.maxPromptImages) images at a time.")
+    }
     return try paths.map { path in
         guard let data = FileManager.default.contents(atPath: path) else {
             throw CLIError(.invalidArgument, "Couldn’t read the image at \(path).")

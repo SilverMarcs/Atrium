@@ -37,11 +37,8 @@ actor ClaudeSessionHistory {
     /// in the chain, which only a rewind past it ends. Least recently used first.
     private var settled: [(url: URL, history: SettledHistory)] = []
 
-    init(configDirectory: URL? = nil) {
-        let configured = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
-            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
-        projects = (configDirectory ?? configured ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude"))
-            .appending(path: "projects", directoryHint: .isDirectory)
+    init(configDirectory: URL) {
+        projects = configDirectory.appending(path: "projects", directoryHint: .isDirectory)
     }
 
     func listThreads() throws -> [AgentThread] {

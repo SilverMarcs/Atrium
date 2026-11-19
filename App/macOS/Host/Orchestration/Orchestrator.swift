@@ -149,7 +149,7 @@ final class Orchestrator {
         }
         if previous == nil || previous?.state == .finished { store.turns[id] = DelegatedTurn(requester: callerID) }
         prompted.insert(id)
-        let reply = await tasks.prompt(RelayedMessage.task(text, from: name(of: caller)), images: images, toTask: id)
+        let reply = await tasks.send(RelayedMessage.task(text, from: name(of: caller)), images: images, toTask: id)
         if case .failed = reply {
             prompted.remove(id)
             store.turns[id] = previous

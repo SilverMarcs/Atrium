@@ -168,12 +168,11 @@ final class AgentIntegrationStore {
     }
 
     func supportsDeletion(_ thread: AgentThread) -> Bool {
-        adapters[thread.provider]?.capabilities.contains(.deleteThread) == true
+        adapters[thread.provider] != nil
     }
 
     func canRename(_ thread: AgentThread) -> Bool {
-        available.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.renameThread) == true
-            && !deletedThreadIDs.contains(thread.id) && !deletingThreadIDs.contains(thread.id)
+        available.contains(thread.provider) && !deletedThreadIDs.contains(thread.id) && !deletingThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
 
@@ -716,7 +715,6 @@ final class AgentIntegrationStore {
     /// conversation through prompts.
     func canFork(_ thread: AgentThread, into provider: AgentProvider) -> Bool {
         available.contains(thread.provider) && available.contains(provider)
-            && (provider != thread.provider || adapters[provider]?.capabilities.contains(.forkThread) == true)
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
             && !stoppingThreadIDs.contains(thread.id) && !renamingThreadIDs.contains(thread.id)
     }
@@ -773,8 +771,7 @@ final class AgentIntegrationStore {
     }
 
     func canStartSideChat(_ thread: AgentThread) -> Bool {
-        available.contains(thread.provider) && adapters[thread.provider]?.capabilities.contains(.sideChat) == true
-            && !thread.isSubagent && !thread.isSideChat
+        available.contains(thread.provider) && !thread.isSubagent && !thread.isSideChat
             && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id) && !stoppingThreadIDs.contains(thread.id)
     }
 
@@ -954,11 +951,11 @@ final class AgentIntegrationStore {
         var message = source
         // A fork's first prompt carries the conversation the chat shows ahead of it.
         if message.role == .user, let first = message.blocks.first, first.text != nil,
-           let request = ForkHandoff.request(in: message.blocks.compactMap(\.text).joined(separator: "\n")) {
+           let request = ForkHandoff.request(in: message.text) {
             message.blocks = request.isEmpty ? [] : [.text(request, id: first.id)]
         }
         if message.role == .user, let first = message.blocks.first, let text = first.text,
-           let relayed = RelayedMessage.relay(in: message.blocks.compactMap(\.text).joined(separator: "\n")) ?? RelayedMessage.relay(in: text) {
+           let relayed = RelayedMessage.relay(in: message.text) ?? RelayedMessage.relay(in: text) {
             message.blocks = [.text(relayed.body, id: first.id)]
             message.relay = relayed.relay
         } else if message.role == .user, message.relay == nil, let parent = thread.parentSessionID {
@@ -1045,7 +1042,7 @@ final class AgentIntegrationStore {
     }
 
     private func refreshModelsIfNeeded(_ provider: AgentProvider) {
-        guard let adapter = adapters[provider], adapter.capabilities.contains(.selectModel),
+        guard let adapter = adapters[provider],
               !listingModels.contains(provider), modelsRefreshDates[provider].map({ $0 <= .now }) ?? true else { return }
         listingModels.insert(provider)
         let generation = generations[provider, default: 0]

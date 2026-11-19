@@ -253,7 +253,7 @@ final class HostDirectory {
             let ref = TaskRef(hostID: host.id, taskID: id)
             if let message {
                 let composer = composer(for: ref)
-                composer.draft = message.blocks.compactMap(\.text).joined(separator: "\n")
+                composer.draft = message.text
                 await composer.attach(images)
             }
             open(ref)

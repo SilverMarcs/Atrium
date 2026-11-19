@@ -16,8 +16,6 @@ nonisolated struct NoiseCipherState {
         self.key = key
     }
 
-    var hasKey: Bool { key != nil }
-
     mutating func encrypt(_ plaintext: Data, associatedData: Data = Data()) throws -> Data {
         guard let key else { return plaintext }
         let box = try ChaChaPoly.seal(plaintext, using: key, nonce: try nextNonce(), authenticating: associatedData)

@@ -25,13 +25,11 @@ struct TasksScreen: View {
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
-        let matches = { (item: HostTask) in
-            TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.workspace?.name, item.host.name)
-        }
+        let matches = { (item: HostTask) in TaskSearch.matches(searchText, item) }
         let tasks = hosts.listedTasks.filter(matches)
         let deviceTasks = hosts.deviceTasks.map { ($0.device, $0.tasks.filter(matches)) }.filter { !$0.1.isEmpty }
-        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.snoozedUntil != nil })
-        let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: \.task.isSnoozed)
+        let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         // The same sections are always declared and only shown or hidden, so
         // changing the filter animates rows instead of rebuilding the list.

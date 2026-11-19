@@ -14,7 +14,7 @@ struct TranscriptMessageRow: View {
         switch message.role {
         case .user:
             UserMessageView(
-                text: message.blocks.compactMap(\.text).joined(separator: "\n"),
+                text: message.text,
                 questionAnswers: message.questionAnswers,
                 images: message.images ?? [],
                 messageID: message.id,

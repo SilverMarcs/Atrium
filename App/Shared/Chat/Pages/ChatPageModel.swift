@@ -58,8 +58,7 @@ final class ChatPageModel {
     func copySelection() async {
         guard let text = try? await webPage.callJavaScript("return window.getSelection().toString()") as? String,
               !text.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Pasteboard.copy(text)
     }
     #endif
 

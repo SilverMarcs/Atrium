@@ -200,11 +200,6 @@ public nonisolated struct GitBranchListing: Codable, Equatable, Sendable {
         return branches.filter { !$0.isRemote && !checkedOut.contains($0.name) }
     }
     public var remoteBranches: [GitBranchInfo] { branches.filter(\.isRemote) }
-    public var currentBranchName: String? { branches.first(where: \.isCurrent)?.name }
-
-    public func branch(for worktree: GitWorktreeInfo) -> GitBranchInfo? {
-        branches.first { !$0.isRemote && $0.name == worktree.branch }
-    }
 
     public func isMerged(_ worktree: GitWorktreeInfo) -> Bool {
         mergedWorktrees.contains(worktree.path)
@@ -224,14 +219,6 @@ public nonisolated enum GitDiffStage: Hashable, Codable, Sendable {
     case staged
     case unstaged
     case commit(hash: String)
-
-    public var displayName: String {
-        switch self {
-            case .staged: "Staged Changes"
-            case .unstaged: "Changes"
-            case .commit(let hash): "Commit \(String(hash.prefix(7)))"
-        }
-    }
 }
 
 public nonisolated struct GitDiffReference: Hashable, Codable, Sendable {

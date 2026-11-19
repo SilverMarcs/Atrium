@@ -9,6 +9,7 @@ struct TaskService {
     let sessions: TaskSessionController
     let workspaces: WorkspaceStore
     let queue: PromptQueue
+    let orchestrator: Orchestrator
 
     func perform(_ action: TaskAction, onTask id: String) async -> HostReply {
         guard let thread = integrations.threads.first(where: { $0.id == id }) else {
@@ -70,8 +71,43 @@ struct TaskService {
         }
     }
 
-    /// Sends a prompt to the task's agent, or with `queueID`, queues it while the agent works.
-    func prompt(_ text: String, images: [Data], toTask id: String, queueID: UUID? = nil) async -> HostReply {
+    /// Sends a prompt to the task's agent, or with `queueID`, queues it while the
+    /// agent works. A prompt from another session's agent goes through the
+    /// orchestrator, which reports the turn back to that session.
+    func prompt(_ text: String, images: [Data], toTask id: String, queueID: UUID? = nil, from caller: String? = nil) async -> HostReply {
+        if let caller {
+            return await orchestrator.delegate(text, images: images, to: id, from: caller, queueID: queueID, using: self)
+        }
+        return await send(text, images: images, toTask: id, queueID: queueID)
+    }
+
+    /// Stops the task's turn, and everything working for it. The prompt queued
+    /// behind the turn doesn't start the next one: a person gets their own back
+    /// for the composer, and an agent that queued one hears it wasn't sent. An
+    /// agent's stop takes only its own.
+    func interrupt(_ id: String, byPerson isPerson: Bool, caller: String?) async -> HostReply {
+        guard let thread = integrations.threads.first(where: { $0.id == id }) else {
+            return .failed(message: "This task no longer exists.")
+        }
+        let waiting = queue.entries[id]
+        let queued = isPerson || (waiting?.requester != nil && waiting?.requester == caller)
+            ? queue.take(from: id) : nil
+        do {
+            try await orchestrator.stop(thread)
+            guard let queued else { return .done }
+            if let requester = queued.requester {
+                if isPerson { orchestrator.queuedPromptDropped(for: id, from: requester) }
+                return .done
+            }
+            return .queuedPrompt(text: queued.text, images: queued.images)
+        } catch {
+            if let queued { queue.putBack(queued, to: id) }
+            return .failed(message: error.localizedDescription)
+        }
+    }
+
+    /// Sends a prompt as its sender wrote it, or queues it; `prompt` decides who sends.
+    func send(_ text: String, images: [Data], toTask id: String, queueID: UUID? = nil) async -> HostReply {
         guard let thread = integrations.threads.first(where: { $0.id == id }) else {
             return .failed(message: "This task no longer exists.")
         }

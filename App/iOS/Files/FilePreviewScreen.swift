@@ -25,9 +25,9 @@ struct FilePreviewScreen: View {
                     TextPreview(listing: listing, line: line)
                 }
             case .image(let data):
-                if let image = UIImage(data: data) {
+                if let image = Image(data: data) {
                     ScrollView([.horizontal, .vertical]) {
-                        Image(uiImage: image)
+                        image
                             .resizable()
                             .scaledToFit()
                             .containerRelativeFrame([.horizontal])

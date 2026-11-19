@@ -51,7 +51,6 @@ public nonisolated enum GitOperation: Codable, Sendable {
 
 public nonisolated enum GitReply: Codable, Sendable {
     case done
-    case text(String)
     case flag(Bool)
     case files([GitChangedFile])
     case log([GitLogEntry])

@@ -8,10 +8,6 @@ actor GitRepository {
     private var repositoryRootsCache: [URL: (fingerprint: [String], roots: [URL])] = [:]
     private var lastFetchAttempts: [URL: Date] = [:]
 
-    func containsRepository(at directoryURL: URL) async -> Bool {
-        await !self.repositoryRoots(in: directoryURL).isEmpty
-    }
-
     /// `worktreeOverrides` maps a repository's main root to a linked worktree root;
     /// an overridden repository is snapshotted at the worktree instead, so one repo
     /// can be viewed through a worktree without affecting its siblings.
@@ -241,10 +237,15 @@ actor GitRepository {
         }
 
         // Conflict: undo the pull and the partial apply, then restore the original tree.
-        _ = try await self.executor.runWithExitCode(
+        // If the tree can't be reset, the changes stay in the stash rather than
+        // being popped onto a half-applied tree.
+        let reset = try await self.executor.runWithExitCode(
             arguments: ["reset", "--hard", originalHEAD],
             at: repositoryRootURL
         )
+        guard reset.exitCode == 0 else {
+            throw GitError.commandFailed(command: "git reset --hard \(originalHEAD)", message: reset.stderr)
+        }
         try await self.executor.execute(GitStashPopCommand(), at: repositoryRootURL)
         return .wouldConflict
     }
@@ -763,9 +764,7 @@ private struct GitLocalBranchesCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [String] {
-        output.split(separator: "\n", omittingEmptySubsequences: true)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        parseNameList(output)
     }
 }
 
@@ -840,6 +839,24 @@ private struct GitAheadBehindAgainstRefCommand: GitCommand {
 }
 
 
+/// `hash NUL subject` lines, as `--pretty=format:%H%x00%s` prints them.
+private func parseCommitList(_ output: String) -> [(hash: String, message: String)] {
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return [] }
+    return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+        let parts = line.split(separator: "\0", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
+        return (hash: String(parts[0]), message: String(parts[1]))
+    }
+}
+
+/// One name per line, as `--format=%(refname:short)` prints them.
+private func parseNameList(_ output: String) -> [String] {
+    output.split(separator: "\n", omittingEmptySubsequences: true)
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+}
+
 private struct GitUnpushedCommitListCommand: GitCommand {
     var upstreamRef: String = "@{u}"
     var arguments: [String] {
@@ -847,13 +864,7 @@ private struct GitUnpushedCommitListCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [(hash: String, message: String)] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\0", maxSplits: 1)
-            guard parts.count == 2 else { return nil }
-            return (hash: String(parts[0]), message: String(parts[1]))
-        }
+        parseCommitList(output)
     }
 }
 
@@ -870,13 +881,7 @@ private struct GitLocalOnlyCommitListCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [(hash: String, message: String)] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\0", maxSplits: 1)
-            guard parts.count == 2 else { return nil }
-            return (hash: String(parts[0]), message: String(parts[1]))
-        }
+        parseCommitList(output)
     }
 }
 
@@ -975,9 +980,7 @@ private struct GitMergedBranchesRawCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [String] {
-        output.split(separator: "\n", omittingEmptySubsequences: true)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        parseNameList(output)
     }
 }
 

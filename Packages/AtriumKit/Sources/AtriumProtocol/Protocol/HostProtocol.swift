@@ -36,6 +36,8 @@ public nonisolated enum HostProtocol {
     public static let maxPreviewImageBytes: Int64 = 8 * 1024 * 1024
     public static let maxDiffBytes = 2 * 1024 * 1024
     public static let maxFoundFiles = 300
+    /// Images one prompt can attach. Hosts accept JPEG only.
+    public static let maxPromptImages = 10
     public static let maxSearchFiles = 100
     public static let maxSearchMatches = 1000
 }
@@ -117,14 +119,19 @@ public nonisolated extension HostProtocol {
     /// on, in its Application Support folder, while the Orchestrator is on.
     /// The bundled client finds it from the app it's inside.
     static func localAgentsSocket(appBundleIdentifier identifier: String) -> URL {
-        // The released app keeps its data under its name; test builds under their bundle ID.
-        let folder = identifier == "com.SilverMarcs.Atrium" ? "Atrium" : identifier
         #if DEBUG
         let name = "agents-development.sock"
         #else
         let name = "agents.sock"
         #endif
-        return URL.applicationSupportDirectory.appending(path: folder, directoryHint: .isDirectory).appending(path: name)
+        return applicationSupportFolder(appBundleIdentifier: identifier).appending(path: name)
+    }
+
+    /// Where an app's host keeps its data. The released app keeps it under its
+    /// name; test builds under their bundle ID, so each keeps its own.
+    static func applicationSupportFolder(appBundleIdentifier identifier: String) -> URL {
+        let folder = identifier == "com.SilverMarcs.Atrium" ? "Atrium" : identifier
+        return URL.applicationSupportDirectory.appending(path: folder, directoryHint: .isDirectory)
     }
 }
 #endif

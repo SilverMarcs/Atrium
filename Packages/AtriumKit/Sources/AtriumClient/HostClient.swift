@@ -546,12 +546,6 @@ public final class HostClient: Identifiable {
         tasks?.providers.filter(\.isAvailable).map(\.provider) ?? []
     }
 
-    /// A path on the host, abbreviated against its home folder for display.
-    public func displayPath(_ path: String) -> String {
-        guard let home = hello?.homeDirectory, path.hasPrefix(home) else { return path }
-        return "~" + path.dropFirst(home.count)
-    }
-
     /// A custom project icon, fetched once and cached for the session.
     public func icon(forKey key: String) async -> Data? {
         if let data = icons[key] { return data }

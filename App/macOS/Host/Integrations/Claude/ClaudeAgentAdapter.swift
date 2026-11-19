@@ -5,7 +5,7 @@ import OSLog
 @MainActor
 final class ClaudeAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.claude
-    let capabilities: AgentCapabilities = [.forkThread, .deleteThread, .renameThread, .selectModel, .editMessage, .sideChat]
+    let capabilities: AgentCapabilities = []
     private(set) var defaultSettings: TaskStartSettings?
     var onEvent: ((AgentEvent) -> Void)?
     private let history: ClaudeSessionHistory
@@ -636,7 +636,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// worktree, under `.claude/worktrees/`, and work there.
     private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil, inNewWorktree: Bool = false) async throws -> ClaudeBackgroundSession {
         try watchHistory()
-        try await ClaudeWorkspaceTrust.accept(directory: directory)
+        try await ClaudeWorkspaceTrust.accept(directory: directory, configFile: globalConfigFile)
         try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
         let settingsFile = try await settingsForBridge()
         let existingBackground: Bool

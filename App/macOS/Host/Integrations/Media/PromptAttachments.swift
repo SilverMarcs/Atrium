@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// Images attached to prompts from clients, written to files the agent can
@@ -5,7 +6,6 @@ import Foundation
 nonisolated enum PromptAttachments {
     private static let directory = URL.temporaryDirectory.appending(path: "PromptAttachments", directoryHint: .isDirectory)
     private static let maxAge: TimeInterval = 7 * 24 * 60 * 60
-    private static let maxCount = 10
 
     static func reference(to url: URL) -> String {
         "@\"" + url.path.replacing("\\", with: "\\\\").replacing("\"", with: "\\\"") + "\""
@@ -35,8 +35,8 @@ nonisolated enum PromptAttachments {
     /// Saves JPEG images and returns their files, in order.
     static func save(_ images: [Data]) throws -> [URL] {
         guard !images.isEmpty else { return [] }
-        guard images.count <= maxCount else {
-            throw IntegrationError(message: "Attach up to \(maxCount) images at a time.")
+        guard images.count <= HostProtocol.maxPromptImages else {
+            throw IntegrationError(message: "Attach up to \(HostProtocol.maxPromptImages) images at a time.")
         }
         guard images.allSatisfy({ $0.starts(with: [0xFF, 0xD8, 0xFF]) }) else {
             throw IntegrationError(message: "Only JPEG images can be attached.")

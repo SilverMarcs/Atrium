@@ -3,12 +3,10 @@ import Foundation
 /// Projects opened in this personal app are trusted before Claude starts a background session.
 @MainActor
 enum ClaudeWorkspaceTrust {
-    static func accept(directory: String) async throws {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let configHome = IntegrationProcess.environment["CLAUDE_CONFIG_DIR"]
-            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home
+    /// `configFile` is Claude's global config, `.claude.json`.
+    static func accept(directory: String, configFile: URL) async throws {
         for path in await AgentWorkspaceTrust.folders(in: directory) {
-            try accept(folder: URL(filePath: path), configFile: configHome.appending(path: ".claude.json"))
+            try accept(folder: URL(filePath: path), configFile: configFile)
         }
     }
 

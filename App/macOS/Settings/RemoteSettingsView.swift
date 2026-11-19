@@ -62,8 +62,7 @@ private struct ThisMacSections: View {
                 }
                 HStack {
                     Button("Copy Pairing Link", systemImage: "doc.on.doc") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        Pasteboard.copy(url.absoluteString)
                     }
                     ShareLink("Share", item: url)
                 }

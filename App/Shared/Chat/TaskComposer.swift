@@ -107,7 +107,7 @@ final class TaskComposer {
     #else
     var isImportingFiles = false
 
-    static let maxImages = 10
+    static let maxImages = HostProtocol.maxPromptImages
     /// A Mac menu has closed by the time its action runs.
     static let contextMenuDismissalDelay: Duration = .zero
     #endif

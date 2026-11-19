@@ -147,13 +147,12 @@ final class TaskSessionController {
             if thread.status != .waiting { allowed.insert(.prompt) }
             allowed.insert(.attachImages)
             if thread.status == .processing { allowed.insert(.interrupt) }
-            if thread.status != .waiting, capabilities.contains(.selectModel),
-               integrations.models[thread.provider]?.isEmpty == false {
+            if thread.status != .waiting, integrations.models[thread.provider]?.isEmpty == false {
                 allowed.insert(.selectModel)
             }
         }
         if !isOpening && !isChanging, thread.status != .processing, thread.status != .waiting,
-           integrations.availableProviders.contains(thread.provider), capabilities.contains(.editMessage) {
+           integrations.availableProviders.contains(thread.provider) {
             allowed.insert(.editMessage)
         }
         if integrations.rewindingThreadIDs.contains(id) { allowed.subtract([.prompt, .selectModel]) }
@@ -173,15 +172,6 @@ final class TaskSessionController {
             supportsDeletion: integrations.supportsDeletion(thread),
             allowed: allowed
         )
-    }
-
-    /// Returns once no task is being opened, as only one can be at a time.
-    func waitUntilIdle() async {
-        while isOpening {
-            await withCheckedContinuation { continuation in
-                withObservationTracking { _ = isOpening } onChange: { continuation.resume() }
-            }
-        }
     }
 
     /// Changes the model, reasoning effort or fast mode a thread's next turns use, as if

@@ -43,4 +43,7 @@ public nonisolated struct TranscriptMessage: Codable, Sendable, Hashable, Identi
         self.isSteer = isSteer
         self.relay = relay
     }
+
+    /// The message's text blocks, one per line.
+    public var text: String { blocks.compactMap(\.text).joined(separator: "\n") }
 }

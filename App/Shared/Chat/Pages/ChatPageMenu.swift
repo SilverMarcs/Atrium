@@ -31,8 +31,7 @@ private struct ChatPageMenu: View {
         if let url = element.linkURL {
             Button("Open Link") { openURL(url) }
             Button("Copy Link") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                Pasteboard.copy(url.absoluteString)
             }
             Divider()
         }

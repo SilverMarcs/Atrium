@@ -85,11 +85,16 @@ final class Client {
             }
             return hosts[0]
         }
+        let hint = LocalHost.socket == nil ? "" : " Another Mac shows up here while Atrium on this Mac is connected to it, with Atrium up to date on both."
+        return try Self.host(selector, in: hosts, hint: hint)
+    }
+
+    /// The one host `selector` names by its ID or name, else by a prefix of its ID.
+    static func host(_ selector: String, in hosts: [HostClient], hint: String = "") throws -> HostClient {
         let matches = hosts.filter { $0.id == selector || $0.name.caseInsensitiveCompare(selector) == .orderedSame }
         if matches.count == 1 { return matches[0] }
         let prefixed = hosts.filter { $0.id.hasPrefix(selector) }
         if prefixed.count == 1 { return prefixed[0] }
-        let hint = LocalHost.socket == nil ? "" : " Another Mac shows up here while Atrium on this Mac is connected to it, with Atrium up to date on both."
         throw CLIError(matches.count + prefixed.count > 1 ? .ambiguous : .notFound, "No single paired host matches “\(selector)”." + hint)
     }
 

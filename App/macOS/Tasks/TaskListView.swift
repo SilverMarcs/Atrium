@@ -25,7 +25,7 @@ struct TaskListView: View {
     }
 
     private func matchesSearch(_ item: HostTask) -> Bool {
-        TaskSearch.matches(searchText, in: item.task.title, item.task.projectName, item.task.directory, item.host.name)
+        TaskSearch.matches(searchText, item)
     }
 
     /// Hosts listed whose agents couldn't load their tasks.
@@ -38,7 +38,7 @@ struct TaskListView: View {
     }
 
     var body: some View {
-        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: { $0.task.isSnoozed })
+        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: \.task.isSnoozed)
 
         let deviceTasks = hosts.deviceTasks.map { ($0.device, $0.tasks.filter(matchesSearch)) }.filter { !$0.1.isEmpty }
 

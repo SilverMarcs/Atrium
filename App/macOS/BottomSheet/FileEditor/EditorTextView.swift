@@ -847,19 +847,6 @@ final class EditorTextView: NSTextView {
         drawBracketHighlights()
     }
 
-    private func drawingLineRect(
-        for glyphRange: NSRange,
-        layoutManager: NSLayoutManager,
-        textContainer: NSTextContainer,
-        containerOrigin: NSPoint
-    ) -> NSRect {
-        let glyphIndex = min(glyphRange.location, max(layoutManager.numberOfGlyphs - 1, 0))
-        var lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-        lineRect.origin.x += containerOrigin.x
-        lineRect.origin.y += containerOrigin.y
-        return lineRect
-    }
-
     // MARK: - Scroll to line and highlight match
 
     func scrollToLineAndHighlight(lineNumber: Int, columnRange: Range<Int>) {

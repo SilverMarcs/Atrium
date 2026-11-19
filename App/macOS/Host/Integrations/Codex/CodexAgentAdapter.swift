@@ -5,9 +5,7 @@ import OSLog
 @MainActor
 final class CodexAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.codex
-    let capabilities: AgentCapabilities = [
-        .forkThread, .deleteThread, .deleteDescendants, .renameThread, .selectModel, .editMessage, .sideChat, .sideChatImages
-    ]
+    let capabilities: AgentCapabilities = [.deleteDescendants, .sideChatImages]
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let instructions: ChatInstructions
@@ -500,7 +498,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         defer { openingConversations[thread.sessionID] = nil }
         try await task.value
         if let message = conversations[thread.sessionID]?.messages.first(where: { $0.role == .user }) {
-            generateTitleIfNeeded(for: thread, prompt: message.blocks.compactMap(\.text).joined(separator: "\n"))
+            generateTitleIfNeeded(for: thread, prompt: message.text)
         }
     }
 
@@ -981,6 +979,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         titleResponses.removeAll()
         dropSideChats(Array(sideChats.keys))
         conversations.removeAll()
+        // Turns can end while the socket is down; ask Codex again once it's back.
+        activeTurnIDs.removeAll()
         for task in openingConversations.values { task.cancel() }
         openingConversations.removeAll()
         for id in Array(decisions.keys) { onEvent?(.interactionResolved(id: id)) }

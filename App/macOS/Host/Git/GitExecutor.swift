@@ -29,14 +29,8 @@ struct GitExecutor: Sendable {
         return try command.parse(output: result.standardOutput)
     }
 
-    func run(arguments: [String], stdinData: Data, at directoryURL: URL) async throws -> (exitCode: Int32, stderr: String) {
-        let result = try await self.run(arguments: arguments, at: directoryURL, stdinData: stdinData)
-        let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (result.terminationStatus, stderr)
-    }
-
     func runWithExitCode(arguments: [String], at directoryURL: URL) async throws -> (exitCode: Int32, stderr: String) {
-        let result = try await self.run(arguments: arguments, at: directoryURL, stdinData: nil)
+        let result = try await self.run(arguments: arguments, at: directoryURL)
         let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
         return (result.terminationStatus, stderr)
     }
@@ -50,8 +44,8 @@ struct GitExecutor: Sendable {
         return result.standardOutput
     }
 
-    private func run(arguments: [String], at directoryURL: URL, stdinData: Data? = nil) async throws -> ExecutionResult {
-        let result = try await runBinary(arguments: arguments, at: directoryURL, stdinData: stdinData)
+    private func run(arguments: [String], at directoryURL: URL) async throws -> ExecutionResult {
+        let result = try await runBinary(arguments: arguments, at: directoryURL)
         return ExecutionResult(
             standardOutput: String(decoding: result.standardOutput, as: UTF8.self),
             standardError: String(decoding: result.standardError, as: UTF8.self),
@@ -62,10 +56,10 @@ struct GitExecutor: Sendable {
     /// Runs Git once a slot is free: a project with many folders or
     /// repositories would otherwise start a process for each at once, running
     /// the app out of file descriptors.
-    private func runBinary(arguments: [String], at directoryURL: URL, stdinData: Data? = nil) async throws -> BinaryExecutionResult {
+    private func runBinary(arguments: [String], at directoryURL: URL) async throws -> BinaryExecutionResult {
         await GitProcessGate.shared.acquire()
         do {
-            let result = try await launch(arguments: arguments, at: directoryURL, stdinData: stdinData)
+            let result = try await launch(arguments: arguments, at: directoryURL)
             await GitProcessGate.shared.release()
             return result
         } catch {
@@ -74,7 +68,7 @@ struct GitExecutor: Sendable {
         }
     }
 
-    private func launch(arguments: [String], at directoryURL: URL, stdinData: Data?) async throws -> BinaryExecutionResult {
+    private func launch(arguments: [String], at directoryURL: URL) async throws -> BinaryExecutionResult {
         let process = Process()
         process.executableURL = self.executableURL
         process.arguments = arguments
@@ -84,8 +78,7 @@ struct GitExecutor: Sendable {
         let standardErrorPipe = Pipe()
         process.standardOutput = standardOutputPipe
         process.standardError = standardErrorPipe
-        let inputPipe = stdinData.map { _ in Pipe() }
-        process.standardInput = inputPipe ?? FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
 
         // Register before launch: short-lived Git failures can exit immediately.
         let termination = AsyncStream<Int32>.makeStream()
@@ -110,22 +103,9 @@ struct GitExecutor: Sendable {
         // read per stream would soon fill, stalling all other async work.
         async let standardOutputData = Self.readToEnd(standardOutputPipe.fileHandleForReading)
         async let standardErrorData = Self.readToEnd(standardErrorPipe.fileHandleForReading)
-        // Feed stdin after launch while both output streams are being drained.
-        async let inputWritten: Void = Task.detached(priority: .userInitiated) {
-            if let inputPipe, let stdinData {
-                let handle = inputPipe.fileHandleForWriting
-                defer { try? handle.close() }
-                // Git exiting before it has read everything must fail the
-                // write, not kill the app with SIGPIPE. Its exit status and
-                // stderr then say what went wrong.
-                _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
-                try? handle.write(contentsOf: stdinData)
-            }
-        }.value
 
         var iterator = termination.stream.makeAsyncIterator()
         let status = await iterator.next()
-        await inputWritten
         return BinaryExecutionResult(
             standardOutput: await standardOutputData,
             standardError: await standardErrorData,

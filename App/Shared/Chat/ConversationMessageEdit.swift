@@ -25,7 +25,7 @@ final class ConversationMessageEdit: Identifiable {
         messageID = message.id
         self.target = target
         images = message.images ?? []
-        text = message.blocks.compactMap(\.text).joined(separator: "\n")
+        text = message.text
     }
 
     var canSubmit: Bool {

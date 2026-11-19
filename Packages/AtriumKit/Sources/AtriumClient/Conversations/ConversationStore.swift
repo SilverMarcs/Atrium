@@ -33,11 +33,11 @@ public final class ConversationStore {
     return prompt
   }
 
-  /// One delivery lifecycle for both transports. Expiry is a delivery deadline,
+  /// One prompt's delivery lifecycle. Expiry is a delivery deadline,
   /// independent of the view's lifetime or animation timing.
   func deliver(
     _ id: UUID, to taskID: String,
-    using transport: any ConversationTransport,
+    using send: @escaping @MainActor (PendingPrompt) async throws -> Void,
     status: @escaping @MainActor () -> AgentThreadStatus?
   ) {
     guard deliveries[id] == nil,
@@ -47,7 +47,7 @@ public final class ConversationStore {
     tasksAwaitingAgent[taskID] = id
     deliveries[id] = Task { [weak self] in
       do {
-        try await transport.deliverPrompt(prompt, to: taskID)
+        try await send(prompt)
         guard let self, !Task.isCancelled else { return }
         self.update(id, in: taskID) { $0.state = .sent }
         try await self.awaitTranscript(id, in: taskID, status: status)

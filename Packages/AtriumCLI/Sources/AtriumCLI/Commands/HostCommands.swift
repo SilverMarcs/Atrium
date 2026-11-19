@@ -79,9 +79,7 @@ let hostCommands: [Command] = [
         guard let selector = arguments.value("host") ?? (connections.hosts.count == 1 ? connections.hosts[0].id : nil) else {
             throw CLIError(.invalidArgument, "Choose the host to forget with --host.")
         }
-        guard let host = connections.hosts.first(where: { $0.id == selector || $0.name.caseInsensitiveCompare(selector) == .orderedSame }) else {
-            throw CLIError(.notFound, "No paired host matches “\(selector)”.")
-        }
+        let host = try Client.host(selector, in: connections.hosts)
         connections.forget(host)
         Output.write(["forgotten": HostJSON(host)])
     },

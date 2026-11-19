@@ -76,6 +76,7 @@ final class HostServer {
     @ObservationIgnored private let sessions: TaskSessionController
     @ObservationIgnored private let orchestrator: Orchestrator
     @ObservationIgnored private let queue: PromptQueue
+    @ObservationIgnored private let tasks: TaskService
     @ObservationIgnored private let media: MediaService
     @ObservationIgnored private let pullRequests: PullRequestTracker
     @ObservationIgnored private let secrets: SecretRequests
@@ -114,6 +115,7 @@ final class HostServer {
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)
         queue = PromptQueue(integrations: integrations, file: bridge.storage.appending(path: "queued-prompts.json"))
+        tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue, orchestrator: orchestrator)
         media = MediaService(integrations: integrations)
         pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
         secrets = SecretRequests(integrations: integrations)
@@ -134,12 +136,7 @@ final class HostServer {
         }
         queue.deliver = { [weak self] entry, thread in
             guard let self else { return }
-            let tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue)
-            let reply = if let requester = entry.requester {
-                await orchestrator.delegate(entry.text, images: entry.images, to: thread.id, from: requester, using: tasks)
-            } else {
-                await tasks.prompt(entry.text, images: entry.images, toTask: thread.id)
-            }
+            let reply = await tasks.prompt(entry.text, images: entry.images, toTask: thread.id, from: entry.requester)
             if case .failed(let message) = reply { throw IntegrationError(message: message) }
             feeds[.transcript(taskID: thread.id)]?.refresh()
         }
@@ -283,7 +280,6 @@ final class HostServer {
     }
 
     private func handleAuthenticated(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
-        let tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue)
         switch request {
         case .pair, .authenticate:
             return .done
@@ -377,41 +373,14 @@ final class HostServer {
         case .prompt(let taskID, let text, let images, let queueID):
             // Anyone else's prompt takes the session back up, as it would once settled.
             orchestrator.cancelSettling(taskID)
-            let reply = if let caller = connection.caller {
-                await orchestrator.delegate(text, images: images, to: taskID, from: caller, queueID: queueID, using: tasks)
-            } else {
-                await tasks.prompt(text, images: images, toTask: taskID, queueID: queueID)
-            }
+            let reply = await tasks.prompt(text, images: images, toTask: taskID, queueID: queueID, from: connection.caller)
             publishTasks(.tasks(tasksFeed.snapshot()))
             feeds[.transcript(taskID: taskID)]?.refresh()
             return reply
         case .skills(let taskID, let provider, let workspaceID):
             return await tasks.skills(forTask: taskID, provider: provider, workspaceID: workspaceID)
         case .interrupt(let taskID):
-            guard let thread = integrations.threads.first(where: { $0.id == taskID }) else {
-                return .failed(message: "This task no longer exists.")
-            }
-            // A stop doesn't let the prompt queued behind the turn start the
-            // next one. A person gets their own back for the composer, and an
-            // agent that queued one hears it wasn't sent; an agent's stop drops
-            // only its own.
-            let isPerson = connection.device?.kind != .commandLine
-            let waiting = queue.entries[taskID]
-            let queued = isPerson || (waiting?.requester != nil && waiting?.requester == connection.caller)
-                ? queue.take(from: taskID) : nil
-            do {
-                // Everything working for it stops with it.
-                try await orchestrator.stop(thread)
-                guard let queued else { return .done }
-                if let requester = queued.requester {
-                    if isPerson { orchestrator.queuedPromptDropped(for: taskID, from: requester) }
-                    return .done
-                }
-                return .queuedPrompt(text: queued.text, images: queued.images)
-            } catch {
-                if let queued { queue.putBack(queued, to: taskID) }
-                return .failed(message: error.localizedDescription)
-            }
+            return await tasks.interrupt(taskID, byPerson: connection.device?.kind != .commandLine, caller: connection.caller)
         case .addWorkspace(let path):
             guard connection.isLocal else { return .hostOnly }
             let reply = WorkspaceService(workspaces: workspaces).add(path: path)

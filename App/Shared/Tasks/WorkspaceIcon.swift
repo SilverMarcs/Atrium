@@ -32,11 +32,7 @@ struct WorkspaceIcon: View {
             .task(id: workspace?.customIconKey) {
                 customImage = nil
                 guard let key = workspace?.customIconKey, let data = await host.icon(forKey: key) else { return }
-                #if os(iOS)
-                customImage = UIImage(data: data).map(Image.init(uiImage:))
-                #else
-                customImage = NSImage(data: data).map(Image.init(nsImage:))
-                #endif
+                customImage = Image(data: data)
             }
         }
     }
