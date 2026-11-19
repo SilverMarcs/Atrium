@@ -244,19 +244,25 @@ struct ComposerBar: View {
         }
         #if os(iOS)
         // The skill suggestions rest just above the composer, over the
-        // timeline, without changing the composer's height.
+        // timeline, without changing the composer's height. Their bottom is
+        // pinned to a zero-height strip along the composer's top edge, so
+        // more rows grow the panel upward.
         .overlay(alignment: .top) {
             if showsSkillPopover, isEditing {
-                ComposerSkillSuggestions(
-                    skills: composer.matchingSkills(in: skills), status: skillStatus,
-                    select: { skill in
-                        showsSkillPopover = false
-                        composer.selectSkill(skill)
-                        composer.isFocused = true
+                Color.clear
+                    .frame(height: 0)
+                    .overlay(alignment: .bottom) {
+                        ComposerSkillSuggestions(
+                            skills: composer.matchingSkills(in: skills), status: skillStatus,
+                            select: { skill in
+                                showsSkillPopover = false
+                                composer.selectSkill(skill)
+                                composer.isFocused = true
+                            }
+                        )
+                        .padding(.horizontal, ComposerBarLayout.expandedMargin)
+                        .padding(.bottom, ComposerBarLayout.expandedMargin)
                     }
-                )
-                .padding(.horizontal, ComposerBarLayout.expandedMargin)
-                .alignmentGuide(.top) { $0[.bottom] + ComposerBarLayout.expandedMargin }
             }
         }
         // At rest the bar sits a little into the home indicator's margin, as
