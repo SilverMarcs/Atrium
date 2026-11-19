@@ -2,7 +2,7 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The title Source Control, Files and Search share: the branch the project's
+/// The title Source Control, Files, Search and Commands share: the branch the project's
 /// scope shows, its repository under it when the project holds more than one,
 /// and a title menu picking the branch
 /// or worktree and the repository, the same on every page. The menu is left

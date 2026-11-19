@@ -66,10 +66,7 @@ struct FileTreeView: View {
                 .padding(.top, 9)
             }
             .safeAreaBar(edge: .bottom) {
-                if (project.scope.repositories?.count ?? 0) > 1 {
-                    InspectorRepositoryPicker(project: project, includesProjectFolder: true)
-                        .padding()
-                }
+                InspectorScopeFooter(project: project, includesProjectFolder: true)
             }
             .onChange(of: model.shownFolders, initial: true) { _, folders in
                 model.follow(folders)

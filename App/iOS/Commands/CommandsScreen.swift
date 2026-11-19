@@ -29,8 +29,7 @@ struct CommandsScreen: View {
                 )
             }
         }
-        .navigationTitle(host.workspace(workspaceID)?.name ?? "Commands")
-        .toolbarTitleDisplayMode(.inline)
+        .projectScopeTitle(host: host, workspaceID: workspaceID, placeholder: "Commands")
         .task(id: workspaceID) {
             await host.follow(.commands(workspaceID: workspaceID))
         }

@@ -17,6 +17,10 @@ struct GitInspectorCommitArea: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
+            GitInspectorMoreMenu(state: state)
+                .frame(width: 20)
+                .offset(y: 1)
+
             TextField("Commit message", text: $state.commitMessage, axis: .vertical)
                 .lineLimit(1...4)
 

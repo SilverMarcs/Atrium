@@ -74,10 +74,7 @@ struct SearchInspectorView: View {
             .padding(.top, 9)
         }
         .safeAreaBar(edge: .bottom) {
-            if (project.scope.repositories?.count ?? 0) > 1 {
-                InspectorRepositoryPicker(project: project, includesProjectFolder: true)
-                    .padding()
-            }
+            InspectorScopeFooter(project: project, includesProjectFolder: true)
         }
         // Searching again below the folder now shown, so no result points into another checkout.
         .onChange(of: project.filesRoot) { state.search() }

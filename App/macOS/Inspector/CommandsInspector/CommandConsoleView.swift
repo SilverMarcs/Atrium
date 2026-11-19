@@ -99,11 +99,13 @@ private struct CommandInputBar: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: command.isRunning ? "arrowshape.turn.up.left" : "chevron.right")
+                .imageScale(.small)
                 .foregroundStyle(.tertiary)
                 .contentTransition(.symbolEffect(.replace))
             ZStack(alignment: .leading) {
                 if console.draft.isEmpty {
-                    Text(command.isRunning ? "Reply" : "Run in \(console.host.displayPath(console.directory))")
+                    // The inspector's foot names the checkout it runs in.
+                    Text(command.isRunning ? "Reply" : "Run Command")
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .allowsHitTesting(false)

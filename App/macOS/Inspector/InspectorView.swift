@@ -61,16 +61,21 @@ struct InspectorView: View {
             InspectorPageView(page: page, media: media(for: item))
                 .safeAreaBar(edge: .bottom) { PageControls(item: item, page: page, shown: shown) }
         } else if let project {
-            switch project.selectedTab {
-            case .files:
-                FileTreeView(project: project)
-            case .search:
-                SearchInspectorView(project: project)
-            case .git:
-                GitInspectorView(state: project.git)
-            case .commands:
-                CommandsInspectorView(project: project)
+            Group {
+                switch project.selectedTab {
+                case .files:
+                    FileTreeView(project: project)
+                case .search:
+                    SearchInspectorView(project: project)
+                case .git:
+                    GitInspectorView(state: project.git)
+                case .commands:
+                    CommandsInspectorView(project: project)
+                }
             }
+            // Every tab's foot switches branches, so what that asks to confirm
+            // shows whichever tab is open.
+            .sourceControlAlerts(project.git.model)
         } else {
             ContentUnavailableView("No Inspector", systemImage: "sidebar.right")
         }

@@ -8,6 +8,17 @@ struct CommandsInspectorView: View {
     @State private var editing: CommandEditing?
 
     var body: some View {
+        // Below the split, so the console sits above the footer rather than under it.
+        VStack(spacing: 0) {
+            commands
+            InspectorScopeFooter(project: project)
+        }
+        .sheet(item: $editing) { editing in
+            CommandEntrySheet(project: project, command: editing.command)
+        }
+    }
+
+    private var commands: some View {
         VSplitView {
             List(selection: $project.selectedCommandID) {
                 ForEach(project.commands) { command in
@@ -51,9 +62,6 @@ struct CommandsInspectorView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             .padding(.top, 7)
-        }
-        .sheet(item: $editing) { editing in
-            CommandEntrySheet(project: project, command: editing.command)
         }
     }
 }

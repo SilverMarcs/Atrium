@@ -24,7 +24,6 @@ struct GitInspectorView: View {
                 initializeView
             }
         }
-        .sourceControlAlerts(state.model)
         .alert("Stash All Changes", isPresented: $state.showStashAlert) {
             TextField("Stash name", text: $state.stashMessage)
             Button("Stash") {
@@ -102,25 +101,20 @@ struct GitInspectorView: View {
     private var repositoryView: some View {
         GitInspectorChangesList(state: state)
         .safeAreaBar(edge: .top) {
-            VStack(spacing: 8) {
-                GitInspectorBranchBar(state: state)
-                GitInspectorCommitArea(state: state)
-                    .padding(.horizontal, 5)
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 13)
+            // Placed as the other tabs place their search fields.
+            GitInspectorCommitArea(state: state)
+                .padding(.horizontal, 10)
+                .padding(.top, 9)
         }
         .safeAreaBar(edge: .bottom) {
-            VStack {
+            VStack(spacing: 0) {
                 if let banner = activeBanner {
                     bannerView(banner)
                         .transition(.move(edge: .bottom))
+                        .padding([.horizontal, .top])
                 }
-                if (state.model.repositories?.count ?? 0) > 1 {
-                    InspectorRepositoryPicker(project: state.project)
-                }
+                InspectorScopeFooter(project: state.project)
             }
-            .padding()
             .animation(.easeInOut(duration: 0.2), value: activeBanner)
         }
         .task(id: snapshot?.branchName) {
