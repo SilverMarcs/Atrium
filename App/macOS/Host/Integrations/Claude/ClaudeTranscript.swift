@@ -201,6 +201,7 @@ nonisolated enum ClaudeTranscript {
             return (reports.map(\.result).joined(separator: "\n\n---\n\n"),
                     TranscriptRelay(kind: .results, senders: reports.map { .init(name: $0.agent) }))
         }
+        if let skill = skillInvocation(trimmed) { return (skill, nil) }
         guard !trimmed.isEmpty, !isWrapped(trimmed), !trimmed.hasPrefix("[Request interrupted"), !isPeerMessage(trimmed) else { return nil }
         return (trimmed, nil)
     }
@@ -212,6 +213,15 @@ nonisolated enum ClaudeTranscript {
         "local-command-caveat", "bash-input", "bash-stdout", "bash-stderr", "task-notification", "agent-message",
         "system-reminder", "artifact-content-authored-by-others"
     ]
+
+    /// A skill run from the prompt, as it was typed. Claude saves one starting
+    /// with `<command-message>`; its built-in commands, such as the `/context`
+    /// Atrium runs to fork, start with `<command-name>` and stay hidden.
+    private static func skillInvocation(_ text: String) -> String? {
+        guard text.hasPrefix("<command-message>"), let name = element("command-name", in: text[...]) else { return nil }
+        let arguments = element("command-args", in: text[...]) ?? ""
+        return arguments.isEmpty ? name : "\(name) \(arguments)"
+    }
 
     private static func isWrapped(_ text: String) -> Bool {
         text.hasPrefix("<") && wrapperTags.contains(String(text.dropFirst().prefix { $0.isLetter || $0 == "-" || $0 == "_" }))
