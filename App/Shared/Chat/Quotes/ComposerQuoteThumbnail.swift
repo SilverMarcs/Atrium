@@ -25,7 +25,9 @@ struct ComposerQuoteThumbnail: View {
                 height: ComposerAttachmentThumbnail.size,
                 alignment: .topLeading
             )
-            .background(.fill.tertiary, in: .rect(cornerRadius: ComposerAttachmentThumbnail.cornerRadius))
+            // Opaque, so the timeline scrolling behind the quote doesn't
+            // show through its text.
+            .background(.background.secondary, in: .rect(cornerRadius: ComposerAttachmentThumbnail.cornerRadius))
             .contentShape(.rect(cornerRadius: ComposerAttachmentThumbnail.cornerRadius))
         }
         .buttonStyle(.plain)
