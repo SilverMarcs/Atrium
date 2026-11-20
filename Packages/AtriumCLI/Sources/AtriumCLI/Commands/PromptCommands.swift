@@ -35,9 +35,9 @@ let promptCommands: [Command] = [
               --branch B    Work on a new branch B, switched to in the project folder.
               --standalone  Start a session of its own rather than one that belongs to you: it's listed among the
                             user's sessions as if they'd started it, the first prompt's result isn't sent to you,
-                            and stopping your session doesn't stop it. Without it, a session an agent on the Mac
-                            starts is listed under that agent's, and one started anywhere else is listed apart,
-                            under the device's name.
+                            and stopping your session doesn't stop it. By default, sessions started by a local agent
+                            appear under that agent's session. Sessions started from another computer appear in the
+                            regular task list.
             \(promptDetails)
             """,
         options: promptOptions.union(["project", "provider", "model", "effort", "branch"]),

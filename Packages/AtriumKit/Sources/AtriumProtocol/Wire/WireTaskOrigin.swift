@@ -1,7 +1,7 @@
 import Foundation
 
 /// Who started a session for work they handed it, when that wasn't the user.
-/// Apps list such sessions under whoever started them instead of on their own.
+/// Apps nest sessions with a parent under that parent.
 public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     /// One of the subagents a session's agent runs itself, by that session's
     /// task ID. It can be read but not prompted: its agent talks to it.

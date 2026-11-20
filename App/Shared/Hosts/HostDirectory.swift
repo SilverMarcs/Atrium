@@ -117,18 +117,9 @@ final class HostDirectory {
         .sorted { WireTask.newestFirst($0.task, $1.task) }
     }
 
-    /// The tasks lists show on their own. A session working for another is
-    /// shown in that session instead, and command-line clients' sessions apart.
+    /// Tasks shown on their own in the list. Child sessions appear under their parent.
     var listedTasks: [HostTask] {
-        tasks.filter { $0.task.origin?.deviceName == nil && $0.parent == nil }
-    }
-
-    /// Sessions command-line clients started, such as an agent on another
-    /// computer, which lists keep out of the way, by the client's name.
-    var deviceTasks: [(device: String, tasks: [HostTask])] {
-        Dictionary(grouping: tasks.filter { $0.task.origin?.deviceName != nil }) { $0.task.origin?.deviceName ?? "" }
-            .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
-            .map { ($0.key, $0.value) }
+        tasks.filter { $0.parent == nil }
     }
 
     /// Whether every visible host has sent its tasks at least once.

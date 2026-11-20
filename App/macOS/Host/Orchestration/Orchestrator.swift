@@ -56,7 +56,7 @@ final class Orchestrator {
 
     // MARK: - Reading
 
-    /// Who started a session for work they handed it, as task lists show it.
+    /// The local session or paired device that started this session.
     func origin(of thread: AgentThread) -> WireTaskOrigin? {
         if let parent = store.parents[thread.id] { return .session(parent) }
         return store.devices[thread.id].map(WireTaskOrigin.device)
@@ -110,9 +110,7 @@ final class Orchestrator {
         return nil
     }
 
-    /// Lists a session a command-line client started under who started it:
-    /// the session it runs in, else the device. It belongs to no one this
-    /// sets: a standalone session is listed as the user's.
+    /// Records the local caller or paired device that started a session.
     func started(_ id: String, by device: ClientDevice, caller: String?) {
         if let caller { store.parents[id] = caller } else { store.devices[id] = device.name }
     }

@@ -16,8 +16,6 @@ struct TasksScreen: View {
     @State private var filter: TaskListFilter = .all
     @State private var isSnoozedExpanded = false
     @State private var isSettledExpanded = false
-    /// The command-line clients whose sessions are shown, by name.
-    @State private var expandedDevices: Set<String> = []
     @State private var showingProjects = false
     @State private var taskToRename: HostTask?
     @State private var taskToDelete: HostTask?
@@ -27,7 +25,6 @@ struct TasksScreen: View {
     var body: some View {
         let matches = { (item: HostTask) in TaskSearch.matches(searchText, item) }
         let tasks = hosts.listedTasks.filter(matches)
-        let deviceTasks = hosts.deviceTasks.map { ($0.device, $0.tasks.filter(matches)) }.filter { !$0.1.isEmpty }
         let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: \.task.isSnoozed)
         let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
@@ -45,18 +42,10 @@ struct TasksScreen: View {
             if filter == .all || filter == .settled {
                 collapsibleSection("Settled", tasks: sections.settled, isExpanded: $isSettledExpanded, isSearching: isSearching)
             }
-            if filter == .all {
-                ForEach(deviceTasks, id: \.0) { device, tasks in
-                    collapsibleSection(device, tasks: tasks, isExpanded: Binding(
-                        get: { expandedDevices.contains(device) },
-                        set: { if $0 { expandedDevices.insert(device) } else { expandedDevices.remove(device) } }
-                    ), isSearching: isSearching)
-                }
-            }
         }
         .contentMargins(.top, isPhone ? 10 : 0)
         .listStyle(.sidebar)
-        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id), deviceTasks.flatMap(\.1).map(\.id)])
+        .animation(.default, value: [sections.active.map(\.id), sections.snoozed.map(\.id), sections.settled.map(\.id)])
         .animation(.default, value: filter)
         .refreshable {
             await withDiscardingTaskGroup { group in
@@ -110,7 +99,7 @@ struct TasksScreen: View {
                              connectingHostIDs: hosts.unconnectedHostIDsWithoutTasks,
                              isRefreshing: hosts.isRefreshingTasks,
                              isSearching: isSearching,
-                             isEmpty: visibleTasksAreEmpty(sections) && (filter != .all || deviceTasks.isEmpty))
+                             isEmpty: visibleTasksAreEmpty(sections))
         }
         .sheet(isPresented: $showingProjects) {
             ProjectsSheet(hosts: hosts)

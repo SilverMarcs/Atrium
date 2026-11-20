@@ -37,7 +37,7 @@ On the Mac, turn on remote access in Atrium Settings → Remote and copy the pai
 atrium pair 'atrium://pair?v=3&host=…' --name Dot
 ```
 
-The device keeps its identity and token in `~/.config/atrium/credentials.json` (or `$XDG_CONFIG_HOME/atrium`, or `$ATRIUM_CONFIG_DIR`), in a folder only its user can open. The Mac lists it under Paired Devices, where removing it revokes the token. Sessions a paired client starts are listed apart on the Mac and iPhone, in a section under the device's name, and alert only when they need an answer. With several paired hosts, choose one with `--host` or `ATRIUM_HOST`.
+The device keeps its identity and token in `~/.config/atrium/credentials.json` (or `$XDG_CONFIG_HOME/atrium`, or `$ATRIUM_CONFIG_DIR`), in a folder only its user can open. The Mac lists it under Paired Devices, where removing it revokes the token. Sessions started from a paired command-line client on another computer appear in the regular task list and alert only when they need an answer. With several paired hosts, choose one with `--host` or `ATRIUM_HOST`.
 
 For relay connections on Linux, `https_proxy` (or `HTTPS_PROXY`) may name an `http://` CONNECT proxy, with optional URL-encoded credentials; `no_proxy` (or `NO_PROXY`) bypasses it for listed hosts. TLS still validates the relay inside the tunnel.
 
