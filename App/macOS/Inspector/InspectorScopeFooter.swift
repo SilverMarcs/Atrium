@@ -54,9 +54,9 @@ struct InspectorScopeFooter: View {
     }
 }
 
-/// Each repository as a submenu of its branches, in the order the repository
-/// picker had: the ones changed in the task on screen, the project folder when
-/// that's a choice, the rest, then submodules.
+/// Each repository as a submenu of its branches: submodules, the rest, the
+/// project folder when that's a choice, then the ones changed in the task on
+/// screen last, nearest the footer the menu opens up from.
 private struct RepositoryMenus: View {
     let project: Project
     let repositories: [GitRepositoryStatus]
@@ -74,33 +74,35 @@ private struct RepositoryMenus: View {
         }
         let mainRepositories = repositories.filter { !scope.isChanged($0) && !submodules.contains($0) }
 
-        if !changed.isEmpty {
-            Section("Changed in This Task") {
-                ForEach(changed, id: \.mainRepositoryURL) { repository in
+        if !submodules.isEmpty {
+            Section("Submodules") {
+                ForEach(submodules, id: \.mainRepositoryURL) { repository in
                     RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
                 }
             }
-
-            if includesProjectFolder || !mainRepositories.isEmpty || !submodules.isEmpty {
-                Divider()
-            }
-        }
-
-        if includesProjectFolder {
-            Toggle(isOn: Binding(get: { selected == nil }, set: { _ in scope.selectedRepository = nil })) {
-                Label(project.workspace?.name ?? "Project", systemImage: "folder")
-            }
-
-            Divider()
         }
 
         ForEach(mainRepositories, id: \.mainRepositoryURL) { repository in
             RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
         }
 
-        if !submodules.isEmpty {
-            Section("Submodules") {
-                ForEach(submodules, id: \.mainRepositoryURL) { repository in
+        if includesProjectFolder {
+            if !mainRepositories.isEmpty || !submodules.isEmpty {
+                Divider()
+            }
+
+            Toggle(isOn: Binding(get: { selected == nil }, set: { _ in scope.selectedRepository = nil })) {
+                Label(project.workspace?.name ?? "Project", systemImage: "folder")
+            }
+        }
+
+        if !changed.isEmpty {
+            if includesProjectFolder || !mainRepositories.isEmpty || !submodules.isEmpty {
+                Divider()
+            }
+
+            Section("Changed in This Task") {
+                ForEach(changed, id: \.mainRepositoryURL) { repository in
                     RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
                 }
             }
