@@ -150,7 +150,7 @@ struct ComposerBar: View {
                         // row, including when editing at a narrow iPad width.
                         if let item, item.offersComposerMenus {
                             Color.clear
-                                .frame(width: ComposerBarLayout.menuControlSize, height: ComposerBarLayout.menuControlSize)
+                                .frame(width: ComposerModelMenu.width(for: item), height: ComposerBarLayout.menuControlSize)
                                 .composerBarPart(.model)
                             if item.task.permissionSelection(using: item.host.models(for: item.task.provider)) != nil {
                                 Color.clear

@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// How full a conversation keeps its model's context, counted the way its
@@ -10,5 +11,11 @@ struct AgentContextUsage: Codable, Sendable, Equatable {
     var usedPercent: Int? {
         guard let window, window > 0 else { return nil }
         return min(100, Int((Double(tokens) / Double(window) * 100).rounded()))
+    }
+
+    /// The usage clients show, once the window is known.
+    var wire: WireContextUsage? {
+        guard let window, window > 0 else { return nil }
+        return WireContextUsage(tokens: tokens, window: window)
     }
 }

@@ -2,18 +2,30 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The task's model menu in the composer's row, before dictation.
+/// The task's model menu in the composer's row, before dictation, after a
+/// ring showing context usage once its provider has said.
 struct ComposerModelMenu: View {
     let item: HostTask
 
+    /// The row's width for the menu and its ring, which the iPhone and iPad
+    /// glass layer reserves too.
+    static func width(for item: HostTask) -> CGFloat {
+        ComposerBarLayout.menuControlSize + (item.task.contextUsage == nil ? 0 : ComposerContextRing.addedWidth)
+    }
+
     var body: some View {
         let models = item.host.models(for: item.task.provider)
-        TaskModelMenu(
-            provider: item.task.provider, selection: item.task.modelSelection, models: models,
-            perform: { item.host.send(.task(id: item.task.id, action: $0)) }, isComposerRow: true
-        )
-        .disabled(models.isEmpty)
-        .composerRowMenuStyle()
+        HStack(spacing: ComposerContextRing.spacing) {
+            if let usage = item.task.contextUsage {
+                ComposerContextRing(usage: usage)
+            }
+            TaskModelMenu(
+                provider: item.task.provider, selection: item.task.modelSelection, models: models,
+                perform: { item.host.send(.task(id: item.task.id, action: $0)) }, isComposerRow: true
+            )
+            .disabled(models.isEmpty)
+            .composerRowMenuStyle()
+        }
     }
 }
 

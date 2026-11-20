@@ -65,7 +65,7 @@ struct ComposerBarLayout: Layout {
     /// Between the field's end and the dictation button inside it.
     private static let dictationInset: CGFloat = 4
     /// Between the row's menus and the buttons beside them.
-    private static let menuSpacing: CGFloat = 4
+    static let menuSpacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 402

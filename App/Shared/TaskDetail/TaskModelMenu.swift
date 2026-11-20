@@ -10,21 +10,13 @@ struct TaskModelMenu: View {
   let perform: (TaskAction) -> Void
   var isComposerRow = false
 
-  private var showsContextUsage: Bool {
-    #if os(iOS)
-    !isComposerRow
-    #else
-    true
-    #endif
-  }
-
   var body: some View {
     let name = models.model(running: selection.model)?.name ?? selection.model ?? "Model"
     let detail = selection.reasoningEffort.map(AgentModel.effortName) ?? ""
 
     Menu {
       TaskModelMenuItems(
-        selection: selection, models: models, showsContextUsage: showsContextUsage, perform: perform
+        selection: selection, models: models, perform: perform
       )
     } label: {
       if isComposerRow {

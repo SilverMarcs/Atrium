@@ -11,10 +11,10 @@ struct ComposerDictationButton: View {
     @Environment(DictationSettings.self) private var settings
 
     #if os(macOS)
-    private static let inlineWidth: CGFloat = 36
+    static let inlineWidth: CGFloat = 36
     #else
     /// A comfortable touch target beside the field's text.
-    private static let inlineWidth: CGFloat = 44
+    static let inlineWidth: CGFloat = 44
     #endif
 
     private var state: ComposerDictationButtonState {

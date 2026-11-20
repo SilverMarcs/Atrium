@@ -4,11 +4,10 @@ import SwiftUI
 /// The model picker's items: fast mode, when the task's model offers it, then
 /// each model its provider lists, opening that model's reasoning efforts.
 /// Choosing an effort, or a model without any, switches the task's next turns
-/// to it. The optional header shows context usage once its provider has said.
+/// to it.
 struct TaskModelMenuItems: View {
   let selection: TaskModelSelection
   let models: [AgentModel]
-  let showsContextUsage: Bool
   let perform: (TaskAction) -> Void
 
   private var currentModel: AgentModel? { models.model(running: selection.model) }
@@ -24,7 +23,7 @@ struct TaskModelMenuItems: View {
         .accessibilityValue(isFastMode ? "On" : "Off")
       }
 
-      Section {
+      Section("Model") {
         ForEach(models) { model in
           if model.reasoningEfforts.isEmpty {
             Button {
@@ -55,12 +54,6 @@ struct TaskModelMenuItems: View {
             }
             .accessibilityAddTraits(model == currentModel ? .isSelected : [])
           }
-        }
-      } header: {
-        if showsContextUsage, let percent = selection.contextUsedPercent {
-          Text("\(percent)% context used")
-        } else {
-          Text("Model")
         }
       }
     }

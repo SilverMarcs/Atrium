@@ -126,7 +126,7 @@ final class TasksFeed: TopicFeed {
             isFastMode: thread.isFastMode,
             permissionMode: thread.permissionMode,
             permissionModesNeedingRestart: thread.permissionModesNeedingRestart,
-            contextUsedPercent: thread.contextUsage?.usedPercent,
+            contextUsage: thread.contextUsage?.wire,
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: checkouts.current,
             changedCheckouts: checkouts.changed,

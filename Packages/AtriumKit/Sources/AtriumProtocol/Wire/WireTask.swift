@@ -30,8 +30,8 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var permissionMode: PermissionMode?
     /// Modes the chat can switch to only by restarting it, which ends a running turn.
     public var permissionModesNeedingRestart: [PermissionMode]?
-    /// How much of its model's context the conversation uses, in percent, when its provider says.
-    public var contextUsedPercent: Int?
+    /// How much of its model's context the conversation uses, when its provider says.
+    public var contextUsage: WireContextUsage?
     public var interactions: [AgentInteraction] = []
     /// The checkout the agent works in, when it's in a Git repository: the one
     /// it last changed files in, or else where it runs commands.
@@ -67,7 +67,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         isFastMode: Bool? = nil,
         permissionMode: PermissionMode? = nil,
         permissionModesNeedingRestart: [PermissionMode]? = nil,
-        contextUsedPercent: Int? = nil,
+        contextUsage: WireContextUsage? = nil,
         interactions: [AgentInteraction] = [],
         checkout: TaskCheckout? = nil,
         changedCheckouts: [TaskCheckout]? = nil,
@@ -94,7 +94,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.isFastMode = isFastMode
         self.permissionMode = permissionMode
         self.permissionModesNeedingRestart = permissionModesNeedingRestart
-        self.contextUsedPercent = contextUsedPercent
+        self.contextUsage = contextUsage
         self.interactions = interactions
         self.checkout = checkout
         self.changedCheckouts = changedCheckouts

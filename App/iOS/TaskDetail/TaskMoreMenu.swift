@@ -15,7 +15,7 @@ struct TaskMoreMenu: View {
                 Section {
                     ScratchPadButton(isPresented: $showingScratchPad)
                 } header: {
-                    if let percent = item.task.contextUsedPercent {
+                    if let percent = item.task.contextUsage?.usedPercent {
                         Text("\(percent)% context used")
                     } else {
                         Text("Context usage")
