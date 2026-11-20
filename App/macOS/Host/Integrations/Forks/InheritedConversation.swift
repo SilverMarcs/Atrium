@@ -2,7 +2,7 @@ import AtriumProtocol
 import Foundation
 import OSLog
 
-/// What a chat forked into the other provider took from the chat it forked:
+/// What a chat forked into another provider took from the chat it forked:
 /// the conversation it shows ahead of its own, which its provider never had,
 /// and the handoff that gives its agent that conversation with its first prompt.
 nonisolated struct InheritedConversation: Codable, Sendable {

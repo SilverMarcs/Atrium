@@ -1,6 +1,16 @@
 import AtriumProtocol
 import Foundation
 
+extension AgentProvider {
+    /// The command that runs the provider's CLI.
+    var command: String {
+        switch self {
+        case .codex, .claude: rawValue
+        case .antigravity: "agy"
+        }
+    }
+}
+
 /// Resolves the CLI Atrium actually launches and keeps updates with its existing installer.
 @MainActor
 struct AgentCLIInstallation {
@@ -11,8 +21,8 @@ struct AgentCLIInstallation {
     let versionKeys: [String]
 
     static func read(_ provider: AgentProvider) async throws -> Self {
-        async let location = IntegrationProcess.run("/usr/bin/which", arguments: [provider.rawValue])
-        async let output = IntegrationProcess.run(provider.rawValue, arguments: ["--version"])
+        async let location = IntegrationProcess.run("/usr/bin/which", arguments: [provider.command])
+        async let output = IntegrationProcess.run(provider.command, arguments: ["--version"])
         let path = String(decoding: try await location, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         let text = String(decoding: try await output, as: UTF8.self)
         let words = text.split(whereSeparator: \.isWhitespace).map { $0.hasPrefix("v") ? $0.dropFirst() : $0 }
@@ -24,16 +34,37 @@ struct AgentCLIInstallation {
 
     static func installation(_ provider: AgentProvider, version: String, executable: URL) throws -> Self {
         let components = executable.pathComponents
-        let package = provider == .codex ? "@openai/codex" : "@anthropic-ai/claude-code"
-        var command = provider.rawValue
+        let package: String?
+        let supported: [String]
+        var command = provider.command
         var arguments = ["update"]
-        var address = provider == .codex
-            ? "https://api.github.com/repos/openai/codex/releases/latest"
-            : "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/\(claudeChannel())"
-        var keys = provider == .codex ? ["tag_name"] : []
+        var address: String
+        var keys: [String]
+        switch provider {
+        case .codex:
+            package = "@openai/codex"
+            supported = ["codex"]
+            address = "https://api.github.com/repos/openai/codex/releases/latest"
+            keys = ["tag_name"]
+        case .claude:
+            package = "@anthropic-ai/claude-code"
+            supported = ["claude-code", "claude-code@latest"]
+            address = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/\(claudeChannel())"
+            keys = []
+        case .antigravity:
+            package = nil
+            supported = ["antigravity-cli"]
+            #if arch(arm64)
+            let platform = "darwin_arm64"
+            #else
+            let platform = "darwin_amd64"
+            #endif
+            // The manifest `agy update` reads.
+            address = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/\(platform).json"
+            keys = ["version"]
+        }
         if let index = components.firstIndex(where: { $0 == "Caskroom" || $0 == "Cellar" }), components.indices.contains(index + 1) {
             let token = components[index + 1]
-            let supported = provider == .codex ? ["codex"] : ["claude-code", "claude-code@latest"]
             guard supported.contains(token) else {
                 throw IntegrationError(message: "This \(provider.name) installation has an unsupported Homebrew package.")
             }
@@ -42,7 +73,7 @@ struct AgentCLIInstallation {
             arguments = ["upgrade", cask ? "--cask" : "--formula", token]
             address = "https://formulae.brew.sh/api/\(cask ? "cask" : "formula")/\(token).json"
             keys = cask ? ["version"] : ["versions", "stable"]
-        } else if components.contains("node_modules") {
+        } else if let package, components.contains("node_modules") {
             command = "npm"
             arguments = ["install", "--global", "\(package)@latest"]
             address = "https://registry.npmjs.org/\(package.replacing("/", with: "%2F"))/latest"
@@ -64,6 +95,8 @@ struct AgentCLIInstallation {
         version = version.trimmingCharacters(in: .whitespacesAndNewlines)
         if version.hasPrefix("rust-v") { version.removeFirst(6) }
         if version.hasPrefix("v") { version.removeFirst() }
+        // A cask's version can carry its build, as Antigravity's `1.5.13,5999302598852608` does.
+        if let comma = version.firstIndex(of: ",") { version = String(version[..<comma]) }
         guard version.first?.isNumber == true else { throw IntegrationError(message: "The update service returned an invalid version.") }
         return version
     }

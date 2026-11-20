@@ -1,6 +1,6 @@
 # Atrium
 
-A native macOS workspace for Codex and Claude tasks, built with SwiftUI.
+A native macOS workspace for Codex, Claude and Antigravity tasks, built with SwiftUI.
 Work across projects with native chat, a command runner, an editor, and a Git inspector.
 
 [Download for macOS](https://github.com/SilverMarcs/Atrium/releases/latest) · [Get the iOS app](https://apps.apple.com/app/id6765783787)
@@ -18,7 +18,7 @@ Work across projects with native chat, a command runner, an editor, and a Git in
 
 ## Features
 
-- Codex and Claude tasks grouped by project
+- Codex, Claude and Antigravity tasks grouped by project
 - Native chat, with any conversation one click away in your terminal app, attached to the same running session
 - Streaming replies, images, mid-turn guidance, and native approval/question controls
 - Saved commands per project that run on its host, with their output, replies and keys from the Mac or iPhone
@@ -35,7 +35,7 @@ Turn on remote access in Settings → Remote, then scan the pairing QR code with
 
 ## What Atrium tells agents
 
-Atrium appends a short, fixed set of instructions to every session it runs (Claude's system prompt, Codex's developer instructions): showing images as Markdown pointing at files on the Mac, and, with Visualizations on in Settings → Integrations, pages (charts, diagrams, mockups) as an HTML file named by an empty fenced `atrium-page` block (`src="/abs/path.html"`), which Atrium shows as a page instead of code. Agents revise a page by editing its file, not rewriting it; the host copies the file the first time it reads each reply that shows it (Application Support `Pages/`, dropped after 30 days), so earlier replies keep their versions. Pages written inside the fence, as older chats did, still show. Each chat keeps the instructions it was created with on every resume, relaunch and fork, so it stays in the cached prompt prefix; the switches in Settings → Integrations only change new chats.
+Atrium appends a short, fixed set of instructions to every session it runs (Claude's system prompt, Codex's developer instructions, the system prompt Antigravity appends for a new conversation): showing images as Markdown pointing at files on the Mac, and, with Visualizations on in Settings → Integrations, pages (charts, diagrams, mockups) as an HTML file named by an empty fenced `atrium-page` block (`src="/abs/path.html"`), which Atrium shows as a page instead of code. Agents revise a page by editing its file, not rewriting it; the host copies the file the first time it reads each reply that shows it (Application Support `Pages/`, dropped after 30 days), so earlier replies keep their versions. Pages written inside the fence, as older chats did, still show. Each chat keeps the instructions it was created with on every resume, relaunch and fork, so it stays in the cached prompt prefix; the switches in Settings → Integrations only change new chats.
 
 HTML pages load images on demand from their task folder and any absolute image folder explicitly written as a quoted path ending in `/` in the page, such as `const base='/path/to/images/';`. This lets JavaScript construct filenames and switch content without listing every image in advance. Individually referenced images outside those folders also remain supported. The host records each page's image scope once, checks canonical paths to prevent traversal or symlink escapes, and uses the existing image size limits and client cache. Image requests include the page key; Markdown and older clients retain their existing transcript-based access. Folder authorization avoids evaluating JavaScript, enumerating directories, or bundling unused images. Local image files must remain on the host for later viewing.
 
@@ -49,7 +49,7 @@ Anywhere else, such as ChatGPT's Dot in its own Linux shell, `atrium pair` pairs
 
 - macOS 26.0+
 
-Both providers require their CLI to be installed separately. Codex conversations use its shared app-server and item events. Claude conversations use `--bg`, a local supervisor connection, and authenticated HTTP hooks delivered directly to Atrium.
+Each provider requires its CLI to be installed separately. Codex conversations use its shared app-server and item events. Claude conversations use `--bg`, a local supervisor connection, and authenticated HTTP hooks delivered directly to Atrium. Antigravity conversations use `agy acp`, its Agent Client Protocol server, which Atrium runs as one child process for all of them; What ACP lacks, forking, rewinding, renaming and deleting conversations, Atrium asks of the server's own local language server, as Antigravity's terminal app does; side chats are forks Atrium deletes when they end. Its permission modes are the ones Antigravity's ACP server offers, plus Full Access, which runs in Antigravity's Default mode while Atrium approves every tool request.
 
 ## License
 

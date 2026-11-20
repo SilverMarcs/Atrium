@@ -1,9 +1,9 @@
 import AtriumProtocol
 import Foundation
 
-/// How a chat forked into the other provider gives that provider's agent the
+/// How a chat forked into another provider gives that provider's agent the
 /// conversation so far. It goes ahead of the fork's first prompt: a prompt is
-/// how both providers take in context, and neither has a way to take a
+/// how every provider takes in context, and none has a way to take a
 /// conversation they didn't hold before a turn.
 ///
 /// The conversation is the one the chat showed, as text: what the user and the

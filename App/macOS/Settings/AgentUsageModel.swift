@@ -19,6 +19,8 @@ final class AgentUsageModel {
                 result = try await reader.usageSnapshot()
             case .claude:
                 result = try await ClaudeUsageReader.read()
+            case .antigravity:
+                result = try await AntigravityUsageReader.read()
             }
             try Task.checkCancellation()
             snapshot = result

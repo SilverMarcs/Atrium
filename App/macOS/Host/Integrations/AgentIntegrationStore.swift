@@ -36,7 +36,7 @@ final class AgentIntegrationStore {
     @ObservationIgnored var transcriptFeeds: [String: TranscriptFeed] = [:]
     /// The pages and images each task's transcript showed, as last read.
     @ObservationIgnored let media = TranscriptMedia()
-    /// What chats forked from the other provider's took from them.
+    /// What chats forked from another provider's took from them.
     @ObservationIgnored private let inherited = InheritedConversations()
     @ObservationIgnored private var viewedThreadID: String?
     @ObservationIgnored private var pendingSave: Task<Void, Never>?
@@ -130,7 +130,7 @@ final class AgentIntegrationStore {
     /// Whether the provider's command is on the agents' PATH, or nil when the
     /// lookup itself failed, which leaves a working provider as it was.
     private static func isInstalled(_ provider: AgentProvider) async -> Bool? {
-        guard let output = try? await IntegrationProcess.run("/usr/bin/which", arguments: [provider.rawValue], acceptedExitCodes: [0, 1]) else {
+        guard let output = try? await IntegrationProcess.run("/usr/bin/which", arguments: [provider.command], acceptedExitCodes: [0, 1]) else {
             return nil
         }
         return !String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -711,7 +711,7 @@ final class AgentIntegrationStore {
     }
 
     /// Whether the chat can be forked into a provider: its own, which copies the
-    /// conversation itself if it can, or the other, which takes over the
+    /// conversation itself if it can, or another, which takes over the
     /// conversation through prompts.
     func canFork(_ thread: AgentThread, into provider: AgentProvider) -> Bool {
         available.contains(thread.provider) && available.contains(provider)
@@ -737,7 +737,7 @@ final class AgentIntegrationStore {
         return (fork, images)
     }
 
-    /// A fork of a chat forked from the other provider's shows the
+    /// A fork of a chat forked from another provider's shows the
     /// conversation that chat took, and hands it over again with its first
     /// prompt when the fork starts before the prompt that carried it.
     private func inherit(from thread: AgentThread, into fork: AgentThread) async throws {
@@ -746,7 +746,7 @@ final class AgentIntegrationStore {
         inherited[fork.id] = conversation
     }
 
-    /// Starts a chat with the other provider that shows the thread's
+    /// Starts a chat with another provider that shows the thread's
     /// conversation, up to a prompt when one is given, and hands its agent the
     /// newest part that fits half the window of the model it runs, with its first prompt.
     private func handOver(_ thread: AgentThread, before messageID: String?, to adapter: any AgentProviderAdapter) async throws -> AgentThread {
@@ -922,7 +922,7 @@ final class AgentIntegrationStore {
     /// relayed, holding only what was relayed: work and results Atrium relayed
     /// between sessions, and every prompt a subagent took from its agent. Pages written in replies
     /// show as pages. Reading a transcript records the media it shows, for
-    /// clients to fetch. A chat forked from the other provider's shows that
+    /// clients to fetch. A chat forked from another provider's shows that
     /// chat's conversation ahead of its own.
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
         let messages = try await conversation(of: thread).map(withPages)
@@ -985,7 +985,7 @@ final class AgentIntegrationStore {
         let adapter = try availableAdapter(for: thread.provider)
         // A prompt takes a settled chat back up, before its session opens, so it isn't stopped again as settled.
         if settledThreadIDs.contains(thread.id) { restore(thread) }
-        // A fork of the other provider's chat hands its agent that chat's conversation with its first prompt.
+        // A fork of another provider's chat hands its agent that chat's conversation with its first prompt.
         guard var conversation = inherited[thread.id], let handoff = conversation.handoff, !conversation.isDelivered else {
             return try await adapter.sendPrompt(text, images: images, to: thread)
         }
@@ -1010,7 +1010,7 @@ final class AgentIntegrationStore {
 
     /// An image attached to a prompt as it was sent, by the prompt's message ID
     /// and the image's place among its images. A fork keeps only the previews
-    /// of the prompts it inherited from the other provider.
+    /// of the prompts it inherited from another provider.
     func promptImage(_ index: Int, of messageID: String, in thread: AgentThread) async -> Data? {
         let images = if let inherited = inherited[thread.id]?.messages.first(where: { $0.id == messageID }) {
             inherited.images ?? []
