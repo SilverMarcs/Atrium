@@ -812,9 +812,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard live[sessionID] != nil else { return requestStatusRefresh() }
         let state = event["record"] as? [String: Any] ?? event["patch"] as? [String: Any] ?? [:]
         let status: AgentThreadStatus?
+        // A blocked state Claude guesses from the reply's wording, which carries
+        // `state: "blocked"`, asks for nothing more than a reply, so only a dialog's waits.
         if type == "settled" {
             status = event["outcome"] as? String == "done" ? .done : .stopped
-        } else if state["tempo"] as? String == "blocked" { status = .waiting }
+        } else if state["tempo"] as? String == "blocked" { status = state["state"] as? String == "blocked" ? nil : .waiting }
         else if state["state"] as? String == "done" { status = .done }
         else if state["state"] as? String == "failed" { status = .failed }
         else if state["state"] as? String == "stopped" { status = .stopped }
