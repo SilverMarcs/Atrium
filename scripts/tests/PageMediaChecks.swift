@@ -70,6 +70,7 @@ struct PageMediaChecks {
             try pixel.write(to: url)
         }
         try Data("This is not an image".utf8).write(to: assets.appending(path: "notes.txt"))
+        try checkFilePages(in: scratch)
         let escape = assets.appending(path: "escape.png")
         if (try? FileManager.default.destinationOfSymbolicLink(atPath: escape.path(percentEncoded: false))) == nil {
             try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside.appending(path: "secret.png"))
@@ -198,6 +199,31 @@ struct PageMediaChecks {
         guard case .failed = await service.image(path, maxPixelSize: 2048, inTask: taskID, pageKey: key) else {
             throw Failure(message: "Expected denial: \(path)")
         }
+    }
+
+    /// A page shown from a file keeps the version each reply showed, after the
+    /// file changes and after memory forgets it.
+    static func checkFilePages(in scratch: URL) throws {
+        ChatPages.copies = scratch.appending(path: "copies", directoryHint: .isDirectory)
+        let file = scratch.appending(path: "diagram.html")
+        let fence = "Intro\n```atrium-page title=\"Flow\" src=\"\(file.path(percentEncoded: false))\"\n```\nAfter"
+        func shown(_ id: String) throws -> String {
+            let blocks = ChatPages.blocks(inReply: fence, id: id)
+            try check(blocks.first?.page?.title == "Flow", "File page keeps its title")
+            try check(blocks.last?.text == "Intro\nAfter", "File page fence is taken out of the text")
+            guard let key = blocks.first?.page?.key, let html = ChatPages.html(forKey: key) else {
+                throw Failure(message: "File page has no HTML")
+            }
+            return html
+        }
+        try Data("<p>one</p>".utf8).write(to: file)
+        try check(try shown("first") == "<p>one</p>", "First reply shows the file")
+        try Data("<p>two</p>".utf8).write(to: file)
+        try check(try shown("second") == "<p>two</p>", "Second reply shows the edited file")
+        try check(try shown("first") == "<p>one</p>", "First reply keeps its copy after the file changes")
+        try FileManager.default.removeItem(at: file)
+        try check(try shown("second") == "<p>two</p>", "A copy outlives the file")
+        try check(try shown("third").contains("is gone"), "A reply whose file is missing says so")
     }
 
     static func check(_ condition: Bool, _ message: String) throws {

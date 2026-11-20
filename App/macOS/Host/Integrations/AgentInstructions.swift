@@ -38,14 +38,12 @@ nonisolated enum AgentInstructions {
 
         ## Pages
 
-        To show a page, write one complete HTML document in your final reply, in a fenced block whose info string is `atrium-page` and a short title:
+        To show a page, write one complete HTML document to its own `.html` file in a temporary folder, then put an empty fenced block in your final reply whose info string is `atrium-page`, a short title and the file's absolute path:
 
-        ```atrium-page title="Build times this week"
-        <!doctype html>
-        <html>…</html>
+        ```atrium-page title="Build times this week" src="/tmp/atrium-pages/build-times.html"
         ```
 
-        Atrium shows a card for the page above your reply's text instead of the block, and opens the page from it. Write it once it's final, at most one per reply, and don't announce, describe or restate it in your text. If the HTML has a line starting with three backticks, fence the block with four. To revise a page, write it again in full under the same title; earlier versions stay in the chat.
+        Atrium shows a card for the page above your reply's text instead of the block, and opens the page from it. Show it once it's final, at most one per reply, and don't announce, describe or restate it in your text. To revise a page, edit its file rather than rewriting it, then show it again under the same title; Atrium keeps a copy of each version a reply showed, so earlier versions stay in the chat.
 
         Keep it light: one clear point, about a screen tall at most (under 600px). Help the user understand without overwhelming them; when there is more to show, put it behind tabs, a picker or toggles rather than making the page longer.
         Inline any <style> or <script> you need. Reference local images by absolute path, as in <img src="/path/to/chart.png">, or relative to the task folder; remote URLs load as-is. JavaScript and CSS can build image paths normally. Keep images outside the task folder together, and write their absolute folder path as a quoted string ending in `/`, such as `const base='/path/to/images/';`. Atrium lets that page load images from that folder. Keep image files available for later viewing.

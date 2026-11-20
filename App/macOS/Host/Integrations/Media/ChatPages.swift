@@ -3,16 +3,25 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-/// HTML pages agents show in their replies, each written as a fenced block
-/// whose info string is `atrium-page` and a title, as `AgentInstructions` asks.
+/// HTML pages agents show in their replies, each a fenced block whose info
+/// string is `atrium-page` and a title, as `AgentInstructions` asks, naming
+/// the page's file with `src` or, in older chats, holding the page itself.
 ///
-/// The page itself stays in the agent's own history, as part of its reply,
-/// so it follows the chat through resumes, forks and rewinds. Reading that
-/// history remembers each page here, in memory, under a key named for its
-/// content, where clients fetch it, so transcripts only carry the key.
+/// A page inside its fence stays in the agent's own history, as part of its
+/// reply, so it follows the chat through resumes, forks and rewinds. A page's
+/// file changes when the agent revises it, so the first reading of a reply
+/// copies the file to `copies`, and the reply shows that copy from then on,
+/// until the copy is a month old. Reading the history remembers each page
+/// here, in memory, under a key named for its content, where clients fetch
+/// it, so transcripts only carry the key.
 nonisolated enum ChatPages {
     static let infoString = "atrium-page"
     static let maximumTitleLength = 200
+    static let maximumFileSize = 8 * 1024 * 1024
+
+    /// Where copies of page files are kept, one for each reply that showed one.
+    nonisolated(unsafe) static var copies = HostStorage.directory.appending(path: "Pages", directoryHint: .isDirectory)
+    private static let copyMaxAge: TimeInterval = 30 * 24 * 60 * 60
 
     private static let cache = Mutex(PageCache(capacity: 64 * 1024 * 1024))
 
@@ -24,13 +33,15 @@ nonisolated enum ChatPages {
         var pages: [TranscriptBlock] = []
         var kept: [Substring] = []
         /// The fence the line is inside, and for a page, its title and lines so far.
-        var open: (fence: Fence, page: (title: String, lines: [Substring])?)?
+        var open: (fence: Fence, page: (title: String, source: String?, lines: [Substring])?)?
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             if let current = open {
                 if current.fence.isClosed(by: line) {
                     if let page = current.page {
-                        let key = remember(page.lines.joined(separator: "\n"))
-                        pages.append(.page(TranscriptPage(key: key, title: page.title), id: "\(id).page\(pages.count)"))
+                        let pageID = "\(id).page\(pages.count)"
+                        let key = page.source.map { remember(file: $0, shownBy: pageID) }
+                            ?? remember(page.lines.joined(separator: "\n"))
+                        pages.append(.page(TranscriptPage(key: key, title: page.title), id: pageID))
                     } else {
                         kept.append(line)
                     }
@@ -42,7 +53,7 @@ nonisolated enum ChatPages {
                 }
             } else if let fence = Fence(opening: line) {
                 let title = fence.pageTitle
-                open = (fence, title.map { ($0, []) })
+                open = (fence, title.map { ($0, fence.attribute("src"), []) })
                 if title == nil { kept.append(line) }
             } else {
                 kept.append(line)
@@ -58,10 +69,44 @@ nonisolated enum ChatPages {
 
     /// Remembers a finished page for clients to fetch, under its key.
     private static func remember(_ html: String) -> String {
-        let key = SHA256.hash(data: Data(html.utf8)).prefix(16)
-            .map { $0 < 16 ? "0" + String($0, radix: 16) : String($0, radix: 16) }.joined()
+        let key = hash(html)
         cache.withLock { $0.insert(html, forKey: key) }
         return key
+    }
+
+    /// Remembers the page a reply showed from a file: the copy made when the
+    /// reply was first read, or else a new copy of the file as it is now.
+    private static func remember(file path: String, shownBy pageID: String) -> String {
+        let copy = copies.appending(path: hash(pageID) + ".html")
+        if let html = try? String(contentsOf: copy, encoding: .utf8) { return remember(html) }
+        let file = URL(filePath: (path as NSString).expandingTildeInPath)
+        guard path.hasPrefix("/") || path.hasPrefix("~"),
+              let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= maximumFileSize,
+              let html = try? String(contentsOf: file, encoding: .utf8) else {
+            return remember("<p class=\"muted\">This page’s file, \(path.replacing("<", with: "&lt;")), is gone.</p>")
+        }
+        _ = pruned
+        try? FileManager.default.createDirectory(at: copies, withIntermediateDirectories: true)
+        try? Data(html.utf8).write(to: copy, options: .atomic)
+        return remember(html)
+    }
+
+    /// Removes copies older than a month, once a launch, before the first new copy.
+    private static let pruned: Void = {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: copies, includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let modified, Date.now.timeIntervalSince(modified) > copyMaxAge {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }()
+
+    private static func hash(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).prefix(16)
+            .map { $0 < 16 ? "0" + String($0, radix: 16) : String($0, radix: 16) }.joined()
     }
 
     /// A page read since Atrium started, unless newer ones have pushed it out.
@@ -99,12 +144,15 @@ private nonisolated struct Fence {
         guard info.hasPrefix(ChatPages.infoString) else { return nil }
         let attributes = info.dropFirst(ChatPages.infoString.count)
         guard attributes.isEmpty || attributes.first == " " else { return nil }
-        var title = ""
-        if let start = attributes.range(of: "title=\"") {
-            title = String(attributes[start.upperBound...].prefix { $0 != "\"" })
-        }
-        title = title.trimmingCharacters(in: .whitespaces)
+        let title = attribute("title") ?? ""
         return title.isEmpty ? "Page" : String(title.prefix(ChatPages.maximumTitleLength))
+    }
+
+    /// A quoted attribute in the fence's info string, such as a page's `src`.
+    func attribute(_ name: String) -> String? {
+        guard let start = info.range(of: " \(name)=\"") else { return nil }
+        let value = info[start.upperBound...].prefix { $0 != "\"" }.trimmingCharacters(in: .whitespaces)
+        return value.isEmpty ? nil : value
     }
 }
 
