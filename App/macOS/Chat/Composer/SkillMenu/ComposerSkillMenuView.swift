@@ -2,7 +2,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The Mac skill menu's items, or why there are none. `ComposerSkillMenu`
-/// hosts it in a panel with the menu material behind it.
+/// hosts it in a panel with Liquid Glass behind it.
 ///
 /// Rows have a fixed height, so the menu's size follows from the skills
 /// alone: replacing the hosting view's root sizes the panel at once, before
