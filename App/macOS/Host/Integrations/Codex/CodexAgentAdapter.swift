@@ -332,23 +332,16 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         return result
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?, title: String?, inNewWorktree: Bool) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await connect()
         try await trustWorkspace(directory: directory)
         var config: [String: Any] = [:]
         if let effort = settings?.reasoningEffort { config["model_reasoning_effort"] = effort }
-        let worktree = inNewWorktree ? try await AgentWorktree.make(of: directory, in: Self.home) : nil
-        var params: [String: Any] = ["cwd": worktree?.path ?? directory, "config": config]
+        var params: [String: Any] = ["cwd": directory, "config": config]
         if let model = settings?.model { params["model"] = model }
         if let mode = settings?.permissionMode { params.merge(CodexPermissions.threadParams(mode)) { $1 } }
         let blocks = instructions.forNewChat
-        let result: [String: Any]
-        do {
-            result = try await startThread("thread/start", params: params, blocks: blocks)
-        } catch {
-            if let worktree { await AgentWorktree.remove(worktree, of: directory) }
-            throw error
-        }
+        let result = try await startThread("thread/start", params: params, blocks: blocks)
         guard let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
@@ -371,12 +364,6 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         conversations[thread.sessionID] = CodexLiveConversation(turns: [])
         desiredConversations[thread.sessionID] = thread
         return thread
-    }
-
-    /// Where Codex keeps its worktrees, which its app server can't make.
-    private static var home: URL {
-        IntegrationProcess.environment["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
-            ?? URL.homeDirectory.appending(path: ".codex")
     }
 
     /// As Codex reports it to turns: the model's window from its catalog, or

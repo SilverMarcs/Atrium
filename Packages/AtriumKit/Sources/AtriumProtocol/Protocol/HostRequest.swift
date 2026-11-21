@@ -50,13 +50,13 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case task(id: String, action: TaskAction)
     /// Skills for a task, or for a new chat's provider and project before the task exists.
     case skills(taskID: String, provider: AgentProvider, workspaceID: UUID?)
-    /// Creates a task in a project, in its folder as it is unless `checkout` says otherwise.
+    /// Creates a task in a project.
     /// A command-line client's task is listed under whoever started it, the
     /// session it runs in or else its device, unless it's `standalone`: then
     /// it's listed on its own, as one the user started, and reports to no one.
     case compose(
         provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil,
-        checkout: TaskStartCheckout? = nil, standalone: Bool? = nil
+        standalone: Bool? = nil
     )
     /// Sends a prompt to the task's agent, with any attached images as JPEG data.
     /// With `queue`, the prompt waits for the agent's current turn to end

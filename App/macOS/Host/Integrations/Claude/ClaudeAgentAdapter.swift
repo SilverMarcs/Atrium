@@ -549,11 +549,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?, title: String?, inNewWorktree: Bool) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         // Claude saves the name as the thread's title once it's saved, and lists it as the job's name until then.
         let blocks = instructions.forNewChat
-        let session = try await startBackgroundSession(directory: directory, instructions: AgentInstructions.text(blocks), name: title,
-                                                       settings: settings, inNewWorktree: inNewWorktree)
+        let session = try await startBackgroundSession(directory: directory, instructions: AgentInstructions.text(blocks), name: title, settings: settings)
         guard var thread = session.thread else {
             throw IntegrationError(message: "Claude did not provide a session identifier.")
         }
@@ -632,9 +631,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
 
     /// Starts a background job with the chat's instructions, which a job that
     /// already ran the session keeps from its own launch.
-    /// A new session in a new worktree has Claude create and name the
-    /// worktree, under `.claude/worktrees/`, and work there.
-    private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil, inNewWorktree: Bool = false) async throws -> ClaudeBackgroundSession {
+    private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory, configFile: globalConfigFile)
         try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
@@ -653,7 +650,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let model = startSettings?.model { arguments += ["--model", model] }
         if let effort = startSettings?.reasoningEffort { arguments += ["--effort", effort] }
         if let sessionID { arguments += ["--resume", sessionID] }
-        if inNewWorktree { arguments.append("--worktree") }
         if let name { arguments += ["--name", name] }
         let output = try await IntegrationProcess.run("claude", arguments: arguments, directory: directory, timeout: .seconds(120))
         guard let line = String(decoding: output, as: UTF8.self).split(separator: "\n").first(where: { $0.hasPrefix("backgrounded") }),
@@ -1146,10 +1142,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let settings = try bridge.writePrivateFile([
             "hooks": hooks,
             // The bundled `atrium` client comes first on its commands' PATH.
-            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1", "PATH": IntegrationProcess.agentPath],
-            // A new worktree starts from what the project has checked out, as
-            // Codex's do, rather than from the remote's default branch.
-            "worktree": ["baseRef": "head"]
+            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1", "PATH": IntegrationProcess.agentPath]
         ], named: "settings.json")
         launchSettings = (endpoint, settings)
         return settings

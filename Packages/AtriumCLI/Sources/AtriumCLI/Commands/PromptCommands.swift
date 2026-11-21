@@ -22,7 +22,7 @@ private let promptFlags: Set<String> = ["wait", "follow", "standalone"]
 let promptCommands: [Command] = [
     Command(
         name: "start",
-        usage: "start --project P [--provider codex|claude|antigravity] [--model M] [--effort E] [--fast | --no-fast] [--worktree | --branch B] [--standalone] [PROMPT]",
+        usage: "start --project P [--provider codex|claude|antigravity] [--model M] [--effort E] [--fast | --no-fast] [--standalone] [PROMPT]",
         summary: "Start a session in a project with its first prompt.",
         details: """
               --project P   The project, by ID, name or folder (`atrium projects`).
@@ -30,9 +30,6 @@ let promptCommands: [Command] = [
               --model M     A model, as `atrium models` lists them. Defaults to the agent's own.
               --effort E    The model's reasoning effort.
               --fast        Turn fast mode on, or off with --no-fast, where the model has it.
-              --worktree    Work in a new worktree the agent creates and names, from what the project folder has
-                            checked out. The project folder must be a Git repository.
-              --branch B    Work on a new branch B, switched to in the project folder.
               --standalone  Start a session of its own rather than one that belongs to you: it's listed among the
                             user's sessions as if they'd started it, the first prompt's result isn't sent to you,
                             and stopping your session doesn't stop it. By default, sessions started by a local agent
@@ -40,8 +37,8 @@ let promptCommands: [Command] = [
                             regular task list.
             \(promptDetails)
             """,
-        options: promptOptions.union(["project", "provider", "model", "effort", "branch"]),
-        flags: promptFlags.union(["fast", "no-fast", "worktree", "standalone"])
+        options: promptOptions.union(["project", "provider", "model", "effort"]),
+        flags: promptFlags.union(["fast", "no-fast", "standalone"])
     ) { arguments in
         try arguments.allowPositionals(1)
         let prompt = try Prompt(arguments)
@@ -52,13 +49,6 @@ let promptCommands: [Command] = [
         }
         let fast = try arguments.toggle("fast")
         let model = arguments.value("model"), effort = arguments.value("effort")
-        let checkout: TaskStartCheckout?
-        switch (arguments.flag("worktree"), arguments.value("branch")) {
-        case (true, .some): throw CLIError(.invalidArgument, "Use either --worktree or --branch.")
-        case (true, nil): checkout = .newWorktree
-        case (false, let branch?): checkout = .newBranch(branch)
-        case (false, nil): checkout = nil
-        }
         let standalone = arguments.flag("standalone")
         let options = try HostOptions(arguments)
         let client = Client(resolvesCaller: !standalone)
@@ -74,7 +64,7 @@ let promptCommands: [Command] = [
         // repeating the command repeats neither.
         let reply = try await client.perform(
             .compose(
-                provider: provider, workspaceID: workspace.id, settings: settings, checkout: checkout,
+                provider: provider, workspaceID: workspace.id, settings: settings,
                 standalone: standalone ? true : nil
             ),
             on: host, key: prompt.key.derived(1)

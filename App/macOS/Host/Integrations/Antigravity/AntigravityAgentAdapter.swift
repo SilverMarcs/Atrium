@@ -152,24 +152,16 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         return session
     }
 
-    func createThread(directory: String, settings: TaskStartSettings?, title: String?, inNewWorktree: Bool) async throws -> AgentThread {
+    func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await start()
-        let worktree = inNewWorktree ? try await AgentWorktree.make(of: directory, in: Self.home) : nil
-        let cwd = worktree?.filePath ?? directory
         let blocks = instructions.forNewChat
-        let reply: [String: Any]
-        do {
-            // Antigravity keeps the appended prompt with the conversation, for every later load.
-            reply = try await connection.request("session/new", [
-                "cwd": cwd, "mcpServers": [],
-                "_meta": ["antigravity": ["systemPrompt": ["append": AgentInstructions.text(blocks)]]],
-            ])
-        } catch {
-            if let worktree { await AgentWorktree.remove(worktree, of: directory) }
-            throw error
-        }
+        // Antigravity keeps the appended prompt with the conversation, for every later load.
+        let reply = try await connection.request("session/new", [
+            "cwd": directory, "mcpServers": [],
+            "_meta": ["antigravity": ["systemPrompt": ["append": AgentInstructions.text(blocks)]]],
+        ])
         guard let id = reply["sessionId"] as? String else { throw IntegrationError(message: "Antigravity didn’t start a session.") }
-        let session = Session(id: id, directory: cwd)
+        let session = Session(id: id, directory: directory)
         session.settings = AntigravitySettings(configOptions: reply["configOptions"] as? [[String: Any]] ?? [])
         sessions[id] = session
         instructions.record(blocks, for: "\(provider.rawValue):\(id)")
@@ -180,7 +172,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         // Antigravity names a conversation after its first prompt, so a name given now waits for that.
         session.pendingTitle = title
         return describe(AgentThread(
-            sessionID: id, provider: .antigravity, title: title ?? "New Antigravity chat", directory: cwd,
+            sessionID: id, provider: .antigravity, title: title ?? "New Antigravity chat", directory: directory,
             updatedAt: .now, status: .idle, isMainTask: true, hasProviderTitle: title != nil, projectDirectory: directory))
     }
 
@@ -221,7 +213,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let last = try await steps(of: thread.sessionID).lastStep(beforePrompt: ordinal)
         guard last >= 0 else {
             let settings = TaskStartSettings(model: thread.model, reasoningEffort: thread.reasoningEffort, permissionMode: thread.permissionMode)
-            return try await createThread(directory: thread.directory, settings: settings, title: thread.forkTitle, inNewWorktree: false)
+            return try await createThread(directory: thread.directory, settings: settings, title: thread.forkTitle)
         }
         let id = try await copy(thread, through: last)
         try await name(id, thread.forkTitle)
@@ -549,9 +541,6 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     }
 
     // MARK: - Helpers
-
-    /// Antigravity's home, where Atrium makes its chats' worktrees.
-    private static var home: URL { URL.homeDirectory.appending(path: ".gemini/antigravity-cli", directoryHint: .isDirectory) }
 
     private static func mediaType(of url: URL) -> String {
         switch url.pathExtension.lowercased() {

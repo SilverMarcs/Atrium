@@ -18,7 +18,7 @@ struct ProviderCompatibilityChecks {
             if provider == .jcode {
                 guard case .unsupported = decoded.request else { throw Failure(message: "Retired provider must be unsupported") }
             } else {
-                guard case .compose(let received, let workspace, _, _, _) = decoded.request else {
+                guard case .compose(let received, let workspace, _, _) = decoded.request else {
                     throw Failure(message: "Supported compose must still decode")
                 }
                 try check(received.rawValue == provider.rawValue && workspace == workspaceID, "Supported compose is unchanged")

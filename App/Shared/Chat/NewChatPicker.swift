@@ -17,7 +17,6 @@ struct NewChatPicker: View {
             }
             NewChatHostPicker(hosts: hosts, host: host)
             NewChatProjectPicker(hosts: hosts, host: host, draft: draft)
-            NewChatCheckoutPicker(host: host, draft: draft)
             NewChatAgentPicker(host: host, draft: draft)
         }
         .buttonStyle(.plain)
@@ -31,10 +30,5 @@ struct NewChatPicker: View {
         // At the end of the timeline, within its margins.
         .padding(.leading, 16)
         #endif
-        // The project folder's own checkout, which the checkout picker reads
-        // whichever worktree the project's pages show.
-        .task(id: GitScope(workspaceID: draft.workspaceID)) {
-            await host.follow(.git(GitScope(workspaceID: draft.workspaceID)))
-        }
     }
 }
