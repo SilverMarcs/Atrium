@@ -14,6 +14,9 @@ nonisolated enum ComposerBarPart {
     case permissions
     /// The model menu, before dictation.
     case model
+    /// An empty stand-in where the editor sits at rest, in either state,
+    /// which measures how long a line the inline field holds.
+    case inlineProbe
 }
 
 private nonisolated struct ComposerBarPartKey: LayoutValueKey {
@@ -36,8 +39,9 @@ extension View {
 /// the attachment button at its leading end and dictation and Send at its
 /// trailing end.
 ///
-/// On Mac it's always expanded, and its row also holds the permission-mode
-/// menu after the attachment button and the model menu before dictation.
+/// Expanded, its row also holds the permission-mode menu after the
+/// attachment button and the model menu before dictation. On Mac the field
+/// at rest also holds a compact model menu before dictation.
 struct ComposerBarLayout: Layout {
     var isExpanded: Bool
     /// The draft, which the expanded editor grows to fit.
@@ -45,9 +49,25 @@ struct ComposerBarLayout: Layout {
 
     /// The system bottom bar's metrics, which the composer at rest matches.
     static let rowHeight: CGFloat = 48
+    /// The field at rest, and the circles beside it. The Mac's inline bar
+    /// keeps the sizes of its earlier desktop composer: a 34pt field
+    /// between 30pt circles.
+    #if os(macOS)
+    static let restingRowHeight: CGFloat = 34
+    static let restingButtonSize: CGFloat = 30
+    #else
+    static let restingRowHeight: CGFloat = rowHeight
+    static let restingButtonSize: CGFloat = rowHeight
+    #endif
     static let menuControlSize: CGFloat = 44
+    #if os(macOS)
+    /// The Mac's inline bar keeps its earlier desktop composer's spacing.
+    static let restingMargin: CGFloat = 10
+    static let restingSpacing: CGFloat = 8
+    #else
     static let restingMargin: CGFloat = 28
     static let restingSpacing: CGFloat = 12
+    #endif
     /// Expanded, the panel nearly reaches the edges, as a focused search
     /// field does. On iPhone and iPad its corners stay concentric with the
     /// row's buttons.
@@ -62,6 +82,8 @@ struct ComposerBarLayout: Layout {
     #else
     static let cornerRadius: CGFloat = rowHeight / 2
     #endif
+    /// The Mac's inline model menu, inside the field before dictation.
+    static let inlineMenuSize: CGFloat = 28
     /// Between the field's end and the dictation button inside it.
     private static let dictationInset: CGFloat = 4
     /// Between the row's menus and the buttons beside them.
@@ -69,7 +91,7 @@ struct ComposerBarLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 402
-        guard isExpanded else { return CGSize(width: width, height: Self.rowHeight) }
+        guard isExpanded else { return CGSize(width: width, height: Self.restingRowHeight) }
         return CGSize(width: width, height: editorHeight(in: width) + Self.rowHeight
                       + (menusNeedOwnRow(in: width, subviews: subviews) ? Self.rowHeight : 0))
     }
@@ -123,21 +145,23 @@ struct ComposerBarLayout: Layout {
     }
 
     private func restingFrames(in bounds: CGRect, subviews: Subviews) -> [ComposerBarPart: CGRect] {
-        let row = Self.rowHeight
+        let row = Self.restingRowHeight
         let y = bounds.maxY - row
         var frames: [ComposerBarPart: CGRect] = [:]
         var leading = bounds.minX + Self.restingMargin
         var trailing = bounds.maxX - Self.restingMargin
 
-        frames[.attach] = CGRect(x: leading, y: y, width: row, height: row)
-        if has(.attach, in: subviews) { leading += row + Self.restingSpacing }
+        let button = Self.restingButtonSize
+        let buttonY = y + (row - button) / 2
+        frames[.attach] = CGRect(x: leading, y: buttonY, width: button, height: button)
+        if has(.attach, in: subviews) { leading += button + Self.restingSpacing }
         if has(.cancelEdit, in: subviews) {
-            frames[.cancelEdit] = CGRect(x: leading, y: y, width: row, height: row)
-            leading += row + Self.restingSpacing
+            frames[.cancelEdit] = CGRect(x: leading, y: buttonY, width: button, height: button)
+            leading += button + Self.restingSpacing
         }
         if has(.action, in: subviews) {
-            frames[.action] = CGRect(x: trailing - row, y: y, width: row, height: row)
-            trailing -= row + Self.restingSpacing
+            frames[.action] = CGRect(x: trailing - button, y: buttonY, width: button, height: button)
+            trailing -= button + Self.restingSpacing
         }
         frames[.panel] = CGRect(x: leading, y: y, width: max(trailing - leading, 0), height: row)
 
@@ -148,10 +172,20 @@ struct ComposerBarLayout: Layout {
             frames[.dictation] = CGRect(x: x, y: y + (row - dictation.height) / 2, width: dictation.width, height: dictation.height)
             editorEnd = x
         }
+        #if os(macOS)
+        // The Mac's inline field also holds the model menu, before dictation.
+        if has(.model, in: subviews) {
+            let size = Self.inlineMenuSize
+            let x = editorEnd - size - (has(.dictation, in: subviews) ? 0 : Self.dictationInset)
+            frames[.model] = CGRect(x: x, y: y + (row - size) / 2, width: size, height: size)
+            editorEnd = x
+        }
+        #endif
         frames[.editor] = CGRect(x: leading, y: y, width: max(editorEnd - leading, 0), height: row)
+        frames[.inlineProbe] = frames[.editor]
         // Hidden menus keep real positions in the bottom row, so expanding
         // never animates them from the layout's origin.
-        frames.merge(menuFrames(in: bounds, subviews: subviews)) { _, menu in menu }
+        frames.merge(menuFrames(in: bounds, subviews: subviews)) { resting, _ in resting }
         return frames
     }
 
@@ -180,6 +214,7 @@ struct ComposerBarLayout: Layout {
                                     width: dictation.width, height: dictation.height)
 
         frames.merge(menuFrames(in: bounds, subviews: subviews)) { _, menu in menu }
+        frames[.inlineProbe] = restingFrames(in: bounds, subviews: subviews)[.inlineProbe]
         return frames
     }
 

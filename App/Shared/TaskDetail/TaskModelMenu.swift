@@ -9,6 +9,9 @@ struct TaskModelMenu: View {
   let models: [AgentModel]
   let perform: (TaskAction) -> Void
   var isComposerRow = false
+  /// The Mac's inline composer shows only the effort gauge, as the iPhone
+  /// and iPad composer does.
+  var isCompact = false
 
   var body: some View {
     let name = models.model(running: selection.model)?.name ?? selection.model ?? "Model"
@@ -33,11 +36,26 @@ struct TaskModelMenu: View {
             .contentTransition(.symbolEffect(.replace))
         }
         #else
-        ComposerMenuLabel {
-          Text(name)
-          if !detail.isEmpty {
-            Text(detail)
-              .foregroundStyle(.tertiary)
+        if isCompact {
+          Label {
+            Text("Model")
+          } icon: {
+            Image(systemName: ComposerReasoningSymbol.name(for: selection.reasoningEffort))
+              .symbolRenderingMode(.palette)
+              .foregroundStyle(.blue, .secondary)
+          }
+          .labelStyle(.iconOnly)
+          .font(.title3)
+          .contentTransition(.symbolEffect(.replace))
+          .frame(width: ComposerBarLayout.inlineMenuSize, height: ComposerBarLayout.inlineMenuSize)
+          .contentShape(.circle)
+        } else {
+          ComposerMenuLabel {
+            Text(name)
+            if !detail.isEmpty {
+              Text(detail)
+                .foregroundStyle(.tertiary)
+            }
           }
         }
         #endif

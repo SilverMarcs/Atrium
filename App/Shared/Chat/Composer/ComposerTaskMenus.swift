@@ -3,9 +3,11 @@ import AtriumProtocol
 import SwiftUI
 
 /// The task's model menu in the composer's row, before dictation, after a
-/// ring showing context usage once its provider has said.
+/// ring showing context usage once its provider has said. Compact, in the
+/// Mac's inline field, it's only the effort gauge, without the ring.
 struct ComposerModelMenu: View {
     let item: HostTask
+    var isCompact = false
 
     /// The row's width for the menu and its ring, which the iPhone and iPad
     /// glass layer reserves too.
@@ -16,12 +18,13 @@ struct ComposerModelMenu: View {
     var body: some View {
         let models = item.host.models(for: item.task.provider)
         HStack(spacing: ComposerContextRing.spacing) {
-            if let usage = item.task.contextUsage {
+            if !isCompact, let usage = item.task.contextUsage {
                 ComposerContextRing(usage: usage)
             }
             TaskModelMenu(
                 provider: item.task.provider, selection: item.task.modelSelection, models: models,
-                perform: { item.host.send(.task(id: item.task.id, action: $0)) }, isComposerRow: true
+                perform: { item.host.send(.task(id: item.task.id, action: $0)) }, isComposerRow: true,
+                isCompact: isCompact
             )
             .disabled(models.isEmpty)
             .composerRowMenuStyle()

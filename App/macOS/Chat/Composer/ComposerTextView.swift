@@ -15,7 +15,7 @@ struct ComposerTextView: NSViewRepresentable {
     /// Whether the editor is first responder.
     @Binding var isEditing: Bool
     let placeholder: String
-    /// Always true on Mac, where the composer stays expanded.
+    /// False while the composer rests inline, which centers the line.
     let isExpanded: Bool
     let isEditable: Bool
     let pasteDelegate: ComposerPasteDelegate
@@ -64,6 +64,7 @@ struct ComposerTextView: NSViewRepresentable {
         editor.pasteDelegate = pasteDelegate
         editor.placeholder = placeholder
         editor.isEditable = isEditable
+        editor.isExpanded = isExpanded
         // Leave text being composed with marked text alone; replacing it
         // would end the composition.
         if editor.string != text, !editor.hasMarkedText() {
@@ -144,6 +145,20 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
     var onFocusChange: ((Bool) -> Void)?
     weak var pasteDelegate: ComposerPasteDelegate?
 
+    /// At rest the line sits centered in the field. Expanded it starts
+    /// from the top of the panel.
+    var isExpanded = true {
+        didSet {
+            guard isExpanded != oldValue else { return }
+            // The insets split between top and bottom; `textContainerOrigin`
+            // places the text.
+            let horizontal = isExpanded ? Self.horizontalInset : Self.restingHorizontalInset
+            textContainerInset = NSSize(width: horizontal, height: textContainerInset.height)
+            invalidateTextContainerOrigin()
+            needsDisplay = true
+        }
+    }
+
     var placeholder = "" {
         didSet {
             guard placeholder != oldValue else { return }
@@ -154,11 +169,26 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
 
     /// The text's distance from the editor's sides, as on iPhone and iPad.
     static let horizontalInset: CGFloat = 20
+    /// The inline field's tighter inset, as the earlier desktop composer had.
+    static let restingHorizontalInset: CGFloat = 13
     /// Above the first line, and below the last, which sits just over the
     /// composer's button row.
     static let insets = (top: CGFloat(14), bottom: CGFloat(4))
 
     private static var font: NSFont { .preferredFont(forTextStyle: .body) }
+
+    /// Whether `text` fits on the inline field's one line in an editor this
+    /// wide. Long drafts and ones with a line break never do; the rest are
+    /// measured as one line of the body font.
+    static func fitsInline(_ text: String, editorWidth: CGFloat) -> Bool {
+        if text.isEmpty { return true }
+        // Before the inline field is laid out, a draft stays inline.
+        guard editorWidth > 0 else { return true }
+        guard text.utf16.count <= 400, !text.contains(where: \.isNewline) else { return false }
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        // A little room for the caret after the last letter.
+        return width + 2 <= editorWidth - restingHorizontalInset * 2
+    }
 
     convenience init() {
         self.init(frame: .zero)
@@ -207,7 +237,16 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
     }
 
     override var textContainerOrigin: NSPoint {
-        NSPoint(x: Self.horizontalInset, y: Self.insets.top)
+        guard !isExpanded else { return NSPoint(x: Self.horizontalInset, y: Self.insets.top) }
+        let lineHeight = Self.lineHeightMeasurer.defaultLineHeight(for: font ?? Self.font)
+        return NSPoint(x: Self.restingHorizontalInset, y: max(((enclosingScrollView?.contentView.bounds.height ?? bounds.height) - lineHeight) / 2, 0))
+    }
+
+    private static let lineHeightMeasurer = NSLayoutManager()
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        if !isExpanded { invalidateTextContainerOrigin() }
     }
 
     var isFirstResponder: Bool { window?.firstResponder === self }

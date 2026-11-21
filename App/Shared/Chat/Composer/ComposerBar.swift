@@ -12,8 +12,10 @@ import SwiftUI
 /// Losing focus, by sending, going back or dragging the keyboard away,
 /// collapses it again with the draft kept.
 ///
-/// On Mac it stays expanded, and its row also holds the chat's permission
-/// menu after the attachment button and its model menu before dictation.
+/// On Mac it rests inline too, focused or not, with a compact model menu in
+/// the field, and only expands once the draft outgrows the field's one
+/// line. Expanded, its row also holds the chat's permission menu after the
+/// attachment button and its model menu before dictation.
 struct ComposerBar: View {
     @Environment(TaskComposer.self) private var composer
     @Environment(DictationSettings.self) private var dictationSettings
@@ -43,10 +45,17 @@ struct ComposerBar: View {
     /// request for focus, so the composer only starts to grow or shrink
     /// once UIKit has announced the keyboard moving with it.
     @State private var isEditing = false
-    /// Expanded while the editor has focus, and always on Mac.
+    #if os(macOS)
+    /// How wide the inline field's editor is, which decides when a draft
+    /// outgrows it.
+    @State private var inlineEditorWidth: CGFloat = 0
+    #endif
+
+    /// Expanded while the editor has focus, and on Mac once the draft no
+    /// longer fits on the inline field's one line.
     private var isExpanded: Bool {
         #if os(macOS)
-        true
+        !ComposerEditor.fitsInline(composer.draft, editorWidth: inlineEditorWidth)
         #else
         isEditing
         #endif
@@ -63,7 +72,23 @@ struct ComposerBar: View {
         #if os(iOS)
         isExpanded && menusReady
         #else
+        isExpanded
+        #endif
+    }
+    /// The Mac keeps a compact model menu in its inline field.
+    private var isModelMenuVisible: Bool {
+        #if os(iOS)
+        areMenusVisible
+        #else
         true
+        #endif
+    }
+    /// The Mac's smaller resting circle takes a smaller plus.
+    private var attachFont: Font {
+        #if os(macOS)
+        isExpanded ? .title2 : .title3
+        #else
+        .title2
         #endif
     }
     private var showsAttach: Bool { item?.task.actions.contains(.attachImages) != false }
@@ -102,14 +127,14 @@ struct ComposerBar: View {
                 GlassEffectContainer(spacing: 0) {
                     ComposerBarLayout(isExpanded: isExpanded, draft: composer.draft) {
                         Color.clear
-                            .glassEffect(.regular, in: .rect(cornerRadius: ComposerBarLayout.cornerRadius))
+                            .glassEffect(.regular, in: .rect(cornerRadius: isExpanded ? ComposerBarLayout.cornerRadius : ComposerBarLayout.restingRowHeight / 2))
                             .composerBarPart(.panel)
 
                         if showsAttach {
                             ComposerAttachmentMenu {
                                 Label("Attach", systemImage: "plus")
                                     .labelStyle(.iconOnly)
-                                    .font(.title2)
+                                    .font(attachFont)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .contentShape(.circle)
                                     .glassEffect(isExpanded ? .identity : .regular.interactive(), in: .circle)
@@ -204,11 +229,11 @@ struct ComposerBar: View {
                     .composerBarPart(.editor)
 
                     if let item, item.offersComposerMenus {
-                        ComposerModelMenu(item: item)
-                            .opacity(areMenusVisible ? 1 : 0)
-                            .allowsHitTesting(areMenusVisible)
-                            .accessibilityHidden(!areMenusVisible)
-                            .animation(nil, value: areMenusVisible)
+                        ComposerModelMenu(item: item, isCompact: !isExpanded)
+                            .opacity(isModelMenuVisible ? 1 : 0)
+                            .allowsHitTesting(isModelMenuVisible)
+                            .accessibilityHidden(!isModelMenuVisible)
+                            .animation(nil, value: isModelMenuVisible)
                             .composerBarPart(.model)
                         if let permissions = item.task.permissionSelection(using: item.host.models(for: item.task.provider)) {
                             ComposerPermissionMenu(item: item, selection: permissions)
@@ -225,6 +250,14 @@ struct ComposerBar: View {
                             .buttonStyle(.plain)
                             .composerBarPart(.dictation)
                     }
+
+                    #if os(macOS)
+                    Color.clear
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { inlineEditorWidth = $0 }
+                        .composerBarPart(.inlineProbe)
+                    #endif
 
                     // One Button keeps its identity and layout frame in both
                     // composer states, outside Liquid Glass's content animation.

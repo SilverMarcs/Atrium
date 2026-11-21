@@ -26,9 +26,9 @@ struct ComposerBarActionButton: View {
             Circle()
                 .fill(action == .stop ? .red : .accentColor)
                 .opacity(fillOpacity)
-                .frame(width: isExpanded ? expandedDiameter : ComposerBarLayout.rowHeight,
-                       height: isExpanded ? expandedDiameter : ComposerBarLayout.rowHeight)
-                .frame(width: ComposerBarLayout.rowHeight, height: ComposerBarLayout.rowHeight)
+                .frame(width: isExpanded ? expandedDiameter : ComposerBarLayout.restingButtonSize,
+                       height: isExpanded ? expandedDiameter : ComposerBarLayout.restingButtonSize)
+                .frame(width: cell, height: cell)
                 .overlay {
                     // The symbol stays centered in the same cell and keeps the
                     // same font while only the circle changes size.
@@ -79,6 +79,7 @@ struct ComposerBarActionButton: View {
     }
 
     private var isDimmed: Bool { !isEnabled && !isBusy }
+    private var cell: CGFloat { isExpanded ? ComposerBarLayout.rowHeight : ComposerBarLayout.restingButtonSize }
 
     private var symbolFont: Font {
         #if os(macOS)
@@ -105,7 +106,8 @@ struct ComposerBarActionGlass: View {
 
     var body: some View {
         Color.clear
-            .frame(width: ComposerBarLayout.rowHeight, height: ComposerBarLayout.rowHeight)
+            .frame(width: isExpanded ? ComposerBarLayout.rowHeight : ComposerBarLayout.restingButtonSize,
+                   height: isExpanded ? ComposerBarLayout.rowHeight : ComposerBarLayout.restingButtonSize)
             .glassEffect(glass, in: .circle)
             .accessibilityHidden(true)
     }
