@@ -431,7 +431,9 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             if let reasoningEffort, session.settings.thinkingLevel != nil {
                 try await setOption("thought_level", to: reasoningEffort, of: id, in: session)
             }
-        case .fastMode:
+        case .fastMode(let isOn):
+            // Antigravity is never in fast mode, so turning it off changes nothing.
+            guard isOn else { return }
             throw IntegrationError(message: "Antigravity has no fast mode.")
         case .permissionMode(let mode):
             try await setOption("mode", to: AntigravitySettings.mode(for: mode), of: id, in: session)

@@ -47,14 +47,14 @@ final class TaskSessionController {
             guard canOpen(thread) else { return nil }
             integrations.registerDraft(thread)
             // Model and effort were passed at creation; fast mode can be applied
-            // once the provider has opened the conversation.
-            if let settings {
-                if let isFastMode = settings.isFastMode {
-                    let change = AgentSettingsChange.fastMode(isFastMode)
-                    try integrations.validate(change, for: thread)
-                    try await integrations.changeSettings(change, of: thread)
-                    thread = change.applying(to: thread)
-                }
+            // once the provider has opened the conversation. A model without fast
+            // mode is already off, so there's nothing to turn off.
+            if let isFastMode = settings?.isFastMode,
+               isFastMode || integrations.models[provider]?.model(running: thread.model)?.supportsFastMode == true {
+                let change = AgentSettingsChange.fastMode(isFastMode)
+                try integrations.validate(change, for: thread)
+                try await integrations.changeSettings(change, of: thread)
+                thread = change.applying(to: thread)
             }
             return thread
         } catch is CancellationError {
