@@ -115,6 +115,8 @@ final class HostServer {
     @ObservationIgnored private let secrets: SecretRequests
     /// What Settings → Integrations turns on, which stays with this Mac's host.
     @ObservationIgnored let integrationSettings = IntegrationSettings()
+    /// Local Settings reads account metadata through the adapter's live server.
+    @ObservationIgnored let readAntigravityUsage: () async throws -> AgentUsageSnapshot
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
@@ -151,9 +153,11 @@ final class HostServer {
         let bridge = AgentBridgeServer()
         let instructions = ChatInstructions(settings: integrationSettings)
         instructions.projectFolders = { directory in store.folders(forDirectory: directory) }
+        let antigravity = AntigravityAgentAdapter(instructions: instructions)
+        readAntigravityUsage = { try await antigravity.usageSnapshot() }
         integrations = AgentIntegrationStore(adapters: [
             CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions),
-            AntigravityAgentAdapter(instructions: instructions),
+            antigravity,
         ], settings: integrationSettings)
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
         orchestrator = Orchestrator(integrations: integrations, directory: bridge.storage)

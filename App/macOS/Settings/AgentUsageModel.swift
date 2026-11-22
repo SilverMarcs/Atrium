@@ -1,12 +1,13 @@
 import AtriumProtocol
 import Observation
+import OSLog
 
 @MainActor
 @Observable
 final class AgentUsageModel {
     private(set) var snapshot = AgentUsageSnapshot(status: "Loading…", usageMessage: "Loading…")
 
-    func refresh(_ provider: AgentProvider) async {
+    func refresh(_ provider: AgentProvider, antigravity: () async throws -> AgentUsageSnapshot) async {
         snapshot = AgentUsageSnapshot(status: "Loading…", usageMessage: "Loading…")
         do {
             let result: AgentUsageSnapshot
@@ -20,12 +21,13 @@ final class AgentUsageModel {
             case .claude:
                 result = try await ClaudeUsageReader.read()
             case .antigravity:
-                result = try await AntigravityUsageReader.read()
+                result = try await antigravity()
             }
             try Task.checkCancellation()
             snapshot = result
         } catch {
             guard !Task.isCancelled else { return }
+            Logger(subsystem: "Atrium", category: "AgentUsage").error("\(provider.rawValue, privacy: .public) account read failed: \(error.localizedDescription, privacy: .public)")
             snapshot = AgentUsageSnapshot(status: "Unavailable")
         }
     }

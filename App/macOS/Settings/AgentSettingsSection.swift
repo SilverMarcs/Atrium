@@ -3,6 +3,7 @@ import AtriumProtocol
 import SwiftUI
 
 struct AgentSettingsSection: View {
+    @Environment(AppModel.self) private var app
     @State private var usage = AgentUsageModel()
     @State private var updates = AgentCLIUpdateModel()
     let provider: WireProvider
@@ -58,7 +59,7 @@ struct AgentSettingsSection: View {
             }
         }
         .task {
-            async let account: Void = usage.refresh(provider.provider)
+            async let account: Void = usage.refresh(provider.provider, antigravity: app.readAntigravityUsage)
             async let version: Void = updates.refresh(provider.provider)
             _ = await (account, version)
         }

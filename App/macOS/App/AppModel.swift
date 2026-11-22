@@ -11,9 +11,10 @@ import SwiftUI
 @Observable
 final class AppModel {
     let hosts: HostDirectory
-    /// What Settings → Integrations turns on for this Mac's agents, which
-    /// stays with this Mac's host; nothing else of the host is reachable here.
+    /// What Settings → Integrations turns on for this Mac's agents.
     let integrationSettings: IntegrationSettings
+    /// Local Settings reads account status without owning the host's connection.
+    let readAntigravityUsage: () async throws -> AgentUsageSnapshot
     /// The tasks selected in the sidebar, on whichever hosts they live.
     var selectedTasks: Set<TaskRef> = []
     /// The task the window shows: the selection when it's a single task.
@@ -39,6 +40,7 @@ final class AppModel {
     init() {
         let server = HostServer()
         integrationSettings = server.integrationSettings
+        readAntigravityUsage = server.readAntigravityUsage
         let localHost = HostClient(localID: server.hello.hostID, name: server.hostName, icon: server.hostIcon) {
             LoopbackConnection(server: server)
         }

@@ -41,8 +41,9 @@ final class AntigravityConnection {
 
     /// Starts the server and introduces Atrium, unless it's running.
     func start() async throws {
-        if isRunning { return }
+        try Task.checkCancellation()
         if let starting { return try await starting.value }
+        if isRunning { return }
         let task = Task { try await launch() }
         starting = task
         defer { starting = nil }
@@ -123,6 +124,11 @@ final class AntigravityConnection {
             }
         } onCancel: {
             Task { @MainActor [weak self] in self?.finish(id, with: .failure(CancellationError())) }
+        }
+        // A successful session RPC has started the language server and restored
+        // sign-in. Remember its port so HTTP calls need no further listing.
+        if languageServerPort == nil, method.hasPrefix("session/") {
+            languageServerPort = loggedLanguageServerPort
         }
         return reply.result
     }
@@ -212,19 +218,23 @@ final class AntigravityConnection {
     /// terminal app uses for what ACP lacks, such as forking, rewinding,
     /// renaming and deleting conversations. It shares the saved conversations
     /// ACP sessions read, and answers protobuf messages as JSON.
-    func languageServer(_ method: String, _ body: [String: Any]) async throws -> Data {
+    func languageServer(_ method: String, _ body: [String: Any], timeout: TimeInterval = 60) async throws -> Data {
         try await start()
+        try Task.checkCancellation()
         let port: Int
         if let known = languageServerPort {
             port = known
         } else {
+            // `initialize` only negotiates ACP. The first session RPC starts
+            // the language server and restores sign-in. Listing is read-only.
+            _ = try await request("session/list", [:], timeout: .seconds(timeout))
             port = try await readLanguageServerPort()
             languageServerPort = port
         }
         guard let url = URL(string: "http://127.0.0.1:\(port)/exa.language_server_pb.LanguageServerService/\(method)") else {
             throw IntegrationError(message: "Antigravity's language server has no address.")
         }
-        var request = URLRequest(url: url, timeoutInterval: 60)
+        var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
@@ -233,14 +243,15 @@ final class AntigravityConnection {
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let message = (reply?["message"] as? String).map { $0.replacing(#/\s\(error ID: [0-9a-f]+\)/#, with: "") }
-            throw AntigravityError(code: nil, message: message ?? "Antigravity refused \(method).")
+            let isUnauthenticated = (response as? HTTPURLResponse)?.statusCode == 401 || reply?["code"] as? String == "unauthenticated"
+            throw AntigravityError(code: isUnauthenticated ? 401 : nil, message: message ?? "Antigravity refused \(method).")
         }
         return data
     }
 
     /// A language server call's reply, read as JSON.
-    func languageServerReply(_ method: String, _ body: [String: Any]) async throws -> [String: Any] {
-        (try JSONSerialization.jsonObject(with: try await languageServer(method, body)) as? [String: Any]) ?? [:]
+    func languageServerReply(_ method: String, _ body: [String: Any], timeout: TimeInterval = 60) async throws -> [String: Any] {
+        (try JSONSerialization.jsonObject(with: try await languageServer(method, body, timeout: timeout)) as? [String: Any]) ?? [:]
     }
 
     private static let session: URLSession = {
@@ -250,12 +261,15 @@ final class AntigravityConnection {
     }()
 
     /// The port the server's log says its language server listens on for plain HTTP.
+    private var loggedLanguageServerPort: Int? {
+        guard let log, let text = try? String(contentsOf: log, encoding: .utf8),
+              let match = text.firstMatch(of: /listening on random port at (\d+) for HTTP\n/) else { return nil }
+        return Int(match.1)
+    }
+
     private func readLanguageServerPort() async throws -> Int {
         for _ in 0..<50 {
-            if let log, let text = try? String(contentsOf: log, encoding: .utf8),
-               let match = text.firstMatch(of: /listening on random port at (\d+) for HTTP\n/), let port = Int(match.1) {
-                return port
-            }
+            if let port = loggedLanguageServerPort { return port }
             try await Task.sleep(for: .milliseconds(100))
         }
         throw IntegrationError(message: "Antigravity's language server didn't start. Update agy and try again.")
@@ -297,4 +311,8 @@ struct AntigravityError: LocalizedError {
     var errorDescription: String? { message }
     /// The session isn't open in the server, which `session/load` fixes.
     var isSessionNotFound: Bool { message.localizedStandardContains("session not found") }
+    var isAuthenticationRequired: Bool {
+        code == 401 || message.localizedStandardContains("authentication required")
+            || message.localizedStandardContains("not logged into Antigravity")
+    }
 }

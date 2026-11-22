@@ -521,6 +521,11 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
 
     // MARK: - Models and settings
 
+    func usageSnapshot() async throws -> AgentUsageSnapshot {
+        try await start()
+        return try await AntigravityUsageReader.read(connection: connection)
+    }
+
     func models() async throws -> [AgentModel] {
         try await start()
         let reply = try await connection.setup(avoiding: Set(sessions.keys).union(opening.keys))
