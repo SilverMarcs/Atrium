@@ -37,24 +37,19 @@ struct TaskListView: View {
 
     var body: some View {
         let sections = TaskSections(tasks, section: \.task.menuState.section)
-
         let shownIDs = sections.ids(shown: isShown)
 
         // A subagent on screen isn't listed, so no row is selected and choosing its session's row goes back.
         List(selection: Bindable(app).selectedTasks) {
             rows(sections.active)
             if !sections.snoozed.isEmpty {
-                Section(isExpanded: Binding(get: { isShown(.snoozed) }, set: { isSnoozedExpanded = $0 }).animation()) {
+                Section("Snoozed", isExpanded: Binding(get: { isShown(.snoozed) }, set: { isSnoozedExpanded = $0 }).animation()) {
                     rows(sections.snoozed)
-                } header: {
-                    Text("Snoozed")
                 }
             }
             if !sections.settled.isEmpty {
-                Section(isExpanded: Binding(get: { isShown(.settled) }, set: { isSettledExpanded = $0 }).animation()) {
+                Section("Settled", isExpanded: Binding(get: { isShown(.settled) }, set: { isSettledExpanded = $0 }).animation()) {
                     rows(sections.settled)
-                } header: {
-                    Text("Settled")
                 }
             }
         }

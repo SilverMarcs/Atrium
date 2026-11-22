@@ -24,14 +24,14 @@ struct TaskSelectionMenu: View {
                     ForEach(group, id: \.self) { action in
                         let targets = items.filter { $0.task.menuState.offers(action) }
                         if case .snooze = action, !targets.isEmpty {
-                            Menu(action.title(count: targets.count), systemImage: action.systemImage) {
+                            Menu(action.title(count: items.count), systemImage: action.systemImage) {
                                 snoozeButtons(SnoozeDuration.menu, targets)
                                 Menu("More") {
                                     snoozeButtons(SnoozeDuration.more, targets)
                                 }
                             }
                         } else if !targets.isEmpty {
-                            Button(action.title(count: targets.count), systemImage: action.systemImage,
+                            Button(action.title(count: items.count), systemImage: action.systemImage,
                                    role: action == .delete ? .destructive : nil) {
                                 perform(action, targets)
                             }
@@ -50,7 +50,7 @@ struct TaskSelectionMenu: View {
 }
 
 extension TaskMenuAction {
-    /// The action's title for several tasks at once.
+    /// The action's title for a number of tasks, plural past one.
     func title(count: Int) -> String {
         guard count > 1 else { return title }
         return switch self {
