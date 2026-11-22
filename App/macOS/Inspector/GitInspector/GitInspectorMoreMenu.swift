@@ -1,7 +1,7 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The Git tab's other actions, beside the commit message: branches, the
+/// The Git tab's other actions, inside the commit bar: branches, the
 /// commit log and reviewing the branch's changes. The branch itself is switched at the inspector's foot.
 struct GitInspectorMoreMenu: View {
     @Bindable var state: GitInspectorState
@@ -54,16 +54,13 @@ struct GitInspectorMoreMenu: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
         } label: {
-            // As tall as the Commit button's arrow, so the two buttons match;
-            // the ellipsis alone makes a flat one.
-            ZStack {
-                Image(systemName: "arrow.up").hidden()
-                Image(systemName: "ellipsis")
-            }
+            Image(systemName: "ellipsis.circle")
+                .foregroundStyle(.secondary)
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .fixedSize()
         .help("More")
     }
 }
