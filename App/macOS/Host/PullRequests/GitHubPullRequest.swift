@@ -4,7 +4,7 @@ import Foundation
 /// A pull request as `gh pr list --json` or GitHub's GraphQL API describes it.
 nonisolated struct GitHubPullRequest: Decodable, Sendable {
     /// The fields asked for, which are all `gh` returns.
-    static let fields = "number,title,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closedAt,updatedAt"
+    static let fields = "number,title,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closedAt"
 
     struct Check: Decodable, Sendable {
         /// A check run's progress and result.
@@ -36,7 +36,6 @@ nonisolated struct GitHubPullRequest: Decodable, Sendable {
     var statusCheckRollup: [Check]?
     var commits: Commits?
     var closedAt: Date?
-    var updatedAt: Date?
 
     static func decode(_ data: Data) throws -> [GitHubPullRequest] {
         try decoder.decode([GitHubPullRequest].self, from: data)
@@ -111,7 +110,7 @@ nonisolated extension GitHubPullRequest {
             aliases[alias] = url
             reads.append(#"\#(alias):repository(owner:"\#(path[0])",name:"\#(path[1])"){pullRequest(number:\#(number)){...f}}"#)
         }
-        let fragment = "fragment f on PullRequest{number title url state isDraft headRefName reviewDecision closedAt updatedAt "
+        let fragment = "fragment f on PullRequest{number title url state isDraft headRefName reviewDecision closedAt "
             + "commits(last:1){nodes{commit{statusCheckRollup{state}}}}}"
         return ("query{\(reads.joined(separator: " "))}\(fragment)", aliases)
     }

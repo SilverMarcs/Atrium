@@ -5,12 +5,13 @@ import SwiftUI
 /// The pull requests linked to a task, in the Mac toolbar. Its icon shows
 /// the most pressing one's state.
 struct PullRequestMenu: View {
-    let pullRequests: [PullRequest]
+    let item: HostTask
+    private var pullRequests: [PullRequest] { item.task.pullRequests }
 
     var body: some View {
         if let lead = pullRequests.mostPressing {
             Menu("Pull Requests", systemImage: lead.systemImage) {
-                PullRequestButtons(pullRequests: pullRequests)
+                PullRequestButtons(item: item)
             }
             #if os(macOS)
             .menuIndicator(.hidden)
@@ -24,7 +25,8 @@ struct PullRequestMenu: View {
 /// checks and review beneath its title, and its repository when they're in
 /// several; on the Mac, then one opening them all.
 struct PullRequestButtons: View {
-    let pullRequests: [PullRequest]
+    let item: HostTask
+    private var pullRequests: [PullRequest] { item.task.pullRequests }
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -32,6 +34,7 @@ struct PullRequestButtons: View {
         let namesRepository = Set(pullRequests.map(\.repository)).count > 1
         ForEach(pullRequests) { pullRequest in
             Button {
+                reportPullRequestOpened()
                 openURL(pullRequest.url)
             } label: {
                 Label(pullRequest.menuTitle, systemImage: pullRequest.systemImage)
@@ -44,11 +47,17 @@ struct PullRequestButtons: View {
         if pullRequests.count > 1 {
             Divider()
             Button("Open All", systemImage: "arrow.up.right") {
+                reportPullRequestOpened()
                 for pullRequest in pullRequests { openURL(pullRequest.url) }
             }
             // Mac menus leave out item icons unless asked for.
             .labelStyle(.titleAndIcon)
         }
         #endif
+    }
+
+    private func reportPullRequestOpened() {
+        // Best effort, since opening GitHub can put Atrium in the background.
+        Task { _ = try? await item.host.request(.openedPullRequest(taskID: item.task.id)) }
     }
 }

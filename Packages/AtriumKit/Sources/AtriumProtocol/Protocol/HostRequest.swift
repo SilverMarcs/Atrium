@@ -47,6 +47,8 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// taller than `maxPixelSize` come back scaled down to fit it.
     case promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int)
     case refreshTasks
+    /// The client opened a linked pull request, so its task's PR badges need an update.
+    case openedPullRequest(taskID: String)
     case task(id: String, action: TaskAction)
     /// Skills for a task, or for a new chat's provider and project before the task exists.
     case skills(taskID: String, provider: AgentProvider, workspaceID: UUID?)

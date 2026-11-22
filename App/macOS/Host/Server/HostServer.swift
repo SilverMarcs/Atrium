@@ -111,7 +111,7 @@ final class HostServer {
     @ObservationIgnored private let queue: PromptQueue
     @ObservationIgnored private let tasks: TaskService
     @ObservationIgnored private let media: MediaService
-    @ObservationIgnored private let pullRequests: PullRequestTracker
+    @ObservationIgnored private var isLoadingInitialTasks = true
     @ObservationIgnored private let secrets: SecretRequests
     /// What Settings → Integrations turns on, which stays with this Mac's host.
     @ObservationIgnored let integrationSettings = IntegrationSettings()
@@ -158,12 +158,11 @@ final class HostServer {
         queue = PromptQueue(integrations: integrations, file: bridge.storage.appending(path: "queued-prompts.json"))
         tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue, orchestrator: orchestrator)
         media = MediaService(integrations: integrations)
-        pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
+        let pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
         secrets = SecretRequests(integrations: integrations)
         tasksFeed = TasksFeed(
             integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue,
             pullRequests: pullRequests)
-        pullRequests.start()
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publishTasks(event) }
@@ -195,7 +194,14 @@ final class HostServer {
             queue.remove(id)
         }
         NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
-        Task { await integrations.refresh() }
+        Task { [weak self] in
+            guard let self else { return }
+            await integrations.refresh()
+            isLoadingInitialTasks = false
+            if connections.values.contains(where: { $0.topics.contains(.tasks) && $0.device?.kind != .commandLine }) {
+                tasksFeed.refreshPullRequests()
+            }
+        }
         if isRemoteAccessEnabled { startRemoteAccess() }
         agentsListener.onChannel = { [weak self] channel in self?.accept(channel, as: .localAgents) }
         integrationSettings.onOrchestratorChange = { [weak self] in self?.setAgentsAllowed($0) }
@@ -359,12 +365,17 @@ final class HostServer {
         case .unsupported:
             return .unsupported
         case .activity(let activity):
-            connection.reportsActivity = true
+            let wasInactive = connection.activity?.isActive == false
+            connection.activity = activity
             if connection.isLocal {
                 NotificationRouting.shared.macTaskID = activity.taskID
                 integrations.setViewedThread(activity.isActive ? activity.taskID : nil)
             } else if let device = connection.device {
                 NotificationRouting.shared.update(activity, deviceID: device.id, connectionID: connection.id)
+            }
+            if wasInactive, activity.isActive, let taskID = activity.taskID,
+               connection.topics.contains(.transcript(taskID: taskID)) {
+                tasksFeed.refreshPullRequests(taskID: taskID)
             }
             return .done
         case .registerPush(let registration):
@@ -379,6 +390,14 @@ final class HostServer {
             connection.subscribe(topic)
             if let current = feed.current { connection.deliver(current, for: topic) }
             feed.refresh()
+            switch topic {
+            case .tasks where !isLoadingInitialTasks && connection.device?.kind != .commandLine:
+                tasksFeed.refreshPullRequests()
+            case .transcript(let taskID):
+                tasksFeed.refreshPullRequests(taskID: taskID)
+            default:
+                break
+            }
             return .done
         case .unsubscribe(let topic):
             connection.unsubscribe(topic)
@@ -398,6 +417,9 @@ final class HostServer {
             return await media.promptImage(index, of: messageID, maxPixelSize: maxPixelSize, inTask: taskID)
         case .refreshTasks:
             await integrations.refresh()
+            return .done
+        case .openedPullRequest(let taskID):
+            tasksFeed.refreshPullRequests(taskID: taskID)
             return .done
         case .task(_, .openTerminal) where !connection.isLocal:
             return .hostOnly

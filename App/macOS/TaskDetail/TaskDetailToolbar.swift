@@ -11,7 +11,7 @@ struct TaskDetailToolbar: ToolbarContent {
     var body: some ToolbarContent {
         if !item.task.pullRequests.isEmpty {
             ToolbarItem {
-                PullRequestMenu(pullRequests: item.task.pullRequests)
+                PullRequestMenu(item: item)
             }
         }
         // The terminal runs on the task's host, so only this Mac's own tasks open in one.

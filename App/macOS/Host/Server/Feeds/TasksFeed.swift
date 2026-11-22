@@ -66,6 +66,21 @@ final class TasksFeed: TopicFeed {
         watchedRepositories = []
     }
 
+    func refreshPullRequests(taskID: String? = nil) {
+        invalidateProjectsIfNeeded()
+        let threads = integrations.visibleThreads(matching: "")
+        let subagents = Dictionary(grouping: threads.filter { $0.parentID != nil }) { $0.parentID ?? "" }
+        let scope = taskID.map { id in threads.filter { $0.id == id } } ?? threads
+        // Record any branch and command changes the feed hasn't published yet.
+        for thread in scope {
+            let edits = mergedEdits(of: thread, subagents: descendants(of: thread.id, in: subagents))
+            let checkouts = checkouts(of: thread, edits: edits, in: project(for: thread))
+            _ = trackPullRequests(for: thread, edits: edits, checkouts: checkouts)
+        }
+        let taskIDs = taskID.map { Set([$0]) } ?? Set(scope.map(\.id))
+        pullRequests.refresh(taskIDs: taskIDs, includeSettled: taskID != nil)
+    }
+
     /// The latest state, reading through any change not yet published.
     func snapshot() -> WireTasksSnapshot {
         invalidateProjectsIfNeeded()
@@ -73,21 +88,9 @@ final class TasksFeed: TopicFeed {
         let withWorkingDescendants = orchestrator.sessionsWithWorkingDescendants()
         let threads = integrations.visibleThreads(matching: "")
         let subagents = Dictionary(grouping: threads.filter { $0.parentID != nil }) { $0.parentID ?? "" }
-        func descendants(of id: String) -> [AgentThread] {
-            var found: [AgentThread] = []
-            var pending = [id]
-            var visited: Set<String> = [id]
-            while let current = pending.popLast() {
-                for child in subagents[current] ?? [] where visited.insert(child.id).inserted {
-                    found.append(child)
-                    pending.append(child.id)
-                }
-            }
-            return found
-        }
         return WireTasksSnapshot(
             tasks: threads.map {
-                wireTask($0, subagents: descendants(of: $0.id), hasWorkingDescendants: withWorkingDescendants.contains($0.id))
+                wireTask($0, subagents: descendants(of: $0.id, in: subagents), hasWorkingDescendants: withWorkingDescendants.contains($0.id))
             },
             workspaces: workspaces.workspaces.map(wireWorkspace),
             providers: integrations.providers.map { provider in
@@ -109,10 +112,7 @@ final class TasksFeed: TopicFeed {
         // Stopping a session stops everything working for it, so it can be stopped while only they work.
         if hasWorkingDescendants { menu.allowed.insert(.interrupt) }
         let project = project(for: thread)
-        var edits = thread.edits ?? AgentEdits()
-        for subagent in subagents {
-            if let theirs = subagent.edits { edits.merge(theirs) }
-        }
+        let edits = mergedEdits(of: thread, subagents: subagents)
         let checkouts = checkouts(of: thread, edits: edits, in: project)
         let isSettled = integrations.settledThreadIDs.contains(thread.id)
         return WireTask(
@@ -142,15 +142,39 @@ final class TasksFeed: TopicFeed {
             interactions: integrations.interactions.filter { $0.taskID == thread.id },
             checkout: checkouts.current,
             changedCheckouts: checkouts.changed,
-            // Settled tasks and ones untouched for days keep the pull requests they have.
-            pullRequests: pullRequests.pullRequests(
-                for: thread.id, opened: edits.pullRequests, checkouts: checkouts.changed,
-                firstChanges: checkouts.firstChanges, updatedAt: thread.updatedAt,
-                isActive: !isSettled && thread.updatedAt > .now.addingTimeInterval(-3 * 86_400)),
+            pullRequests: trackPullRequests(for: thread, edits: edits, checkouts: checkouts),
             origin: thread.sideChatParentID.map(WireTaskOrigin.sideChat) ?? thread.parentID.map(WireTaskOrigin.subagent)
                 ?? orchestrator.origin(of: thread),
             queuedPrompt: queue.queuedPrompt(for: thread.id)
         )
+    }
+
+    private func descendants(of id: String, in subagents: [String: [AgentThread]]) -> [AgentThread] {
+        var found: [AgentThread] = []
+        var pending = [id]
+        var visited: Set<String> = [id]
+        while let current = pending.popLast() {
+            for child in subagents[current] ?? [] where visited.insert(child.id).inserted {
+                found.append(child)
+                pending.append(child.id)
+            }
+        }
+        return found
+    }
+
+    private func mergedEdits(of thread: AgentThread, subagents: [AgentThread]) -> AgentEdits {
+        var edits = thread.edits ?? AgentEdits()
+        for subagent in subagents {
+            if let theirs = subagent.edits { edits.merge(theirs) }
+        }
+        return edits
+    }
+
+    private func trackPullRequests(for thread: AgentThread, edits: AgentEdits, checkouts: TaskCheckouts) -> [PullRequest] {
+        pullRequests.pullRequests(
+            for: thread.id, opened: edits.pullRequests, checkouts: checkouts.changed,
+            firstChanges: checkouts.firstChanges, updatedAt: thread.updatedAt,
+            isActive: !integrations.settledThreadIDs.contains(thread.id) && thread.updatedAt > .now.addingTimeInterval(-3 * 86_400))
     }
 
     /// The provider's own defaults, with the permission mode Atrium starts new chats in.
@@ -182,6 +206,8 @@ final class TasksFeed: TopicFeed {
         return workspace
     }
 
+    private typealias TaskCheckouts = (current: TaskCheckout?, changed: [TaskCheckout], firstChanges: [URL: Date])
+
     /// The checkouts of its project a task changed files in, the most recently
     /// changed first and one for each repository, its subagents' edits
     /// included; and the one it works in now: the last it changed, or else the
@@ -189,8 +215,7 @@ final class TasksFeed: TopicFeed {
     /// first changed files in each repository, as far as its edits go back.
     /// Changes to other projects' repositories or to files outside any are
     /// left out.
-    private func checkouts(of thread: AgentThread, edits: AgentEdits, in project: Workspace?)
-        -> (current: TaskCheckout?, changed: [TaskCheckout], firstChanges: [URL: Date]) {
+    private func checkouts(of thread: AgentThread, edits: AgentEdits, in project: Workspace?) -> TaskCheckouts {
         let folder = project.map { URL(filePath: $0.directory, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath() }
         func inProject(_ checkout: TaskCheckout) -> Bool {
             folder.map { $0.contains(checkout.repository) || checkout.repository.contains($0) } ?? false

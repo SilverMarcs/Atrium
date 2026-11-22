@@ -25,7 +25,7 @@ struct TaskMoreMenu: View {
             }
             if !item.task.pullRequests.isEmpty {
                 Section("Pull Requests") {
-                    PullRequestButtons(pullRequests: item.task.pullRequests)
+                    PullRequestButtons(item: item)
                 }
             }
             if let workspaceID = item.task.workspaceID {
