@@ -21,11 +21,12 @@ struct ScratchpadSheet: View {
                             ScratchpadDraftRow(draft: draft, host: item.host)
                         }
                         .contextMenu {
-                            Button("Move to Composer", systemImage: "arrow.up.doc") {
-                                composer.restore(draft, from: item)
-                                dismiss()
-                            }
+                            Button("Move to Composer", systemImage: "arrow.up.doc") { moveToComposer(draft) }
                             Button("Delete", systemImage: "trash", role: .destructive) { delete(draft) }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button("Move to Composer", systemImage: "arrow.up.doc") { moveToComposer(draft) }
+                                .tint(.accentColor)
                         }
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) { delete(draft) }
@@ -58,6 +59,11 @@ struct ScratchpadSheet: View {
         #else
         "Select text in the composer and choose Add to Scratchpad."
         #endif
+    }
+
+    private func moveToComposer(_ draft: ScratchpadDraft) {
+        composer.restore(draft, from: item)
+        dismiss()
     }
 
     private func delete(_ draft: ScratchpadDraft) {
