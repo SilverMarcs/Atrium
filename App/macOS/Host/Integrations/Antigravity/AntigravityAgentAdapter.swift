@@ -55,6 +55,23 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         /// Prompts the server hasn't finished: a steer joins the turn in
         /// progress, which ends its earlier prompt.
         var prompts = 0
+        /// True while `session/load` is replaying saved history updates.
+        var isLoading = false
+        /// Non-daemon tool calls still in progress (including background commands
+        /// that outlive the initial `session/prompt` response).
+        var activeToolCalls: Set<String> = []
+        /// True after a post-`usage_update` settle check found disk hadn't flushed
+        /// the final `PLANNER_RESPONSE` yet, so `brainTranscriptChanged` can finish it.
+        var awaitingDiskSettle = false
+        /// Bumped on every live background update, prompt or reset so in-flight
+        /// async settle checks bail out if newer activity arrived.
+        var backgroundGeneration = 0
+        /// Debounced check that settles background work once Antigravity goes idle.
+        var settleTask: Task<Void, Never>?
+
+        var isWorking: Bool { prompts > 0 || status.isWorking }
+        var isWorkingInBackground: Bool { prompts == 0 && status.isWorking }
+
         init(id: String, directory: String) {
             self.directory = directory
             conversation = AntigravityConversation(sessionID: id)
@@ -214,6 +231,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             try await start()
             watchBrain()
             let session = Session(id: id, directory: thread.directory)
+            session.isLoading = true
             // The replay arrives before the reply, as updates for the session.
             sessions[id] = session
             do {
@@ -221,10 +239,12 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                     "sessionId": id, "cwd": thread.directory, "mcpServers": [],
                     "additionalDirectories": instructions.otherFolders(for: thread.directory),
                 ], timeout: .seconds(120))
+                session.isLoading = false
                 session.settings = AntigravitySettings(configOptions: reply["configOptions"] as? [[String: Any]] ?? [])
                 let thumbnails = await history.promptThumbnails(of: id)
                 session.conversation.restoreThumbnails(thumbnails)
             } catch {
+                session.isLoading = false
                 if sessions[id] === session { sessions[id] = nil }
                 throw error
             }
@@ -272,7 +292,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         stoppedAt[thread.sessionID] = .now
         withdrawDecisions(of: thread.sessionID)
         invalidateDescendants(of: thread.sessionID)
-        guard sessions.removeValue(forKey: thread.sessionID) != nil else { return }
+        guard let removed = sessions.removeValue(forKey: thread.sessionID) else { return }
+        removed.settleTask?.cancel()
         _ = try? await connection.request("session/close", ["sessionId": thread.sessionID], timeout: .seconds(10))
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .unknown)))
     }
@@ -372,11 +393,12 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     /// Rewinds the conversation only, keeping files as they are: the server
     /// lets the session go while its language server reverts it, then loads it again.
     func rewind(_ thread: AgentThread, before messageID: String) async throws -> [TranscriptMessage] {
-        guard (sessions[thread.sessionID]?.prompts ?? 0) == 0 else {
+        guard sessions[thread.sessionID]?.isWorking != true else {
             throw IntegrationError(message: "Wait for Antigravity to finish or stop it before editing a message.")
         }
         let last = try await steps(of: thread.sessionID).lastStep(beforePrompt: promptOrdinal(messageID))
-        if sessions.removeValue(forKey: thread.sessionID) != nil {
+        if let removed = sessions.removeValue(forKey: thread.sessionID) {
+            removed.settleTask?.cancel()
             withdrawDecisions(of: thread.sessionID)
             _ = try? await connection.request("session/close", ["sessionId": thread.sessionID], timeout: .seconds(10))
         }
@@ -444,9 +466,10 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         if unmarkedSideChats.remove(id) != nil {
             content.insert(["type": "resource", "resource": ["uri": "atrium://side-chat", "mimeType": "text/plain", "text": Self.sideChatBoundary]], at: 0)
         }
-        let isSteer = session.prompts > 0
+        let isSteer = session.isWorking
         if !session.conversation.hasPrompts, session.pendingTitle == nil { session.pendingTitle = Self.title(ofRelayed: text) }
         session.conversation.send(text, images: originals, thumbnails: thumbnails, isSteer: isSteer)
+        clearBackgroundWork(of: session, keepActiveTools: true)
         session.prompts += 1
         if !isSteer { update(session, id: id, status: .processing) }
         onEvent?(.transcriptChanged(sessionID: id))
@@ -467,8 +490,17 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             session.prompts -= 1
             if session.prompts == 0 {
                 if status == .stopped { self.stoppedAt[id] = .now }
-                self.update(session, id: id, status: status)
-                self.invalidateDescendants(of: id)
+                if status == .done, !session.activeToolCalls.isEmpty {
+                    // Antigravity returns `end_turn` while non-daemon background tools are still
+                    // running and will wake this session up later; stay `.processing` so intermediary
+                    // notes stay visible and Stop remains available.
+                    session.backgroundGeneration += 1
+                    self.invalidateDescendants(of: id)
+                } else {
+                    self.clearBackgroundWork(of: session)
+                    self.update(session, id: id, status: status)
+                    self.invalidateDescendants(of: id)
+                }
             }
         }
     }
@@ -497,8 +529,12 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         stoppedAt[targetID] = .now
         withdrawDecisions(of: targetID)
         invalidateDescendants(of: targetID)
-        guard sessions[targetID] != nil else { return }
+        guard let session = sessions[targetID] else { return }
         connection.notify("session/cancel", ["sessionId": targetID])
+        if session.isWorkingInBackground {
+            clearBackgroundWork(of: session)
+            update(session, id: targetID, status: .stopped)
+        }
     }
 
     /// Cancelling also stops the session's subagents and background tasks.
@@ -514,6 +550,9 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         onEvent?(.interactionResolved(id: interactionID))
         if let session = sessions[pending.sessionID], !decisions.values.contains(where: { $0.sessionID == pending.sessionID }) {
             update(session, id: pending.sessionID, status: .processing)
+            if session.isWorkingInBackground, session.activeToolCalls.isEmpty {
+                scheduleBackgroundSettle(session, id: pending.sessionID, delay: .seconds(30), forceOnTimeout: true)
+            }
         } else if subagentParents[pending.sessionID] != nil {
             onEvent?(.threadInvalidated(sessionID: pending.sessionID))
         }
@@ -640,6 +679,12 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                     self.subagentParents[spawn.sessionID] = id
                     self.onEvent?(.threadInvalidated(sessionID: spawn.sessionID))
                 }
+                if let session = self.sessions[id],
+                   session.isWorkingInBackground,
+                   session.awaitingDiskSettle,
+                   session.activeToolCalls.isEmpty {
+                    await self.settleBackgroundWorkIfIdle(session, id: id, snapshot: snap, forceOnTimeout: false)
+                }
                 self.onEvent?(.threadInvalidated(sessionID: id))
             }
             return
@@ -660,6 +705,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     /// Every open session and pending decision went with the server.
     private func closed() {
         let ids = Array(sessions.keys)
+        for session in sessions.values { session.settleTask?.cancel() }
         sessions.removeAll()
         stoppedAt.removeAll()
         for id in decisions.keys { onEvent?(.interactionResolved(id: id)) }
@@ -685,11 +731,19 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             return
         }
         guard let session = sessions[id] else { return }
-        switch update["sessionUpdate"] as? String {
+        let kind = update["sessionUpdate"] as? String
+        switch kind {
         case "usage_update":
             guard let used = update["used"] as? Int else { return }
             session.contextUsage = AgentContextUsage(tokens: used, window: update["size"] as? Int)
             onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(contextUsage: session.contextUsage)))
+            if !session.isLoading, session.isWorkingInBackground, stoppedAt[id] == nil {
+                session.backgroundGeneration += 1
+                session.awaitingDiskSettle = false
+                if session.activeToolCalls.isEmpty {
+                    scheduleBackgroundSettle(session, id: id, delay: .milliseconds(800), forceOnTimeout: false)
+                }
+            }
         case "session_info_update":
             guard let title = update["title"] as? String, !title.isEmpty else { return }
             if let pending = session.pendingTitle {
@@ -711,7 +765,140 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             onEvent?(.threadInvalidated(sessionID: id))
         default:
             if session.conversation.apply(update) { onEvent?(.transcriptChanged(sessionID: id)) }
+            if !session.isLoading {
+                trackLiveUpdate(kind, update: update, session: session, id: id)
+            }
         }
+    }
+
+    /// Tracks live tool lifecycles and reactive wakeups that run after
+    /// `session/prompt` returns (for example, while background commands finish
+    /// or subagents report back and wake Antigravity up).
+    private func trackLiveUpdate(_ kind: String?, update: [String: Any], session: Session, id: String) {
+        switch kind {
+        case "tool_call":
+            if let callID = update["toolCallId"] as? String {
+                if Self.isTerminalToolStatus(update["status"] as? String) || Self.isDaemonToolCall(update) {
+                    session.activeToolCalls.remove(callID)
+                } else {
+                    session.activeToolCalls.insert(callID)
+                }
+            }
+            if session.prompts == 0, stoppedAt[id] == nil {
+                beginBackgroundActivity(session, id: id, idleDeadline: session.activeToolCalls.isEmpty ? .seconds(30) : nil)
+            }
+        case "tool_call_update":
+            guard let callID = update["toolCallId"] as? String else { return }
+            if Self.isDaemonToolCall(update) {
+                session.activeToolCalls.remove(callID)
+                return
+            }
+            guard Self.isTerminalToolStatus(update["status"] as? String) else { return }
+            let wasActive = session.activeToolCalls.remove(callID) != nil
+            if session.prompts == 0, stoppedAt[id] == nil, wasActive || session.isWorkingInBackground {
+                // Wait briefly for a reactive wakeup before settling, in case the completed
+                // background tool triggers no follow-up turn.
+                beginBackgroundActivity(session, id: id, idleDeadline: session.activeToolCalls.isEmpty ? .seconds(8) : nil)
+            }
+        case "agent_thought_chunk", "agent_message_chunk":
+            if session.prompts == 0, stoppedAt[id] == nil {
+                beginBackgroundActivity(session, id: id, idleDeadline: session.activeToolCalls.isEmpty ? .seconds(30) : nil)
+            }
+        default:
+            break
+        }
+    }
+
+    private func beginBackgroundActivity(_ session: Session, id: String, idleDeadline: Duration?) {
+        session.settleTask?.cancel()
+        session.settleTask = nil
+        session.awaitingDiskSettle = false
+        session.backgroundGeneration += 1
+        if session.status != .waiting {
+            update(session, id: id, status: .processing)
+        }
+        if let idleDeadline {
+            scheduleBackgroundSettle(session, id: id, delay: idleDeadline, forceOnTimeout: true)
+        }
+    }
+
+    private func clearBackgroundWork(of session: Session, keepActiveTools: Bool = false) {
+        session.settleTask?.cancel()
+        session.settleTask = nil
+        session.awaitingDiskSettle = false
+        session.backgroundGeneration += 1
+        if !keepActiveTools { session.activeToolCalls.removeAll() }
+    }
+
+    private func scheduleBackgroundSettle(_ session: Session, id: String, delay: Duration, forceOnTimeout: Bool) {
+        session.settleTask?.cancel()
+        session.settleTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, self.sessions[id] === session else { return }
+            session.settleTask = nil
+            await self.settleBackgroundWorkIfIdle(session, id: id, forceOnTimeout: forceOnTimeout)
+        }
+    }
+
+    private func settleBackgroundWorkIfIdle(
+        _ session: Session,
+        id: String,
+        snapshot: AntigravityHistory.Snapshot? = nil,
+        forceOnTimeout: Bool
+    ) async {
+        guard session.isWorkingInBackground,
+              session.activeToolCalls.isEmpty,
+              !decisions.values.contains(where: { $0.sessionID == id }) else { return }
+        let generation = session.backgroundGeneration
+        let snap: AntigravityHistory.Snapshot
+        if let snapshot {
+            snap = snapshot
+        } else {
+            snap = await history.snapshot(of: id, directory: session.directory)
+        }
+        guard sessions[id] === session,
+              session.backgroundGeneration == generation,
+              session.isWorkingInBackground,
+              session.activeToolCalls.isEmpty,
+              !decisions.values.contains(where: { $0.sessionID == id }) else { return }
+
+        if let last = snap.work.lastStep {
+            if let terminal = last.terminalStatus {
+                clearBackgroundWork(of: session)
+                update(session, id: id, status: terminal)
+                invalidateDescendants(of: id)
+                return
+            }
+            if !forceOnTimeout {
+                // Disk hasn't flushed the final PLANNER_RESPONSE yet; let `brainTranscriptChanged`
+                // settle as soon as it lands, with a fallback timer if the watcher isn't running.
+                session.awaitingDiskSettle = true
+                scheduleBackgroundSettle(session, id: id, delay: .seconds(10), forceOnTimeout: true)
+                return
+            }
+            if last.status == "RUNNING" || last.type == "SYSTEM_MESSAGE",
+               let activity = snap.modified ?? last.timestamp,
+               Date.now.timeIntervalSince(activity) < 30 {
+                // Antigravity recently recorded a background/wakeup step; wait once more before forcing idle.
+                scheduleBackgroundSettle(session, id: id, delay: .seconds(30), forceOnTimeout: true)
+                return
+            }
+        }
+        clearBackgroundWork(of: session)
+        update(session, id: id, status: .done)
+        invalidateDescendants(of: id)
+    }
+
+    private static func isTerminalToolStatus(_ status: String?) -> Bool {
+        switch status {
+        case "completed", "failed", "cancelled": true
+        default: false
+        }
+    }
+
+    private static func isDaemonToolCall(_ update: [String: Any]) -> Bool {
+        let args = (update["args"] as? [String: Any]) ?? (update["rawInput"] as? [String: Any])
+        return args?["IsDaemon"] as? Bool == true
     }
 
     private func receive(_ request: AntigravityRequest) {

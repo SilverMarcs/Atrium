@@ -107,12 +107,18 @@ nonisolated struct AntigravityConversation {
             return true
         case "agent_message_chunk":
             guard let text = Self.text(in: update), !text.isEmpty else { return false }
-            appendToReply { parts in
-                if case .text(let previous)? = parts.last {
+            if case .reply(let parts)? = entries.last, case .text(let previous)? = parts.last {
+                appendToReply { parts in
                     parts[parts.count - 1] = .text(previous + text)
-                } else {
-                    parts.append(.text(text))
                 }
+                return true
+            }
+            // Antigravity prefixes later planner responses with blank lines for plain-text streams;
+            // strip them when starting a new block after tool calls so Steps rows don't show leading blanks.
+            let trimmed = String(text.drop(while: \.isNewline))
+            guard !trimmed.isEmpty else { return false }
+            appendToReply { parts in
+                parts.append(.text(trimmed))
             }
             return true
         case "tool_call":
