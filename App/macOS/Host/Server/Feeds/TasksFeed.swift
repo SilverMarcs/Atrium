@@ -19,6 +19,8 @@ final class TasksFeed: TopicFeed {
     /// Resolving a task's project and checkouts reads Git metadata from disk,
     /// so results are cached until the set of projects changes.
     private var projects: [String: Workspace?] = [:]
+    /// Agent background session ID → its project, cached the same way.
+    private var backgroundProjects: [String: Workspace?] = [:]
     /// Folder path → the checkout it's in, if any.
     private var checkouts: [String: TaskCheckout?] = [:]
     /// The repositories of the checkouts found, whose worktrees are watched:
@@ -90,11 +92,12 @@ final class TasksFeed: TopicFeed {
         let withWorkingDescendants = orchestrator.sessionsWithWorkingDescendants()
         let threads = integrations.visibleThreads(matching: "")
         let subagents = Dictionary(grouping: threads.filter { $0.parentID != nil }) { $0.parentID ?? "" }
+        let backgroundSessions = backgroundSessionsByProject()
         return WireTasksSnapshot(
             tasks: threads.map {
                 wireTask($0, subagents: descendants(of: $0.id, in: subagents), hasWorkingDescendants: withWorkingDescendants.contains($0.id))
             },
-            workspaces: workspaces.workspaces.map(wireWorkspace),
+            workspaces: workspaces.workspaces.map { wireWorkspace($0, backgroundSessions: backgroundSessions[$0.id] ?? []) },
             providers: integrations.providers.map { provider in
                 WireProvider(
                     provider: provider,
@@ -187,7 +190,7 @@ final class TasksFeed: TopicFeed {
         return settings
     }
 
-    private func wireWorkspace(_ workspace: Workspace) -> WireWorkspace {
+    private func wireWorkspace(_ workspace: Workspace, backgroundSessions: [WireBackgroundSession]) -> WireWorkspace {
         WireWorkspace(
             id: workspace.id,
             name: workspace.name,
@@ -197,8 +200,38 @@ final class TasksFeed: TopicFeed {
             projectIcon: workspace.projectType.iconName.isEmpty ? nil : workspace.projectType.iconName,
             customIconKey: workspace.customIconFilename,
             scratchpad: workspace.scratchpadDrafts,
-            hasRunningCommand: workspace.commands.contains { $0.isRunning }
+            runningCommandCount: workspace.commands.count(where: \.isRunning),
+            backgroundSessions: backgroundSessions
         )
+    }
+
+    /// Agents' running background sessions, by the project each belongs to.
+    private func backgroundSessionsByProject() -> [UUID: [WireBackgroundSession]] {
+        let active = integrations.backgroundSessions
+        guard !active.isEmpty else { return [:] }
+        let threads = integrations.threads
+        let titles = Dictionary(threads.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        var byProject: [UUID: [WireBackgroundSession]] = [:]
+        for session in active {
+            let project = backgroundProjects[session.id] ?? {
+                let project = workspaces.workspace(forBackgroundSession: session, threads: threads)
+                backgroundProjects[session.id] = .some(project)
+                return project
+            }()
+            guard let project else { continue }
+            byProject[project.id, default: []].append(WireBackgroundSession(
+                id: session.id,
+                provider: session.provider,
+                taskID: session.taskID,
+                taskTitle: titles[session.taskID] ?? "",
+                title: session.title,
+                command: session.command,
+                directory: session.directory,
+                startedAt: session.startedAt,
+                hasOutput: session.hasOutput
+            ))
+        }
+        return byProject
     }
 
     private func project(for thread: AgentThread) -> Workspace? {
@@ -265,6 +298,7 @@ final class TasksFeed: TopicFeed {
 
     private func worktreesChanged() {
         projects.removeAll()
+        backgroundProjects.removeAll()
         checkouts.removeAll()
         repositories.removeAll()
         worktreeChanges.count += 1
@@ -294,6 +328,7 @@ final class TasksFeed: TopicFeed {
         guard signature != projectsSignature else { return }
         projectsSignature = signature
         projects.removeAll()
+        backgroundProjects.removeAll()
         checkouts.removeAll()
         repositories.removeAll()
     }

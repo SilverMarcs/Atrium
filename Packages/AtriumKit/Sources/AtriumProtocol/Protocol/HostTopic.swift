@@ -10,6 +10,8 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
     case commands(workspaceID: UUID)
     /// What one of a project's saved commands printed.
     case commandOutput(workspaceID: UUID, commandID: UUID)
+    /// What one of a project's agent background sessions printed.
+    case backgroundSessionOutput(workspaceID: UUID, sessionID: String)
     /// One folder's entries, watched on the host.
     case directory(workspaceID: UUID, path: String)
     /// Changes to one file, watched on the host.
@@ -20,11 +22,11 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
     case unknown
 
     private enum CodingKeys: String, CodingKey {
-        case kind, taskID, scope, workspaceID, commandID, path
+        case kind, taskID, scope, workspaceID, commandID, sessionID, path
     }
 
     private enum Kind: String, Codable {
-        case tasks, transcript, git, commands, commandOutput, directory, file, remoteAccess
+        case tasks, transcript, git, commands, commandOutput, backgroundSessionOutput, directory, file, remoteAccess
     }
 
     public init(from decoder: any Decoder) throws {
@@ -42,6 +44,9 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
         case .commandOutput:
             self = .commandOutput(workspaceID: try container.decode(UUID.self, forKey: .workspaceID),
                                   commandID: try container.decode(UUID.self, forKey: .commandID))
+        case .backgroundSessionOutput:
+            self = .backgroundSessionOutput(workspaceID: try container.decode(UUID.self, forKey: .workspaceID),
+                                            sessionID: try container.decode(String.self, forKey: .sessionID))
         case .directory, .file:
             let workspaceID = try container.decode(UUID.self, forKey: .workspaceID)
             let path = try container.decode(String.self, forKey: .path)
@@ -69,6 +74,10 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
             try container.encode(Kind.commandOutput, forKey: .kind)
             try container.encode(workspaceID, forKey: .workspaceID)
             try container.encode(commandID, forKey: .commandID)
+        case .backgroundSessionOutput(let workspaceID, let sessionID):
+            try container.encode(Kind.backgroundSessionOutput, forKey: .kind)
+            try container.encode(workspaceID, forKey: .workspaceID)
+            try container.encode(sessionID, forKey: .sessionID)
         case .directory(let workspaceID, let path), .file(let workspaceID, let path):
             try container.encode(self.isFile ? Kind.file : Kind.directory, forKey: .kind)
             try container.encode(workspaceID, forKey: .workspaceID)

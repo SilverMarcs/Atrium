@@ -9,19 +9,32 @@ struct CommandsScreen: View {
     let workspaceID: UUID
 
     private var commands: [WireCommand]? { host.commands[workspaceID] }
+    private var backgroundSessions: [WireBackgroundSession] { host.workspace(workspaceID)?.backgroundSessions ?? [] }
+    private var workspaceRef: WorkspaceRef { WorkspaceRef(hostID: host.id, workspaceID: workspaceID) }
 
     var body: some View {
-        List(commands ?? []) { command in
-            NavigationLink(value: Route.command(WorkspaceRef(hostID: host.id, workspaceID: workspaceID), commandID: command.id)) {
-                CommandRow(command: command) { host.toggle(command, in: workspaceID) }
+        List {
+            ForEach(commands ?? []) { command in
+                NavigationLink(value: Route.command(workspaceRef, commandID: command.id)) {
+                    CommandRow(command: command) { host.toggle(command, in: workspaceID) }
+                }
+            }
+            if !backgroundSessions.isEmpty {
+                Section("Background") {
+                    ForEach(backgroundSessions) { session in
+                        NavigationLink(value: Route.backgroundSession(workspaceRef, sessionID: session.id)) {
+                            BackgroundSessionRowiOS(session: session)
+                        }
+                    }
+                }
             }
         }
         .contentMargins(.top, 10)
         .overlay {
-            if commands == nil {
+            if commands == nil && backgroundSessions.isEmpty {
                 ProgressView()
                     .controlSize(.large)
-            } else if commands?.isEmpty == true {
+            } else if commands?.isEmpty == true && backgroundSessions.isEmpty {
                 ContentUnavailableView(
                     "No Commands",
                     systemImage: "terminal",
@@ -33,5 +46,34 @@ struct CommandsScreen: View {
         .task(id: workspaceID) {
             await host.follow(.commands(workspaceID: workspaceID))
         }
+    }
+}
+
+private struct BackgroundSessionRowiOS: View {
+    let session: WireBackgroundSession
+
+    var body: some View {
+        LabeledContent {
+            ProgressView()
+        } label: {
+            Label {
+                Text(session.title)
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .lineLimit(1)
+                }
+            } icon: {
+                ProviderIcon(provider: session.provider)
+            }
+        }
+    }
+
+    private var subtitle: String? {
+        let trimmed = session.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, trimmed != session.title {
+            return trimmed
+        }
+        return session.taskTitle.isEmpty ? session.provider.name : "\(session.provider.name) · \(session.taskTitle)"
     }
 }

@@ -14,6 +14,8 @@ public nonisolated enum HostEvent: Codable, Sendable {
     case commands(workspaceID: UUID, commands: [WireCommand])
     /// A followed command's output: complete when a client subscribes, then what changed.
     case commandOutput(workspaceID: UUID, commandID: UUID, output: WireCommandOutput)
+    /// A followed agent background session's output: complete when a client subscribes, then what changed.
+    case backgroundSessionOutput(workspaceID: UUID, sessionID: String, output: WireCommandOutput)
     /// The entries of a followed folder, whenever they change.
     case directory(workspaceID: UUID, path: String, entries: [FileEntry])
     /// A followed file changed on the host.

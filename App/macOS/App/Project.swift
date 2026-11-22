@@ -9,10 +9,15 @@ import Observation
 @MainActor
 @Observable
 final class Project: Identifiable {
+    enum CommandSelection: Hashable {
+        case background(String)
+        case command(UUID)
+    }
+
     let host: HostClient
     let workspaceID: UUID
     var selectedTab: InspectorTab = .files
-    var selectedCommandID: UUID?
+    var selectedCommand: CommandSelection?
     let editor = EditorPanel()
     @ObservationIgnored private(set) lazy var fileTree = FileTreeModel(project: self)
     @ObservationIgnored private(set) lazy var search = SearchInspectorModel(project: self)
@@ -36,6 +41,9 @@ final class Project: Identifiable {
     /// The project's repositories, once its host has sent their status.
     var repositories: [GitRepositoryStatus]? { scope.repositories }
     var commands: [WireCommand] { host.commands[workspaceID] ?? [] }
+    var backgroundSessions: [WireBackgroundSession] { workspace?.backgroundSessions ?? [] }
+    /// Saved commands and agent background sessions running, for the Commands tab's badge.
+    var runningCount: Int { workspace?.runningCount ?? 0 }
     var defaultCommand: WireCommand? { commands.first(where: \.isDefault) }
     /// Only a project on this Mac's own host can be edited.
     var isLocal: Bool { host.isLocal }

@@ -17,7 +17,7 @@ final class ServerConnection {
     var reportsActivity: Bool { activity != nil }
     private var sentTasks: WireTasksSnapshot?
     private var sentTranscripts: [String: [TranscriptMessage]] = [:]
-    private var sentOutputs: [UUID: WireCommandOutput] = [:]
+    private var sentOutputs: [HostTopic: WireCommandOutput] = [:]
     private let send: (HostEvent) -> Void
     private let closeChannel: () -> Void
 
@@ -50,7 +50,7 @@ final class ServerConnection {
         switch topic {
         case .tasks: sentTasks = nil
         case .transcript(let taskID): sentTranscripts[taskID] = nil
-        case .commandOutput(_, let commandID): sentOutputs[commandID] = nil
+        case .commandOutput, .backgroundSessionOutput: sentOutputs[topic] = nil
         default: break
         }
     }
@@ -58,7 +58,8 @@ final class ServerConnection {
     func unsubscribe(_ topic: HostTopic) {
         topics.remove(topic)
         if case .transcript(let taskID) = topic { sentTranscripts[taskID] = nil }
-        if case .commandOutput(_, let commandID) = topic { sentOutputs[commandID] = nil }
+        if case .commandOutput = topic { sentOutputs[topic] = nil }
+        if case .backgroundSessionOutput = topic { sentOutputs[topic] = nil }
     }
 
     func sendHello(_ hello: HostHello) {
@@ -74,24 +75,28 @@ final class ServerConnection {
         case .transcript(let taskID, let messages):
             push(transcript: messages, of: taskID)
         case .commandOutput(let workspaceID, let commandID, let output):
-            push(output: output, of: commandID, in: workspaceID)
+            if let change = nextOutput(output, for: topic) {
+                send(.commandOutput(workspaceID: workspaceID, commandID: commandID, output: change))
+            }
+        case .backgroundSessionOutput(let workspaceID, let sessionID, let output):
+            if let change = nextOutput(output, for: topic) {
+                send(.backgroundSessionOutput(workspaceID: workspaceID, sessionID: sessionID, output: change))
+            }
         default:
             send(event)
         }
     }
 
-    /// Sends a command's output in full first, then from the last line sent,
-    /// which may have been unfinished.
-    private func push(output: WireCommandOutput, of commandID: UUID, in workspaceID: UUID) {
-        let sent = sentOutputs[commandID]
-        guard sent != output else { return }
-        sentOutputs[commandID] = output
-        let change = if let sent, sent.id == output.id, sent.end > output.firstLine {
-            output.changes(from: sent.end - 1)
-        } else {
-            output
+    /// Returns output in full first, then from the last line sent (which may have been unfinished),
+    /// or nil when nothing changed.
+    private func nextOutput(_ output: WireCommandOutput, for topic: HostTopic) -> WireCommandOutput? {
+        let sent = sentOutputs[topic]
+        guard sent != output else { return nil }
+        sentOutputs[topic] = output
+        if let sent, sent.id == output.id, sent.end > output.firstLine {
+            return output.changes(from: sent.end - 1)
         }
-        send(.commandOutput(workspaceID: workspaceID, commandID: commandID, output: change))
+        return output
     }
 
     /// Sends the first snapshot in full and only what changed after that.

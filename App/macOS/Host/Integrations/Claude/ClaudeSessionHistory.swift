@@ -24,6 +24,7 @@ actor ClaudeSessionHistory {
     }
 
     private static let windowSize = 64 * 1024
+    private let configDirectory: URL
     private let projects: URL
     private var cache: [URL: Cached] = [:]
     private var locations: [String: URL] = [:]
@@ -31,6 +32,8 @@ actor ClaudeSessionHistory {
     private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
     /// The edits and newest reply found in each subagent's transcript.
     private var subagentScans: [URL: JSONLines.Scan<SubagentScan>] = [:]
+    /// Background Bash/Monitor tasks found in live sessions' transcripts (scanned on demand only).
+    private var backgroundScans: [URL: JSONLines.Scan<BackgroundTaskScan>] = [:]
     /// Transcripts' conversations up to a prompt some turns back, so a reload
     /// reads only the turns after it. Claude only appends records, so the chain
     /// behind a record never changes: one holds for as long as its prompt stays
@@ -38,6 +41,7 @@ actor ClaudeSessionHistory {
     private var settled: [(url: URL, history: SettledHistory)] = []
 
     init(configDirectory: URL) {
+        self.configDirectory = configDirectory
         projects = configDirectory.appending(path: "projects", directoryHint: .isDirectory)
     }
 
@@ -69,6 +73,7 @@ actor ClaudeSessionHistory {
         let existing = Set(files.map(\.url))
         cache = cache.filter { existing.contains($0.key) }
         recordScans = recordScans.filter { existing.contains($0.key) }
+        backgroundScans = backgroundScans.filter { existing.contains($0.key) }
         // A subagent's files sit in a folder named after its session's transcript.
         let transcripts = Set(files.map(\.url.path))
         subagentScans = subagentScans.filter { url, _ in
@@ -82,6 +87,37 @@ actor ClaudeSessionHistory {
         guard let file = locate(id), let metadata = try metadata(for: file) else { return nil }
         locations[id] = file.url
         return thread(file, metadata: metadata)
+    }
+
+    /// Active background Bash/Monitor tasks recorded in a live session's transcript, scanned incrementally on demand.
+    func backgroundTasks(of id: String) -> [ClaudeBackgroundTaskRecord] {
+        guard let file = locate(id) else { return [] }
+        locations[id] = file.url
+        var scan = backgroundScans[file.url] ?? JSONLines.Scan(BackgroundTaskScan())
+        try? scan.read(file.url, size: file.stamp.size) { data, range, state in
+            Self.recordBackgroundTasks(in: data, range, into: &state)
+        }
+        backgroundScans[file.url] = scan
+        return scan.state.active.values.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Running Claude CLI sessions registered in `~/.claude/sessions/*.json` whose PID is still alive.
+    func liveSessions() -> [String: (startedAt: Date, cwd: String)] {
+        let dir = configDirectory.appending(path: "sessions", directoryHint: .isDirectory)
+        let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        var result: [String: (startedAt: Date, cwd: String)] = [:]
+        for url in urls where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let pid = (obj["pid"] as? NSNumber)?.int32Value, pid > 0, kill(pid, 0) == 0,
+                  let sessionID = obj["sessionId"] as? String, UUID(uuidString: sessionID) != nil,
+                  let startedMs = (obj["startedAt"] as? NSNumber)?.doubleValue else { continue }
+            let startedAt = Date(timeIntervalSince1970: startedMs / 1000)
+            let cwd = obj["cwd"] as? String ?? ""
+            if let existing = result[sessionID], existing.startedAt >= startedAt { continue }
+            result[sessionID] = (startedAt, cwd)
+        }
+        return result
     }
 
     func renameThread(_ id: String, to proposedTitle: String, directory: String) throws {
@@ -118,6 +154,7 @@ actor ClaudeSessionHistory {
         if FileManager.default.fileExists(atPath: related.path) { try FileManager.default.removeItem(at: related) }
         cache[file.url] = nil
         recordScans[file.url] = nil
+        backgroundScans[file.url] = nil
         settled.removeAll { $0.url == file.url }
         locations[id] = nil
     }
@@ -528,6 +565,166 @@ actor ClaudeSessionHistory {
             scan.commands[id] = nil
             return !scan.commands.isEmpty
         }
+    }
+
+    // MARK: - Background tasks
+
+    private static let bashToolMarker = #""name":"Bash""#
+    private static let monitorToolMarker = #""name":"Monitor""#
+    private static let backgroundTaskIDMarker = #""backgroundTaskId""#
+    private static let monitorStartedMarker = "Monitor started (task "
+    private static let taskNotificationMarker = "<task-notification>"
+    private static let stoppedTaskMarker = "Successfully stopped task:"
+
+    /// Incrementally tracks background `Bash` and `Monitor` tasks in `range`:
+    /// started when a `tool_result` carries `backgroundTaskId` (or Monitor's `taskId`),
+    /// ended when a `<task-notification>` reports status/expiry or `TaskStop` stops it.
+    private static func recordBackgroundTasks(in data: Data, _ range: Range<Int>, into scan: inout BackgroundTaskScan) {
+        // 1. Capture Bash and Monitor tool_use inputs so we have their command, description and cwd.
+        for marker in [bashToolMarker, monitorToolMarker] {
+            JSONLines.forEachLine(containing: marker, in: data, range, newestFirst: false) { line in
+                guard JSONLines.position(of: timestampMarker, in: data, line) != nil,
+                      let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                      record["type"] as? String == "assistant",
+                      let content = (record["message"] as? [String: Any])?["content"] as? [[String: Any]] else { return true }
+                let cwd = record["cwd"] as? String
+                for block in content where block["type"] as? String == "tool_use" {
+                    guard let name = block["name"] as? String, name == "Bash" || name == "Monitor",
+                          let id = block["id"] as? String,
+                          let input = block["input"] as? [String: Any],
+                          let command = input["command"] as? String else { continue }
+                    let description = (input["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    scan.recordPending(id, call: BackgroundTaskScan.PendingCall(
+                        command: command,
+                        description: description?.isEmpty == false ? description : nil,
+                        directory: cwd,
+                        isMonitor: name == "Monitor"
+                    ))
+                }
+                return true
+            }
+        }
+
+        // 2. Match tool_result records that started a background Bash or Monitor task.
+        for marker in [backgroundTaskIDMarker, monitorStartedMarker] {
+            JSONLines.forEachLine(containing: marker, in: data, range, newestFirst: false) { line in
+                guard JSONLines.position(of: timestampMarker, in: data, line) != nil,
+                      let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                      record["type"] as? String == "user",
+                      let result = record["toolUseResult"] as? [String: Any] else { return true }
+                let contentBlocks = (record["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+                let bgID = result["backgroundTaskId"] as? String
+                let monID = result["taskId"] as? String
+                let matchedID = (bgID?.isEmpty == false ? bgID : nil) ?? (monID?.isEmpty == false ? monID : nil)
+                let toolResultBlocks = contentBlocks.filter { $0["type"] as? String == "tool_result" }
+                let toolResultBlock = toolResultBlocks.first { block in
+                    if let matchedID, Self.toolResultText(in: block).contains(matchedID) { return true }
+                    if let id = block["tool_use_id"] as? String, scan.pendingCalls[id] != nil { return true }
+                    return false
+                } ?? toolResultBlocks.first
+                let toolUseID = toolResultBlock?["tool_use_id"] as? String
+                let resultText = toolResultBlock.map(Self.toolResultText) ?? ""
+
+                let taskID: String?
+                let isMonitor: Bool
+                if let bgID, !bgID.isEmpty {
+                    taskID = bgID
+                    isMonitor = false
+                } else if let monID, !monID.isEmpty,
+                          (toolUseID.flatMap { scan.pendingCalls[$0]?.isMonitor } == true) || resultText.contains(monitorStartedMarker) {
+                    taskID = monID
+                    isMonitor = true
+                } else {
+                    return true
+                }
+                guard let taskID, scan.active[taskID] == nil else { return true }
+                let pending = toolUseID.flatMap { scan.takePending($0) }
+
+                let command = pending?.command ?? ""
+                let title = pending?.description ?? AgentBackgroundSession.fallbackTitle(forCommand: command)
+                let directory = pending?.directory ?? record["cwd"] as? String ?? ""
+                let timestamp = (record["timestamp"] as? String)
+                    .flatMap { try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) } ?? .now
+                let outputFilePath = Self.extractOutputPath(from: resultText)
+                scan.active[taskID] = ClaudeBackgroundTaskRecord(
+                    taskID: taskID,
+                    title: title,
+                    command: command,
+                    directory: directory,
+                    startedAt: timestamp,
+                    outputFilePath: outputFilePath,
+                    isMonitor: isMonitor
+                )
+                return true
+            }
+        }
+        scan.trimPending()
+
+        // 3. Remove tasks that finished, expired, or were stopped.
+        guard !scan.active.isEmpty else { return }
+        JSONLines.forEachLine(containing: taskNotificationMarker, in: data, range, newestFirst: false) { line in
+            guard let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                  let type = record["type"] as? String,
+                  ["queue-operation", "attachment", "user"].contains(type) else { return true }
+            let text: String?
+            switch type {
+            case "queue-operation":
+                text = record["content"] as? String
+            case "attachment":
+                text = (record["attachment"] as? [String: Any])?["prompt"] as? String
+            case "user":
+                let content = (record["message"] as? [String: Any])?["content"]
+                text = content as? String
+                    ?? (content as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
+            default:
+                text = nil
+            }
+            guard let text, text.contains(taskNotificationMarker) else { return true }
+            for chunk in text.split(separator: "</task-notification>") {
+                guard let id = Self.xmlValue("task-id", in: chunk), let active = scan.active[id] else { continue }
+                let hasStatus = Self.xmlValue("status", in: chunk) != nil
+                let monitorExpired = active.isMonitor && chunk.contains("[Monitor expired")
+                if hasStatus || monitorExpired {
+                    scan.active[id] = nil
+                }
+            }
+            return !scan.active.isEmpty
+        }
+
+        guard !scan.active.isEmpty else { return }
+        JSONLines.forEachLine(containing: stoppedTaskMarker, in: data, range, newestFirst: false) { line in
+            guard let record = (try? JSONSerialization.jsonObject(with: data[line])) as? [String: Any],
+                  record["type"] as? String == "user",
+                  let result = record["toolUseResult"] as? [String: Any],
+                  let id = result["task_id"] as? String else { return true }
+            scan.active[id] = nil
+            return !scan.active.isEmpty
+        }
+    }
+
+    private static func toolResultText(in block: [String: Any]) -> String {
+        if let string = block["content"] as? String { return string }
+        if let parts = block["content"] as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        }
+        return ""
+    }
+
+    private static func extractOutputPath(from text: String) -> String? {
+        let marker = "Output is being written to: "
+        guard let start = text.range(of: marker)?.upperBound else { return nil }
+        let rest = text[start...]
+        let end = rest.firstIndex { $0 == "\n" || $0 == "\r" || $0 == " " } ?? rest.endIndex
+        var path = String(rest[..<end])
+        while path.hasSuffix(".") || path.hasSuffix(",") { path.removeLast() }
+        return path.isEmpty ? nil : path
+    }
+
+    private static func xmlValue(_ tag: String, in text: Substring) -> String? {
+        guard let start = text.range(of: "<\(tag)>"),
+              let end = text.range(of: "</\(tag)>", range: start.upperBound..<text.endIndex) else { return nil }
+        let value = text[start.upperBound..<end.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     /// The lines in `range`, newest first, read lazily so a search can stop early. `range` starts a line.

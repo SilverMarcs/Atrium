@@ -11,6 +11,10 @@ final class AgentIntegrationStore {
     let providers: [AgentProvider]
     private(set) var threads: [AgentThread] = []
     private(set) var interactions: [AgentInteraction] = []
+    /// Background shell sessions currently running across all enabled providers.
+    private(set) var backgroundSessions: [AgentBackgroundSession] = []
+    /// Bumped whenever a provider-buffered background session produces new output.
+    private(set) var backgroundOutputRevisions: [String: Int] = [:]
     private(set) var errors: [AgentProvider: String] = [:]
     private(set) var isRefreshing = false
     private(set) var deletingThreadIDs: Set<String> = []
@@ -157,6 +161,9 @@ final class AgentIntegrationStore {
         adapters[provider]?.setEnabled(isAvailable)
         if !isAvailable {
             removeInteractions { $0.taskID.hasPrefix(provider.rawValue + ":") }
+            backgroundSessions.removeAll { $0.provider == provider }
+            let prefix = provider.rawValue + ":"
+            backgroundOutputRevisions = backgroundOutputRevisions.filter { !$0.key.hasPrefix(prefix) }
             for index in threads.indices where threads[index].provider == provider {
                 threads[index].status = .unknown
             }
@@ -251,6 +258,7 @@ final class AgentIntegrationStore {
         media.forget(id)
         inherited[id] = nil
         threads.removeAll { $0.id == id }
+        backgroundSessions.removeAll { $0.taskID == id }
         drafts[id] = nil
         activity[id] = nil
         metadataRequests.remove(id)
@@ -273,6 +281,12 @@ final class AgentIntegrationStore {
             interactions.append(request)
         case .interactionResolved(let id):
             interactions.removeAll { $0.id == id }
+        case .backgroundSessionsChanged(let sessions):
+            guard available.contains(provider) else { return }
+            replaceBackgroundSessions(sessions, for: provider)
+        case .backgroundSessionOutputChanged(let id):
+            guard available.contains(provider) else { return }
+            backgroundOutputRevisions[id, default: 0] += 1
         case .threadUpdated(let sessionID, let update):
             guard available.contains(provider) else { return }
             guard let index = threads.firstIndex(where: { $0.provider == provider && $0.sessionID == sessionID }) else { return }
@@ -1114,6 +1128,23 @@ final class AgentIntegrationStore {
             throw IntegrationError(message: "\(provider.name) isn’t installed on this Mac.")
         }
         return adapter
+    }
+
+    func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput? {
+        guard available.contains(session.provider), let adapter = adapters[session.provider] else { return nil }
+        return await adapter.backgroundSessionOutput(for: session)
+    }
+
+    private func replaceBackgroundSessions(_ sessions: [AgentBackgroundSession], for provider: AgentProvider) {
+        let filtered = sessions.filter { !deletedThreadIDs.contains($0.taskID) }
+        let updated = (backgroundSessions.filter { $0.provider != provider } + filtered)
+            .sorted(by: AgentBackgroundSession.newestFirst)
+        let activeIDs = Set(updated.map(\.id))
+        if backgroundOutputRevisions.keys.contains(where: { !activeIDs.contains($0) }) {
+            backgroundOutputRevisions = backgroundOutputRevisions.filter { activeIDs.contains($0.key) }
+        }
+        guard updated != backgroundSessions else { return }
+        backgroundSessions = updated
     }
 
     private func isCurrent(_ provider: AgentProvider, generation: Int) -> Bool {

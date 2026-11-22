@@ -227,3 +227,48 @@ nonisolated struct EditScan: Equatable, Sendable {
     var edits = AgentEdits()
     var commands: [String: AgentShellCommand] = [:]
 }
+
+/// A background Bash or Monitor task recorded in a Claude transcript.
+nonisolated struct ClaudeBackgroundTaskRecord: Equatable, Sendable {
+    let taskID: String
+    var title: String
+    var command: String
+    var directory: String
+    var startedAt: Date
+    var outputFilePath: String?
+    var isMonitor: Bool
+}
+
+/// Incremental scan state for background shell commands and monitors in a Claude transcript.
+nonisolated struct BackgroundTaskScan: Equatable, Sendable {
+    struct PendingCall: Equatable, Sendable {
+        let command: String
+        let description: String?
+        let directory: String?
+        let isMonitor: Bool
+    }
+
+    var pendingCalls: [String: PendingCall] = [:]
+    var pendingOrder: [String] = []
+    var active: [String: ClaudeBackgroundTaskRecord] = [:]
+
+    mutating func recordPending(_ id: String, call: PendingCall) {
+        if pendingCalls[id] == nil { pendingOrder.append(id) }
+        pendingCalls[id] = call
+    }
+
+    mutating func takePending(_ id: String) -> PendingCall? {
+        pendingCalls.removeValue(forKey: id)
+    }
+
+    /// Evicts oldest unmatched calls after matching `tool_result`s in the current scan chunk.
+    mutating func trimPending(limit: Int = 256) {
+        guard pendingCalls.count > limit else { return }
+        pendingOrder.removeAll { pendingCalls[$0] == nil }
+        let excess = pendingOrder.count - limit
+        if excess > 0 {
+            for id in pendingOrder.prefix(excess) { pendingCalls[id] = nil }
+            pendingOrder.removeFirst(excess)
+        }
+    }
+}

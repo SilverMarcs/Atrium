@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                       let commandID = (userInfo["commandID"] as? String).flatMap(UUID.init(uuidString:)),
                       let project = app.project(WorkspaceRef(hostID: localHost.id, workspaceID: workspaceID)) {
                 app.showInspector(.commands, in: project)
-                project.selectedCommandID = commandID
+                project.selectedCommand = .command(commandID)
             }
         }
         AppDelegate.clearBadge()

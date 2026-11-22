@@ -38,6 +38,9 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     /// The commands and skills the server last listed, by the folder of the session it listed them for.
     private var commands: [String: [AgentSkill]] = [:]
     private var fallbackCommands: [AgentSkill] = []
+    /// Active background shell sessions per Antigravity conversation ID.
+    private var backgroundShellsBySession: [String: [AgentBackgroundSession]] = [:]
+    private var backgroundExpiryTask: Task<Void, Never>?
     private var isEnabled = true
 
     private let log = Logger(subsystem: "Atrium", category: "Antigravity")
@@ -110,6 +113,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         var enrichedThreads: [AgentThread] = []
         var subagents: [AgentThread] = []
         var newSubagentParents: [String: String] = [:]
+        var newBackgroundShells: [String: [AgentBackgroundSession]] = [:]
         let waitingIDs = Set(decisions.values.map(\.sessionID))
 
         for base in rawThreads {
@@ -117,8 +121,17 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             let snap = await history.snapshot(of: base.sessionID, directory: base.directory)
             let described = describe(base, history: snap.work)
             enrichedThreads.append(described)
-            guard !described.isSideChat else { continue }
             let openSession = sessions[base.sessionID]
+            let bg = AntigravityHistory.activeBackgroundSessions(
+                of: base.sessionID,
+                directory: base.directory,
+                snapshot: snap,
+                sessionOpenedAt: openSession?.openedAt,
+                parentIsWorking: openSession?.status.isWorking == true,
+                stoppedAt: stoppedAt[base.sessionID]
+            )
+            if !bg.isEmpty { newBackgroundShells[base.sessionID] = bg }
+            guard !described.isSideChat else { continue }
             let children = await history.subagents(
                 of: described,
                 parentSnapshot: snap,
@@ -129,6 +142,16 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             )
             for child in children {
                 if let parentID = child.parentSessionID { newSubagentParents[child.sessionID] = parentID }
+                let childSnap = await history.snapshot(of: child.sessionID, directory: child.directory)
+                let childBG = AntigravityHistory.activeBackgroundSessions(
+                    of: child.sessionID,
+                    directory: child.directory,
+                    snapshot: childSnap,
+                    sessionOpenedAt: openSession?.openedAt,
+                    parentIsWorking: child.status.isWorking,
+                    stoppedAt: stoppedAt[base.sessionID]
+                )
+                if !childBG.isEmpty { newBackgroundShells[child.sessionID] = childBG }
             }
             subagents += children
         }
@@ -143,7 +166,78 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         subagentParents = newSubagentParents
         let liveIDs = Set(enrichedThreads.map(\.sessionID)).union(subagents.map(\.sessionID))
         await history.dropDeleted(keeping: liveIDs)
+        replaceBackgroundShells(newBackgroundShells)
         return enrichedThreads + subagents
+    }
+
+    private func activeBackgroundSessions() -> [AgentBackgroundSession] {
+        backgroundShellsBySession.values.flatMap(\.self).sorted(by: AgentBackgroundSession.newestFirst)
+    }
+
+    private func replaceBackgroundShells(_ updated: [String: [AgentBackgroundSession]]) {
+        let previous = activeBackgroundSessions()
+        backgroundShellsBySession = updated
+        updateBackgroundExpiry()
+        let current = activeBackgroundSessions()
+        if current != previous {
+            onEvent?(.backgroundSessionsChanged(current))
+        }
+    }
+
+    /// Re-evaluates background tasks of sessions not open in ACP so ones whose
+    /// external CLI exited without writing a completion record expire after 60s.
+    private func updateBackgroundExpiry() {
+        guard isEnabled, !externalBackgroundSessionIDs().isEmpty else {
+            backgroundExpiryTask?.cancel()
+            backgroundExpiryTask = nil
+            return
+        }
+        guard backgroundExpiryTask == nil else { return }
+        backgroundExpiryTask = Task { [weak self] in
+            // A cancelled loop's handle was already cleared, maybe replaced.
+            defer { if !Task.isCancelled { self?.backgroundExpiryTask = nil } }
+            while let self, !Task.isCancelled, self.isEnabled {
+                let ids = self.externalBackgroundSessionIDs()
+                guard !ids.isEmpty else { return }
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, self.isEnabled else { return }
+                for id in ids {
+                    let rootID = self.rootAncestorID(of: id) ?? id
+                    let directory = self.listedThreads[rootID]?.directory ?? self.sessions[rootID]?.directory ?? ""
+                    let snap = await self.history.snapshot(of: id, directory: directory.isEmpty ? nil : directory)
+                    self.updateBackgroundShells(for: id, directory: directory, snapshot: snap)
+                }
+            }
+        }
+    }
+
+    /// Sessions with background shells whose root session isn't open in ACP.
+    private func externalBackgroundSessionIDs() -> [String] {
+        backgroundShellsBySession.keys.filter { sessions[rootAncestorID(of: $0) ?? $0] == nil }
+    }
+
+    private func updateBackgroundShells(for id: String, directory: String, snapshot: AntigravityHistory.Snapshot) {
+        let rootID = rootAncestorID(of: id) ?? id
+        let openSession = sessions[rootID]
+        let bg = AntigravityHistory.activeBackgroundSessions(
+            of: id,
+            directory: directory,
+            snapshot: snapshot,
+            sessionOpenedAt: openSession?.openedAt,
+            parentIsWorking: openSession?.status.isWorking == true,
+            stoppedAt: stoppedAt[rootID]
+        )
+        var updated = backgroundShellsBySession
+        if bg.isEmpty { updated[id] = nil }
+        else { updated[id] = bg }
+        replaceBackgroundShells(updated)
+    }
+
+    private func clearBackgroundShells(for rootID: String) {
+        let targets = Set([rootID] + descendantSessionIDs(of: rootID))
+        var updated = backgroundShellsBySession
+        for target in targets { updated[target] = nil }
+        replaceBackgroundShells(updated)
     }
 
     func readThread(_ sessionID: String) async throws -> AgentThread? {
@@ -292,6 +386,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         stoppedAt[thread.sessionID] = .now
         withdrawDecisions(of: thread.sessionID)
         invalidateDescendants(of: thread.sessionID)
+        clearBackgroundShells(for: thread.sessionID)
         guard let removed = sessions.removeValue(forKey: thread.sessionID) else { return }
         removed.settleTask?.cancel()
         _ = try? await connection.request("session/close", ["sessionId": thread.sessionID], timeout: .seconds(10))
@@ -529,6 +624,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         stoppedAt[targetID] = .now
         withdrawDecisions(of: targetID)
         invalidateDescendants(of: targetID)
+        clearBackgroundShells(for: targetID)
         guard let session = sessions[targetID] else { return }
         connection.notify("session/cancel", ["sessionId": targetID])
         if session.isWorkingInBackground {
@@ -625,6 +721,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         brainWatcher?.stop()
         brainWatcher = nil
         stoppedAt.removeAll()
+        replaceBackgroundShells([:])
         for task in opening.values { task.cancel() }
         connection.stop()
     }
@@ -666,6 +763,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                     self.subagentParents[spawn.sessionID] = id
                     self.onEvent?(.threadInvalidated(sessionID: spawn.sessionID))
                 }
+                self.updateBackgroundShells(for: id, directory: rootDirectory ?? "", snapshot: snap)
                 self.onEvent?(.threadInvalidated(sessionID: id))
                 self.onEvent?(.transcriptChanged(sessionID: id))
             }
@@ -679,6 +777,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                     self.subagentParents[spawn.sessionID] = id
                     self.onEvent?(.threadInvalidated(sessionID: spawn.sessionID))
                 }
+                self.updateBackgroundShells(for: id, directory: directory, snapshot: snap)
                 if let session = self.sessions[id],
                    session.isWorkingInBackground,
                    session.awaitingDiskSettle,
@@ -708,6 +807,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         for session in sessions.values { session.settleTask?.cancel() }
         sessions.removeAll()
         stoppedAt.removeAll()
+        replaceBackgroundShells([:])
         for id in decisions.keys { onEvent?(.interactionResolved(id: id)) }
         decisions.removeAll()
         for id in ids {

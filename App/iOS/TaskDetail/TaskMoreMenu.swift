@@ -30,7 +30,10 @@ struct TaskMoreMenu: View {
             }
             if let workspaceID = item.task.workspaceID {
                 Section {
-                    ProjectLinks(workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID))
+                    ProjectLinks(
+                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
+                        runningCommands: runningCommands
+                    )
                 } header: {
                     // The branch or worktree the project's pages show.
                     if let title = item.host.scope(for: workspaceID).title {
@@ -62,7 +65,11 @@ struct TaskMoreMenu: View {
         } label: {
             Label("More", systemImage: "ellipsis")
         }
-        .badge(item.workingSubagents)
+        .badge(item.workingSubagents + runningCommands)
+    }
+
+    private var runningCommands: Int {
+        item.task.workspaceID.flatMap { item.host.workspace($0)?.runningCount } ?? 0
     }
 
     private func subagentSummary(count: Int) -> String {

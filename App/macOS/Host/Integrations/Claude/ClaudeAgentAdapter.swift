@@ -59,6 +59,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Chats without hooks that were sent a prompt mid-turn, connected once the turn ends.
     private var awaitingHooks: [String: AgentThread] = [:]
     private var hookConnections: [String: Task<Bool, Never>] = [:]
+    /// Running background Bash/Monitor tasks across active Claude sessions.
+    private var activeBackgroundShells: [AgentBackgroundSession] = []
+    private var backgroundShellLivenessTask: Task<Void, Never>?
+    /// Counts refreshes, so only the latest one's findings are kept.
+    private var backgroundShellRefreshes = 0
 
     init(bridge: AgentBridgeServer, instructions: ChatInstructions, configDirectory: URL? = nil) {
         self.bridge = bridge
@@ -96,7 +101,63 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         for session in sessions.prefix(Self.sessionsWithSubagents) {
             subagents += await history.subagents(of: session.sessionID).map { subagentThread($0, of: session) }
         }
+        Task { await refreshBackgroundShells() }
         return sessions + subagents + sideChats.values.map(\.thread)
+    }
+
+    /// Recomputes running background Bash/Monitor sessions across all live Claude processes
+    /// (both `claude --bg` jobs and interactive terminal sessions).
+    private func refreshBackgroundShells() async {
+        backgroundShellRefreshes += 1
+        let refresh = backgroundShellRefreshes
+        var live: [String: (startedAt: Date, cwd: String)] = await history.liveSessions()
+        for (sessionID, job) in backgroundSessions where job.isRunning {
+            let startedAt = Date(timeIntervalSince1970: job.startedAt / 1000)
+            live[sessionID] = (startedAt, job.cwd)
+        }
+        var found: [AgentBackgroundSession] = []
+        for (sessionID, info) in live {
+            let tasks = await history.backgroundTasks(of: sessionID)
+            for task in tasks where task.startedAt >= info.startedAt.addingTimeInterval(-2) {
+                found.append(AgentBackgroundSession(
+                    id: "claude:\(sessionID):\(task.taskID)",
+                    provider: .claude,
+                    sessionID: sessionID,
+                    title: task.title,
+                    command: task.command,
+                    directory: task.directory.isEmpty ? info.cwd : task.directory,
+                    startedAt: task.startedAt,
+                    outputFilePath: task.outputFilePath,
+                    itemID: nil
+                ))
+            }
+        }
+        guard refresh == backgroundShellRefreshes, isEnabled else { return }
+        found.sort(by: AgentBackgroundSession.newestFirst)
+        updateBackgroundShellLiveness(hasActive: !found.isEmpty)
+        guard found != activeBackgroundShells else { return }
+        activeBackgroundShells = found
+        onEvent?(.backgroundSessionsChanged(found))
+    }
+
+    /// Re-checks live PIDs periodically while background shells are active so an interactive
+    /// terminal Claude session that exits without writing a completion record clears promptly.
+    private func updateBackgroundShellLiveness(hasActive: Bool) {
+        guard isEnabled, hasActive else {
+            backgroundShellLivenessTask?.cancel()
+            backgroundShellLivenessTask = nil
+            return
+        }
+        guard backgroundShellLivenessTask == nil else { return }
+        backgroundShellLivenessTask = Task { [weak self] in
+            // A cancelled loop's handle was already cleared, maybe replaced.
+            defer { if !Task.isCancelled { self?.backgroundShellLivenessTask = nil } }
+            while let self, !Task.isCancelled, self.isEnabled, !self.activeBackgroundShells.isEmpty {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, self.isEnabled else { return }
+                await self.refreshBackgroundShells()
+            }
+        }
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
@@ -207,6 +268,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                     if self.unsavedTurns[id] != nil { await self.loadSavedTurn(id) }
                     if self.awaitingHooks[id] != nil { self.onEvent?(.transcriptChanged(sessionID: id)) }
                 }
+                await self.refreshBackgroundShells()
             }
         })
     }
@@ -627,6 +689,12 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             statusRevision += 1
             for sideChat in sideChats.values { sideChat.cancel() }
             sideChats.removeAll()
+            backgroundShellLivenessTask?.cancel()
+            backgroundShellLivenessTask = nil
+            if !activeBackgroundShells.isEmpty {
+                activeBackgroundShells = []
+                onEvent?(.backgroundSessionsChanged([]))
+            }
         }
     }
 
@@ -758,6 +826,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             onEvent?(.threadUpdated(sessionID: sessionID, update: AgentThreadUpdate(status: session.threadStatus)))
             onEvent?(.threadInvalidated(sessionID: sessionID))
         }
+        await refreshBackgroundShells()
     }
 
     private func requestStatusRefresh() {

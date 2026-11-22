@@ -9,5 +9,7 @@ enum AgentEvent: Sendable {
     case transcriptChanged(sessionID: String)
     case interactionRequested(AgentInteraction)
     case interactionResolved(id: String)
+    case backgroundSessionsChanged([AgentBackgroundSession])
+    case backgroundSessionOutputChanged(id: String)
     case listInvalidated
 }

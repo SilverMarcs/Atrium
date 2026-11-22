@@ -16,11 +16,16 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
     public var customIconKey: String?
     /// Drafts put aside, newest first.
     public var scratchpad: [ScratchpadDraft]
-    public var hasRunningCommand: Bool
+    /// How many of the project's saved commands are running.
+    public var runningCommandCount: Int
+    /// Background shell sessions agents are running in the project.
+    public var backgroundSessions: [WireBackgroundSession]
 
     /// The project's primary folder on the host, where agents start and
     /// commands run.
     public var path: String { folders.first ?? "" }
+    /// Saved commands and agent background sessions running, for badges.
+    public var runningCount: Int { runningCommandCount + backgroundSessions.count }
 
     public init(
         id: UUID,
@@ -31,7 +36,8 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         projectIcon: String? = nil,
         customIconKey: String? = nil,
         scratchpad: [ScratchpadDraft],
-        hasRunningCommand: Bool
+        runningCommandCount: Int,
+        backgroundSessions: [WireBackgroundSession] = []
     ) {
         self.id = id
         self.name = name
@@ -41,7 +47,8 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         self.projectIcon = projectIcon
         self.customIconKey = customIconKey
         self.scratchpad = scratchpad
-        self.hasRunningCommand = hasRunningCommand
+        self.runningCommandCount = runningCommandCount
+        self.backgroundSessions = backgroundSessions
     }
 
     public init(from decoder: any Decoder) throws {
@@ -54,6 +61,7 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         projectIcon = container.lenient(.projectIcon, or: nil)
         customIconKey = container.lenient(.customIconKey, or: nil)
         scratchpad = container.lenient(.scratchpad, or: [])
-        hasRunningCommand = container.lenient(.hasRunningCommand, or: false)
+        runningCommandCount = container.lenient(.runningCommandCount, or: 0)
+        backgroundSessions = container.lenient(.backgroundSessions, or: [])
     }
 }

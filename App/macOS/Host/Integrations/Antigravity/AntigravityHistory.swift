@@ -23,6 +23,26 @@ actor AntigravityHistory {
         var pendingSubagentTitles: [String] = []
         /// Commands from the latest `PLANNER_RESPONSE` that might print opened PR URLs.
         var pendingCommands: [AgentShellCommand] = []
+        /// Unmatched `run_command` invocations from the latest `PLANNER_RESPONSE`,
+        /// supplying titles, working directories and daemon flags for backgrounded commands.
+        var pendingRunCommands: [PendingRunCommand] = []
+        /// Background shell tasks that have started and not yet reported finishing or cancellation.
+        var activeBackgroundTasks: [String: BackgroundTask] = [:]
+    }
+
+    nonisolated struct PendingRunCommand: Sendable, Equatable {
+        let command: String
+        let summary: String?
+        let directory: String?
+    }
+
+    nonisolated struct BackgroundTask: Sendable, Equatable {
+        let taskID: String
+        let title: String
+        let command: String
+        let directory: String
+        let startedAt: Date?
+        let logPath: String?
     }
 
     nonisolated struct SubagentSpawn: Sendable, Equatable {
@@ -332,6 +352,7 @@ actor AntigravityHistory {
             case "USER_INPUT":
                 work.pendingSubagentTitles.removeAll()
                 work.pendingCommands.removeAll()
+                work.pendingRunCommands.removeAll()
                 let urls = (record["media"] as? [[String: Any]] ?? []).compactMap { item -> URL? in
                     guard let uri = item["uri"] as? String, !uri.isEmpty else { return nil }
                     return uri.hasPrefix("file://") ? URL(string: uri) : URL(filePath: uri)
@@ -340,11 +361,15 @@ actor AntigravityHistory {
 
             case "SYSTEM_MESSAGE":
                 if let content = record["content"] as? String,
-                   let message = parseSystemMessage(content),
-                   UUID(uuidString: message.sender) != nil {
-                    let timestamp = message.timestamp ?? date ?? .now
-                    if let previous = work.reportedSubagents[message.sender], previous >= timestamp { continue }
-                    work.reportedSubagents[message.sender] = timestamp
+                   let message = parseSystemMessage(content) {
+                    if work.activeBackgroundTasks.removeValue(forKey: message.sender) != nil {
+                        continue
+                    }
+                    if UUID(uuidString: message.sender) != nil {
+                        let timestamp = message.timestamp ?? date ?? .now
+                        if let previous = work.reportedSubagents[message.sender], previous >= timestamp { continue }
+                        work.reportedSubagents[message.sender] = timestamp
+                    }
                 }
 
             case "PLANNER_RESPONSE":
@@ -355,6 +380,7 @@ actor AntigravityHistory {
                 }
                 work.pendingSubagentTitles.removeAll()
                 work.pendingCommands.removeAll()
+                work.pendingRunCommands.removeAll()
                 let stepDate = date ?? .now
                 for call in toolCalls {
                     let name = call["name"] as? String ?? ""
@@ -362,6 +388,13 @@ actor AntigravityHistory {
                     if let filePath = editedFilePath(tool: name, args: args) {
                         work.edits.record(file: filePath, at: stepDate)
                     } else if name == "run_command", let commandLine = decodeArg(args["CommandLine"]) {
+                        let summary = decodeArg(args["toolSummary"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let cwd = decodeArg(args["Cwd"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        work.pendingRunCommands.append(PendingRunCommand(
+                            command: commandLine,
+                            summary: summary?.isEmpty == false ? summary : nil,
+                            directory: cwd?.isEmpty == false ? cwd : nil
+                        ))
                         let mightMatter = AgentShellCommand.mightMatter(commandLine)
                         let mightMove = AgentShellCommand.mightChangeDirectory(commandLine)
                         if mightMatter || mightMove {
@@ -382,10 +415,27 @@ actor AntigravityHistory {
                     }
                 }
 
-            case "GENERIC":
+            case "GENERIC", "RUN_COMMAND":
                 let content = record["content"] as? String ?? ""
                 let stepDate = date ?? .now
-                if let spawnedID = createdSubagentID(in: content) {
+                if let started = startedBackgroundTask(in: content) {
+                    let matchedIndex = work.pendingRunCommands.firstIndex { $0.command == started.command }
+                        ?? (work.pendingRunCommands.isEmpty ? nil : 0)
+                    let pending = matchedIndex.map { work.pendingRunCommands.remove(at: $0) }
+                    let summary = pending?.summary.flatMap { $0 == "Command execution" ? nil : $0 }
+                    let command = started.command.isEmpty ? (pending?.command ?? "") : started.command
+                    let title = summary ?? AgentBackgroundSession.fallbackTitle(forCommand: command)
+                    work.activeBackgroundTasks[started.taskID] = BackgroundTask(
+                        taskID: started.taskID,
+                        title: title,
+                        command: command,
+                        directory: pending?.directory ?? directory ?? "",
+                        startedAt: date,
+                        logPath: started.logPath
+                    )
+                } else if let cancelledID = cancelledBackgroundTaskID(in: content) {
+                    work.activeBackgroundTasks[cancelledID] = nil
+                } else if let spawnedID = createdSubagentID(in: content) {
                     let title = work.pendingSubagentTitles.isEmpty ? "Subagent" : work.pendingSubagentTitles.removeFirst()
                     if !work.subagents.contains(where: { $0.sessionID == spawnedID }) {
                         work.subagents.append(SubagentSpawn(sessionID: spawnedID, title: title, createdAt: date))
@@ -545,6 +595,86 @@ actor AntigravityHistory {
         default:
             nil
         }
+    }
+
+    /// Background shell sessions currently active for `sessionID`.
+    nonisolated static func activeBackgroundSessions(
+        of sessionID: String,
+        directory: String,
+        snapshot: Snapshot,
+        sessionOpenedAt: Date?,
+        parentIsWorking: Bool,
+        stoppedAt: Date?,
+        now: Date = .now
+    ) -> [AgentBackgroundSession] {
+        guard !snapshot.work.activeBackgroundTasks.isEmpty else { return [] }
+        return snapshot.work.activeBackgroundTasks.values.compactMap { task -> AgentBackgroundSession? in
+            let logModified = task.logPath.flatMap { path in
+                (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+            }
+            let activityDate = [task.startedAt, logModified, snapshot.modified].compactMap(\.self).max()
+            if let stoppedAt, activityDate.map({ $0 <= stoppedAt }) ?? true {
+                return nil
+            }
+            if let sessionOpenedAt {
+                let threshold = sessionOpenedAt.addingTimeInterval(-2)
+                let startedSinceOpen = task.startedAt.map { $0 >= threshold } ?? false
+                let wroteSinceOpen = logModified.map { $0 >= threshold } ?? false
+                guard startedSinceOpen || wroteSinceOpen else { return nil }
+            } else if !parentIsWorking {
+                // Outside an open ACP session, treat recently active unfinished logs as running.
+                guard let activityDate, now.timeIntervalSince(activityDate) < 60 else { return nil }
+            }
+            return AgentBackgroundSession(
+                id: "antigravity:\(sessionID):\(task.taskID)",
+                provider: .antigravity,
+                sessionID: sessionID,
+                title: task.title,
+                command: task.command,
+                directory: task.directory.isEmpty ? directory : task.directory,
+                startedAt: task.startedAt,
+                outputFilePath: task.logPath,
+                itemID: nil
+            )
+        }.sorted(by: AgentBackgroundSession.newestFirst)
+    }
+
+    /// Parses Antigravity's background task launch record:
+    /// `Tool is running as a background task with task id: <id>\nTask Description: <cmd>\nTask logs are available at: file://<path>`
+    private nonisolated static func startedBackgroundTask(in content: String) -> (taskID: String, command: String, logPath: String?)? {
+        let marker = "Tool is running as a background task with task id: "
+        guard let start = content.range(of: marker)?.upperBound else { return nil }
+        let rest = content[start...]
+        let idEnd = rest.firstIndex { $0.isNewline || $0.isWhitespace } ?? rest.endIndex
+        let taskID = String(rest[..<idEnd])
+        guard !taskID.isEmpty else { return nil }
+
+        var command = ""
+        if let descStart = content.range(of: "Task Description: ")?.upperBound {
+            let descEnd = content.range(of: "\nTask logs are available at:", range: descStart..<content.endIndex)?.lowerBound
+                ?? content[descStart...].firstIndex(of: "\n")
+                ?? content.endIndex
+            command = String(content[descStart..<descEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        var logPath: String?
+        if let logStart = content.range(of: "Task logs are available at: ")?.upperBound {
+            let logEnd = content[logStart...].firstIndex { $0.isNewline } ?? content.endIndex
+            let raw = String(content[logStart..<logEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if raw.hasPrefix("file://"), let url = URL(string: raw) {
+                logPath = url.filePath
+            } else if !raw.isEmpty {
+                logPath = raw
+            }
+        }
+        return (taskID, command, logPath)
+    }
+
+    /// Parses `manage_task` kill confirmation: `Task "<id>" cancelled.`
+    private nonisolated static func cancelledBackgroundTaskID(in content: String) -> String? {
+        guard content.contains("cancelled."),
+              let match = content.firstMatch(of: /Task "([^"]+)" cancelled\./) else { return nil }
+        return String(match.output.1)
     }
 
     /// Extracts the subagent `conversationId` from `invoke_subagent`'s `GENERIC` result.

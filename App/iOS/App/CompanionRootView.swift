@@ -140,6 +140,10 @@ private struct RouteDestination: View {
             if let host = hosts.host(ref.hostID) { CommandsScreen(host: host, workspaceID: ref.workspaceID) }
         case .command(let ref, let commandID):
             if let host = hosts.host(ref.hostID) { CommandConsoleScreen(host: host, workspaceID: ref.workspaceID, commandID: commandID) }
+        case .backgroundSession(let ref, let sessionID):
+            if let host = hosts.host(ref.hostID) {
+                BackgroundSessionConsoleScreen(host: host, workspaceID: ref.workspaceID, sessionID: sessionID)
+            }
         case .files(let ref, let folder):
             if let host = hosts.host(ref.hostID) { FilesScreen(host: host, workspaceID: ref.workspaceID, folder: folder) }
         case .file(let ref, let path, let line):

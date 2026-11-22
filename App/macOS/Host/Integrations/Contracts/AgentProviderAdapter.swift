@@ -56,6 +56,8 @@ protocol AgentProviderAdapter: AnyObject {
     func changeSettings(_ change: AgentSettingsChange, of thread: AgentThread) async throws
     /// Suspends background work while the provider is turned off.
     func setEnabled(_ isEnabled: Bool)
+    /// Live output for a provider-buffered background session, or nil when unavailable.
+    func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput?
 }
 
 extension AgentProviderAdapter {
@@ -66,4 +68,6 @@ extension AgentProviderAdapter {
     func markUnread(_ thread: AgentThread) async throws -> AgentReadState {
         throw IntegrationError(message: "\(provider.name) does not support marking a thread unread.")
     }
+
+    func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput? { nil }
 }

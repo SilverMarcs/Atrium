@@ -7,6 +7,7 @@ import SwiftUI
 /// Source Control and Commands when it returns.
 struct ProjectLinks: View {
     let workspace: WorkspaceRef
+    var runningCommands = 0
 
     var body: some View {
         NavigationLink(value: Route.files(workspace)) {
@@ -17,6 +18,9 @@ struct ProjectLinks: View {
         }
         NavigationLink(value: Route.commands(workspace)) {
             Label("Commands", systemImage: "terminal")
+            if runningCommands > 0 {
+                Text("\(runningCommands) running")
+            }
         }
     }
 }

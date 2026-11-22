@@ -68,6 +68,17 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// token count, which it sends after each turn and on resume.
     private var contextUsages: [String: AgentContextUsage] = [:]
     private let rolloutEdits = CodexRolloutEdits()
+    /// Running background terminals reported by Codex, keyed by thread ID.
+    private var backgroundTerminalsByThread: [String: [AgentBackgroundSession]] = [:]
+    /// First-seen timestamps for active background terminals so their sort order stays stable.
+    private var backgroundStartedAt: [String: Date] = [:]
+    /// Live output buffered for active `commandExecution` items, keyed by item ID.
+    private var commandOutputs: [String: CommandOutput] = [:]
+    private var pendingBackgroundRefreshThreads: Set<String> = []
+    private var backgroundRefreshTask: Task<Void, Never>?
+    private var backgroundPollTask: Task<Void, Never>?
+    /// Counts background terminal refreshes, so an older one's findings can't land last.
+    private var backgroundRefreshes = 0
 
     init(instructions: ChatInstructions) {
         self.instructions = instructions
@@ -117,7 +128,168 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         for id in sideChats.keys.sorted() {
             if let sideChat = try? await readThread(id) { threads.append(sideChat) } else { dropSideChats([id]) }
         }
+        Task { await refreshAllBackgroundTerminals() }
         return threads
+    }
+
+    // MARK: - Background terminals
+
+    private func activeBackgroundSessions() -> [AgentBackgroundSession] {
+        backgroundTerminalsByThread.values.flatMap(\.self).sorted(by: AgentBackgroundSession.newestFirst)
+    }
+
+    func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput? {
+        guard let itemID = session.itemID else { return nil }
+        if let existing = commandOutputs[itemID], !existing.isEmpty {
+            return existing.wire
+        }
+        guard connected else { return nil }
+        var aggregated: String?
+        try? await forEachTurn(of: session.sessionID, pageSize: 5) { turn in
+            for item in turn["items"] as? [[String: Any]] ?? [] where item["id"] as? String == itemID {
+                aggregated = item["aggregatedOutput"] as? String
+                return true
+            }
+            return false
+        }
+        guard let aggregated, !aggregated.isEmpty else { return commandOutputs[itemID]?.wire }
+        if commandOutputs[itemID]?.isEmpty != false {
+            var output = CommandOutput()
+            output.append(Data(aggregated.utf8))
+            commandOutputs[itemID] = output
+        }
+        return commandOutputs[itemID]?.wire
+    }
+
+    private func refreshAllBackgroundTerminals() async {
+        guard connected else { return }
+        backgroundRefreshes += 1
+        let refresh = backgroundRefreshes
+        var loadedIDs = Set(conversations.keys)
+        var cursor: String?
+        repeat {
+            var params: [String: Any] = [:]
+            if let cursor { params["cursor"] = cursor }
+            guard let data = try? await request("thread/loaded/list", params: params, disconnectOnTimeout: false),
+                  let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { break }
+            loadedIDs.formUnion(result["data"] as? [String] ?? [])
+            cursor = result["nextCursor"] as? String
+        } while cursor != nil
+        loadedIDs.subtract(titleResponses.keys)
+        var updated: [String: [AgentBackgroundSession]] = [:]
+        for threadID in loadedIDs {
+            let terminals = await listBackgroundTerminals(for: threadID)
+            if !terminals.isEmpty { updated[threadID] = terminals }
+        }
+        guard refresh == backgroundRefreshes, connected else { return }
+        applyBackgroundTerminals(updated)
+    }
+
+    private func refreshBackgroundTerminals(for threadID: String) async {
+        guard connected, titleResponses[threadID] == nil else { return }
+        backgroundRefreshes += 1
+        let refresh = backgroundRefreshes
+        let terminals = await listBackgroundTerminals(for: threadID)
+        guard refresh == backgroundRefreshes, connected else { return }
+        var updated = backgroundTerminalsByThread
+        if terminals.isEmpty { updated[threadID] = nil }
+        else { updated[threadID] = terminals }
+        applyBackgroundTerminals(updated)
+    }
+
+    private func listBackgroundTerminals(for threadID: String) async -> [AgentBackgroundSession] {
+        var sessions: [AgentBackgroundSession] = []
+        var cursor: String?
+        repeat {
+            var params: [String: Any] = ["threadId": threadID]
+            if let cursor { params["cursor"] = cursor }
+            guard let data = try? await request("thread/backgroundTerminals/list", params: params, disconnectOnTimeout: false),
+                  let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = result["data"] as? [[String: Any]] else { break }
+            for row in rows {
+                guard let processID = row["processId"] as? String, !processID.isEmpty,
+                      let command = row["command"] as? String else { continue }
+                let id = "codex:\(threadID):\(processID)"
+                let startedAt = backgroundStartedAt[id] ?? .now
+                backgroundStartedAt[id] = startedAt
+                sessions.append(AgentBackgroundSession(
+                    id: id,
+                    provider: .codex,
+                    sessionID: threadID,
+                    title: AgentBackgroundSession.fallbackTitle(forCommand: command),
+                    command: command,
+                    directory: row["cwd"] as? String ?? "",
+                    startedAt: startedAt,
+                    outputFilePath: nil,
+                    itemID: row["itemId"] as? String
+                ))
+            }
+            cursor = result["nextCursor"] as? String
+        } while cursor != nil
+        return sessions
+    }
+
+    private func clearBackgroundTerminals(for threadID: String) {
+        var updated = backgroundTerminalsByThread
+        guard updated.removeValue(forKey: threadID) != nil else { return }
+        applyBackgroundTerminals(updated)
+    }
+
+    private func applyBackgroundTerminals(_ updated: [String: [AgentBackgroundSession]]) {
+        let previous = activeBackgroundSessions()
+        backgroundTerminalsByThread = updated
+        let activeIDs = Set(updated.values.flatMap(\.self).map(\.id))
+        backgroundStartedAt = backgroundStartedAt.filter { activeIDs.contains($0.key) }
+        pruneCommandOutputs()
+        updateBackgroundPolling()
+        let current = activeBackgroundSessions()
+        if current != previous {
+            onEvent?(.backgroundSessionsChanged(current))
+        }
+    }
+
+    private func scheduleBackgroundRefresh(threadID: String) {
+        pendingBackgroundRefreshThreads.insert(threadID)
+        guard backgroundRefreshTask == nil else { return }
+        backgroundRefreshTask = Task { [weak self] in
+            // A cancelled loop's handle was already cleared, maybe replaced.
+            defer { if !Task.isCancelled { self?.backgroundRefreshTask = nil } }
+            while let self, !Task.isCancelled, self.connected, !self.pendingBackgroundRefreshThreads.isEmpty {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, self.connected else { return }
+                let ids = self.pendingBackgroundRefreshThreads
+                self.pendingBackgroundRefreshThreads.removeAll()
+                for id in ids {
+                    await self.refreshBackgroundTerminals(for: id)
+                }
+            }
+        }
+    }
+
+    /// Polls lightly only while Codex has active background terminals so one
+    /// that exits quietly between turns disappears promptly.
+    private func updateBackgroundPolling() {
+        guard connected, isEnabled, !backgroundTerminalsByThread.isEmpty else {
+            backgroundPollTask?.cancel()
+            backgroundPollTask = nil
+            return
+        }
+        guard backgroundPollTask == nil else { return }
+        backgroundPollTask = Task { [weak self] in
+            defer { if !Task.isCancelled { self?.backgroundPollTask = nil } }
+            while let self, !Task.isCancelled, self.connected, self.isEnabled, !self.backgroundTerminalsByThread.isEmpty {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, self.connected, self.isEnabled else { return }
+                await self.refreshAllBackgroundTerminals()
+            }
+        }
+    }
+
+    private func pruneCommandOutputs(keeping preservedItemID: String? = nil) {
+        guard commandOutputs.count > 48 else { return }
+        var activeItems = Set(backgroundTerminalsByThread.values.flatMap(\.self).compactMap(\.itemID))
+        if let preservedItemID { activeItems.insert(preservedItemID) }
+        commandOutputs = commandOutputs.filter { activeItems.contains($0.key) }
     }
 
     // MARK: - Side chats
@@ -712,6 +884,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     func endBackgroundWork(_ thread: AgentThread) async throws {
         try await connect()
         _ = try await request("thread/backgroundTerminals/clean", params: ["threadId": thread.sessionID])
+        await refreshBackgroundTerminals(for: thread.sessionID)
     }
 
     /// A thread's whole history, oldest first.
@@ -859,6 +1032,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         } else if let method = message["method"] as? String,
                   let params = message["params"] as? [String: Any] {
             if method == "thread/deleted", let id = params["threadId"] as? String {
+                clearBackgroundTerminals(for: id)
                 onEvent?(.threadDeleted(sessionID: id))
                 onEvent?(.listInvalidated)
                 return
@@ -868,9 +1042,12 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 return
             }
             guard let id = params["threadId"] as? String else { return }
-            if method == "thread/closed", sideChats[id] != nil {
-                dropSideChats([id])
-                return
+            if method == "thread/closed" {
+                clearBackgroundTerminals(for: id)
+                if sideChats[id] != nil {
+                    dropSideChats([id])
+                    return
+                }
             }
             if let response = titleResponses[id] {
                 response.receive(method, params: params)
@@ -902,13 +1079,44 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 if params["item"] != nil || params["turn"] != nil { refreshAsyncQuestions(sessionID: id) }
                 if method.hasPrefix("item/") || method.hasPrefix("turn/") { onEvent?(.transcriptChanged(sessionID: id)) }
             }
+            if method == "item/commandExecution/outputDelta",
+               let itemID = params["itemId"] as? String,
+               let delta = params["delta"] as? String {
+                var output = commandOutputs[itemID] ?? CommandOutput()
+                output.append(Data(delta.utf8))
+                commandOutputs[itemID] = output
+                pruneCommandOutputs(keeping: itemID)
+                if let session = backgroundTerminalsByThread[id]?.first(where: { $0.itemID == itemID }) {
+                    onEvent?(.backgroundSessionOutputChanged(id: session.id))
+                }
+                return
+            }
+            if method == "item/commandExecution/terminalInteraction" {
+                scheduleBackgroundRefresh(threadID: id)
+                return
+            }
             if ["item/started", "item/completed"].contains(method) {
                 onEvent?(.transcriptChanged(sessionID: id))
+                let item = params["item"] as? [String: Any]
+                if item?["type"] as? String == "commandExecution" {
+                    if let itemID = item?["id"] as? String {
+                        if let aggregated = item?["aggregatedOutput"] as? String, !aggregated.isEmpty,
+                           commandOutputs[itemID]?.isEmpty != false {
+                            var output = CommandOutput()
+                            output.append(Data(aggregated.utf8))
+                            commandOutputs[itemID] = output
+                            if let session = backgroundTerminalsByThread[id]?.first(where: { $0.itemID == itemID }) {
+                                onEvent?(.backgroundSessionOutputChanged(id: session.id))
+                            }
+                        }
+                    }
+                    scheduleBackgroundRefresh(threadID: id)
+                }
                 // The thread's rollout now records the files the change touched.
-                if method == "item/completed", (params["item"] as? [String: Any])?["type"] as? String == "fileChange" {
+                if method == "item/completed", item?["type"] as? String == "fileChange" {
                     onEvent?(.threadInvalidated(sessionID: id))
                 }
-                for subagent in recordSubagents(in: [params["item"] as? [String: Any] ?? [:]], of: id) {
+                for subagent in recordSubagents(in: [item ?? [:]], of: id) {
                     onEvent?(.threadInvalidated(sessionID: subagent))
                     onEvent?(.transcriptChanged(sessionID: subagent))
                 }
@@ -931,6 +1139,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 onEvent?(.transcriptChanged(sessionID: id))
                 onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: status)))
                 onEvent?(.threadInvalidated(sessionID: id))
+                scheduleBackgroundRefresh(threadID: id)
             } else if method == "thread/name/updated" {
                 titleTasks[id]?.cancel()
                 onEvent?(.threadInvalidated(sessionID: id))
@@ -948,6 +1157,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
                 default: break
                 }
                 onEvent?(.threadInvalidated(sessionID: id))
+                scheduleBackgroundRefresh(threadID: id)
             }
         }
     }
@@ -962,6 +1172,17 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         titleResponses.removeAll()
         dropSideChats(Array(sideChats.keys))
         conversations.removeAll()
+        backgroundRefreshTask?.cancel()
+        backgroundRefreshTask = nil
+        backgroundPollTask?.cancel()
+        backgroundPollTask = nil
+        pendingBackgroundRefreshThreads.removeAll()
+        commandOutputs.removeAll()
+        if !backgroundTerminalsByThread.isEmpty {
+            backgroundTerminalsByThread.removeAll()
+            backgroundStartedAt.removeAll()
+            onEvent?(.backgroundSessionsChanged([]))
+        }
         // Turns can end while the socket is down; ask Codex again once it's back.
         activeTurnIDs.removeAll()
         for task in openingConversations.values { task.cancel() }

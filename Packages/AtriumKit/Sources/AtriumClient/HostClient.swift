@@ -65,6 +65,8 @@ public final class HostClient: Identifiable {
     /// What followed commands printed, by command. Kept after they're no longer
     /// followed, until the host sends them again.
     public private(set) var commandOutputs: [UUID: WireCommandOutput] = [:]
+    /// What followed agent background sessions printed, by session ID, while followed.
+    public private(set) var backgroundSessionOutputs: [String: WireCommandOutput] = [:]
     /// Entries of followed folders, by their `.directory` topic.
     public private(set) var directories: [HostTopic: [FileEntry]] = [:]
     /// The host's remote access, while its own Mac UI follows it.
@@ -423,6 +425,9 @@ public final class HostClient: Identifiable {
         await Task.waitUntilCancelled()
         let remaining = (topicCounts[topic] ?? 1) - 1
         topicCounts[topic] = remaining > 0 ? remaining : nil
+        if remaining <= 0, case .backgroundSessionOutput(_, let sessionID) = topic {
+            backgroundSessionOutputs[sessionID] = nil
+        }
         if remaining <= 0, isConnected {
             Task {
                 guard (topicCounts[topic] ?? 0) <= 0 else { return }
@@ -661,6 +666,11 @@ public final class HostClient: Identifiable {
             // A change that doesn't follow what this client has needs the whole output again.
             guard let complete = output.applying(to: commandOutputs[commandID]) else { return reload(topic) }
             commandOutputs[commandID] = complete
+        case .backgroundSessionOutput(let workspaceID, let sessionID, let output):
+            let topic = HostTopic.backgroundSessionOutput(workspaceID: workspaceID, sessionID: sessionID)
+            guard (topicCounts[topic] ?? 0) > 0 else { return }
+            guard let complete = output.applying(to: backgroundSessionOutputs[sessionID]) else { return reload(topic) }
+            backgroundSessionOutputs[sessionID] = complete
         case .directory(let workspaceID, let path, let entries):
             directories[.directory(workspaceID: workspaceID, path: path)] = entries
         case .fileChanged(let workspaceID, let path):

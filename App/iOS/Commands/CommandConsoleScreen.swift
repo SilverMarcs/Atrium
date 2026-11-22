@@ -52,7 +52,7 @@ struct CommandConsoleScreen: View {
 
 /// Output lines, numbered as the host numbers them so only new ones lay out,
 /// following the end as more arrive.
-private struct CommandOutputLines: View {
+struct CommandOutputLines: View {
     let output: WireCommandOutput?
 
     var body: some View {

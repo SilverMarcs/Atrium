@@ -20,16 +20,25 @@ struct CommandsInspectorView: View {
 
     private var commands: some View {
         VSplitView {
-            List(selection: $project.selectedCommandID) {
+            List(selection: $project.selectedCommand) {
                 ForEach(project.commands) { command in
                     CommandEntryRow(command: command, project: project) { editing = .edit(command) }
-                        .tag(command.id)
+                        .tag(Project.CommandSelection.command(command.id))
                         .listRowSeparator(.hidden)
                 }
                 .onMove { source, destination in
                     guard let index = source.first else { return }
                     let command = project.commands[index]
                     project.send(.move(toIndex: destination > index ? destination - 1 : destination), to: command)
+                }
+                if !project.backgroundSessions.isEmpty {
+                    Section("Background") {
+                        ForEach(project.backgroundSessions) { session in
+                            BackgroundSessionRow(session: session)
+                                .tag(Project.CommandSelection.background(session.id))
+                                .listRowSeparator(.hidden)
+                        }
+                    }
                 }
             }
             .safeAreaInset(edge: .top) {
@@ -39,10 +48,22 @@ struct CommandsInspectorView: View {
             .layoutPriority(1)
 
             Group {
-                if let id = project.selectedCommandID, let command = project.commands.first(where: { $0.id == id }) {
-                    CommandConsoleView(command: command, console: project.console(for: command), project: project)
-                        .id(command.id)
-                } else {
+                switch project.selectedCommand {
+                case .command(let id):
+                    if let command = project.commands.first(where: { $0.id == id }) {
+                        CommandConsoleView(command: command, console: project.console(for: command), project: project)
+                            .id(command.id)
+                    } else {
+                        Color.clear
+                    }
+                case .background(let id):
+                    if let session = project.backgroundSessions.first(where: { $0.id == id }) {
+                        BackgroundSessionConsoleView(session: session, project: project)
+                            .id(session.id)
+                    } else {
+                        Color.clear
+                    }
+                case nil:
                     Color.clear
                 }
             }

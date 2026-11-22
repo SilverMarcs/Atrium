@@ -173,7 +173,7 @@ struct ProjectJSON: Encodable {
         path = workspace.path
         directory = workspace.directory
         projectType = workspace.projectType
-        hasRunningCommand = workspace.hasRunningCommand
+        hasRunningCommand = workspace.runningCommandCount > 0
     }
 }
 

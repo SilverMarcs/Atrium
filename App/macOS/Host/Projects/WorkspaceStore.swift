@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 import Observation
 import SwiftUI
@@ -104,12 +105,43 @@ final class WorkspaceStore {
         return (workspace.folders, own)
     }
 
+    /// The project a background shell session belongs to: its owning task's project,
+    /// or else the project containing its working directory (including linked worktrees).
+    func workspace(forBackgroundSession session: AgentBackgroundSession, threads: [AgentThread]) -> Workspace? {
+        if let thread = threads.first(where: { $0.id == session.taskID }),
+           let workspace = workspace(for: thread) {
+            return workspace
+        }
+        guard !session.directory.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: session.directory)
+        if let workspace = workspace(at: url) ?? workspace(containing: url) { return workspace }
+        if let checkout = GitCheckout(locating: url, lastUsed: session.startedAt),
+           let workspace = workspace(at: checkout.mainCheckoutURL) ?? workspace(containing: checkout.mainCheckoutURL) {
+            return workspace
+        }
+        return nil
+    }
+
     /// The project whose primary folder this is, or else the first with it
     /// among its other folders.
     private func workspace(at url: URL) -> Workspace? {
         let path = Self.path(of: url)
         return workspaces.first { Self.path(of: $0.url) == path }
             ?? workspaces.first { $0.additionalFolders.contains { Self.path(of: URL(fileURLWithPath: $0)) == path } }
+    }
+
+    /// The project with the deepest folder containing `url`.
+    private func workspace(containing url: URL) -> Workspace? {
+        var best: (workspace: Workspace, depth: Int)?
+        for workspace in workspaces {
+            for folder in workspace.folders {
+                let root = URL(fileURLWithPath: folder)
+                guard root.contains(url) else { continue }
+                let depth = root.standardizedFileURL.pathComponents.count
+                if best == nil || depth > best!.depth { best = (workspace, depth) }
+            }
+        }
+        return best?.workspace
     }
 
     /// Directory URLs may or may not carry a trailing slash; compare paths without it.

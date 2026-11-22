@@ -545,6 +545,9 @@ final class HostServer {
         case .commandOutput(let workspaceID, let commandID):
             guard let command = workspace(workspaceID)?.commands.first(where: { $0.id == commandID }) else { return nil }
             feed = CommandOutputFeed(workspaceID: workspaceID, command: command)
+        case .backgroundSessionOutput(let workspaceID, let sessionID):
+            guard workspace(workspaceID) != nil else { return nil }
+            feed = BackgroundSessionOutputFeed(workspaceID: workspaceID, sessionID: sessionID, integrations: integrations)
         case .directory(let workspaceID, let path):
             guard let workspace = workspace(workspaceID), workspace.access.allows(path) else { return nil }
             feed = DirectoryFeed(workspaceID: workspaceID, path: path)
