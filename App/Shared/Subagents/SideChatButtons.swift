@@ -2,21 +2,21 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Opens a task's side chat, or starts one when it has none, looking the same
-/// either way. The side chat opens with `open`, as a delegated session opens.
+/// Opens the task's existing side chat or starts one when it has none.
 struct SideChatButton: View {
     let item: HostTask
     let open: (TaskRef) -> Void
 
     var body: some View {
-        Button("Side Chat", systemImage: "plus.bubble") {
+        let hasSideChat = item.sideChat != nil
+        Button("Side Chat", systemImage: hasSideChat ? "plus.bubble.fill" : "plus.bubble") {
             if let sideChat = item.sideChat {
                 open(TaskRef(hostID: item.host.id, taskID: sideChat.id))
             } else {
                 item.host.startSideChat(about: item.task.id, open: open)
             }
         }
-        .disabled(item.sideChat == nil && !item.task.actions.contains(.sideChat))
+        .disabled(!hasSideChat && !item.task.actions.contains(.sideChat))
     }
 }
 
