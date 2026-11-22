@@ -1,6 +1,6 @@
 import Foundation
 
-/// A sidebar section, which tasks move between from menus or by dragging.
+/// A sidebar section, which tasks move between from their menus.
 nonisolated enum TaskSection: Hashable, CaseIterable, Sendable {
     case active
     case snoozed

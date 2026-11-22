@@ -50,18 +50,16 @@ struct TaskSelectionMenu: View {
 }
 
 extension TaskMenuAction {
-    /// The action's title for a number of tasks at once.
+    /// The action's title for several tasks at once.
     func title(count: Int) -> String {
         guard count > 1 else { return title }
         return switch self {
-        case .settle: "Settle \(count) Threads"
-        case .restore: "Restore \(count) Threads"
-        case .snooze: "Snooze \(count) Threads"
-        case .unsnooze: "Unsnooze \(count) Threads"
-        case .markRead: "Mark \(count) as Read"
-        case .markUnread: "Mark \(count) as Unread"
-        case .delete: "Delete \(count) Threads"
-        case .fork, .forkInto, .rename: title
+        case .settle: "Settle Threads"
+        case .restore: "Restore Threads"
+        case .snooze: "Snooze Threads"
+        case .unsnooze: "Unsnooze Threads"
+        case .delete: "Delete Threads"
+        case .markRead, .markUnread, .fork, .forkInto, .rename: title
         }
     }
 }

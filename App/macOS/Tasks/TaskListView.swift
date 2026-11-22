@@ -11,8 +11,6 @@ struct TaskListView: View {
     @State private var taskToRename: HostTask?
     @State private var isSettledExpanded = false
     @State private var isSnoozedExpanded = false
-    /// The tasks the last drag from this list took, for which sections they can go to.
-    @State private var draggedTasks: [TaskRef] = []
 
     private var hosts: HostDirectory { app.hosts }
 
@@ -40,24 +38,23 @@ struct TaskListView: View {
     var body: some View {
         let sections = TaskSections(tasks, section: \.task.menuState.section)
 
-        let dropTargets = Set(TaskSection.allCases.filter { !hosts.moves(draggedTasks, to: $0).isEmpty })
         let shownIDs = sections.ids(shown: isShown)
 
         // A subagent on screen isn't listed, so no row is selected and choosing its session's row goes back.
         List(selection: Bindable(app).selectedTasks) {
-            rows(sections.active, in: .active, dropTargets: dropTargets)
+            rows(sections.active)
             if !sections.snoozed.isEmpty {
                 Section(isExpanded: Binding(get: { isShown(.snoozed) }, set: { isSnoozedExpanded = $0 }).animation()) {
-                    rows(sections.snoozed, in: .snoozed, dropTargets: dropTargets)
+                    rows(sections.snoozed)
                 } header: {
-                    header("Snoozed", for: .snoozed, dropTargets: dropTargets)
+                    Text("Snoozed")
                 }
             }
             if !sections.settled.isEmpty {
                 Section(isExpanded: Binding(get: { isShown(.settled) }, set: { isSettledExpanded = $0 }).animation()) {
-                    rows(sections.settled, in: .settled, dropTargets: dropTargets)
+                    rows(sections.settled)
                 } header: {
-                    header("Settled", for: .settled, dropTargets: dropTargets)
+                    Text("Settled")
                 }
             }
         }
@@ -95,22 +92,12 @@ struct TaskListView: View {
         }
     }
 
-    private func rows(_ items: [HostTask], in section: TaskSection, dropTargets: Set<TaskSection>) -> some View {
+    private func rows(_ items: [HostTask]) -> some View {
         ForEach(items) { item in
             TaskRow(item: item, showsHost: hosts.showsHostNames)
                 .tag(item.id)
-                .draggable(drag(item))
-                .taskDropTarget(isEnabled: dropTargets.contains(section)) { drop($0, into: section) }
                 .taskSwipeActions(item.task.menuState) { perform($0, on: [item]) }
         }
-    }
-
-    /// A section's header, which takes dropped tasks whether the section is expanded or not.
-    private func header(_ title: String, for section: TaskSection, dropTargets: Set<TaskSection>) -> some View {
-        Text(title)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(.rect)
-            .taskDropTarget(isEnabled: dropTargets.contains(section)) { drop($0, into: section) }
     }
 
     /// Whether the section's rows are on screen: active always, the others
@@ -129,22 +116,6 @@ struct TaskListView: View {
         guard app.selectedTasks.count > 1 else { return }
         let listed = app.selectedTasks.intersection(ids)
         if listed != app.selectedTasks { app.selectedTasks = listed.count > 1 ? listed : [] }
-    }
-
-    /// The dragged row's task, or every selected one when it's among them:
-    /// the list drags all the selected rows, each with this, and the drop
-    /// counts each task once. It runs as the drag starts.
-    private func drag(_ item: HostTask) -> TaskDrag {
-        let selected = app.selectedTasks
-        let refs = selected.count > 1 && selected.contains(item.id) ? tasks.map(\.id).filter(selected.contains) : [item.id]
-        draggedTasks = refs
-        return TaskDrag(tasks: refs)
-    }
-
-    private func drop(_ refs: [TaskRef], into section: TaskSection) {
-        draggedTasks = []
-        let moves = Dictionary(grouping: hosts.moves(refs, to: section), by: \.action)
-        for (action, moves) in moves { perform(action, on: moves.map(\.item)) }
     }
 
     @ViewBuilder

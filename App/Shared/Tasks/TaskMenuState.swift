@@ -34,15 +34,4 @@ nonisolated struct TaskMenuState: Hashable, Sendable {
         case .fork, .forkInto, .rename: return true
         }
     }
-
-    /// The action that moves the task into the section, if it can go there.
-    func action(movingTo target: TaskSection) -> TaskMenuAction? {
-        guard target != section else { return nil }
-        let action: TaskMenuAction = switch target {
-        case .active: isSettled ? .restore : .unsnooze
-        case .snoozed: .snooze(nil)
-        case .settled: .settle
-        }
-        return offers(action) ? action : nil
-    }
 }
