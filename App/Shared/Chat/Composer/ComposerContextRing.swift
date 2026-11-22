@@ -9,14 +9,14 @@ struct ComposerContextRing: View {
     @State private var showsDetails = false
 
     // On the Mac, about as tall as the dictation waveform. On iPhone and
-    // iPad, as big as the model menu's gauge symbol beside it, which is 22pt
-    // at title2 and follows Dynamic Type up to the
-    // xxxLarge cap ComposerModelMenu sets.
+    // iPad, a little smaller than the model menu's 22pt gauge symbol beside
+    // it, following Dynamic Type at title2 up to the xxxLarge cap
+    // ComposerModelMenu sets.
     #if os(macOS)
     private let diameter: CGFloat = 14
     private let lineWidth: CGFloat = 2
     #else
-    @ScaledMetric(relativeTo: .title2) private var diameter: CGFloat = 22
+    @ScaledMetric(relativeTo: .title2) private var diameter: CGFloat = 20
     @ScaledMetric(relativeTo: .title2) private var lineWidth: CGFloat = 2.5
     #endif
     /// The ring sits in a cell as wide as the dictation button's, spaced from
