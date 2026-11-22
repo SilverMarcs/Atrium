@@ -8,13 +8,16 @@ struct ComposerContextRing: View {
     let usage: WireContextUsage
     @State private var showsDetails = false
 
-    // About as tall as the dictation waveform.
+    // On the Mac, about as tall as the dictation waveform. On iPhone and
+    // iPad, as big as the model menu's gauge symbol beside it, which is 22pt
+    // at title2 and follows Dynamic Type up to the
+    // xxxLarge cap ComposerModelMenu sets.
     #if os(macOS)
-    private static let diameter: CGFloat = 14
-    private static let lineWidth: CGFloat = 2
+    private let diameter: CGFloat = 14
+    private let lineWidth: CGFloat = 2
     #else
-    private static let diameter: CGFloat = 18
-    private static let lineWidth: CGFloat = 2.5
+    @ScaledMetric(relativeTo: .title2) private var diameter: CGFloat = 22
+    @ScaledMetric(relativeTo: .title2) private var lineWidth: CGFloat = 2.5
     #endif
     /// The ring sits in a cell as wide as the dictation button's, spaced from
     /// the model menu as the row's controls are, so the row keeps its rhythm.
@@ -33,13 +36,13 @@ struct ComposerContextRing: View {
         } label: {
             ZStack {
                 Circle()
-                    .stroke(.quaternary, lineWidth: Self.lineWidth)
+                    .stroke(.quaternary, lineWidth: lineWidth)
                 Circle()
                     .trim(from: 0, to: fraction)
-                    .stroke(.secondary, style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round))
+                    .stroke(.secondary, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            .frame(width: Self.diameter, height: Self.diameter)
+            .frame(width: diameter, height: diameter)
             .frame(width: Self.cellWidth)
             .padding(.vertical, 4)
             .frame(maxHeight: .infinity)

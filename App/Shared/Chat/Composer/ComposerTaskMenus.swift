@@ -20,6 +20,10 @@ struct ComposerModelMenu: View {
         HStack(spacing: ComposerContextRing.spacing) {
             if !isCompact, let usage = item.task.contextUsage {
                 ComposerContextRing(usage: usage)
+                    #if os(iOS)
+                    // The model menu's label caps its symbol at this size.
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    #endif
             }
             TaskModelMenu(
                 provider: item.task.provider, selection: item.task.modelSelection, models: models,
