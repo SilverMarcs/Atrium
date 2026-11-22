@@ -7,7 +7,8 @@ import SwiftUI
 /// Source Control and Commands when it returns.
 struct ProjectLinks: View {
     let workspace: WorkspaceRef
-    var runningCommands = 0
+    /// Filled while a command or agent background session is running.
+    var hasRunningCommands = false
 
     var body: some View {
         NavigationLink(value: Route.files(workspace)) {
@@ -17,10 +18,7 @@ struct ProjectLinks: View {
             Label("Source Control", systemImage: "arrow.triangle.branch")
         }
         NavigationLink(value: Route.commands(workspace)) {
-            Label("Commands", systemImage: "terminal")
-            if runningCommands > 0 {
-                Text("\(runningCommands) running")
-            }
+            Label("Commands", systemImage: hasRunningCommands ? "terminal.fill" : "terminal")
         }
     }
 }

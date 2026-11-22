@@ -32,7 +32,7 @@ struct TaskMoreMenu: View {
                 Section {
                     ProjectLinks(
                         workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-                        runningCommands: runningCommands
+                        hasRunningCommands: runningCommands > 0
                     )
                 } header: {
                     // The branch or worktree the project's pages show.
