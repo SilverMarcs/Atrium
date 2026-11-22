@@ -380,7 +380,6 @@ PYVERSION
 # ----- Build dirs -----
 ARCHIVE_PATH="$OUT_DIR/${APP_NAME}.xcarchive"
 EXPORT_DIR="$OUT_DIR/export"
-APP_PATH="$EXPORT_DIR/${APP_NAME}.app"
 DMG_PATH="$OUT_DIR/$DMG_NAME"
 DMG_STAGE="$OUT_DIR/dmg-stage"
 CLI_DIR="$OUT_DIR/cli"
@@ -413,7 +412,9 @@ xcodebuild -exportArchive \
   -allowProvisioningUpdates \
   -quiet
 
-[[ -d "$APP_PATH" ]] || fatal "Exported app missing: $APP_PATH"
+# The bundle is named after PRODUCT_NAME (Diffs), not the scheme.
+APP_PATH="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.app' | head -1)"
+[[ -d "$APP_PATH" ]] || fatal "Exported app missing from $EXPORT_DIR"
 
 # ----- Command-line client, built while notarization waits on Apple -----
 CLI_PID=""
