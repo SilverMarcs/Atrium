@@ -148,14 +148,28 @@ struct ToolbarHeightPlaceholder: ToolbarContent {
     }
 }
 
-/// Keeps the Settings sidebar resizable but never collapsed, like System Settings.
-/// SwiftUI re-enables collapsing on updates, so the split view item is observed.
+/// Keeps the Settings sidebar resizable but never collapsed, like System Settings,
+/// and the toolbar unified with the title bar. SwiftUI gives Settings windows the
+/// `.preference` toolbar style (centered title, items on a second row) and re-enables
+/// collapsing on updates, so the window and split view item are observed.
 private struct SettingsWindowConfigurator: NSViewRepresentable {
     final class Coordinator {
+        weak var observedWindow: NSWindow?
         weak var observedSidebar: NSSplitViewItem?
+        var windowObservation: NSKeyValueObservation?
         var observations: [NSKeyValueObservation] = []
 
         func attach(to window: NSWindow) {
+            if window.toolbarStyle != .unified { window.toolbarStyle = .unified }
+            if observedWindow !== window {
+                observedWindow = window
+                windowObservation = window.observe(\.toolbarStyle, options: [.new]) { window, _ in
+                    MainActor.assumeIsolated {
+                        if window.toolbarStyle != .unified { window.toolbarStyle = .unified }
+                    }
+                }
+            }
+
             guard let splitVC = findSplitViewController(in: window),
                   let sidebar = splitVC.splitViewItems.first else { return }
 

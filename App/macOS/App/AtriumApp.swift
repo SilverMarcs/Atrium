@@ -47,6 +47,5 @@ struct AtriumApp: App {
                 .environment(dictationSettings)
         }
         .defaultSize(width: 760, height: 580)
-        .windowToolbarStyle(.unified)
     }
 }
