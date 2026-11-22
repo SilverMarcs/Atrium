@@ -60,11 +60,10 @@ struct GitInspectorChangesList: View {
                                         state.showUndoLastCommitAlert = true
                                     },
                                     onShowChanges: {
-                                        openWindow(value: GitCommitDiffSheetItem(
+                                        openWindow(value: GitDiffWindowItem(
                                             project: project.id,
-                                            hash: commit.hash,
-                                            message: commit.message,
-                                            repositoryRootURL: snapshot.repositoryRootURL
+                                            repositoryRootURL: snapshot.repositoryRootURL,
+                                            subject: .commit(hash: commit.hash, message: commit.message)
                                         ))
                                     }
                                 )

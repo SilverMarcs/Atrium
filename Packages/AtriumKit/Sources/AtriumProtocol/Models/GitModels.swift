@@ -221,6 +221,9 @@ public nonisolated enum GitDiffStage: Hashable, Codable, Sendable {
     case staged
     case unstaged
     case commit(hash: String)
+    /// A branch's changes since it left its base: from their merge base to
+    /// `head`, or to the checkout's working tree when `head` is nil.
+    case comparison(mergeBase: String, head: String?)
 }
 
 public nonisolated struct GitDiffReference: Hashable, Codable, Sendable {
@@ -257,4 +260,45 @@ public nonisolated struct TaskCheckout: Codable, Sendable, Hashable {
         self.repository = repository
         self.worktree = worktree
     }
+}
+
+/// What a branch or checkout changed since it left its base, as a pull
+/// request would show it.
+public nonisolated struct GitComparison: Codable, Equatable, Sendable {
+    /// The base as asked for or chosen, e.g. "origin/develop".
+    public var base: String
+    /// The base's full ref, e.g. "refs/remotes/origin/develop", or the base
+    /// itself when it isn't a ref.
+    public var baseRef: String
+    /// Where the compared side left the base; its files are diffed from here.
+    public var mergeBase: String
+    /// Commits on the compared side since the merge base.
+    public var commitCount: Int
+    public var files: [GitComparedFile]
+
+    public init(base: String, baseRef: String, mergeBase: String, commitCount: Int, files: [GitComparedFile]) {
+        self.base = base
+        self.baseRef = baseRef
+        self.mergeBase = mergeBase
+        self.commitCount = commitCount
+        self.files = files
+    }
+
+    public var added: Int { files.reduce(0) { $0 + ($1.added ?? 0) } }
+    public var removed: Int { files.reduce(0) { $0 + ($1.removed ?? 0) } }
+}
+
+public nonisolated struct GitComparedFile: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var file: GitChangedFile
+    /// Lines added and removed, or nil for a binary file.
+    public var added: Int?
+    public var removed: Int?
+
+    public init(file: GitChangedFile, added: Int?, removed: Int?) {
+        self.file = file
+        self.added = added
+        self.removed = removed
+    }
+
+    public var id: String { file.id }
 }

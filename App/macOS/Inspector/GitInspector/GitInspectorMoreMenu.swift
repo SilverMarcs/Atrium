@@ -1,10 +1,11 @@
 import AtriumProtocol
 import SwiftUI
 
-/// The Git tab's other actions, beside the commit message: branches and the
-/// commit log. The branch itself is switched at the inspector's foot.
+/// The Git tab's other actions, beside the commit message: branches, the
+/// commit log and reviewing the branch's changes. The branch itself is switched at the inspector's foot.
 struct GitInspectorMoreMenu: View {
     @Bindable var state: GitInspectorState
+    @Environment(\.openWindow) private var openWindow
 
     private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
@@ -30,6 +31,18 @@ struct GitInspectorMoreMenu: View {
                 state.showCommitLogSheet = true
             } label: {
                 Label("Commit Log", systemImage: "clock.arrow.circlepath")
+            }
+            .disabled(snapshot == nil)
+
+            Button {
+                guard let snapshot else { return }
+                openWindow(value: GitDiffWindowItem(
+                    project: state.project.id,
+                    repositoryRootURL: snapshot.repositoryRootURL,
+                    subject: .review(head: nil, name: snapshot.branchName ?? "HEAD")
+                ))
+            } label: {
+                Label("Review Changes", systemImage: "text.magnifyingglass")
             }
             .disabled(snapshot == nil)
 

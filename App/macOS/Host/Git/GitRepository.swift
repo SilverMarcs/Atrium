@@ -124,6 +124,7 @@ actor GitRepository {
             case .unstaged: ""
             case .staged: "HEAD"
             case .commit(let hash): "\(hash)~1"
+            case .comparison(let mergeBase, _): mergeBase
             }
             old = try? await self.fileData(at: path, ref: ref, repositoryRootURL: root)
         }
@@ -135,6 +136,10 @@ actor GitRepository {
                 new = (try? await self.fileData(at: path, ref: "", repositoryRootURL: root)) ?? (try? Data(contentsOf: reference.fileURL))
             case .commit(let hash):
                 new = try? await self.fileData(at: path, ref: hash, repositoryRootURL: root)
+            case .comparison(_, let head?):
+                new = try? await self.fileData(at: path, ref: head, repositoryRootURL: root)
+            case .comparison(_, nil):
+                new = try? Data(contentsOf: reference.fileURL)
             }
         }
         return (old, new)
@@ -259,6 +264,63 @@ actor GitRepository {
         }
     }
 
+    /// What `head` changed since it left `base`, as a pull request would show
+    /// it. A nil `head` is the checkout itself, uncommitted and untracked
+    /// files included; a nil `base` is the repository's default branch.
+    func compare(base: String?, head: String?, at root: URL) async throws -> GitComparison {
+        let base = if let base { base } else { try await self.defaultCompareBase(at: root) }
+        let tip = head ?? "HEAD"
+        let mergeBase = try await self.executor.execute(GitMergeBaseCommand(base: base, tip: tip), at: root)
+        async let baseRef = self.executor.execute(GitFullRefNameCommand(ref: base), at: root)
+        async let commitCount = self.executor.execute(GitRevListCountCommand(range: "\(mergeBase)..\(tip)"), at: root)
+        async let statuses = self.executor.execute(GitComparisonFilesCommand(mergeBase: mergeBase, head: head), at: root)
+        async let lineCounts = self.executor.execute(GitComparisonNumstatCommand(mergeBase: mergeBase, head: head), at: root)
+        var untracked: [String] = []
+        if head == nil { untracked = try await self.executor.execute(GitUntrackedFilesCommand(), at: root) }
+
+        let counts = try await lineCounts
+        let entries = try await statuses
+        var files = entries.compactMap { entry -> GitComparedFile? in
+            guard let kind = Self.changeKindFromDiffTreeStatus(entry.status) else { return nil }
+            let file = GitChangedFile(fileURL: root.appending(path: entry.path).standardizedFileURL,
+                                      repositoryRelativePath: entry.path, kind: kind)
+            let count = counts[entry.path]
+            return GitComparedFile(file: file, added: count?.added, removed: count?.removed)
+        }
+        for path in untracked {
+            let fileURL = root.appending(path: path).standardizedFileURL
+            let lines = (try? Data(contentsOf: fileURL)).flatMap { String(data: $0, encoding: .utf8) }?.diffLines.count
+            files.append(GitComparedFile(file: GitChangedFile(fileURL: fileURL, repositoryRelativePath: path, kind: .untracked),
+                                         added: lines, removed: lines.map { _ in 0 }))
+        }
+        files.sort { $0.file.repositoryRelativePath.localizedStandardCompare($1.file.repositoryRelativePath) == .orderedAscending }
+        let fullRef = try await baseRef
+        return GitComparison(base: base, baseRef: fullRef.isEmpty ? base : fullRef, mergeBase: mergeBase,
+                             commitCount: try await commitCount, files: files)
+    }
+
+    /// The local default branch when there is one, else its remote: the
+    /// Branches sheet's merge target.
+    private func defaultCompareBase(at root: URL) async throws -> String {
+        async let target = self.executor.execute(GitDefaultBranchCommand(), at: root)
+        async let local = self.executor.execute(GitLocalBranchesCommand(), at: root)
+        let targets = Self.defaultTargets(try await target, localBranches: try await local)
+        guard let base = targets.local ?? targets.remote else {
+            throw GitError.commandFailed(command: "git for-each-ref", message: "This repository has no default branch to compare with.")
+        }
+        return base
+    }
+
+    /// The default branch as a local branch, when one exists, and as its
+    /// remote. Work merged into the local one counts before it's pushed, and
+    /// work merged on the remote counts before it's pulled.
+    private nonisolated static func defaultTargets(_ target: (ref: String, branch: String)?,
+                                                   localBranches: [String]) -> (local: String?, remote: String?) {
+        guard let target else { return (nil, nil) }
+        let remote = target.ref.hasPrefix("refs/remotes/") ? String(target.ref.dropFirst("refs/remotes/".count)) : nil
+        return (localBranches.contains(target.branch) ? target.branch : nil, remote)
+    }
+
     func switchBranch(to branch: String, at repositoryRootURL: URL) async throws {
         try await self.executor.execute(GitSwitchCommand(branch: branch), at: repositoryRootURL)
     }
@@ -299,12 +361,7 @@ actor GitRepository {
         let target = try await targetTask
         let currentMerged = Set(try await currentMergedTask)
 
-        // Work merged into the local default branch counts before it's pushed,
-        // and work merged on the remote counts before it's pulled.
-        let remoteTarget = target.flatMap { target in
-            target.ref.hasPrefix("refs/remotes/") ? String(target.ref.dropFirst("refs/remotes/".count)) : nil
-        }
-        let localTarget = target.flatMap { target in local.contains { $0.name == target.branch } ? target.branch : nil }
+        let (localTarget, remoteTarget) = Self.defaultTargets(target, localBranches: local.map(\.name))
         let mergeTargets = [localTarget.map { "refs/heads/\($0)" }, remoteTarget.map { "refs/remotes/\($0)" }].compactMap { $0 }
         var defaultMerged: Set<String> = []
         for ref in mergeTargets {
@@ -782,14 +839,90 @@ private struct GitCommitFilesCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [(status: Character, path: String)] {
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return trimmed.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\t")
-            guard parts.count >= 2, let status = parts[0].first else { return nil }
-            let path = String(parts.last!)
-            return (status: status, path: path)
+        parseNameStatus(output)
+    }
+}
+
+/// Each file's status letter and path, as `--name-status` prints them.
+private func parseNameStatus(_ output: String) -> [(status: Character, path: String)] {
+    output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+        let parts = line.split(separator: "\t")
+        guard parts.count >= 2, let status = parts[0].first else { return nil }
+        return (status: status, path: String(parts.last!))
+    }
+}
+
+private struct GitMergeBaseCommand: GitCommand {
+    let base: String
+    let tip: String
+
+    var arguments: [String] { ["merge-base", base, tip] }
+
+    func parse(output: String) throws -> String {
+        output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// The ref's full name, or empty when it's a commit rather than a ref.
+private struct GitFullRefNameCommand: GitCommand {
+    let ref: String
+
+    var arguments: [String] { ["rev-parse", "--symbolic-full-name", ref] }
+
+    func parse(output: String) throws -> String {
+        output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct GitRevListCountCommand: GitCommand {
+    let range: String
+
+    var arguments: [String] { ["rev-list", "--count", range] }
+
+    func parse(output: String) throws -> Int {
+        Int(output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    }
+}
+
+/// Files changed from the merge base to `head`, or to the working tree.
+private struct GitComparisonFilesCommand: GitCommand {
+    let mergeBase: String
+    let head: String?
+
+    var arguments: [String] {
+        ["diff", "--no-renames", "--name-status", mergeBase] + (head.map { [$0] } ?? [])
+    }
+
+    func parse(output: String) throws -> [(status: Character, path: String)] {
+        parseNameStatus(output)
+    }
+}
+
+/// Lines added and removed per file, nil for binary files.
+private struct GitComparisonNumstatCommand: GitCommand {
+    let mergeBase: String
+    let head: String?
+
+    var arguments: [String] {
+        ["diff", "--no-renames", "--numstat", mergeBase] + (head.map { [$0] } ?? [])
+    }
+
+    func parse(output: String) throws -> [String: (added: Int?, removed: Int?)] {
+        var counts: [String: (added: Int?, removed: Int?)] = [:]
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3 else { continue }
+            counts[String(parts[2])] = (Int(parts[0]), Int(parts[1]))
         }
+        return counts
+    }
+}
+
+private struct GitUntrackedFilesCommand: GitCommand {
+    var arguments: [String] { ["ls-files", "--others", "--exclude-standard"] }
+
+    func parse(output: String) throws -> [String] {
+        parseNameList(output)
     }
 }
 

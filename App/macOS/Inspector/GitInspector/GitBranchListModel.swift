@@ -16,7 +16,7 @@ final class GitBranchListModel {
     private(set) var forceableAction: GitBranchAction?
     private var isPerforming = false
     private var loadRevision = 0
-    private let repositoryRootURL: URL
+    let repositoryRootURL: URL
     private let inspector: GitInspectorState
 
     var isBusy: Bool { isLoading || isPerforming || inspector.model.isBusy }

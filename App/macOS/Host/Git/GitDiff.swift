@@ -198,6 +198,8 @@ struct GitDiffCommand: GitCommand {
                 // -m --first-parent so merge commits show changes vs their first parent
                 // rather than the combined diff `git show` emits for them.
                 ["show", "-m", "--first-parent", "--format=", "--no-color", "--no-ext-diff", hash, "--", reference.repositoryRelativePath]
+            case .comparison(let mergeBase, let head):
+                ["diff", "--no-color", "--no-ext-diff", mergeBase] + (head.map { [$0] } ?? []) + ["--", reference.repositoryRelativePath]
         }
     }
 
@@ -215,6 +217,8 @@ struct GitFullContextDiffCommand: GitCommand {
                 ["diff", "--no-color", "--no-ext-diff", "-U99999", "--", reference.repositoryRelativePath]
             case .commit(let hash):
                 ["show", "-m", "--first-parent", "--format=", "--no-color", "--no-ext-diff", "-U99999", hash, "--", reference.repositoryRelativePath]
+            case .comparison(let mergeBase, let head):
+                ["diff", "--no-color", "--no-ext-diff", "-U99999", mergeBase] + (head.map { [$0] } ?? []) + ["--", reference.repositoryRelativePath]
         }
     }
 

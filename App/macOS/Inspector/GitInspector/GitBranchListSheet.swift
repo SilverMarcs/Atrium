@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GitBranchListSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
     private let state: GitInspectorState
     @State private var model: GitBranchListModel
 
@@ -35,7 +36,10 @@ struct GitBranchListSheet: View {
                                 ForEach(model.listing.localBranches) { branch in
                                     GitBranchRow(name: branch.name, icon: "arrow.triangle.branch",
                                                  isCurrent: branch.isCurrent, isMerged: branch.isMergedIntoDefaultBranch)
-                                    .contextMenu { deleteButton(for: .deleteBranch(branch)) }
+                                    .contextMenu {
+                                        reviewButton(head: branch.isCurrent ? nil : branch.name, name: branch.name)
+                                        deleteButton(for: .deleteBranch(branch))
+                                    }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         deleteButton(for: .deleteBranch(branch))
                                     }
@@ -48,7 +52,10 @@ struct GitBranchListSheet: View {
                                     GitBranchRow(name: worktree.branch ?? "Detached · \(worktree.head?.prefix(7) ?? "")",
                                                  subtitle: worktree.path.path(percentEncoded: false), icon: "folder",
                                                  isCurrent: worktree.isCurrent, isMerged: model.listing.isMerged(worktree))
-                                    .contextMenu { deleteButton(for: .deleteWorktree(worktree)) }
+                                    .contextMenu {
+                                        reviewButton(head: nil, name: worktree.branch ?? worktree.displayName, in: worktree.path)
+                                        deleteButton(for: .deleteWorktree(worktree))
+                                    }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         deleteButton(for: .deleteWorktree(worktree))
                                     }
@@ -60,6 +67,7 @@ struct GitBranchListSheet: View {
                                 ForEach(model.listing.remoteBranches) { branch in
                                     GitBranchRow(name: branch.name, icon: "cloud", isCurrent: false,
                                                  isMerged: branch.isMergedIntoDefaultBranch)
+                                    .contextMenu { reviewButton(head: branch.name, name: branch.name) }
                                 }
                             }
                         }
@@ -95,6 +103,22 @@ struct GitBranchListSheet: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.actionError ?? "")
+        }
+    }
+
+    /// Opens what a branch changed since it left the default branch, or
+    /// nothing for the default branch itself. A nil `head` is the checkout at
+    /// `root` with its uncommitted changes.
+    @ViewBuilder
+    private func reviewButton(head: String?, name: String, in root: URL? = nil) -> some View {
+        if name != model.listing.mergeTarget {
+            Button("Review Changes", systemImage: "text.magnifyingglass") {
+                openWindow(value: GitDiffWindowItem(
+                    project: state.project.id,
+                    repositoryRootURL: root ?? model.repositoryRootURL,
+                    subject: .review(head: head, name: name)
+                ))
+            }
         }
     }
 

@@ -29,17 +29,8 @@ struct DiffPopoverHeaderView: View {
 
             Spacer()
 
-            HStack(spacing: 4) {
-                if addedCount > 0 {
-                    Text("+\(addedCount)")
-                        .foregroundStyle(.green)
-                }
-                if removedCount > 0 {
-                    Text("-\(removedCount)")
-                        .foregroundStyle(.red)
-                }
-            }
-            .font(.caption.monospacedDigit())
+            LineCounts(added: addedCount, removed: removedCount)
+                .font(.caption.monospacedDigit())
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 4)

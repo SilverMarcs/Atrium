@@ -49,11 +49,10 @@ struct GitCommitLogSheet: View {
 
     private func openDiffs(for entry: GitLogEntry) {
         guard let snapshot else { return }
-        openWindow(value: GitCommitDiffSheetItem(
+        openWindow(value: GitDiffWindowItem(
             project: state.project.id,
-            hash: entry.hash,
-            message: entry.subject,
-            repositoryRootURL: snapshot.repositoryRootURL
+            repositoryRootURL: snapshot.repositoryRootURL,
+            subject: .commit(hash: entry.hash, message: entry.subject)
         ))
         dismiss()
     }

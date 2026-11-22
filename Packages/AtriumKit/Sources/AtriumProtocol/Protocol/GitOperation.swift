@@ -25,6 +25,10 @@ public nonisolated enum GitOperation: Codable, Sendable {
     case amendMessage(String)
     case log(limit: Int)
     case commitFiles(hash: String)
+    /// What `head` (a branch or commit, or the checkout with its uncommitted
+    /// changes when nil) changed since it left `base`, or the repository's
+    /// default branch when `base` is nil.
+    case compare(base: String?, head: String?)
     case branches
     case deleteBranch(name: String, force: Bool)
     /// Deletes a linked worktree and its branch; `force` also discards its modified and untracked files.
@@ -41,7 +45,7 @@ public nonisolated enum GitOperation: Codable, Sendable {
     /// Whether the operation can change what `git status` reports.
     public var changesStatus: Bool {
         switch self {
-        case .log, .commitFiles, .branches, .hasUncommittedChanges, .diff, .imageDiff, .gutterDiff, .fetchIfStale:
+        case .log, .commitFiles, .compare, .branches, .hasUncommittedChanges, .diff, .imageDiff, .gutterDiff, .fetchIfStale:
             false
         default:
             true
@@ -53,6 +57,7 @@ public nonisolated enum GitReply: Codable, Sendable {
     case done
     case flag(Bool)
     case files([GitChangedFile])
+    case comparison(GitComparison)
     case log([GitLogEntry])
     case branches(GitBranchListing)
     case pull(PullPreservingResult)

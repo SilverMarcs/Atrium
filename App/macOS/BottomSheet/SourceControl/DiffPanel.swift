@@ -54,19 +54,9 @@ struct DiffPanel: View {
 
     @ViewBuilder
     private func diffStats(_ lineKinds: [Int: GitDiffLineKind]) -> some View {
-        let added = lineKinds.values.filter { $0 == .added }.count
-        let removed = lineKinds.values.filter { $0 == .removed }.count
-        HStack(spacing: 4) {
-            if added > 0 {
-                Text("+\(added)")
-                    .foregroundStyle(.green)
-            }
-            if removed > 0 {
-                Text("-\(removed)")
-                    .foregroundStyle(.red)
-            }
-        }
-        .font(.caption.monospacedDigit())
+        LineCounts(added: lineKinds.values.filter { $0 == .added }.count,
+                   removed: lineKinds.values.filter { $0 == .removed }.count)
+            .font(.caption.monospacedDigit())
     }
 }
 

@@ -61,6 +61,8 @@ enum GitService {
             return .log(try await git.commitLog(at: root, limit: limit))
         case .commitFiles(let hash):
             return .files(try await git.changedFiles(forCommit: hash, at: root))
+        case .compare(let base, let head):
+            return .comparison(try await git.compare(base: base, head: head, at: root))
         case .branches:
             return .branches(try await git.allBranchesDetailed(at: root))
         case .deleteBranch(let name, let force):

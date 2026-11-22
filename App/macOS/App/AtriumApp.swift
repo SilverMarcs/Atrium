@@ -20,9 +20,9 @@ struct AtriumApp: App {
             AppCommands(app: app, updater: updater)
         }
 
-        WindowGroup("Diff", for: GitCommitDiffSheetItem.self) { $item in
+        WindowGroup("Diff", for: GitDiffWindowItem.self) { $item in
             if let item {
-                GitCommitDiffWindow(item: item)
+                GitDiffWindow(item: item)
                     .environment(app)
             }
         }
