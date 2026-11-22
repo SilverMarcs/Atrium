@@ -271,7 +271,7 @@ final class Orchestrator {
     private func isDone(_ thread: AgentThread) -> Bool {
         guard Self.outcome(of: thread.status) != nil, !prompted.contains(thread.id) else { return false }
         let awaitsWork = store.turns.values.contains { $0.requester == thread.id }
-        let hasWorkingSubagents = integrations.threads.contains { $0.parentID == thread.id && $0.status.isWorking }
+        let hasWorkingSubagents = descendants(of: thread.id).contains { $0.isSubagent && $0.status.isWorking }
         return !awaitsWork && !hasWorkingSubagents
     }
 

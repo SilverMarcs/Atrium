@@ -70,10 +70,32 @@ nonisolated struct AntigravityConversation {
         originals[messageID] ?? []
     }
 
+    /// Restores pre-decoded display thumbnails for prompts replayed by `session/load`,
+    /// which omits uploaded images; `thumbnailsByPrompt` is indexed 0-based by prompt order.
+    mutating func restoreThumbnails(_ thumbnailsByPrompt: [[Data]]) {
+        var ordinal = 0
+        for index in entries.indices {
+            guard case .prompt(let text, let existing, let isSteer) = entries[index] else { continue }
+            defer { ordinal += 1 }
+            guard existing.isEmpty, thumbnailsByPrompt.indices.contains(ordinal), !thumbnailsByPrompt[ordinal].isEmpty else { continue }
+            entries[index] = .prompt(text: text, thumbnails: thumbnailsByPrompt[ordinal], isSteer: isSteer)
+        }
+    }
+
     /// Applies a `session/update`, and returns whether the messages changed.
     mutating func apply(_ update: [String: Any]) -> Bool {
         switch update["sessionUpdate"] as? String {
         case "user_message_chunk":
+            if let image = Self.image(in: update), let thumbnail = TranscriptImage.thumbnail(image) {
+                if case .prompt(let previous, let thumbnails, let isSteer)? = entries.last {
+                    entries[entries.count - 1] = .prompt(text: previous, thumbnails: thumbnails + [thumbnail], isSteer: isSteer)
+                } else {
+                    entries.append(.prompt(text: "", thumbnails: [thumbnail], isSteer: false))
+                }
+                let ordinal = entries.reduce(0) { if case .prompt = $1 { $0 + 1 } else { $0 } }
+                originals[promptID(ordinal), default: []].append(image)
+                return true
+            }
             // A resource Atrium sent with a prompt, such as a side chat's boundary, replays as its own piece.
             guard let text = Self.text(in: update), !text.hasPrefix("Content of atrium://") else { return false }
             // A replayed prompt can arrive in pieces.
@@ -121,6 +143,12 @@ nonisolated struct AntigravityConversation {
     private static func text(in update: [String: Any]) -> String? {
         guard let content = update["content"] as? [String: Any], content["type"] as? String == "text" else { return nil }
         return content["text"] as? String
+    }
+
+    private static func image(in update: [String: Any]) -> Data? {
+        guard let content = update["content"] as? [String: Any], content["type"] as? String == "image",
+              let encoded = content["data"] as? String, encoded.utf8.count <= 28 * 1024 * 1024 else { return nil }
+        return Data(base64Encoded: encoded)
     }
 
     private func promptID(_ ordinal: Int) -> String { "\(sessionID).u\(ordinal)" }

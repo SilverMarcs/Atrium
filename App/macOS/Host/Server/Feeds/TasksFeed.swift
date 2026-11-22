@@ -73,9 +73,21 @@ final class TasksFeed: TopicFeed {
         let withWorkingDescendants = orchestrator.sessionsWithWorkingDescendants()
         let threads = integrations.visibleThreads(matching: "")
         let subagents = Dictionary(grouping: threads.filter { $0.parentID != nil }) { $0.parentID ?? "" }
+        func descendants(of id: String) -> [AgentThread] {
+            var found: [AgentThread] = []
+            var pending = [id]
+            var visited: Set<String> = [id]
+            while let current = pending.popLast() {
+                for child in subagents[current] ?? [] where visited.insert(child.id).inserted {
+                    found.append(child)
+                    pending.append(child.id)
+                }
+            }
+            return found
+        }
         return WireTasksSnapshot(
             tasks: threads.map {
-                wireTask($0, subagents: subagents[$0.id] ?? [], hasWorkingDescendants: withWorkingDescendants.contains($0.id))
+                wireTask($0, subagents: descendants(of: $0.id), hasWorkingDescendants: withWorkingDescendants.contains($0.id))
             },
             workspaces: workspaces.workspaces.map(wireWorkspace),
             providers: integrations.providers.map { provider in

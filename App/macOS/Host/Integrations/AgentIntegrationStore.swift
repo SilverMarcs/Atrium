@@ -80,8 +80,14 @@ final class AgentIntegrationStore {
             // Snoozed threads stay reachable however far newer activity pushes them down.
             return Array(matching.filter { snoozedUntil[$0.id] == nil }.prefix(25)) + matching.filter { snoozedUntil[$0.id] != nil }
         }
-        let shown = Set(sessions.map(\.id))
-        let children = threads.filter { ($0.parentID ?? $0.sideChatParentID).map(shown.contains) == true }
+        var shown = Set(sessions.map(\.id))
+        var children: [AgentThread] = []
+        while true {
+            let next = threads.filter { !shown.contains($0.id) && ($0.parentID ?? $0.sideChatParentID).map(shown.contains) == true }
+            if next.isEmpty { break }
+            children += next
+            shown.formUnion(next.map(\.id))
+        }
         return (sessions + children).sorted(by: AgentThread.newestFirst)
     }
 

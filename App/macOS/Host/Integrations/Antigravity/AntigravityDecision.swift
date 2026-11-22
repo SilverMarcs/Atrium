@@ -13,6 +13,7 @@ nonisolated enum AntigravityDecision {
     struct Question {
         let property: String
         let values: [String: String]
+        let allowsMultiple: Bool
         let otherProperty: String?
     }
 
@@ -32,17 +33,18 @@ nonisolated enum AntigravityDecision {
             for property in properties.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
                 let field = properties[property] ?? [:]
                 // An "other" answer belongs to the question it follows.
-                if property.hasSuffix("_other"), properties[String(property.dropLast(6))]?["oneOf"] != nil { continue }
-                let choices = field["oneOf"] as? [[String: Any]] ?? []
-                let titles = choices.compactMap { $0["title"] as? String }
-                let values = Dictionary(choices.compactMap { choice -> (String, String)? in
-                    guard let title = choice["title"] as? String, let value = choice["const"] as? String else { return nil }
-                    return (title, value)
-                }, uniquingKeysWith: { first, _ in first })
+                if property.hasSuffix("_other"), let base = properties[String(property.dropLast(6))], hasChoices(base) { continue }
+                let parsed = parseChoices(in: field)
                 let other = properties["\(property)_other"] == nil ? nil : "\(property)_other"
-                questions.append(Question(property: property, values: values, otherProperty: other))
-                shown.append(AgentQuestion(id: property, title: field["title"] as? String ?? field["description"] as? String ?? property,
-                                           options: titles, note: field["description"] as? String))
+                questions.append(Question(property: property, values: parsed.values, allowsMultiple: parsed.allowsMultiple, otherProperty: other))
+                shown.append(AgentQuestion(
+                    id: property,
+                    title: field["title"] as? String ?? field["description"] as? String ?? property,
+                    options: parsed.titles,
+                    allowsMultiple: parsed.allowsMultiple,
+                    optionDescriptions: parsed.descriptions,
+                    note: field["description"] as? String
+                ))
             }
             guard !shown.isEmpty else { return nil }
             let interaction = AgentInteraction(id: id, taskID: taskID, title: "Antigravity needs your input",
@@ -65,17 +67,74 @@ nonisolated enum AntigravityDecision {
             guard decision.allowed else { return ["action": "decline"] }
             var content: [String: Any] = [:]
             for question in questions {
-                guard let answer = decision.answers[question.property]?.first, !answer.isEmpty else { continue }
-                if let value = question.values[answer] {
-                    content[question.property] = value
-                } else if let other = question.otherProperty {
-                    content[other] = answer
-                } else if question.values.isEmpty {
-                    content[question.property] = answer
+                let answers = (decision.answers[question.property] ?? []).filter { !$0.isEmpty }
+                guard !answers.isEmpty else { continue }
+                if question.allowsMultiple {
+                    var selected: [String] = []
+                    var custom: [String] = []
+                    for answer in answers {
+                        if let value = question.values[answer] {
+                            selected.append(value)
+                        } else if question.otherProperty != nil {
+                            custom.append(answer)
+                        } else {
+                            selected.append(answer)
+                        }
+                    }
+                    if !selected.isEmpty { content[question.property] = selected }
+                    if let other = question.otherProperty, !custom.isEmpty { content[other] = custom.joined(separator: ", ") }
+                } else if let answer = answers.first {
+                    if let value = question.values[answer] {
+                        content[question.property] = value
+                    } else if let other = question.otherProperty {
+                        content[other] = answer
+                    } else if question.values.isEmpty {
+                        content[question.property] = answer
+                    }
                 }
             }
             return ["action": "accept", "content": content]
         }
+    }
+
+    private static func hasChoices(_ field: [String: Any]) -> Bool {
+        !parseChoices(in: field).titles.isEmpty
+    }
+
+    /// Single-select (`oneOf` / `enum`) or multi-select (`type: "array"` with
+    /// `items.anyOf` / `items.oneOf` / `items.enum`) schema choices.
+    private static func parseChoices(in field: [String: Any])
+        -> (titles: [String], values: [String: String], descriptions: [String: String], allowsMultiple: Bool) {
+        let isArray = field["type"] as? String == "array"
+        let source = isArray ? (field["items"] as? [String: Any] ?? [:]) : field
+        let entries = source["oneOf"] as? [[String: Any]] ?? source["anyOf"] as? [[String: Any]]
+        if let entries, !entries.isEmpty {
+            var titles: [String] = []
+            var values: [String: String] = [:]
+            var descriptions: [String: String] = [:]
+            for entry in entries {
+                guard let value = entry["const"] as? String else { continue }
+                let title = (entry["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? value
+                titles.append(title)
+                if values[title] == nil { values[title] = value }
+                if let description = entry["description"] as? String, !description.isEmpty {
+                    descriptions[title] = description
+                }
+            }
+            return (titles, values, descriptions, isArray)
+        }
+        if let rawValues = source["enum"] as? [String], !rawValues.isEmpty {
+            let names = source["enumNames"] as? [String] ?? []
+            var titles: [String] = []
+            var values: [String: String] = [:]
+            for (index, value) in rawValues.enumerated() {
+                let title = names.indices.contains(index) && !names[index].isEmpty ? names[index] : value
+                titles.append(title)
+                if values[title] == nil { values[title] = value }
+            }
+            return (titles, values, [:], isArray)
+        }
+        return ([], [:], [:], isArray)
     }
 
     /// The result that withdraws the request, as a turn that's cancelled does.

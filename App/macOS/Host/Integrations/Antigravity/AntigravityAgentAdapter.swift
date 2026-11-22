@@ -12,16 +12,24 @@ import OSLog
 @MainActor
 final class AntigravityAgentAdapter: AgentProviderAdapter {
     let provider = AgentProvider.antigravity
-    let capabilities: AgentCapabilities = [.sideChatImages]
+    let capabilities: AgentCapabilities = [.deleteDescendants, .sideChatImages]
     var onEvent: ((AgentEvent) -> Void)?
     private(set) var defaultSettings: TaskStartSettings?
 
     private let connection = AntigravityConnection()
     private let instructions: ChatInstructions
     private let fullAccess = AntigravityFullAccess()
+    private let history = AntigravityHistory()
+    private var brainWatcher: FileSystemWatcher?
     private var sessions: [String: Session] = [:]
     private var opening: [String: Task<Session, Error>] = [:]
     private var decisions: [String: Pending] = [:]
+    /// Cached base metadata for listed/created main threads so single-thread refreshes avoid re-running `session/list`.
+    private var listedThreads: [String: AgentThread] = [:]
+    /// Known subagent -> parent session ID links (including nested subagents).
+    private var subagentParents: [String: String] = [:]
+    /// When a parent session was explicitly stopped or interrupted; subagent activity after this reflects a new turn.
+    private var stoppedAt: [String: Date] = [:]
     /// Side chats by session ID: the session they ask about, and how many
     /// messages they took from it, which they don't show.
     private var sideChats: [String: (parentID: String, inherited: Int)] = [:]
@@ -29,12 +37,14 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     private var unmarkedSideChats: Set<String> = []
     /// The commands and skills the server last listed, by the folder of the session it listed them for.
     private var commands: [String: [AgentSkill]] = [:]
+    private var fallbackCommands: [AgentSkill] = []
     private var isEnabled = true
 
     private let log = Logger(subsystem: "Atrium", category: "Antigravity")
 
     private final class Session {
         let directory: String
+        let openedAt = Date()
         var conversation: AntigravityConversation
         var status: AgentThreadStatus = .idle
         var settings = AntigravitySettings()
@@ -68,36 +78,104 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
 
     func listThreads() async throws -> [AgentThread] {
         try await start()
-        var threads: [AgentThread] = []
+        watchBrain()
+        var rawThreads: [AgentThread] = []
         var cursor: String?
         repeat {
             var params: [String: Any] = [:]
             if let cursor { params["cursor"] = cursor }
             let page = try await connection.request("session/list", params)
-            threads += (page["sessions"] as? [[String: Any]] ?? []).compactMap(thread)
+            rawThreads += (page["sessions"] as? [[String: Any]] ?? []).compactMap(baseThread)
             cursor = page["nextCursor"] as? String
         } while cursor != nil
-        return threads
+
+        var newListed: [String: AgentThread] = [:]
+        var enrichedThreads: [AgentThread] = []
+        var subagents: [AgentThread] = []
+        var newSubagentParents: [String: String] = [:]
+        let waitingIDs = Set(decisions.values.map(\.sessionID))
+
+        for base in rawThreads {
+            newListed[base.sessionID] = base
+            let snap = await history.snapshot(of: base.sessionID, directory: base.directory)
+            let described = describe(base, history: snap.work)
+            enrichedThreads.append(described)
+            guard !described.isSideChat else { continue }
+            let openSession = sessions[base.sessionID]
+            let children = await history.subagents(
+                of: described,
+                parentSnapshot: snap,
+                sessionOpenedAt: openSession?.openedAt,
+                parentIsWorking: openSession?.status.isWorking == true,
+                stoppedAt: stoppedAt[base.sessionID],
+                waitingIDs: waitingIDs
+            )
+            for child in children {
+                if let parentID = child.parentSessionID { newSubagentParents[child.sessionID] = parentID }
+            }
+            subagents += children
+        }
+        // Preserve any threads created or subagents discovered while `listThreads()` was suspended.
+        for (id, existing) in listedThreads where newListed[id] == nil && sessions[id] != nil {
+            newListed[id] = existing
+        }
+        for (child, parent) in subagentParents where newSubagentParents[child] == nil && newListed[parent] != nil {
+            newSubagentParents[child] = parent
+        }
+        listedThreads = newListed
+        subagentParents = newSubagentParents
+        let liveIDs = Set(enrichedThreads.map(\.sessionID)).union(subagents.map(\.sessionID))
+        await history.dropDeleted(keeping: liveIDs)
+        return enrichedThreads + subagents
     }
 
     func readThread(_ sessionID: String) async throws -> AgentThread? {
-        try await listThreads().first { $0.sessionID == sessionID }
+        if subagentParents[sessionID] != nil, let rootID = rootAncestorID(of: sessionID), let rootBase = listedThreads[rootID] {
+            let rootSnap = await history.snapshot(of: rootID, directory: rootBase.directory)
+            let root = describe(rootBase, history: rootSnap.work)
+            let openSession = sessions[rootID]
+            let children = await history.subagents(
+                of: root,
+                parentSnapshot: rootSnap,
+                sessionOpenedAt: openSession?.openedAt,
+                parentIsWorking: openSession?.status.isWorking == true,
+                stoppedAt: stoppedAt[rootID],
+                waitingIDs: Set(decisions.values.map(\.sessionID))
+            )
+            for child in children {
+                if let parentID = child.parentSessionID { subagentParents[child.sessionID] = parentID }
+            }
+            return children.first { $0.sessionID == sessionID }
+        }
+        if let base = listedThreads[sessionID] {
+            let snap = await history.snapshot(of: sessionID, directory: base.directory)
+            return describe(base, history: snap.work)
+        }
+        return try await listThreads().first { $0.sessionID == sessionID }
     }
 
-    private func thread(_ row: [String: Any]) -> AgentThread? {
+    private func baseThread(_ row: [String: Any]) -> AgentThread? {
         guard let id = row["sessionId"] as? String,
               let directory = row["cwd"] as? String, directory != AntigravityConnection.folder.filePath else { return nil }
         let reported = (row["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let updated = (row["updatedAt"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
-        return describe(AgentThread(
+        return AgentThread(
             sessionID: id, provider: .antigravity, title: reported.isEmpty ? "New Antigravity chat" : reported,
             directory: directory, updatedAt: updated ?? .now, status: .unknown, isMainTask: true,
-            hasProviderTitle: !reported.isEmpty))
+            hasProviderTitle: !reported.isEmpty)
     }
 
-    /// The thread with what its open session reports.
-    private func describe(_ source: AgentThread) -> AgentThread {
+    /// The thread with what its open session and on-disk log report.
+    private func describe(_ source: AgentThread, history work: AntigravityHistory.Work? = nil) -> AgentThread {
         var thread = source
+        if let work {
+            if !work.edits.folders.isEmpty || !work.edits.pullRequests.isEmpty { thread.edits = work.edits }
+            thread.currentDirectory = work.currentDirectory
+            if thread.model == nil {
+                thread.model = work.model
+                thread.reasoningEffort = work.reasoningEffort
+            }
+        }
         if let sideChat = sideChats[thread.sessionID] {
             thread.title = "Side Chat"
             thread.hasProviderTitle = true
@@ -110,8 +188,10 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             thread.hasProviderTitle = true
         }
         thread.status = session.status
-        thread.model = session.settings.model
-        thread.reasoningEffort = session.settings.thinkingLevel
+        if let model = session.settings.model {
+            thread.model = model
+            thread.reasoningEffort = session.settings.thinkingLevel
+        }
         thread.permissionMode = session.settings.permissionMode(fullAccess: fullAccess.contains(thread.sessionID))
         thread.contextUsage = session.contextUsage
         return thread
@@ -120,6 +200,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     // MARK: - Sessions
 
     func openConversation(_ thread: AgentThread) async throws {
+        // Subagents are read from their brain log on disk rather than opened in ACP.
+        guard !thread.isSubagent else { return }
         _ = try await session(of: thread)
     }
 
@@ -130,6 +212,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let id = thread.sessionID
         let task = Task { () throws -> Session in
             try await start()
+            watchBrain()
             let session = Session(id: id, directory: thread.directory)
             // The replay arrives before the reply, as updates for the session.
             sessions[id] = session
@@ -137,6 +220,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                 let reply = try await connection.request("session/load", ["sessionId": id, "cwd": thread.directory, "mcpServers": []],
                                                          timeout: .seconds(120))
                 session.settings = AntigravitySettings(configOptions: reply["configOptions"] as? [[String: Any]] ?? [])
+                let thumbnails = await history.promptThumbnails(of: id)
+                session.conversation.restoreThumbnails(thumbnails)
             } catch {
                 if sessions[id] === session { sessions[id] = nil }
                 throw error
@@ -154,6 +239,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
 
     func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await start()
+        watchBrain()
         let blocks = instructions.forNewChat
         // Antigravity keeps the appended prompt with the conversation, for every later load.
         let reply = try await connection.request("session/new", [
@@ -171,16 +257,20 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         if let mode = settings?.permissionMode { try await apply(.permissionMode(mode), to: id, in: session) }
         // Antigravity names a conversation after its first prompt, so a name given now waits for that.
         session.pendingTitle = title
-        return describe(AgentThread(
+        let base = AgentThread(
             sessionID: id, provider: .antigravity, title: title ?? "New Antigravity chat", directory: directory,
-            updatedAt: .now, status: .idle, isMainTask: true, hasProviderTitle: title != nil, projectDirectory: directory))
+            updatedAt: .now, status: .idle, isMainTask: true, hasProviderTitle: title != nil, projectDirectory: directory)
+        listedThreads[id] = base
+        return describe(base)
     }
 
     /// Closes the session in the server; a turn in progress ends with it.
     func stopThread(_ thread: AgentThread) async throws {
         opening[thread.sessionID]?.cancel()
-        guard sessions.removeValue(forKey: thread.sessionID) != nil else { return }
+        stoppedAt[thread.sessionID] = .now
         withdrawDecisions(of: thread.sessionID)
+        invalidateDescendants(of: thread.sessionID)
+        guard sessions.removeValue(forKey: thread.sessionID) != nil else { return }
         _ = try? await connection.request("session/close", ["sessionId": thread.sessionID], timeout: .seconds(10))
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .unknown)))
     }
@@ -194,14 +284,26 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             "cascadeId": id, "annotations": ["title": title], "mergeAnnotations": true,
         ])
         sessions[id]?.title = title
+        listedThreads[id]?.title = title
+        listedThreads[id]?.hasProviderTitle = true
         onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(title: title)))
     }
 
-    /// Deletes the conversation from Antigravity's history, as its terminal app's `/resume` does.
+    /// Deletes the conversation and its subagent conversations from Antigravity's history.
     func deleteThread(_ thread: AgentThread) async throws {
+        let descendants = await history.descendantIDs(of: thread.sessionID)
         try await stopThread(thread)
         _ = try await connection.languageServer("DeleteCascadeTrajectory", ["cascadeId": thread.sessionID])
+        for childID in descendants {
+            _ = try? await connection.languageServer("DeleteCascadeTrajectory", ["cascadeId": childID])
+            subagentParents[childID] = nil
+            await history.forget(childID)
+            onEvent?(.threadDeleted(sessionID: childID))
+        }
+        listedThreads[thread.sessionID] = nil
+        stoppedAt[thread.sessionID] = nil
         fullAccess.set(false, for: thread.sessionID)
+        await history.forget(thread.sessionID)
         onEvent?(.threadDeleted(sessionID: thread.sessionID))
         onEvent?(.listInvalidated)
     }
@@ -218,10 +320,12 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let id = try await copy(thread, through: last)
         try await name(id, thread.forkTitle)
         instructions.record(instructions.blocks(for: thread.id), for: "\(provider.rawValue):\(id)")
-        onEvent?(.listInvalidated)
-        return describe(AgentThread(
+        let base = AgentThread(
             sessionID: id, provider: .antigravity, title: thread.forkTitle, directory: thread.directory, updatedAt: .now,
-            status: .unknown, isMainTask: true, hasProviderTitle: true, projectDirectory: thread.projectDirectory))
+            status: .unknown, isMainTask: true, hasProviderTitle: true, projectDirectory: thread.projectDirectory)
+        listedThreads[id] = base
+        onEvent?(.listInvalidated)
+        return describe(base)
     }
 
     /// A copy of the conversation through a step, which keeps the instructions it was started with.
@@ -277,6 +381,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         _ = try await connection.languageServer("RevertToCascadeStep", [
             "cascadeId": thread.sessionID, "stepIndex": last, "conversationOnly": true,
         ])
+        await history.forget(thread.sessionID)
         return try await transcript(for: thread)
     }
 
@@ -304,12 +409,18 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     // MARK: - Conversation
 
     func transcript(for thread: AgentThread) async throws -> [TranscriptMessage] {
+        if thread.isSubagent {
+            return await history.subagentTranscript(thread.sessionID, parentID: thread.parentSessionID)
+        }
         let messages = try await session(of: thread).conversation.messages
         return Array(messages.dropFirst(sideChats[thread.sessionID]?.inherited ?? 0))
     }
 
     func promptImages(of thread: AgentThread, messageID: String) async throws -> [Data] {
-        sessions[thread.sessionID]?.conversation.images(ofPrompt: messageID) ?? []
+        let inMemory = sessions[thread.sessionID]?.conversation.images(ofPrompt: messageID) ?? []
+        if !inMemory.isEmpty { return inMemory }
+        guard let ordinal = AntigravityConversation.ordinal(ofPrompt: messageID) else { return [] }
+        return await history.promptImages(of: thread.sessionID, promptOrdinal: ordinal)
     }
 
     /// Starts a turn, or joins the one in progress as a steer, which the
@@ -317,6 +428,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     func sendPrompt(_ text: String, images: [URL], to thread: AgentThread) async throws {
         let session = try await session(of: thread)
         let id = thread.sessionID
+        stoppedAt[id] = nil
         var content: [[String: Any]] = text.isEmpty ? [] : [["type": "text", "text": text]]
         var originals: [Data] = []
         var thumbnails: [Data] = []
@@ -351,7 +463,11 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             }
             guard let self, self.sessions[id] === session else { return }
             session.prompts -= 1
-            if session.prompts == 0 { self.update(session, id: id, status: status) }
+            if session.prompts == 0 {
+                if status == .stopped { self.stoppedAt[id] = .now }
+                self.update(session, id: id, status: status)
+                self.invalidateDescendants(of: id)
+            }
         }
     }
 
@@ -374,15 +490,18 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         """
 
     func interrupt(_ thread: AgentThread) async throws {
-        guard sessions[thread.sessionID] != nil else { return }
-        withdrawDecisions(of: thread.sessionID)
-        connection.notify("session/cancel", ["sessionId": thread.sessionID])
+        // Stopping a subagent cancels the parent session running it.
+        let targetID = openSessionOwner(of: thread.sessionID) ?? rootAncestorID(of: thread.sessionID) ?? thread.sessionID
+        stoppedAt[targetID] = .now
+        withdrawDecisions(of: targetID)
+        invalidateDescendants(of: targetID)
+        guard sessions[targetID] != nil else { return }
+        connection.notify("session/cancel", ["sessionId": targetID])
     }
 
     /// Cancelling also stops the session's subagents and background tasks.
     func endBackgroundWork(_ thread: AgentThread) async throws {
-        guard sessions[thread.sessionID] != nil else { return }
-        connection.notify("session/cancel", ["sessionId": thread.sessionID])
+        try await interrupt(thread)
     }
 
     func respond(to interactionID: String, with decision: AgentDecision) async throws {
@@ -393,6 +512,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         onEvent?(.interactionResolved(id: interactionID))
         if let session = sessions[pending.sessionID], !decisions.values.contains(where: { $0.sessionID == pending.sessionID }) {
             update(session, id: pending.sessionID, status: .processing)
+        } else if subagentParents[pending.sessionID] != nil {
+            onEvent?(.threadInvalidated(sessionID: pending.sessionID))
         }
     }
 
@@ -441,16 +562,23 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
 
     func contextWindow(for thread: AgentThread) async -> Int? {
         if let window = sessions[thread.sessionID]?.contextUsage?.window { return window }
+        guard !thread.isSubagent else { return nil }
         return try? await session(of: thread).contextUsage?.window
     }
 
     func skills(in directory: String) async throws -> [AgentSkill] {
-        commands[directory] ?? commands.values.first ?? []
+        if let listed = commands[directory], !listed.isEmpty { return listed }
+        let disk = await history.diskSkills(in: directory)
+        if !disk.isEmpty { return disk }
+        return fallbackCommands
     }
 
     func setEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
         guard !isEnabled else { return }
+        brainWatcher?.stop()
+        brainWatcher = nil
+        stoppedAt.removeAll()
         for task in opening.values { task.cancel() }
         connection.stop()
     }
@@ -462,18 +590,94 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         try await connection.start()
     }
 
+    /// Watches Antigravity's on-disk brain logs so subagents, edits and external turns appear live.
+    private func watchBrain() {
+        guard brainWatcher == nil, isEnabled else { return }
+        let brain = history.brainDirectory
+        guard FileManager.default.fileExists(atPath: brain.path) else { return }
+        brainWatcher = FileSystemWatcher(url: brain, latency: 0.3, ignoredSubstrings: []) { @Sendable [weak self] paths in
+            var seen: Set<String> = []
+            let ids = paths.compactMap { path -> String? in
+                guard let id = AntigravityHistory.conversationID(inChangedPath: path, under: brain),
+                      seen.insert(id).inserted else { return nil }
+                return id
+            }
+            guard !ids.isEmpty else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled else { return }
+                for id in ids { self.brainTranscriptChanged(id) }
+            }
+        }
+    }
+
+    private func brainTranscriptChanged(_ id: String) {
+        if subagentParents[id] != nil {
+            let rootDirectory = rootAncestorID(of: id).flatMap { listedThreads[$0]?.directory ?? sessions[$0]?.directory }
+            Task { [weak self] in
+                guard let self else { return }
+                let snap = await self.history.snapshot(of: id, directory: rootDirectory)
+                for spawn in snap.work.subagents where self.subagentParents[spawn.sessionID] == nil {
+                    self.subagentParents[spawn.sessionID] = id
+                    self.onEvent?(.threadInvalidated(sessionID: spawn.sessionID))
+                }
+                self.onEvent?(.threadInvalidated(sessionID: id))
+                self.onEvent?(.transcriptChanged(sessionID: id))
+            }
+            return
+        }
+        if let directory = listedThreads[id]?.directory ?? sessions[id]?.directory {
+            Task { [weak self] in
+                guard let self else { return }
+                let snap = await self.history.snapshot(of: id, directory: directory)
+                for spawn in snap.work.subagents where self.subagentParents[spawn.sessionID] == nil {
+                    self.subagentParents[spawn.sessionID] = id
+                    self.onEvent?(.threadInvalidated(sessionID: spawn.sessionID))
+                }
+                self.onEvent?(.threadInvalidated(sessionID: id))
+            }
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            if let parentID = await self.history.senderParentID(of: id),
+               self.listedThreads[parentID] != nil || self.sessions[parentID] != nil || self.subagentParents[parentID] != nil {
+                self.subagentParents[id] = parentID
+                self.onEvent?(.threadInvalidated(sessionID: id))
+                self.onEvent?(.transcriptChanged(sessionID: id))
+            } else {
+                self.onEvent?(.listInvalidated)
+            }
+        }
+    }
+
     /// Every open session and pending decision went with the server.
     private func closed() {
         let ids = Array(sessions.keys)
         sessions.removeAll()
+        stoppedAt.removeAll()
         for id in decisions.keys { onEvent?(.interactionResolved(id: id)) }
         decisions.removeAll()
-        for id in ids { onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .unknown))) }
+        for id in ids {
+            onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(status: .unknown)))
+            invalidateDescendants(of: id)
+        }
     }
 
     private func receive(_ method: String, _ params: [String: Any]) {
         guard method == "session/update", let id = params["sessionId"] as? String,
-              let update = params["update"] as? [String: Any], let session = sessions[id] else { return }
+              let update = params["update"] as? [String: Any] else { return }
+        if update["sessionUpdate"] as? String == "available_commands_update" {
+            let parsed = (update["availableCommands"] as? [[String: Any]] ?? []).compactMap { command -> AgentSkill? in
+                guard let name = command["name"] as? String, !name.isEmpty else { return nil }
+                return AgentSkill(name: name, description: command["description"] as? String ?? "")
+            }
+            if !parsed.isEmpty {
+                fallbackCommands = parsed
+                if let session = sessions[id] { commands[session.directory] = parsed }
+            }
+            return
+        }
+        guard let session = sessions[id] else { return }
         switch update["sessionUpdate"] as? String {
         case "usage_update":
             guard let used = update["used"] as? Int else { return }
@@ -489,6 +693,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
                 }
             }
             session.title = title
+            listedThreads[id]?.title = title
+            listedThreads[id]?.hasProviderTitle = true
             if sideChats[id] == nil { onEvent?(.threadUpdated(sessionID: id, update: AgentThreadUpdate(title: title))) }
         case "config_option_update":
             session.settings = AntigravitySettings(configOptions: update["configOptions"] as? [[String: Any]] ?? [])
@@ -496,37 +702,80 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         case "current_mode_update":
             session.settings.mode = update["currentModeId"] as? String
             onEvent?(.threadInvalidated(sessionID: id))
-        case "available_commands_update":
-            commands[session.directory] = (update["availableCommands"] as? [[String: Any]] ?? []).compactMap { command in
-                guard let name = command["name"] as? String, !name.isEmpty else { return nil }
-                return AgentSkill(name: name, description: command["description"] as? String ?? "")
-            }
         default:
             if session.conversation.apply(update) { onEvent?(.transcriptChanged(sessionID: id)) }
         }
     }
 
     private func receive(_ request: AntigravityRequest) {
-        guard let sessionID = request.params["sessionId"] as? String, sessions[sessionID] != nil else {
+        guard let sessionID = request.params["sessionId"] as? String else {
             return connection.refuse(request)
         }
+        if let openOwner = openSessionOwner(of: sessionID) {
+            handle(request, for: sessionID, openOwner: openOwner)
+            return
+        }
+        // A freshly spawned subagent can ask for permission before `brainWatcher` registers it.
+        guard !sessions.isEmpty else { return connection.refuse(request) }
+        Task { [weak self] in
+            guard let self else { return }
+            if let openOwner = await self.resolveOpenSessionOwner(of: sessionID) {
+                self.handle(request, for: sessionID, openOwner: openOwner)
+            } else {
+                self.connection.refuse(request)
+            }
+        }
+    }
+
+    private func handle(_ request: AntigravityRequest, for sessionID: String, openOwner: String) {
         let id = "\(provider.rawValue):\(UUID().uuidString)"
         guard let (decision, interaction) = AntigravityDecision.decision(
             for: request.method, params: request.params, id: id, taskID: "\(provider.rawValue):\(sessionID)") else {
             return connection.refuse(request)
         }
         // Full Access allows tools without asking; questions still go to the user.
-        if case .permission = decision, fullAccess.contains(sessionID) {
+        if case .permission = decision, fullAccess.contains(openOwner) {
             return connection.respond(to: request, with: decision.result(for: AgentDecision(allowed: true)))
         }
         decisions[id] = Pending(request: request, decision: decision, sessionID: sessionID)
         onEvent?(.interactionRequested(interaction))
-        if let session = sessions[sessionID] { update(session, id: sessionID, status: .waiting) }
+        if let session = sessions[sessionID] {
+            update(session, id: sessionID, status: .waiting)
+        } else {
+            onEvent?(.threadInvalidated(sessionID: sessionID))
+        }
     }
 
-    /// Withdraws what the session asked, as cancelling its turn does.
+    /// Walks on-disk `senderParentID` links for an unregistered subagent to find its open ancestor session.
+    private func resolveOpenSessionOwner(of sessionID: String) async -> String? {
+        var current = sessionID
+        var visited: Set<String> = [current]
+        var discovered: [(child: String, parent: String)] = []
+        while true {
+            let parent: String?
+            if let known = subagentParents[current] {
+                parent = known
+            } else {
+                parent = await history.senderParentID(of: current)
+            }
+            guard let parent, visited.insert(parent).inserted else { break }
+            discovered.append((current, parent))
+            if sessions[parent] != nil {
+                for link in discovered where subagentParents[link.child] == nil {
+                    subagentParents[link.child] = link.parent
+                    onEvent?(.threadInvalidated(sessionID: link.child))
+                }
+                return parent
+            }
+            current = parent
+        }
+        return nil
+    }
+
+    /// Withdraws what the session or any of its subagents asked, as cancelling its turn does.
     private func withdrawDecisions(of sessionID: String) {
-        for (id, pending) in decisions where pending.sessionID == sessionID {
+        let targets = Set([sessionID] + descendantSessionIDs(of: sessionID))
+        for (id, pending) in decisions where targets.contains(pending.sessionID) {
             decisions[id] = nil
             connection.respond(to: pending.request, with: pending.decision.cancellation)
             onEvent?(.interactionResolved(id: id))
@@ -541,6 +790,46 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     }
 
     // MARK: - Helpers
+
+    private func rootAncestorID(of sessionID: String) -> String? {
+        var current = sessionID
+        var visited: Set<String> = [current]
+        while let parent = subagentParents[current], visited.insert(parent).inserted {
+            current = parent
+        }
+        return current == sessionID ? nil : current
+    }
+
+    /// The open session owning `sessionID` (either itself or an open ancestor session for a subagent).
+    private func openSessionOwner(of sessionID: String) -> String? {
+        if sessions[sessionID] != nil { return sessionID }
+        var current = sessionID
+        var visited: Set<String> = [current]
+        while let parent = subagentParents[current], visited.insert(parent).inserted {
+            if sessions[parent] != nil { return parent }
+            current = parent
+        }
+        return nil
+    }
+
+    private func descendantSessionIDs(of sessionID: String) -> [String] {
+        var found: [String] = []
+        var pending = [sessionID]
+        var visited: Set<String> = [sessionID]
+        while let current = pending.popLast() {
+            for (child, parent) in subagentParents where parent == current && visited.insert(child).inserted {
+                found.append(child)
+                pending.append(child)
+            }
+        }
+        return found
+    }
+
+    private func invalidateDescendants(of sessionID: String) {
+        for child in descendantSessionIDs(of: sessionID) {
+            onEvent?(.threadInvalidated(sessionID: child))
+        }
+    }
 
     private static func mediaType(of url: URL) -> String {
         switch url.pathExtension.lowercased() {

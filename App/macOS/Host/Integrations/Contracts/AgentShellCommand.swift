@@ -57,6 +57,31 @@ nonisolated struct AgentShellCommand: Equatable, Sendable {
         return folders
     }
 
+    /// Whether the command might explicitly navigate into another directory (`cd` or `git -C`).
+    static func mightChangeDirectory(_ script: String) -> Bool {
+        script.contains("cd ") || script.contains("cd\t") || script.contains("-C ") || script.contains("-C\t")
+    }
+
+    /// The last folder the command explicitly targeted via `cd` or `git -C`,
+    /// ignoring quoted text, comments and heredocs. Nil when it never moved.
+    var lastDirectory: String? {
+        var moved: String?
+        var directories = [directory]
+        for segment in segments {
+            directories.removeLast(max(0, directories.count - segment.depth - 1))
+            while directories.count < segment.depth + 1 { directories.append(directories.last ?? nil) }
+            let words = Self.command(segment.words)
+            let current = directories[directories.count - 1]
+            if words.first == "cd", let resolved = Self.resolve(words.dropFirst().first ?? "~", in: current) {
+                directories[directories.count - 1] = resolved
+                moved = resolved
+            } else if let folder = Self.gitDashCFolder(words, in: current) {
+                moved = folder
+            }
+        }
+        return moved
+    }
+
     /// The pull requests it opened, as its output names them: URLs on lines of
     /// their own, from a command that runs `gh pr create`. One the command
     /// also names, as `gh pr view 12` does, existed before it ran; and when it
@@ -133,6 +158,25 @@ nonisolated struct AgentShellCommand: Equatable, Sendable {
         }
         guard let subcommand = rest.first, subcommand == "commit" || subcommand == "push" else { return nil }
         return folder
+    }
+
+    /// The explicit directory targeted by `git -C <path>`, regardless of subcommand.
+    private static func gitDashCFolder(_ words: ArraySlice<String>, in directory: String?) -> String? {
+        guard words.first.map({ URL(filePath: $0).lastPathComponent == "git" }) == true else { return nil }
+        var folder = directory
+        var sawDashC = false
+        var rest = words.dropFirst()
+        while let option = rest.first, option.hasPrefix("-") {
+            rest = rest.dropFirst()
+            if option == "-C", let path = rest.first {
+                folder = resolve(path, in: folder)
+                sawDashC = true
+                rest = rest.dropFirst()
+            } else if option == "-c" {
+                rest = rest.dropFirst()
+            }
+        }
+        return sawDashC ? folder : nil
     }
 
     private static func resolve(_ path: String, in directory: String?) -> String? {

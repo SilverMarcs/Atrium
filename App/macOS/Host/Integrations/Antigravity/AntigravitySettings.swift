@@ -76,6 +76,18 @@ nonisolated struct AntigravitySettings: Equatable {
         }
     }
 
+    /// Splits a model slug that carries a thinking-level suffix, such as
+    /// `gemini-4-neon-high`, into the model option and its thinking level.
+    static func splitModel(_ slug: String) -> (model: String, thinkingLevel: String?) {
+        for level in knownLevels {
+            let suffix = "-\(level)"
+            if slug.hasSuffix(suffix), slug.count > suffix.count {
+                return (String(slug.dropLast(suffix.count)), level)
+            }
+        }
+        return (slug, nil)
+    }
+
     /// Antigravity's thinking levels, lowest first.
-    private static let knownLevels = ["minimal", "low", "medium", "high", "xhigh", "max"]
+    static let knownLevels = ["minimal", "low", "medium", "high", "xhigh", "max"]
 }
