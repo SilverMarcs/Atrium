@@ -103,7 +103,8 @@ final class TasksFeed: TopicFeed {
                     deletionMessage: integrations.deletionMessage(for: provider)
                 )
             },
-            isRefreshing: integrations.isRefreshing
+            isRefreshing: integrations.isRefreshing,
+            snoozeDuration: integrations.defaultSnooze
         )
     }
 

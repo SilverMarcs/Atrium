@@ -10,7 +10,17 @@ struct TaskContextMenu: View {
     var body: some View {
         TaskActionButton(action: state.settleAction, state: state, perform: perform)
         if let snoozeAction = state.snoozeAction {
-            TaskActionButton(action: snoozeAction, state: state, perform: perform)
+            if case .snooze = snoozeAction {
+                Menu(snoozeAction.title, systemImage: snoozeAction.systemImage) {
+                    snoozeButtons(SnoozeDuration.menu)
+                    Menu("More") {
+                        snoozeButtons(SnoozeDuration.more)
+                    }
+                }
+                .disabled(!state.allowed.allows(snoozeAction))
+            } else {
+                TaskActionButton(action: snoozeAction, state: state, perform: perform)
+            }
         }
 
         Divider()
@@ -37,6 +47,12 @@ struct TaskContextMenu: View {
         if state.supportsDeletion {
             Divider()
             TaskActionButton(action: .delete, state: state, role: .destructive, perform: perform)
+        }
+    }
+
+    private func snoozeButtons(_ durations: [SnoozeDuration]) -> some View {
+        ForEach(durations) { duration in
+            Button(duration.title) { perform(.snooze(duration)) }
         }
     }
 }

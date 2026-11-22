@@ -2,8 +2,9 @@ import AtriumProtocol
 import Foundation
 import Observation
 
-/// What Settings → Integrations turns on for the agents this Mac runs, and the
-/// permission mode Settings → Agents starts new chats in. Each integration
+/// What Settings → Integrations turns on for the agents this Mac runs, the
+/// permission mode Settings → Agents starts new chats in, and how long
+/// Settings → General snoozes a swiped task. Each integration
 /// only decides which instruction blocks new chats get; the Orchestrator also
 /// decides whether agents' command-line clients get in.
 @MainActor
@@ -29,17 +30,24 @@ final class IntegrationSettings {
         didSet { defaults.set(defaultPermissionMode.rawValue, forKey: Self.permissionModeKey) }
     }
 
+    /// How long swiping a task snoozes it, on this Mac and its companions.
+    var defaultSnooze: SnoozeDuration {
+        didSet { defaults.set(defaultSnooze.rawValue, forKey: Self.snoozeKey) }
+    }
+
     @ObservationIgnored var onOrchestratorChange: ((Bool) -> Void)?
     @ObservationIgnored private let defaults: UserDefaults
 
     private static let orchestratorKey = "integrations.orchestrator.enabled"
     private static let visualizationsKey = "integrations.visualizations.enabled"
     private static let permissionModeKey = "agents.defaultPermissionMode"
+    private static let snoozeKey = "tasks.defaultSnooze"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isOrchestratorEnabled = defaults.bool(forKey: Self.orchestratorKey)
         isVisualizationsEnabled = defaults.object(forKey: Self.visualizationsKey) as? Bool ?? true
         defaultPermissionMode = defaults.string(forKey: Self.permissionModeKey).flatMap(PermissionMode.init(rawValue:)) ?? .fullAccess
+        defaultSnooze = defaults.string(forKey: Self.snoozeKey).flatMap(SnoozeDuration.init(rawValue:)) ?? .default
     }
 }

@@ -13,10 +13,12 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
     public var providers: [WireProvider]?
     /// Present only when it changed.
     public var isRefreshing: Bool?
+    /// Present only when it changed.
+    public var snoozeDuration: SnoozeDuration?
 
     public var isEmpty: Bool {
         upsertedTasks.isEmpty && removedTaskIDs.isEmpty && upsertedWorkspaces.isEmpty
-            && removedWorkspaceIDs.isEmpty && workspaceOrder == nil && providers == nil && isRefreshing == nil
+            && removedWorkspaceIDs.isEmpty && workspaceOrder == nil && providers == nil && isRefreshing == nil && snoozeDuration == nil
     }
 
     public init(from old: WireTasksSnapshot, to new: WireTasksSnapshot) {
@@ -26,10 +28,11 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
         if old.workspaces.map(\.id) != order { workspaceOrder = order }
         if old.providers != new.providers { providers = new.providers }
         if old.isRefreshing != new.isRefreshing { isRefreshing = new.isRefreshing }
+        if old.snoozeDuration != new.snoozeDuration { snoozeDuration = new.snoozeDuration }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case upsertedTasks, removedTaskIDs, upsertedWorkspaces, removedWorkspaceIDs, workspaceOrder, providers, isRefreshing
+        case upsertedTasks, removedTaskIDs, upsertedWorkspaces, removedWorkspaceIDs, workspaceOrder, providers, isRefreshing, snoozeDuration
     }
 
     // Empty lists are left out: most deltas touch a single task.
@@ -42,6 +45,7 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
         workspaceOrder = try container.decodeIfPresent([UUID].self, forKey: .workspaceOrder)
         providers = try container.decodeIfPresent(ProviderRows<WireProvider>.self, forKey: .providers)?.values
         isRefreshing = try container.decodeIfPresent(Bool.self, forKey: .isRefreshing)
+        snoozeDuration = try container.decodeIfPresent(SnoozeDuration.self, forKey: .snoozeDuration)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -53,6 +57,7 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
         try container.encodeIfPresent(workspaceOrder, forKey: .workspaceOrder)
         try container.encodeIfPresent(providers, forKey: .providers)
         try container.encodeIfPresent(isRefreshing, forKey: .isRefreshing)
+        try container.encodeIfPresent(snoozeDuration, forKey: .snoozeDuration)
     }
 
     private static func changes<Element: Identifiable & Equatable>(

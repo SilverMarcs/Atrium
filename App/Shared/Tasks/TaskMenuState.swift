@@ -13,6 +13,6 @@ nonisolated struct TaskMenuState: Hashable, Sendable {
 
     var settleAction: TaskMenuAction { isSettled ? .restore : .settle }
     /// A settled task can't be snoozed, but one that is snoozed can always wake.
-    var snoozeAction: TaskMenuAction? { isSnoozed ? .unsnooze : isSettled ? nil : .snooze }
+    var snoozeAction: TaskMenuAction? { isSnoozed ? .unsnooze : isSettled ? nil : .snooze(nil) }
     var readAction: TaskMenuAction { hasUnreadResult ? .markRead : .markUnread }
 }

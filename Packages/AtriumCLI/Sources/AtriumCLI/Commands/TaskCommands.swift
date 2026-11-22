@@ -28,7 +28,7 @@ extension TaskAction {
 }
 
 let taskCommands: [Command] = [
-    taskCommand("rename", usage: "rename <session> <title>", summary: "Rename a session.", positionals: 2) { arguments, _ in
+    taskCommand("rename", usage: "rename <session> <title>", summary: "Rename a session.", positionals: 2) { arguments, _, _ in
         let title = try arguments.required(1, "title").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw CLIError(.invalidArgument, "The title is empty.") }
         return [.rename(title: title)]
@@ -38,18 +38,20 @@ let taskCommands: [Command] = [
                 An agent settling its own session settles it once its turn ends, so run it as your last step, \
                 in the foreground and with no delay, then end your turn; the output has "settlesWhenTurnEnds": true. \
                 A prompt from anyone else before then keeps the session going, and one after brings it back.
-                """) { _, _ in [.settle] },
-    taskCommand("restore", summary: "Bring a settled session back to the active list.") { _, _ in [.restore] },
-    taskCommand("snooze", usage: "snooze <session> [--hours H]", summary: "Snooze a session for H hours (default 24).",
-                options: ["hours"]) { arguments, _ in
-        [.snooze(until: .now.addingTimeInterval((try arguments.number("hours") ?? 24) * 3600))]
+                """) { _, _, _ in [.settle] },
+    taskCommand("restore", summary: "Bring a settled session back to the active list.") { _, _, _ in [.restore] },
+    taskCommand("snooze", usage: "snooze <session> [--hours H]",
+                summary: "Snooze a session for H hours, or as long as swiping does on the host.",
+                options: ["hours"]) { arguments, _, host in
+        let hours = try arguments.number("hours")
+        return [.snooze(until: hours.map { .now.addingTimeInterval($0 * 3600) } ?? (host.tasks?.snoozeDuration ?? .default).end())]
     },
-    taskCommand("unsnooze", summary: "Wake a snoozed session.") { _, _ in [.unsnooze] },
-    taskCommand("mark-read", summary: "Acknowledge a session's result, as opening it on the Mac does.") { _, _ in [.markRead] },
-    taskCommand("mark-unread", summary: "Mark a session's result unread.") { _, _ in [.markUnread] },
+    taskCommand("unsnooze", summary: "Wake a snoozed session.") { _, _, _ in [.unsnooze] },
+    taskCommand("mark-read", summary: "Acknowledge a session's result, as opening it on the Mac does.") { _, _, _ in [.markRead] },
+    taskCommand("mark-unread", summary: "Mark a session's result unread.") { _, _, _ in [.markUnread] },
     taskCommand("fork", usage: "fork <session> [--into codex|claude|antigravity]",
                 summary: "Start a new session from a copy of this one's conversation, with its agent or another.",
-                options: ["into"]) { arguments, task in
+                options: ["into"]) { arguments, task, _ in
         let provider = try arguments.value("into").map { name in
             guard let provider = AgentProvider(rawValue: name) else { throw CLIError(.invalidArgument, "--into takes codex, claude or antigravity.") }
             return provider
@@ -58,7 +60,7 @@ let taskCommands: [Command] = [
     },
     taskCommand("configure", usage: "configure <session> [--model M] [--effort E] [--fast | --no-fast]",
                 summary: "Change the model, reasoning effort or fast mode for a session's next turns.",
-                options: ["model", "effort"], flags: ["fast", "no-fast"]) { arguments, task in
+                options: ["model", "effort"], flags: ["fast", "no-fast"]) { arguments, task, _ in
         let model = arguments.value("model"), effort = arguments.value("effort"), fast = try arguments.toggle("fast")
         guard model != nil || effort != nil || fast != nil else { throw CLIError(.invalidArgument, "Pass --model, --effort or --fast/--no-fast.") }
         var actions: [TaskAction] = []
@@ -71,7 +73,7 @@ let taskCommands: [Command] = [
     },
     taskCommand("delete", usage: "delete <session> --confirm",
                 summary: "Delete a session and its agent's history on the host. This can't be undone.",
-                flags: ["confirm"]) { arguments, _ in
+                flags: ["confirm"]) { arguments, _, _ in
         guard arguments.flag("confirm") else { throw CLIError(.invalidArgument, "Deleting can’t be undone; pass --confirm.") }
         return [.delete]
     },
@@ -82,7 +84,7 @@ let taskCommands: [Command] = [
 private func taskCommand(
     _ name: String, usage: String? = nil, summary: String, details: String = "", positionals: Int = 1,
     options: Set<String> = [], flags: Set<String> = [],
-    actions: @escaping @MainActor (Arguments, WireTask) throws -> [TaskAction]
+    actions: @escaping @MainActor (Arguments, WireTask, HostClient) throws -> [TaskAction]
 ) -> Command {
     Command(name: name, usage: usage ?? "\(name) <session>", summary: summary, details: details, options: options, flags: flags) { arguments in
         try arguments.allowPositionals(positionals)
@@ -92,7 +94,7 @@ private func taskCommand(
         let host = try await client.connectForTasks(options)
         let task = try host.session(selector)
         var created: String?
-        let actions = try actions(arguments, task)
+        let actions = try actions(arguments, task, host)
         for action in actions {
             precondition(action.command == name, "\(name) performs only its own actions")
             if case .forked(let id, _) = try await client.perform(.task(id: task.id, action: action), on: host) { created = id }

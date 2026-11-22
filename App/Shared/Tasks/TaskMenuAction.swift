@@ -5,7 +5,8 @@ import Foundation
 nonisolated enum TaskMenuAction: Hashable, Sendable {
     case settle
     case restore
-    case snooze
+    /// Snoozes for a duration, or for the host's default when there's none.
+    case snooze(SnoozeDuration?)
     case unsnooze
     /// Forks the chat with its own provider.
     case fork

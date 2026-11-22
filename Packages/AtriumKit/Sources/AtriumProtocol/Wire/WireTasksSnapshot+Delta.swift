@@ -10,6 +10,7 @@ public nonisolated extension WireTasksSnapshot {
         }
         if let providers = delta.providers { self.providers = providers }
         if let isRefreshing = delta.isRefreshing { self.isRefreshing = isRefreshing }
+        if let snoozeDuration = delta.snoozeDuration { self.snoozeDuration = snoozeDuration }
     }
 
     private static func merging<Element: Identifiable>(

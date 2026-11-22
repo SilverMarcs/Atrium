@@ -69,6 +69,8 @@ final class AgentIntegrationStore {
     var availableProviders: [AgentProvider] { providers.filter { available.contains($0) } }
     /// The permission mode new chats start in, from Settings → Agents.
     var defaultPermissionMode: PermissionMode { settings.defaultPermissionMode }
+    /// How long swiping a task snoozes it, from Settings → General.
+    var defaultSnooze: SnoozeDuration { settings.defaultSnooze }
     /// The latest sessions, and the subagents and side chats of those shown, which don't count toward the limit.
     func visibleThreads(matching searchText: String) -> [AgentThread] {
         let sessions = availableProviders.flatMap { provider in

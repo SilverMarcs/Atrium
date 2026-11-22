@@ -33,7 +33,7 @@ extension TaskMenuAction {
         switch self {
         case .settle: "Settle Thread"
         case .restore: "Restore Thread"
-        case .snooze: "Snooze for a Day"
+        case .snooze: "Snooze"
         case .unsnooze: "Unsnooze Thread"
         case .fork: "Fork"
         case .forkInto(let provider): provider.name

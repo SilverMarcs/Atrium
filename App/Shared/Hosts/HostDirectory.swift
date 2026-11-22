@@ -202,9 +202,9 @@ final class HostDirectory {
         switch action {
         case .settle: request = .settle
         case .restore: request = .restore
-        case .snooze:
-            guard let date = Calendar.current.date(byAdding: .day, value: 1, to: .now) else { return }
-            request = .snooze(until: date)
+        case .snooze(let duration):
+            guard let duration = duration ?? host.tasks?.snoozeDuration else { return }
+            request = .snooze(until: duration.end())
         case .unsnooze: request = .unsnooze
         case .markRead: request = .markRead
         case .markUnread: request = .markUnread

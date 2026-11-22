@@ -1,12 +1,15 @@
 import AppKit
+import AtriumProtocol
 import SwiftUI
 
 struct GeneralSettingsView: View {
+    @Environment(AppModel.self) private var app
     @AppStorage("editorWrapLines") private var editorWrapLines = true
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     var body: some View {
+        @Bindable var settings = app.integrationSettings
         Form {
             Section {
                 LabeledContent("Font size") {
@@ -21,6 +24,17 @@ struct GeneralSettingsView: View {
             }
 
             SendModeSettingsSection()
+
+            Section {
+                Picker(selection: $settings.defaultSnooze) {
+                    ForEach(SnoozeDuration.allCases) { duration in
+                        Text(duration.title).tag(duration)
+                    }
+                } label: {
+                    Text("Snooze for")
+                    Text("When you swipe to snooze a task")
+                }
+            }
 
             Section {
                 Toggle("Wrap long lines", isOn: $editorWrapLines)
@@ -47,9 +61,4 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
     }
-}
-
-#Preview {
-    GeneralSettingsView()
-        .environment(DictationSettings())
 }
