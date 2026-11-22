@@ -2,43 +2,50 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// Every subagent a task's agent ran, finished or not, as menu items. They
-/// aren't listed, so this is where they're opened.
+/// Every subagent a task's agent ran, finished or not, as menu items: those
+/// still working first, then the rest, each newest first. They aren't listed,
+/// so this is where they're opened.
 struct SubagentButtons: View {
     let item: HostTask
     let open: (TaskRef) -> Void
 
     var body: some View {
-        ForEach(item.host.tasks?.children(of: item.task.id) ?? []) { child in
-            Button {
-                open(TaskRef(hostID: item.host.id, taskID: child.id))
-            } label: {
-                Label {
-                    Text(child.title)
-                    Text("\(child.provider.name) · \(child.status.rawValue)")
-                } icon: {
-                    Image(systemName: child.status.systemImage)
-                }
+        let subagents = item.subagents
+        let working = subagents.filter(\.status.isWorking)
+        let finished = subagents.filter { !$0.status.isWorking }
+        Group {
+            ForEach(working) { button(for: $0) }
+            if !working.isEmpty, !finished.isEmpty {
+                Divider()
             }
+            ForEach(finished) { button(for: $0) }
         }
         // Mac menus leave out icons unless asked.
         .labelStyle(.titleAndIcon)
     }
+
+    private func button(for subagent: WireTask) -> some View {
+        Button {
+            open(TaskRef(hostID: item.host.id, taskID: subagent.id))
+        } label: {
+            Label(subagent.title, systemImage: subagent.status.systemImage)
+            Text("\(subagent.provider.name) · \(subagent.status.rawValue)")
+        }
+    }
 }
 
 extension HostTask {
+    /// The subagents this task's agent ran, newest first.
+    var subagents: [WireTask] { host.tasks?.children(of: task.id) ?? [] }
+
     /// Whether this task's agent ran any subagents.
-    var hasSubagents: Bool {
-        host.tasks?.children(of: task.id).isEmpty == false
-    }
+    var hasSubagents: Bool { !subagents.isEmpty }
 
     /// The side chat about this task's conversation, while it lasts.
     var sideChat: WireTask? { host.tasks?.sideChat(of: task.id) }
 
     /// Its subagents still working or waiting for an answer.
-    var workingSubagents: Int {
-        host.tasks?.children(of: task.id).count(where: \.status.isWorking) ?? 0
-    }
+    var workingSubagents: Int { subagents.count(where: \.status.isWorking) }
 
     /// The task's status for its progress indicators in its chat and its
     /// list row, which stay up while its subagents work in the background

@@ -43,14 +43,30 @@ struct TaskMoreMenu: View {
                     SideChatButton(item: item, open: openSideChat)
                 }
             }
-            if item.hasSubagents {
+            // A lone subagent shows inline; several get their own menu.
+            let subagentCount = item.subagents.count
+            if subagentCount == 1 {
                 Section("Subagents") {
                     SubagentButtons(item: item, open: openSubagent)
+                }
+            } else if subagentCount > 1 {
+                Section {
+                    Menu {
+                        SubagentButtons(item: item, open: openSubagent)
+                    } label: {
+                        Label("Subagents", systemImage: "rectangle.stack")
+                        Text(subagentSummary(count: subagentCount))
+                    }
                 }
             }
         } label: {
             Label("More", systemImage: "ellipsis")
         }
         .badge(item.workingSubagents)
+    }
+
+    private func subagentSummary(count: Int) -> String {
+        let working = item.workingSubagents
+        return working > 0 ? "\(working) working · \(count) total" : "\(count) total"
     }
 }
