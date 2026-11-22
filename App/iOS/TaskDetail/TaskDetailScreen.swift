@@ -10,7 +10,6 @@ struct TaskDetailScreen: View {
     @Environment(\.isPresented) private var isPresented
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let ref: TaskRef
-    @State private var showingScratchpad = false
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptFlights()
@@ -105,10 +104,7 @@ struct TaskDetailScreen: View {
                 if let item, !task.isSideChat, task.workspaceID != nil || item.hasSubagents
                     || item.sideChat != nil || task.actions.contains(.sideChat) || !task.pullRequests.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
-                        TaskMoreMenu(
-                            item: item,
-                            showingScratchpad: $showingScratchpad
-                        )
+                        TaskMoreMenu(item: item)
                     }
                 }
             }
@@ -125,7 +121,7 @@ struct TaskDetailScreen: View {
         .composerDictationLifecycle(composer)
         .environment(composer)
         .environment(sendAnimator)
-        .sheet(isPresented: $showingScratchpad) {
+        .sheet(isPresented: Bindable(composer).isShowingScratchpad) {
             if let item {
                 ScratchpadSheet(item: item, composer: composer)
             }
@@ -135,7 +131,7 @@ struct TaskDetailScreen: View {
             respond: { interaction, decision in
                 _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },
-            canPresent: scenePhase == .active && !showingScratchpad
+            canPresent: scenePhase == .active && !composer.isShowingScratchpad
                 && !composer.isPickingPhotos && !composer.isTakingPhoto
                 && composer.dictation.error == nil,
             prepareToPresent: { composer.isFocused = false }

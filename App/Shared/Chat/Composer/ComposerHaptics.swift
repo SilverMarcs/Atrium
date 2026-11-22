@@ -27,7 +27,7 @@ struct ComposerHaptics: ViewModifier {
         return switch event?.kind {
         case .recordingStarted, .transcriptReady: .impact(weight: .light, intensity: 0.8)
         case .send: .impact(weight: .medium, intensity: 0.7)
-        case .stop: .impact(weight: .light, intensity: 0.7)
+        case .stop, .scratchpad: .impact(weight: .light, intensity: 0.7)
         case nil: nil
         }
     }

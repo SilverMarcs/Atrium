@@ -274,6 +274,10 @@ struct SessionChatView: View {
     ))
     .focusedSceneValue(\.latestPromptEdit, latestPromptEdit(rows: rows, actions: actions))
     .composerAttachmentPickers(composer)
+    .focusedSceneValue(\.showScratchpad, task.workspaceID == nil || task.isSubagent ? nil : { composer.isShowingScratchpad = true })
+    .sheet(isPresented: Bindable(composer).isShowingScratchpad) {
+      ScratchpadSheet(item: item, composer: composer)
+    }
     .composerQuoting(composer, isEnabled: !task.isSubagent)
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)

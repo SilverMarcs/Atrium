@@ -132,7 +132,7 @@ struct ComposerBar: View {
 
                         if showsAttach {
                             ComposerAttachmentMenu(item: item) {
-                                Label("Attach", systemImage: "plus")
+                                Label { Text("Attach") } icon: { ComposerAttachGlyph(composer: composer) }
                                     .labelStyle(.iconOnly)
                                     .font(attachFont)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -66,14 +66,11 @@ struct TaskListView: View {
         .overlay { placeholder(isEmpty: tasks.isEmpty) }
         .toolbar(removing: .sidebarToggle)
         .toolbar {
-            ToolbarItem {
-                SidebarMenu()
-            }
+            // New Chat is in the chat's toolbar, so the sidebar's own
+            // control takes its old place at the sidebar's trailing edge.
             ToolbarSpacer(.flexible)
             ToolbarItem {
-                Button("New Chat", systemImage: "square.and.pencil") { hosts.openNewChat() }
-                    .help("New Chat")
-                    .disabled(!hosts.canStartNewChat)
+                SidebarMenu()
             }
         }
         .taskConfirmations(rename: $taskToRename, delete: $tasksToDelete)

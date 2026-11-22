@@ -8,6 +8,7 @@ struct AppCommands: Commands {
     @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @FocusedValue(\.latestPromptEdit) private var latestPromptEdit
+    @FocusedValue(\.showScratchpad) private var showScratchpad
     @AppStorage("showHiddenFiles") var showHiddenFiles = false
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
@@ -87,6 +88,14 @@ struct AppCommands: Commands {
                     Label("Toggle Bottom Panel", systemImage: "rectangle.bottomhalf.inset.filled")
                 }
                 .keyboardShortcut("j", modifiers: .command)
+
+                Button {
+                    showScratchpad?()
+                } label: {
+                    Label("Scratchpad", systemImage: "note.text")
+                }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(showScratchpad == nil)
 
                 Divider()
 

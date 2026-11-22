@@ -94,6 +94,8 @@ final class TaskComposer {
     @ObservationIgnored lazy var pasteDelegate = ComposerPasteDelegate(composer: self)
     @ObservationIgnored weak var textEditor: (any ComposerTextInserting)?
     var isPickingPhotos = false
+    /// The project's scratchpad sheet, opened from the attachment menu.
+    var isShowingScratchpad = false
     /// Mirrors the composer's focus, where the timeline observes it to scroll
     /// to the latest message (`FocusState` is view-local).
     var isFocused = false
@@ -353,6 +355,7 @@ final class TaskComposer {
         self.draft = ""
         self.images = []
         ordinaryQuotes = []
+        provideFeedback(.scratchpad)
         Task {
             do {
                 let text = ComposerQuote.prompt(quoting: quotes, draft: draft)

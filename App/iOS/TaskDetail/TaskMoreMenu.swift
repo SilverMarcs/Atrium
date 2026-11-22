@@ -2,27 +2,14 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// A task's project links, scratchpad, side chat and subagents in one menu.
+/// A task's project links, side chat and subagents in one menu.
 struct TaskMoreMenu: View {
     let item: HostTask
-    @Binding var showingScratchpad: Bool
     @Environment(\.openSubagent) private var openSubagent
     @Environment(\.openSideChat) private var openSideChat
 
     var body: some View {
         Menu {
-            if item.task.workspaceID != nil {
-                Section {
-                    ScratchpadButton(isPresented: $showingScratchpad)
-                } header: {
-                    if let percent = item.task.contextUsage?.usedPercent {
-                        Text("\(percent)% context used")
-                    } else {
-                        Text("Context usage")
-                    }
-                }
-                Divider()
-            }
             if !item.task.pullRequests.isEmpty {
                 Section("Pull Requests") {
                     PullRequestButtons(item: item)

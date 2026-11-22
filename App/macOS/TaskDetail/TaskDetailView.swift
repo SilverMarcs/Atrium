@@ -6,7 +6,6 @@ import SwiftUI
 struct TaskDetailView: View {
     let item: HostTask
     @Environment(AppModel.self) private var app
-    @State private var showingScratchpad = false
 
     private var task: WireTask { item.task }
     private var project: Project? {
@@ -28,10 +27,7 @@ struct TaskDetailView: View {
                 if task.hasUnreadResult { item.host.send(.task(id: task.id, action: .viewed)) }
             }
             .toolbar {
-                TaskDetailToolbar(item: item, showingScratchpad: $showingScratchpad)
-            }
-            .sheet(isPresented: $showingScratchpad) {
-                ScratchpadSheet(item: item, composer: app.hosts.composer(for: item.id))
+                TaskDetailToolbar(item: item)
             }
             .navigationTitle(app.hosts.navigationTitle(for: item))
             .modifier(ConnectionStatusSubtitle(
