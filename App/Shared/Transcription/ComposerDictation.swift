@@ -37,7 +37,7 @@ final class ComposerDictation {
     var isActive: Bool { isRecording || isBusy }
     private(set) var sessionID = UUID()
     private var finishRecording: (() -> Void)?
-    private var recorder: AVAudioRecorder?
+    private var recorder: DictationAudioRecorder?
     private var operation: Task<Void, Never>?
     /// Finishes a recording that reaches `maximumDuration`.
     @ObservationIgnored private var limit: Task<Void, Never>?
@@ -85,6 +85,9 @@ final class ComposerDictation {
                     #endif
                 }
                 do {
+                    #if os(macOS)
+                    if let error = recorder.recordingError { throw error }
+                    #endif
                     let text = try await provider.transcribe(audio: url)
                     try Task.checkCancellation()
                     if !text.isEmpty { append(text) }
@@ -114,7 +117,12 @@ final class ComposerDictation {
                     try Task.checkCancellation()
                     #if os(iOS)
                     let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.record, mode: .default)
+                    // Keep media playing quietly until the recording releases
+                    // the session, including playback over Bluetooth.
+                    try session.setCategory(
+                        .playAndRecord, mode: .default,
+                        options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP]
+                    )
                     // Recording otherwise suppresses the microphone-ready and
                     // Send haptics while the audio session is active.
                     try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
@@ -122,14 +130,14 @@ final class ComposerDictation {
                     observeInterruptions()
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
-                    let recorder = try AVAudioRecorder(url: url, settings: [
+                    let recorder = try DictationAudioRecorder(url: url, settings: [
                         AVFormatIDKey: kAudioFormatMPEG4AAC,
                         AVSampleRateKey: 24_000,
                         AVNumberOfChannelsKey: 1,
                         AVEncoderBitRateKey: 64_000,
                     ])
                     self.recorder = recorder
-                    guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
+                    guard try recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                     isRecording = true
                     recordingStarted()
                     feedback(.recordingStarted)
