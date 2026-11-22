@@ -6,7 +6,20 @@
 #   ./release.sh --major          bump major (1.2.0 -> 2.0.0)
 #   ./release.sh <version>        explicit version (e.g. 2.5.0)
 #   ./release.sh --check          verify setup without preparing a version
+#   add --nightly                 release to the nightly channel only
 #   add --app-only                leave out a command-line client that changed
+#   ./release.sh --promote <tag>  make a nightly release (e.g. v1.3.70) stable
+#   add --force                   release or promote to stable even if the App Store
+#                                 iPhone app is behind
+#
+# Two channels share one app and one feed. Nightly releases carry
+# <sparkle:channel>nightly</sparkle:channel>, so only Macs set to Nightly in
+# Settings → Updates see them; stable releases have no channel and reach every
+# Mac. Promoting rebuilds nothing: it drops the nightly channel from that
+# release's feed entry and marks its GitHub release as latest. Stable releases
+# and promotions check the iPhone app live on the App Store (with asc) and
+# refuse while it speaks an older host protocol than the Mac release, so stable
+# Macs always work with App Store iPhones.
 #
 # Releases whatever is on origin/main, whatever this checkout's branch or
 # uncommitted changes: it builds in its own worktree under .asc/release. One
@@ -39,6 +52,9 @@ SPARKLE_KEY_FILE="${SPARKLE_KEY_FILE:-}"
 APPCAST="appcast.xml"
 EXPORT_PLIST="ExportOptions.plist"
 APPCAST_BASE_URL="https://github.com/${REPO}/releases/download"
+# What stable releases check: the App Store iPhone app, and where the host protocol version lives.
+IOS_BUNDLE_ID="com.SilverMarcs.Atrium"
+PROTOCOL_SWIFT="Packages/AtriumKit/Sources/AtriumProtocol/Protocol/HostProtocol.swift"
 
 # The command-line client: what it's built from, and the toolchain that
 # cross-compiles it into static Linux binaries.
@@ -110,29 +126,145 @@ build_cli() {
   (cd "$out" && shasum -a 256 atrium-linux-*.tar.gz > atrium-linux-sha256.txt)
 }
 
+# Pushes this checkout's HEAD to main, replaying it on top if main moved.
+push_to_main() {
+  log "Pushing to main"
+  if ! git push --quiet origin "HEAD:main"; then
+    git fetch --quiet origin main
+    git rebase --quiet origin/main || fatal "Couldn't rebase onto main. Push it by hand from $WORKTREE."
+    git push --quiet origin "HEAD:main"
+  fi
+}
+
+# The host protocol version in commit $1.
+protocol_version_at() {
+  git show "$1:$PROTOCOL_SWIFT" | sed -nE 's/.*static let version = ([0-9]+).*/\1/p'
+}
+
+# Prints "<version> <build>" for the iPhone app live on the App Store.
+live_ios_release() {
+  local app_id
+  app_id="$(asc apps list --bundle-id "$IOS_BUNDLE_ID" --output json | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')" \
+    || fatal "Couldn't find the App Store app for $IOS_BUNDLE_ID with asc."
+  asc versions list --app "$app_id" --platform IOS --include build --paginate --output json | python3 -c '
+import json, sys
+response = json.load(sys.stdin)
+builds = {b["id"]: b["attributes"]["version"] for b in response.get("included", []) if b["type"] == "builds"}
+def live(version):
+    attributes = version["attributes"]
+    state = attributes.get("appVersionState")
+    return state == "READY_FOR_DISTRIBUTION" if state else attributes.get("appStoreState") == "READY_FOR_SALE"
+versions = sorted(filter(live, response["data"]), key=lambda v: v["attributes"]["createdDate"])
+if not versions:
+    sys.exit("No iPhone version is live on the App Store.")
+newest = versions[-1]
+build = (newest["relationships"].get("build", {}).get("data") or {}).get("id")
+print(newest["attributes"]["versionString"], builds.get(build, ""))
+'
+}
+
+# Stops a stable release of $1 (a commit or tag, named $2) while App Store
+# iPhones speak an older host protocol than it, unless --force.
+check_app_store_iphone() {
+  local rev="$1" name="$2"
+  if [[ "$FORCE" == true ]]; then
+    warn "--force: not checking the App Store iPhone app"
+    return
+  fi
+  log "Checking the iPhone app on the App Store"
+  local ios ios_version ios_build ios_commit mac_protocol ios_protocol
+  ios="$(live_ios_release)" || fatal "Couldn't read the live iPhone version."
+  read -r ios_version ios_build <<<"$ios"
+  [[ -n "$ios_build" ]] || fatal "The live iPhone version $ios_version has no build. Pass --force to release anyway."
+  ios_commit="$(git log origin/main --format=%H -n1 -F --grep="Release iOS $ios_version ($ios_build)")"
+  [[ -n "$ios_commit" ]] || fatal "No 'Release iOS $ios_version ($ios_build)' commit on main. Pass --force to release anyway."
+  mac_protocol="$(protocol_version_at "$rev")"
+  ios_protocol="$(protocol_version_at "$ios_commit")"
+  [[ -n "$mac_protocol" && -n "$ios_protocol" ]] || fatal "Couldn't read HostProtocol.version."
+  (( mac_protocol <= ios_protocol )) \
+    || fatal "$name speaks host protocol $mac_protocol, but App Store iPhones ($ios_version, build $ios_build) speak $ios_protocol. Release the iPhone app first, or pass --force."
+  log "App Store iPhone app $ios_version ($ios_build) speaks protocol $ios_protocol; $name speaks $mac_protocol"
+}
+
+# Drops the nightly channel from release $1's feed entry and makes it the latest release.
+promote() {
+  local tag="$1" version="${1#v}"
+  [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fatal "Bad tag: $tag (expected e.g. v1.3.70)"
+  git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null || fatal "No release tag $tag."
+
+  check_app_store_iphone "$tag" "$tag"
+
+  log "Updating $APPCAST"
+  python3 - "$APPCAST" "$version" <<'PYPROMOTE'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+version = sys.argv[2]
+text = path.read_text()
+items = list(re.finditer(r"[ \t]*<item>.*?</item>", text, flags=re.S))
+item = next((m for m in items if f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>" in m[0]), None)
+if item is None:
+    sys.exit(f"{version} isn't in the feed.")
+if "<sparkle:channel>nightly</sparkle:channel>" not in item[0]:
+    sys.exit(f"{version} is already stable.")
+promoted = re.sub(r"\n[ \t]*<sparkle:channel>nightly</sparkle:channel>", "", item[0])
+path.write_text(text[:item.start()] + promoted + text[item.end():])
+PYPROMOTE
+
+  log "Committing the promotion"
+  git add "$APPCAST"
+  git commit --quiet -m "Promote ${tag} to stable"
+
+  log "Marking GitHub release $tag as latest"
+  gh release edit "$tag" --repo "$REPO" --prerelease=false --latest >/dev/null
+
+  push_to_main
+  remove_release_worktree
+  log "Done. $tag is stable: https://github.com/${REPO}/releases/tag/${tag}"
+  log "Run git pull in $REPO_ROOT to pick up the promotion."
+}
+
 # ----- Arguments -----
 APP_ONLY=false
+NIGHTLY=false
+FORCE=false
+PROMOTE_TAG=""
 ARGS=()
-for arg in "$@"; do
-  case "$arg" in
-    --help|-h) sed -n '2,23p' "$0"; exit 0 ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     --app-only) APP_ONLY=true ;;
-    *) ARGS+=("$arg") ;;
+    --nightly) NIGHTLY=true ;;
+    --force) FORCE=true ;;
+    --promote) [[ $# -ge 2 ]] || fatal "--promote needs a tag, e.g. --promote v1.3.70"
+               PROMOTE_TAG="$2"; shift ;;
+    *) ARGS+=("$1") ;;
   esac
+  shift
 done
 set -- ${ARGS[@]+"${ARGS[@]}"}
 CHECK_ONLY=false
 [[ "${1:-}" != "--check" ]] || CHECK_ONLY=true
+[[ -z "$PROMOTE_TAG" || $# -eq 0 ]] || fatal "--promote takes no other version arguments."
+[[ -z "$PROMOTE_TAG" || "$NIGHTLY" == false ]] || fatal "--promote and --nightly don't go together."
 
 # ----- Pre-flight guards -----
 log "Pre-flight checks"
 cd "$REPO_ROOT"
 
-security find-identity -v -p codesigning | grep -q "Developer ID Application: .*($TEAM_ID)" \
-  || fatal "Developer ID Application cert not found in keychain. Create one via Xcode → Settings → Accounts → Manage Certificates."
+[[ "$NIGHTLY" == true || "$FORCE" == true ]] || command -v asc >/dev/null 2>&1 \
+  || fatal "asc not found; a stable release checks the App Store iPhone app with it. Pass --nightly or --force."
 
-xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
-  || fatal "Notary keychain profile '$NOTARY_PROFILE' missing. Create with: xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <id> --team-id $TEAM_ID --password <app-specific-password>"
+# Promoting rebuilds nothing, so it needs no signing or notarizing.
+if [[ -z "$PROMOTE_TAG" ]]; then
+  security find-identity -v -p codesigning | grep -q "Developer ID Application: .*($TEAM_ID)" \
+    || fatal "Developer ID Application cert not found in keychain. Create one via Xcode → Settings → Accounts → Manage Certificates."
+
+  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
+    || fatal "Notary keychain profile '$NOTARY_PROFILE' missing. Create with: xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <id> --team-id $TEAM_ID --password <app-specific-password>"
+
+  SIGN_UPDATE="$(find_sign_update)"
+  [[ -x "$SIGN_UPDATE" ]] || fatal "Sparkle sign_update not found. Open the project in Xcode once to resolve packages."
+fi
 
 gh auth status >/dev/null 2>&1 || fatal "gh CLI not authenticated. Run: gh auth login"
 
@@ -146,9 +278,6 @@ export GH_TOKEN
 gh api "repos/$REPO" --jq '.permissions.push' 2>/dev/null | grep -qx true \
   || fatal "Account '$GH_ACCOUNT' lacks push access to $REPO."
 
-SIGN_UPDATE="$(find_sign_update)"
-[[ -x "$SIGN_UPDATE" ]] || fatal "Sparkle sign_update not found. Open the project in Xcode once to resolve packages."
-
 # ----- Check out origin/main in the release worktree -----
 log "Checking out origin/main"
 git fetch origin main --tags --quiet
@@ -161,6 +290,14 @@ git -C "$WORKTREE" checkout --detach --force origin/main --quiet
 git -C "$WORKTREE" clean -fdxq -e .build
 BASE=$(git -C "$WORKTREE" rev-parse HEAD)
 cd "$WORKTREE"
+
+if [[ -n "$PROMOTE_TAG" ]]; then
+  promote "$PROMOTE_TAG"
+  exit 0
+fi
+
+# A stable release goes to every Mac, so it must work with App Store iPhones.
+[[ "$NIGHTLY" == true || "$CHECK_ONLY" == true ]] || check_app_store_iphone "$BASE" "main"
 
 # Check that this app and the signing tool use the same dedicated key.
 GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
@@ -214,7 +351,9 @@ esac
 NEW_BUILD=$((CUR_BUILD + 1))
 TAG="v${NEW_VER}"
 
-log "Releasing $(git log -1 --format='%h %s')"
+CHANNEL="stable"
+[[ "$NIGHTLY" == false ]] || CHANNEL="nightly"
+log "Releasing $(git log -1 --format='%h %s') to the $CHANNEL channel"
 log "Current: ${CUR_VER} (build ${CUR_BUILD})  →  New: ${NEW_VER} (build ${NEW_BUILD})"
 
 git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1 && fatal "Tag $TAG already exists on origin."
@@ -348,11 +487,14 @@ fi
 log "Updating $APPCAST"
 PUB_DATE=$(LC_ALL=C date -u +"%a, %d %b %Y %H:%M:%S +0000")
 DOWNLOAD_URL="${APPCAST_BASE_URL}/${TAG}/${DMG_NAME}"
+# Only Macs on the nightly channel read entries tagged with it.
+CHANNEL_TAG=""
+[[ "$NIGHTLY" == false ]] || CHANNEL_TAG=$'\n            <sparkle:channel>nightly</sparkle:channel>'
 
 NEW_ITEM=$(cat <<EOF
         <item>
             <title>Version ${NEW_VER}</title>
-            <pubDate>${PUB_DATE}</pubDate>
+            <pubDate>${PUB_DATE}</pubDate>${CHANNEL_TAG}
             <sparkle:version>${NEW_BUILD}</sparkle:version>
             <sparkle:shortVersionString>${NEW_VER}</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>${MIN_OS}</sparkle:minimumSystemVersion>
@@ -405,23 +547,27 @@ curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/atrium-linux-\$(u
 \`\`\`
 NOTES
 fi
+RELEASE_FLAGS=(--latest)
+TITLE="Atrium $NEW_VER"
+if [[ "$NIGHTLY" == true ]]; then
+  # A pre-release, until --promote makes it the latest release.
+  RELEASE_FLAGS=(--prerelease --latest=false)
+  TITLE="Atrium $NEW_VER (Nightly)"
+fi
 gh release create "$TAG" "$DMG_PATH" ${CLI_ASSETS[@]+"${CLI_ASSETS[@]}"} \
   --repo "$REPO" \
   --verify-tag \
-  --title "Atrium $NEW_VER" \
+  "${RELEASE_FLAGS[@]}" \
+  --title "$TITLE" \
   --notes-file "$NOTES" \
   --generate-notes \
   || { git push --quiet origin ":refs/tags/$TAG"; fatal "Couldn't create the release; removed tag $TAG."; }
 
 # ----- Push the feed onto main -----
-log "Pushing to main"
-if ! git push --quiet origin "HEAD:main"; then
-  # Someone pushed while the release built: replay the version bump and feed on top.
-  git fetch --quiet origin main
-  git rebase --quiet origin/main || fatal "Couldn't rebase the release commit onto main. Push it by hand from $WORKTREE."
-  git push --quiet origin "HEAD:main"
-fi
+# If someone pushed while the release built, the version bump and feed replay on top.
+push_to_main
 
 remove_release_worktree
-log "Done. Released ${TAG}: https://github.com/${REPO}/releases/tag/${TAG}"
+log "Done. Released ${TAG} to the $CHANNEL channel: https://github.com/${REPO}/releases/tag/${TAG}"
+[[ "$NIGHTLY" == false ]] || log "Make it stable later with: $0 --promote ${TAG}"
 log "Run git pull in $REPO_ROOT to pick up the release commit."

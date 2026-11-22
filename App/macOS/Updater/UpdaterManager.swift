@@ -33,7 +33,20 @@ final class UpdaterManager {
         }
     }
 
+    /// Stable, or nightly builds as well. Switching to nightly checks right away.
+    var channel: UpdateChannel = UpdateChannel.current {
+        didSet {
+            guard channel != oldValue else { return }
+            UserDefaults.standard.set(channel.rawValue, forKey: UpdateChannel.key)
+            if isConfigured, channel == .nightly {
+                controller.updater.checkForUpdatesInBackground()
+            }
+        }
+    }
+
     @ObservationIgnored let controller: SPUStandardUpdaterController
+    /// Held here because Sparkle keeps its delegate weakly.
+    @ObservationIgnored private let channelDelegate: UpdateChannelDelegate
     @ObservationIgnored private var canCheckObservation: NSKeyValueObservation?
 
     init() {
@@ -41,9 +54,11 @@ final class UpdaterManager {
         let signingKey = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String
         isConfigured = feedURL?.isEmpty == false && signingKey?.isEmpty == false
 
+        let channelDelegate = UpdateChannelDelegate()
+        self.channelDelegate = channelDelegate
         controller = SPUStandardUpdaterController(
             startingUpdater: isConfigured,
-            updaterDelegate: nil,
+            updaterDelegate: channelDelegate,
             userDriverDelegate: nil
         )
 

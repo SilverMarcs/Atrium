@@ -16,6 +16,17 @@ struct UpdatesSettingsView: View {
 
         if updater.isConfigured {
             Form {
+                Section {
+                    Picker("Update channel", selection: $updater.channel) {
+                        ForEach(UpdateChannel.allCases) { channel in
+                            Text(channel.label).tag(channel)
+                        }
+                    }
+                } footer: {
+                    Text("Nightly gets new features as soon as they're built. Stable releases always work with the iPhone app on the App Store.")
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Automatic Updates") {
                     Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
 
