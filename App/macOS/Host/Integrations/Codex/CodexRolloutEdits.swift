@@ -1,23 +1,38 @@
 import Foundation
 
-/// The files Codex threads changed and the repositories their commands
-/// worked in, read from their rollouts off the main actor.
+/// The files Codex threads changed, the repositories their commands worked
+/// in and the folder they last ran one in, read from their rollouts off the
+/// main actor.
 actor CodexRolloutEdits {
-    private var scans: [String: JSONLines.Scan<AgentEdits>] = [:]
+    struct Work: Sendable {
+        var edits = AgentEdits()
+        /// The folder the thread's newest command ran in. Codex runs each
+        /// command in the folder it names, so an agent works in a worktree
+        /// while its thread stays in the main checkout; and one that changes
+        /// files with its own scripts, not patches, leaves no edit saying so.
+        var directory: String?
+    }
+
+    private var scans: [String: JSONLines.Scan<Work>] = [:]
 
     private static let marker = #""item":{"type":"FileChange""#
 
-    func edits(atPath path: String) -> AgentEdits? {
+    func work(atPath path: String) -> Work? {
         guard let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int else { return nil }
-        var scan = scans[path] ?? JSONLines.Scan(AgentEdits())
-        try? scan.read(URL(filePath: path), size: size) { data, range, edits in
+        var scan = scans[path] ?? JSONLines.Scan(Work())
+        try? scan.read(URL(filePath: path), size: size) { data, range, work in
             JSONLines.forEachLine(containing: Self.marker, in: data, range, newestFirst: false) { line in
-                Self.record(data[line], into: &edits)
+                Self.record(data[line], into: &work.edits)
                 return true
             }
             JSONLines.forEachLine(containing: Self.commandMarker, in: data, range, newestFirst: false) { line in
-                Self.recordCommand(data[line], into: &edits)
+                Self.recordCommand(data[line], into: &work.edits)
                 return true
+            }
+            JSONLines.forEachLine(containing: Self.commandMarker, in: data, range, newestFirst: true) { line in
+                guard let directory = Self.directory(ofCommand: data[line]) else { return true }
+                work.directory = directory
+                return false
             }
         }
         scans[path] = scan
@@ -35,10 +50,25 @@ actor CodexRolloutEdits {
               let output = item["aggregated_output"] as? String,
               let date = (record["timestamp"] as? String)
                 .flatMap({ try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse($0) }) else { return }
-        let directory = (item["cwd"] as? String).map { URL(string: $0)?.path(percentEncoded: false) ?? $0 }
+        let directory = (item["cwd"] as? String).map(Self.path)
         let command = (item["command"] as? [String]).map { AgentShellCommand(arguments: $0, directory: directory) }
             ?? (item["command"] as? String).map { AgentShellCommand($0, directory: directory) }
         if let command { edits.record(command, output: output, at: date) }
+    }
+
+    /// The folder a finished command ran in.
+    private static func directory(ofCommand line: Data) -> String? {
+        guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+              let item = (record["payload"] as? [String: Any])?["item"] as? [String: Any],
+              item["type"] as? String == "CommandExecution",
+              let cwd = item["cwd"] as? String else { return nil }
+        let folder = path(cwd)
+        return folder.hasPrefix("/") ? folder : nil
+    }
+
+    /// A folder as Codex records it: a file URL or a path.
+    private static func path(_ cwd: String) -> String {
+        URL(string: cwd)?.path(percentEncoded: false) ?? cwd
     }
 
     /// Forgets the rollouts of threads deleted since.

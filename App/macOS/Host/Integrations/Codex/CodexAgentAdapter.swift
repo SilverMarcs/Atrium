@@ -259,16 +259,18 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         for row in rows {
             guard var thread = withDefaults(Self.thread(row)) else { continue }
             thread.readState = Self.readState(readStates[thread.sessionID])
-            thread.edits = await edits(of: row)
+            await addWork(of: row, to: &thread)
             threads.append(thread)
         }
         return AgentThread.unique(threads)
     }
 
-    /// The files a thread changed, from the rollout Codex saves it in.
-    private func edits(of row: [String: Any]) async -> AgentEdits? {
-        guard let path = row["path"] as? String else { return nil }
-        return await rolloutEdits.edits(atPath: path)
+    /// The files a thread changed and the folder its commands last ran in,
+    /// from the rollout Codex saves it in.
+    private func addWork(of row: [String: Any], to thread: inout AgentThread) async {
+        guard let path = row["path"] as? String, let work = await rolloutEdits.work(atPath: path) else { return }
+        thread.edits = work.edits
+        thread.currentDirectory = work.directory
     }
 
     func readThread(_ id: String) async throws -> AgentThread? {
@@ -279,7 +281,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             throw IntegrationError(message: "Codex returned an invalid thread.")
         }
         thread.readState = Self.readState(result["readState"] as? [String: Any])
-        thread.edits = await edits(of: row)
+        await addWork(of: row, to: &thread)
         if let parentID = sideChats[id] { return sideChat(thread, of: parentID) }
         return withSubagentState(thread)
     }
