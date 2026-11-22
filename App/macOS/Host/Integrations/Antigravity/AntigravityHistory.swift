@@ -36,6 +36,13 @@ actor AntigravityHistory {
         let status: String
         let hasToolCalls: Bool
         let timestamp: Date?
+
+        /// Terminal status when this step ends a turn on its own, or nil while work may continue.
+        var terminalStatus: AgentThreadStatus? {
+            if status == "ERROR" { return .failed }
+            if type == "PLANNER_RESPONSE", status == "DONE", !hasToolCalls { return .done }
+            return nil
+        }
     }
 
     /// Snapshot of a conversation's log state and modification time.
@@ -285,9 +292,8 @@ actor AntigravityHistory {
             if let stoppedAt, activityDate.map({ $0 <= stoppedAt }) ?? true { return .stopped }
             return parentIsWorking ? .processing : .stopped
         }
-        if last.status == "ERROR" { return .failed }
-        if last.type == "PLANNER_RESPONSE", last.status == "DONE", !last.hasToolCalls {
-            return .done
+        if let terminal = last.terminalStatus {
+            return terminal
         }
         if let reportedAt, let lastTime = last.timestamp, lastTime <= reportedAt, last.status != "RUNNING" {
             return .done
