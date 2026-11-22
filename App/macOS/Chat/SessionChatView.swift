@@ -278,7 +278,7 @@ struct SessionChatView: View {
     .sheet(isPresented: Bindable(composer).isShowingScratchpad) {
       ScratchpadSheet(item: item, composer: composer)
     }
-    .composerQuoting(composer, isEnabled: !task.isSubagent)
+    .replySelectionActions(composer, item: item)
     .composerDictationLifecycle(composer)
     .composerDropHandler(composer)
     .environment(composer)

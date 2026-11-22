@@ -367,6 +367,20 @@ final class TaskComposer {
         }
     }
 
+    /// Puts text selected in a reply aside in the project's scratchpad as a
+    /// new draft, leaving the composer as it is.
+    func addSelectionToScratchpad(_ text: String, of item: HostTask) {
+        guard let workspaceID = item.task.workspaceID else { return }
+        provideFeedback(.scratchpad)
+        Task {
+            do {
+                _ = try await item.host.request(.workspace(id: workspaceID, action: .addToScratchpad(text: text, images: [])))
+            } catch {
+                item.host.actionError = error.localizedDescription
+            }
+        }
+    }
+
     /// ⌘S: puts the draft aside, or on an empty composer brings back the
     /// newest draft in the scratchpad.
     func addToScratchpadOrRestoreNewest(of item: HostTask) {

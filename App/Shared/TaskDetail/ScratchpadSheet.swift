@@ -56,9 +56,9 @@ struct ScratchpadSheet: View {
 
     private var emptyHint: String {
         #if os(macOS)
-        "Press ⌘S to put the draft aside."
+        "Press ⌘S to put the draft aside, or select text in a reply and choose Scratchpad."
         #else
-        "Select text in the composer and choose Add to Scratchpad."
+        "Select text in the composer or a reply and choose Scratchpad."
         #endif
     }
 

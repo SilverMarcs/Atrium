@@ -114,7 +114,7 @@ struct ComposerTextView: UIViewRepresentable {
         /// Selecting any of the draft offers to put all of it aside, images included.
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             guard range.length > 0, let addToScratchpad = (textView as? ComposerEditor)?.onAddToScratchpad else { return nil }
-            let action = UIAction(title: "Add to Scratchpad", image: UIImage(systemName: "note.text")) { _ in addToScratchpad() }
+            let action = UIAction(title: "Scratchpad", image: UIImage(systemName: "note.text")) { _ in addToScratchpad() }
             var actions = suggestedActions
             actions.insert(UIMenu(options: .displayInline, children: [action]), at: min(1, actions.count))
             return UIMenu(children: actions)
