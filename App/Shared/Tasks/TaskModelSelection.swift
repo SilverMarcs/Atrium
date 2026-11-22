@@ -7,12 +7,8 @@ nonisolated struct TaskModelSelection: Equatable, Sendable {
     var isFastMode: Bool
     var canSelectModel: Bool
 
-    func summary(using models: [AgentModel]) -> String? {
-        guard let model else { return nil }
-        return [
-            models.model(running: model)?.name ?? model,
-            reasoningEffort.map(AgentModel.effortName),
-            isFastMode ? "Fast" : nil
-        ].compactMap(\.self).joined(separator: " · ")
+    /// The model as its provider lists it, such as "Opus 5.5".
+    func modelName(using models: [AgentModel]) -> String? {
+        model.map { models.model(running: $0)?.name ?? $0 }
     }
 }

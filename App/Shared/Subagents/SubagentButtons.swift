@@ -29,7 +29,9 @@ struct SubagentButtons: View {
             open(TaskRef(hostID: item.host.id, taskID: subagent.id))
         } label: {
             Label(subagent.title, systemImage: subagent.status.systemImage)
-            Text("\(subagent.provider.name) · \(subagent.status.rawValue)")
+            // The icon shows its status, so the line under it names who ran it.
+            Text([subagent.provider.name, subagent.modelSelection.modelName(using: item.host.models(for: subagent.provider))]
+                .compactMap(\.self).joined(separator: " · "))
         }
     }
 }

@@ -36,6 +36,8 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
         let effort: String?
         let speed: String?
         var contextTokens: Int?
+
+        var isFastMode: Bool? { speed.map { $0 == "fast" } }
     }
 
     /// The newest records of the kinds that can sit anywhere in a transcript.
@@ -77,7 +79,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
             lastActivity: latest.activity,
             model: latest.reply?.model,
             reasoningEffort: latest.reply?.effort,
-            isFastMode: latest.reply?.speed.map { $0 == "fast" },
+            isFastMode: latest.reply?.isFastMode,
             permissionMode: ClaudePermissions.mode(latest.permissionMode),
             contextTokens: latest.reply?.contextTokens,
             edits: latest.edits.edits,

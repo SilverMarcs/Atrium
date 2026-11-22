@@ -14,7 +14,7 @@ struct TaskModelMenu: View {
   var isCompact = false
 
   var body: some View {
-    let name = models.model(running: selection.model)?.name ?? selection.model ?? "Model"
+    let name = selection.modelName(using: models) ?? "Model"
     let detail = selection.reasoningEffort.map(AgentModel.effortName) ?? ""
 
     Menu {

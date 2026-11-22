@@ -29,8 +29,8 @@ actor ClaudeSessionHistory {
     private var locations: [String: URL] = [:]
     /// The newest records found in each transcript.
     private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
-    /// The edits found in each subagent's transcript.
-    private var editScans: [URL: JSONLines.Scan<EditScan>] = [:]
+    /// The edits and newest reply found in each subagent's transcript.
+    private var subagentScans: [URL: JSONLines.Scan<SubagentScan>] = [:]
     /// Transcripts' conversations up to a prompt some turns back, so a reload
     /// reads only the turns after it. Claude only appends records, so the chain
     /// behind a record never changes: one holds for as long as its prompt stays
@@ -71,7 +71,7 @@ actor ClaudeSessionHistory {
         recordScans = recordScans.filter { existing.contains($0.key) }
         // A subagent's files sit in a folder named after its session's transcript.
         let transcripts = Set(files.map(\.url.path))
-        editScans = editScans.filter { url, _ in
+        subagentScans = subagentScans.filter { url, _ in
             transcripts.contains(url.deletingLastPathComponent().deletingLastPathComponent().path + ".jsonl")
         }
         locations = locations.filter { seen.contains($0.key) }
@@ -141,6 +141,14 @@ actor ClaudeSessionHistory {
         let wasInterrupted: Bool
         /// The folders its edit tools changed files in.
         let edits: AgentEdits
+        /// The model, effort and speed of its newest reply.
+        let reply: ClaudeSessionMetadata.Reply?
+    }
+
+    /// What's read from a subagent's transcript as it grows.
+    private struct SubagentScan {
+        var edits = EditScan()
+        var reply: ClaudeSessionMetadata.Reply?
     }
 
     /// The subagents a session's agent started, newest first.
@@ -155,19 +163,23 @@ actor ClaudeSessionHistory {
             let description = (meta["description"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let type = (meta["agentType"] as? String).map(Self.humanized)
             let isFinished = meta["finished"] as? Bool == true
+            let scan = subagentScan(at: url, stamp: stamp)
             return Subagent(agentID: agentID, title: description.isEmpty ? type ?? "Subagent" : description,
                             updatedAt: stamp.modified, isFinished: isFinished,
                             wasInterrupted: !isFinished && Self.endsInterrupted(url, size: stamp.size),
-                            edits: subagentEdits(at: url, stamp: stamp))
+                            edits: scan.edits.edits, reply: scan.reply)
         }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    /// Brings a subagent's edits up to date, reading only what was appended since the last scan.
-    private func subagentEdits(at url: URL, stamp: Stamp) -> AgentEdits {
-        var scan = editScans[url] ?? JSONLines.Scan(EditScan())
-        try? scan.read(url, size: stamp.size) { data, range, edits in Self.recordEdits(in: data, range, into: &edits) }
-        editScans[url] = scan
-        return scan.state.edits
+    /// Brings a subagent's edits and newest reply up to date, reading only what was appended since the last scan.
+    private func subagentScan(at url: URL, stamp: Stamp) -> SubagentScan {
+        var scan = subagentScans[url] ?? JSONLines.Scan(SubagentScan())
+        try? scan.read(url, size: stamp.size) { data, range, state in
+            Self.recordEdits(in: data, range, into: &state.edits)
+            state.reply = ClaudeSessionMetadata.latestReply(after: state.reply, appended: Self.linesNewestFirst(in: data, range))
+        }
+        subagentScans[url] = scan
+        return scan.state
     }
 
     /// Claude ends a stopped turn with an interruption notice as its last prompt.
