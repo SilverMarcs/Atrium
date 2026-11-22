@@ -34,7 +34,7 @@ final class AppModel {
     init() {
         let server = HostServer()
         integrationSettings = server.integrationSettings
-        let localHost = HostClient(localID: server.hello.hostID, name: HostServer.hostName) {
+        let localHost = HostClient(localID: server.hello.hostID, name: server.hostName, icon: server.hostIcon) {
             LoopbackConnection(server: server)
         }
         let hosts = HostDirectory(localHost: localHost)

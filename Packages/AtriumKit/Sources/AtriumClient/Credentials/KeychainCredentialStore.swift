@@ -60,8 +60,8 @@ public final class KeychainCredentialStore: CredentialStore {
         store(pairedHosts.adding(host))
     }
 
-    public func rename(_ host: PairedHost, to name: String?) {
-        store(pairedHosts.renaming(host, to: name))
+    public func update(_ host: PairedHost) {
+        store(pairedHosts.updating(host))
     }
 
     public func forget(_ host: PairedHost) {

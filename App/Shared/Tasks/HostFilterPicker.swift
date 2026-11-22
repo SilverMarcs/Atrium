@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// Narrows task lists to one host, or shows every host's. It never changes
@@ -10,7 +11,7 @@ struct HostFilterPicker: View {
         Picker("Host", selection: $hosts.filter) {
             Label("All Hosts", systemImage: "square.stack.3d.up").tag(String?.none)
             ForEach(hosts.hosts) { host in
-                Label(host.name, systemImage: host.isConnected ? "macbook" : "macbook.trianglebadge.exclamationmark")
+                Label(host.name, systemImage: host.isConnected ? host.icon.symbolName : "exclamationmark.triangle")
                     .tag(Optional(host.id))
             }
         }

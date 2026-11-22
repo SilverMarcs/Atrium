@@ -11,8 +11,9 @@ public protocol CredentialStore: AnyObject {
     var pairedHosts: [PairedHost] { get }
     func token(for host: PairedHost) -> String?
     /// Adds or updates a host with its new token. Pairing the same host again
-    /// keeps its place and the name chosen for it.
+    /// keeps its place.
     func save(_ host: PairedHost, token: String) throws
-    func rename(_ host: PairedHost, to name: String?)
+    /// Updates a saved host's cached advertised metadata in place.
+    func update(_ host: PairedHost)
     func forget(_ host: PairedHost)
 }

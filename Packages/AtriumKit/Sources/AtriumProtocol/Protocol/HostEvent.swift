@@ -1,7 +1,8 @@
 import Foundation
 
 public nonisolated enum HostEvent: Codable, Sendable {
-    /// The first message on every connection, before authentication.
+    /// Who this host is: sent first on every connection, and again whenever its
+    /// name or icon changes.
     case hello(HostHello)
     case tasks(WireTasksSnapshot)
     case tasksChanged(WireTasksDelta)
@@ -27,14 +28,31 @@ public nonisolated enum HostEvent: Codable, Sendable {
 public nonisolated struct HostHello: Codable, Sendable, Equatable {
     public var hostID: String
     public var hostName: String
+    public var hostIcon: HostIcon
     public var protocolVersion: Int
     /// The host's home folder, which paths are abbreviated against for display.
     public var homeDirectory: String
 
-    public init(hostID: String, hostName: String, protocolVersion: Int, homeDirectory: String) {
+    public init(
+        hostID: String,
+        hostName: String,
+        hostIcon: HostIcon = .default,
+        protocolVersion: Int,
+        homeDirectory: String
+    ) {
         self.hostID = hostID
         self.hostName = hostName
+        self.hostIcon = hostIcon
         self.protocolVersion = protocolVersion
         self.homeDirectory = homeDirectory
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hostID = try container.decode(String.self, forKey: .hostID)
+        hostName = try container.decode(String.self, forKey: .hostName)
+        hostIcon = (try? container.decodeIfPresent(HostIcon.self, forKey: .hostIcon)) ?? .default
+        protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)
+        homeDirectory = try container.decode(String.self, forKey: .homeDirectory)
     }
 }

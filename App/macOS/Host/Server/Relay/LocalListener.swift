@@ -13,8 +13,6 @@ final class LocalListener {
 
     func start(name: String) {
         guard listener == nil, let listener = try? NWListener(using: .hostConnection()) else { return }
-        let record = NWTXTRecord([HostProtocol.localHostIDKey: HostIdentity.hostID])
-        listener.service = NWListener.Service(name: name, type: HostProtocol.localServiceType, txtRecord: record)
         listener.newConnectionHandler = { [weak self] connection in
             MainActor.assumeIsolated {
                 self?.onChannel?(NoiseChannel(
@@ -25,7 +23,14 @@ final class LocalListener {
             }
         }
         self.listener = listener
+        updateName(name)
         listener.start(queue: .main)
+    }
+
+    func updateName(_ name: String) {
+        guard let listener else { return }
+        let record = NWTXTRecord([HostProtocol.localHostIDKey: HostIdentity.hostID])
+        listener.service = NWListener.Service(name: name, type: HostProtocol.localServiceType, txtRecord: record)
     }
 
     func stop() {

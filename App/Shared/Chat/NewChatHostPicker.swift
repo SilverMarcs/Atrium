@@ -17,22 +17,16 @@ struct NewChatHostPicker: View {
                 }
             )) {
                 ForEach(hosts.hosts) { host in
-                    Label {
-                        Text(host.name)
-                    } icon: {
-                        if !host.canStartTask {
-                            Image(systemName: "exclamationmark.triangle")
-                        }
-                    }
-                    .tag(host.id)
-                    .disabled(!host.canStartTask)
+                    Label(host.name, systemImage: host.canStartTask ? host.icon.symbolName : "exclamationmark.triangle")
+                        .tag(host.id)
+                        .disabled(!host.canStartTask)
                 }
             }
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
             NewChatPickerLabel(title: host.name) {
-                Image(systemName: "desktopcomputer")
+                Image(systemName: host.icon.symbolName)
             }
         }
         .accessibilityLabel("Host")

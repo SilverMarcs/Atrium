@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// A host's name over how it's connected.
@@ -11,7 +12,7 @@ struct HostLabel: View {
                 .foregroundStyle(.primary)
             Text(status)
         } icon: {
-            Image(systemName: "macbook")
+            Image(systemName: host.icon.symbolName)
         }
     }
 

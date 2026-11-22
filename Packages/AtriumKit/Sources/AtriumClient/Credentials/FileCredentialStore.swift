@@ -71,9 +71,9 @@ public final class FileCredentialStore: CredentialStore {
         }
     }
 
-    public func rename(_ host: PairedHost, to name: String?) {
+    public func update(_ host: PairedHost) {
         try? update { contents in
-            let hosts = contents.hosts.map(\.host).renaming(host, to: name)
+            let hosts = contents.hosts.map(\.host).updating(host)
             contents.hosts = zip(hosts, contents.hosts).map { Entry(host: $0, token: $1.token) }
         }
     }
@@ -111,7 +111,7 @@ public final class FileCredentialStore: CredentialStore {
                 contents: try encoder.encode(contents),
                 attributes: [.posixPermissions: 0o600]
             ) else { throw CocoaError(.fileWriteUnknown) }
-            guard move(temporary.path(percentEncoded: false), over: url.path(percentEncoded: false)) == 0 else {
+            guard rename(temporary.path(percentEncoded: false), url.path(percentEncoded: false)) == 0 else {
                 let code = POSIXErrorCode(rawValue: errno) ?? .EIO
                 try? manager.removeItem(at: temporary)
                 throw POSIXError(code)
@@ -120,11 +120,6 @@ public final class FileCredentialStore: CredentialStore {
             throw CredentialStoreError.unwritable(url, error)
         }
     }
-}
-
-/// Replaces a file in one step. Outside the store, whose `rename` would hide POSIX's.
-private nonisolated func move(_ source: String, over destination: String) -> Int32 {
-    rename(source, destination)
 }
 
 public nonisolated enum CredentialStoreError: LocalizedError {

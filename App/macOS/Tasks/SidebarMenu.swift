@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
 /// The sidebar's toolbar control, in place of the system sidebar toggle:
@@ -48,6 +49,7 @@ private struct SidebarMenuContent: Hashable {
     struct Host: Hashable {
         let id: String
         let name: String
+        let icon: HostIcon
         let isConnected: Bool
     }
 
@@ -56,6 +58,6 @@ private struct SidebarMenuContent: Hashable {
 
     init(_ directory: HostDirectory) {
         filter = directory.filter
-        hosts = directory.hosts.map { Host(id: $0.id, name: $0.name, isConnected: $0.isConnected) }
+        hosts = directory.hosts.map { Host(id: $0.id, name: $0.name, icon: $0.icon, isConnected: $0.isConnected) }
     }
 }

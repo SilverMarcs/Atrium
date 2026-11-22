@@ -13,6 +13,7 @@ public nonisolated struct PairingLink: Equatable, Sendable {
     public var publicKey: Data
     public var secret: String
     public var hostName: String
+    public var hostIcon: HostIcon
 
     public static let scheme = "atrium"
     private static let version = "3"
@@ -27,15 +28,17 @@ public nonisolated struct PairingLink: Equatable, Sendable {
             URLQueryItem(name: "key", value: publicKey.base64URLEncodedString()),
             URLQueryItem(name: "secret", value: secret),
             URLQueryItem(name: "name", value: hostName),
+            URLQueryItem(name: "icon", value: hostIcon.rawValue),
         ]
         return components.url
     }
 
-    public init(hostID: String, publicKey: Data, secret: String, hostName: String) {
+    public init(hostID: String, publicKey: Data, secret: String, hostName: String, hostIcon: HostIcon = .default) {
         self.hostID = hostID
         self.publicKey = publicKey
         self.secret = secret
         self.hostName = hostName
+        self.hostIcon = hostIcon
     }
 
     public init?(url: URL) {
@@ -46,7 +49,13 @@ public nonisolated struct PairingLink: Equatable, Sendable {
               let hostID = value("host"), !hostID.isEmpty,
               let publicKey = value("key").flatMap(Data.init(base64URLEncoded:)), publicKey.count == 32,
               let secret = value("secret"), !secret.isEmpty else { return nil }
-        self.init(hostID: hostID, publicKey: publicKey, secret: secret, hostName: value("name") ?? "Mac")
+        self.init(
+            hostID: hostID,
+            publicKey: publicKey,
+            secret: secret,
+            hostName: value("name") ?? "Mac",
+            hostIcon: value("icon").flatMap(HostIcon.init(rawValue:)) ?? .default
+        )
     }
 
     /// Binds the handshake to this host, so a key captured for one host can't be replayed for another.

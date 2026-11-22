@@ -39,8 +39,6 @@ public final class HostClient: Identifiable {
     /// Whether this is the host running in this app.
     public let isLocal: Bool
     public private(set) var pairedHost: PairedHost?
-    /// A name the user chose for this Mac's own host, shown instead of its own.
-    public private(set) var customLocalName: String?
     public private(set) var state: State = .connecting {
         didSet { if state != oldValue { notify(.state(state)) } }
     }
@@ -109,13 +107,20 @@ public final class HostClient: Identifiable {
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var failedAttempts = 0
     @ObservationIgnored private let localName: String
+    @ObservationIgnored private let localIcon: HostIcon
     @ObservationIgnored private var observers: [UUID: AsyncStream<HostClientChange>.Continuation] = [:]
 
     /// The Mac's own host.
-    public init(localID: String, name: String, connection: @escaping @MainActor () -> any HostConnection) {
+    public init(
+        localID: String,
+        name: String,
+        icon: HostIcon = .default,
+        connection: @escaping @MainActor () -> any HostConnection
+    ) {
         id = localID
         isLocal = true
         localName = name
+        localIcon = icon
         loopback = connection
         authentication = .none
         takeBackUnsentPrompts()
@@ -127,6 +132,7 @@ public final class HostClient: Identifiable {
         isLocal = false
         pairedHost = host
         localName = host.hostName
+        localIcon = host.hostIcon
         loopback = nil
         self.authentication = authentication
         takeBackUnsentPrompts()
@@ -142,9 +148,8 @@ public final class HostClient: Identifiable {
         }
     }
 
-    public var name: String { pairedHost?.displayName ?? customLocalName ?? hello?.hostName ?? localName }
-    /// What an empty rename goes back to: the host's own name.
-    public var defaultName: String { pairedHost?.hostName ?? hello?.hostName ?? localName }
+    public var name: String { hello?.hostName ?? pairedHost?.hostName ?? localName }
+    public var icon: HostIcon { hello?.hostIcon ?? pairedHost?.hostIcon ?? localIcon }
     public var isConnected: Bool { state == .connected }
     /// Whether the relay is holding a connection until the host comes online.
     private var isWaitingForHost: Bool {
@@ -181,13 +186,6 @@ public final class HostClient: Identifiable {
         connection?.close()
         connection = nil
         route = nil
-    }
-
-    public func rename(to name: String?) {
-        if isLocal { customLocalName = name }
-        guard var host = pairedHost else { return }
-        host.customName = name
-        pairedHost = host
     }
 
     /// The host's own Mac connects in process; a paired host directly when
@@ -618,6 +616,12 @@ public final class HostClient: Identifiable {
         switch event {
         case .hello(let hello):
             self.hello = hello
+            if var host = pairedHost, host.hostName != hello.hostName || host.hostIcon != hello.hostIcon {
+                host.hostName = hello.hostName
+                host.hostIcon = hello.hostIcon
+                pairedHost = host
+                if !isPairing { connections?.credentials.update(host) }
+            }
         case .tasks(let snapshot):
             let previous = hostTasks
             hostTasks = snapshot

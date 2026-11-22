@@ -51,10 +51,8 @@ final class HostDirectory {
     @ObservationIgnored private var composers: [TaskRef: TaskComposer] = [:]
 
     private static let filterKey = "hostFilter"
-    private static let localHostNameKey = "localHostName"
 
     init(localHost: HostClient? = nil) {
-        localHost?.rename(to: UserDefaults.standard.string(forKey: Self.localHostNameKey))
         connections = HostConnections(localHost: localHost, credentials: KeychainCredentialStore(deviceName: Self.deviceName))
         let filter = UserDefaults.standard.string(forKey: Self.filterKey)
         self.filter = connections.hosts.contains { $0.id == filter } ? filter : nil
@@ -431,18 +429,6 @@ final class HostDirectory {
     /// Forgets a host. Pairing it again needs a fresh link from its Settings.
     func forget(_ host: HostClient) {
         connections.forget(host)
-    }
-
-    /// Names a host on this device only; an empty name goes back to the host's own.
-    func rename(_ host: HostClient, to name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let customName = name.isEmpty ? nil : name
-        if host.isLocal {
-            UserDefaults.standard.set(customName, forKey: Self.localHostNameKey)
-            host.rename(to: customName)
-        } else {
-            connections.rename(host, to: customName)
-        }
     }
 
     // MARK: - Notifications

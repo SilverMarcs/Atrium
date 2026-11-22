@@ -101,24 +101,38 @@ final class Client {
     /// Pairs this client with every host the Atrium app it's bundled in is
     /// paired with and it isn't yet, with the app vouching for it, so agents on
     /// this Mac reach those hosts with nothing to set up. They're saved as if
-    /// paired from a link. Does nothing when the app can't be reached: the
-    /// hosts paired before still work.
-    func adoptAppHosts(timeout: Duration) async {
+    /// paired from a link. Returns this Mac's own hello when the app answered.
+    /// Does nothing when the app can't be reached: the hosts paired before
+    /// still work.
+    @discardableResult
+    func adoptAppHosts(timeout: Duration) async -> HostHello? {
         #if os(macOS)
         guard let socket = LocalHost.socket, (try? LocalHost.checkReachable()) != nil,
-              let store = try? credentials() else { return }
+              let store = try? credentials() else { return nil }
         let app = HostClient.localAgents(socket: socket, name: LocalHost.name)
         app.start()
         defer { app.stop() }
-        guard (try? await waitUntil(app, timeout: timeout, { app.isConnected ? true : nil })) == true,
-              case .sharedHosts(let shared)? = try? await deadline(timeout, {
-                  try await app.request(.sharedHosts(device: store.device, known: store.pairedHosts.map(\.id)))
-              }) else { return }
-        for host in shared {
-            try? store.save(PairedHost(shared: host), token: host.token)
+        guard let localHello = try? await waitUntil(app, timeout: timeout, { app.isConnected ? app.hello : nil }) else { return nil }
+        if case .sharedHosts(let shared)? = try? await deadline(timeout, {
+            try await app.request(.sharedHosts(device: store.device, known: store.pairedHosts.map(\.id)))
+        }) {
+            var changed = false
+            for host in shared {
+                let paired = PairedHost(shared: host)
+                if let token = host.token {
+                    try? store.save(paired, token: token)
+                    changed = true
+                } else if store.pairedHosts.first(where: { $0.id == paired.id }) != paired {
+                    store.update(paired)
+                    changed = true
+                }
+            }
+            // Built again with the hosts just saved or updated.
+            if changed { connections = nil }
         }
-        // Built again with the hosts just saved.
-        if !shared.isEmpty { connections = nil }
+        return localHello
+        #else
+        return nil
         #endif
     }
 
@@ -131,10 +145,11 @@ final class Client {
         host.start()
         connected.append(host)
         let isConnected = try await deadline(timeout) {
-            if host.isConnected { return true }
+            if host.isConnected && host.hello != nil { return true }
             for await change in changes {
                 switch change {
-                case .state(.connected): return true
+                case .state(.connected), .event(.hello):
+                    if host.isConnected && host.hello != nil { return true }
                 case .state(.offline(let reason)):
                     lastReason = reason
                     // This Mac's host is there or not; there's no relay to wait at.

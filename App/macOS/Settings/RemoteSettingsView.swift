@@ -18,14 +18,46 @@ struct RemoteSettingsView: View {
     }
 }
 
-/// This Mac as a host: remote access, pairing, and the devices paired with it.
+/// This Mac as a host: its advertised name and icon, remote access, pairing,
+/// and the devices paired with it.
 private struct ThisMacSections: View {
     let host: HostClient
+    @State private var hostName = ""
+    @FocusState private var isEditingHostName: Bool
 
     private var access: WireRemoteAccess? { host.remoteAccess }
 
     var body: some View {
         Section {
+            TextField("Name", text: $hostName, prompt: Text(access?.defaultHostName ?? ""))
+                .focused($isEditingHostName)
+                .disabled(access == nil)
+                .onSubmit { commitHostName(normalizingField: true) }
+                .onChange(of: isEditingHostName) {
+                    if !isEditingHostName { commitHostName(normalizingField: true) }
+                }
+                .onChange(of: access?.customHostName, initial: true) {
+                    if !isEditingHostName { hostName = access?.customHostName ?? "" }
+                }
+                .task(id: hostName) {
+                    guard isEditingHostName else { return }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    commitHostName(normalizingField: false)
+                }
+                .onDisappear { commitHostName(normalizingField: false) }
+            Picker("Icon", selection: Binding(
+                get: { host.icon },
+                set: { host.send(.setHostIcon($0)) }
+            )) {
+                ForEach(HostIcon.allCases) { icon in
+                    Image(systemName: icon.symbolName)
+                        .help(icon.title)
+                        .accessibilityLabel(icon.title)
+                        .tag(icon)
+                }
+            }
+            .pickerStyle(.segmented)
             Toggle("Allow remote access", isOn: Binding(
                 get: { access?.isEnabled ?? false },
                 set: { host.send(.setRemoteAccess($0)) }
@@ -39,7 +71,7 @@ private struct ThisMacSections: View {
         } header: {
             Text("This Mac")
         } footer: {
-            Text("Your iPhone and other Macs running Atrium can connect to this Mac with end-to-end encryption.")
+            Text("Your iPhone and other Macs running Atrium connect to this Mac with end-to-end encryption and show its name and icon.")
         }
         .sectionActions {
             if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
@@ -85,25 +117,28 @@ private struct ThisMacSections: View {
             }
         }
     }
+
+    private func commitHostName(normalizingField: Bool) {
+        guard let access else { return }
+        let trimmed = hostName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizingField { hostName = trimmed }
+        guard trimmed != (access.customHostName ?? "") else { return }
+        host.send(.setHostName(trimmed))
+    }
 }
 
-/// This Mac's own host and the hosts it connects to as a client, and
-/// pairing with a new one.
+/// Other Macs this Mac connects to as a client, and pairing with a new one.
 private struct HostsSection: View {
     let hosts: HostDirectory
     @State private var link = ""
-    @State private var hostToRename: HostClient?
 
     var body: some View {
         Section {
-            if let host = hosts.localHost {
-                HostRow(host: host, hostToRename: $hostToRename)
-            }
             ForEach(hosts.remoteHosts) { host in
                 LabeledContent {
                     Button("Remove", role: .destructive) { hosts.forget(host) }
                 } label: {
-                    HostRow(host: host, hostToRename: $hostToRename)
+                    HostLabel(host: host)
                 }
             }
             HStack {
@@ -122,12 +157,11 @@ private struct HostsSection: View {
                     .foregroundStyle(.red)
             }
         } header: {
-            Text("Hosts")
+            Text("Other Hosts")
         } footer: {
-            Text("Click a host to rename it on this Mac. To add one, copy the pairing link from Atrium Settings on another Mac and paste it here.")
+            Text("To add another Mac, copy the pairing link from Atrium Settings there and paste it here.")
         }
         .onChange(of: hosts.pairingCount) { link = "" }
-        .hostRenameAlert($hostToRename, in: hosts)
     }
 
     private func pair() {
@@ -136,22 +170,6 @@ private struct HostsSection: View {
             return
         }
         hosts.pair(with: link)
-    }
-}
-
-/// A host's name and status, which opens renaming it.
-private struct HostRow: View {
-    let host: HostClient
-    @Binding var hostToRename: HostClient?
-
-    var body: some View {
-        Button { hostToRename = host } label: {
-            HostLabel(host: host)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .help("Rename on this Mac")
     }
 }
 
