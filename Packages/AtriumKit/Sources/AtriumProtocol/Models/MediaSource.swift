@@ -36,9 +36,11 @@ public nonisolated enum MediaSource: Hashable, Sendable {
     }
 
     /// The image sources in Markdown, such as `![chart](</tmp/a b.png>)`, in order.
+    /// A path with spaces may also go without angle brackets when its image
+    /// ends the line or comes before another, as SwiftMarkdownView shows it.
     public static func markdownImages(in markdown: String) -> [String] {
-        markdown.matches(of: markdownImage).map { match in
-            let destination = String(match.output.1)
+        markdown.matches(of: markdownImage).compactMap { match in
+            guard let destination = (match.output.1 ?? match.output.2).map(String.init) else { return nil }
             return destination.hasPrefix("<") && destination.hasSuffix(">")
                 ? String(destination.dropFirst().dropLast()).replacing("\\<", with: "<").replacing("\\>", with: ">")
                 : destination
@@ -107,8 +109,19 @@ public nonisolated enum MediaSource: Hashable, Sendable {
             .replacing("&lt;", with: "<").replacing("&gt;", with: ">").replacing("&amp;", with: "&")
     }
 
-    // `![alt](destination "title")`, where the destination may be wrapped in angle brackets.
-    nonisolated(unsafe) private static let markdownImage = #/!\[(?:[^\]\\]|\\.)*\]\(\s*(<(?:[^>\\\n]|\\.)*>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/#
+    // `![alt](destination "title")` as SwiftMarkdownView reads it, which draws
+    // the images clients fetch: a destination in angle brackets, or one without
+    // spaces whose parentheses balance, with an optional title; or else a path
+    // with spaces that ends its line or comes before another image.
+    nonisolated(unsafe) private static let markdownImage = #/
+        (?m)
+        !\[ (?: [^\]\\] | \\. )* \] \(
+        (?:
+            \s* ( < (?: [^>\\\n] | \\. )* > | (?: [^\s()\\] | \\. | \( [^\s()]* \) )+ )
+            (?: \s+ (?: "[^"]*" | '[^']*' ) )? \s* \)
+          | \h* ( [^<\s] .*? ) \h* \) (?= \h* (?: $ | !\[ ) )
+        )
+        /#
     nonisolated(unsafe) private static let htmlAttribute = #/(?i)\s(src|srcset|poster)\s*=\s*(?:"([^"]*)"|'([^']*)')/#
     // `url(` that isn't part of a longer name, so script calls like `toDataURL(…)` don't count.
     nonisolated(unsafe) private static let cssURL = #/(?:^|[^\w.$])url\(\s*["']?([^"')]+)["']?\s*\)/#

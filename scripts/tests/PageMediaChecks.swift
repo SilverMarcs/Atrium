@@ -71,6 +71,7 @@ struct PageMediaChecks {
         }
         try Data("This is not an image".utf8).write(to: assets.appending(path: "notes.txt"))
         try checkFilePages(in: scratch)
+        try checkMarkdownImages()
         let escape = assets.appending(path: "escape.png")
         if (try? FileManager.default.destinationOfSymbolicLink(atPath: escape.path(percentEncoded: false))) == nil {
             try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside.appending(path: "secret.png"))
@@ -224,6 +225,20 @@ struct PageMediaChecks {
         try FileManager.default.removeItem(at: file)
         try check(try shown("second") == "<p>two</p>", "A copy outlives the file")
         try check(try shown("third").contains("is gone"), "A reply whose file is missing says so")
+    }
+
+    /// Markdown image paths, including ones with spaces written without angle brackets.
+    static func checkMarkdownImages() throws {
+        let markdown = """
+            **Caption:** see below.
+            ![a](/Users/me/Atrium Screenshots/a (2).png)
+            ![b](</tmp/b c.png> "Title") ![c](/tmp/c d.png)
+            Inline ![d](/tmp/d.png) and ![e](/tmp/e f.png) in a sentence.
+            ![f](/tmp/f(1).png)
+            """
+        try check(MediaSource.markdownImages(in: markdown)
+            == ["/Users/me/Atrium Screenshots/a (2).png", "/tmp/b c.png", "/tmp/c d.png", "/tmp/d.png", "/tmp/f(1).png"],
+            "Markdown image paths: \(MediaSource.markdownImages(in: markdown))")
     }
 
     static func check(_ condition: Bool, _ message: String) throws {
