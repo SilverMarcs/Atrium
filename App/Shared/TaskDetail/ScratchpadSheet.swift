@@ -37,6 +37,7 @@ struct ScratchpadSheet: View {
                     #endif
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle("Scratchpad")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
@@ -90,6 +91,7 @@ private struct ScratchpadDraftEditor: View {
                     #if os(iOS)
                     .contentMargins(.horizontal, 16, for: .scrollContent)
                     #else
+                    .font(.body.monospaced())
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     #endif
