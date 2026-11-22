@@ -38,6 +38,15 @@ extension HostClient {
         return (text, images)
     }
 
+    /// Takes a draft out of a project's scratchpad, to put in a composer.
+    /// - Returns: Its text and images as they were added.
+    public func takeScratchpadDraft(_ id: UUID, from workspaceID: UUID) async throws -> (text: String, images: [Data]) {
+        guard case .queuedPrompt(let text, let images) = try await request(
+            .workspace(id: workspaceID, action: .removeScratchpadDraft(id: id))
+        ) else { throw HostClientError.unexpectedReply }
+        return (text, images)
+    }
+
     /// Stops the agent's turn.
     /// - Returns: The prompt that was queued behind the turn, for the
     ///   composer, with its images as they were sent.

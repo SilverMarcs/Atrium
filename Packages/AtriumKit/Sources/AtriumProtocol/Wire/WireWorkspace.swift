@@ -14,7 +14,8 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
     public var projectIcon: String?
     /// Fetch with `HostRequest.icon(key:)`; the key changes whenever the icon does.
     public var customIconKey: String?
-    public var scratchpad: String
+    /// Drafts put aside, newest first.
+    public var scratchpad: [ScratchpadDraft]
     public var hasRunningCommand: Bool
 
     /// The project's primary folder on the host, where agents start and
@@ -29,7 +30,7 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         projectType: String,
         projectIcon: String? = nil,
         customIconKey: String? = nil,
-        scratchpad: String,
+        scratchpad: [ScratchpadDraft],
         hasRunningCommand: Bool
     ) {
         self.id = id

@@ -196,7 +196,7 @@ final class TasksFeed: TopicFeed {
             projectType: workspace.projectTypeRaw,
             projectIcon: workspace.projectType.iconName.isEmpty ? nil : workspace.projectType.iconName,
             customIconKey: workspace.customIconFilename,
-            scratchpad: workspace.scratchPad,
+            scratchpad: workspace.scratchpadDrafts,
             hasRunningCommand: workspace.commands.contains { $0.isRunning }
         )
     }

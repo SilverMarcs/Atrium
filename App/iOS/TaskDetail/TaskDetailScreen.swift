@@ -10,7 +10,7 @@ struct TaskDetailScreen: View {
     @Environment(\.isPresented) private var isPresented
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let ref: TaskRef
-    @State private var showingScratchPad = false
+    @State private var showingScratchpad = false
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptFlights()
@@ -109,7 +109,7 @@ struct TaskDetailScreen: View {
                     ToolbarItem(placement: .primaryAction) {
                         TaskMoreMenu(
                             item: item,
-                            showingScratchPad: $showingScratchPad
+                            showingScratchpad: $showingScratchpad
                         )
                     }
                 }
@@ -127,9 +127,9 @@ struct TaskDetailScreen: View {
         .composerDictationLifecycle(composer)
         .environment(composer)
         .environment(sendAnimator)
-        .sheet(isPresented: $showingScratchPad) {
-            if let host, let workspaceID = task?.workspaceID {
-                ScratchPadSheet(host: host, workspaceID: workspaceID)
+        .sheet(isPresented: $showingScratchpad) {
+            if let item {
+                ScratchpadSheet(item: item, composer: composer)
             }
         }
         .modifier(AgentInteractionPresentation(
@@ -138,7 +138,7 @@ struct TaskDetailScreen: View {
             respond: { interaction, decision in
                 _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },
-            canPresent: scenePhase == .active && !showingScratchPad
+            canPresent: scenePhase == .active && !showingScratchpad
                 && !composer.isPickingPhotos && !composer.isTakingPhoto
                 && composer.dictation.error == nil,
             prepareToPresent: { composer.isFocused = false }

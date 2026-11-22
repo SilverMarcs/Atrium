@@ -38,8 +38,16 @@ struct WorkspaceService {
         case .rename(let name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             workspace.name = name.isEmpty ? workspace.url.lastPathComponent : name
-        case .setScratchpad(let text):
-            workspace.scratchPad = text
+        case .addToScratchpad(let text, let images):
+            do { try workspace.addToScratchpad(text, images: images) }
+            catch { return .failed(message: error.localizedDescription) }
+        case .editScratchpadDraft(let id, let text):
+            workspace.editScratchpadDraft(id, text: text)
+        case .removeScratchpadDraft(let id):
+            guard let draft = workspace.removeScratchpadDraft(id) else {
+                return .failed(message: "This draft is no longer in the scratchpad.")
+            }
+            return .queuedPrompt(text: draft.text, images: draft.images)
         case .setProjectType(let raw):
             workspace.projectTypeRaw = ProjectType(rawValue: raw)?.rawValue ?? ProjectType.unknown.rawValue
         case .detectProjectType:

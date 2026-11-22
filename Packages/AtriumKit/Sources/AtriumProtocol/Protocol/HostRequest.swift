@@ -134,7 +134,13 @@ public nonisolated enum TaskAction: Codable, Sendable {
 public nonisolated enum WorkspaceAction: Codable, Sendable {
     /// Names the project; an empty name goes back to its folder's.
     case rename(String)
-    case setScratchpad(String)
+    /// Puts a draft aside in the project's scratchpad, newest first, with its
+    /// images as JPEG data.
+    case addToScratchpad(text: String, images: [Data])
+    case editScratchpadDraft(id: UUID, text: String)
+    /// Removes a draft from the scratchpad. Replies `.queuedPrompt` with it as
+    /// it was added, to put back in a composer.
+    case removeScratchpadDraft(id: UUID)
     case setProjectType(String)
     case detectProjectType
     /// Copies an image file on the host as the project's icon. Only the host itself may.

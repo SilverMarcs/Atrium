@@ -1,28 +1,51 @@
+import AtriumClient
+import AtriumProtocol
 import SwiftUI
 
-/// Attaches images to the prompt, beside the composer. The pickers it opens
-/// are presented by `ComposerAttachmentPickers`.
+/// Attaches images to the prompt, beside the composer, and brings back
+/// drafts from the project's scratchpad. The pickers it opens are presented
+/// by `ComposerAttachmentPickers`.
 struct ComposerAttachmentMenu<MenuLabel: View>: View {
     @Environment(TaskComposer.self) private var composer
 
+    let item: HostTask?
     @ViewBuilder let label: MenuLabel
 
     var body: some View {
         Menu {
-            Button("Photo Library", systemImage: "photo.on.rectangle") {
-                composer.isPickingPhotos = true
+            Group {
+                Button("Photo Library", systemImage: "photo.on.rectangle") {
+                    composer.isPickingPhotos = true
+                }
+                #if os(iOS)
+                Button("Camera", systemImage: "camera") {
+                    composer.isTakingPhoto = true
+                }
+                .disabled(!CameraPicker.isAvailable)
+                #else
+                Divider()
+                Button("Attach Images", systemImage: "paperclip") {
+                    composer.isImportingFiles = true
+                }
+                #endif
             }
-            #if os(iOS)
-            Button("Camera", systemImage: "camera") {
-                composer.isTakingPhoto = true
+            .disabled(composer.remainingImageSlots == 0)
+            if let item, !item.scratchpad.isEmpty {
+                Divider()
+                Menu {
+                    ForEach(item.scratchpad) { draft in
+                        Button {
+                            composer.restore(draft, from: item)
+                        } label: {
+                            Label(draft.title, systemImage: draft.text.isEmpty ? "photo" : "text.alignleft")
+                            if let summary = draft.imageSummary { Text(summary) }
+                        }
+                    }
+                } label: {
+                    Label("Scratchpad", systemImage: "note.text")
+                    Text(item.scratchpad.count == 1 ? "1 draft" : "\(item.scratchpad.count) drafts")
+                }
             }
-            .disabled(!CameraPicker.isAvailable)
-            #else
-            Divider()
-            Button("Attach Images", systemImage: "paperclip") {
-                composer.isImportingFiles = true
-            }
-            #endif
         } label: {
             label
         }
@@ -30,6 +53,5 @@ struct ComposerAttachmentMenu<MenuLabel: View>: View {
         .menuStyle(.button)
         #endif
         .menuIndicator(.hidden)
-        .disabled(composer.remainingImageSlots == 0)
     }
 }

@@ -131,7 +131,7 @@ struct ComposerBar: View {
                             .composerBarPart(.panel)
 
                         if showsAttach {
-                            ComposerAttachmentMenu {
+                            ComposerAttachmentMenu(item: item) {
                                 Label("Attach", systemImage: "plus")
                                     .labelStyle(.iconOnly)
                                     .font(attachFont)
@@ -225,6 +225,9 @@ struct ComposerBar: View {
                         }
                     )
                     #endif
+                    #if os(iOS)
+                    .environment(\.addToScratchpad, item?.task.workspaceID == nil ? nil : { if let item { composer.addToScratchpad(of: item) } })
+                    #endif
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
 
@@ -309,6 +312,21 @@ struct ComposerBar: View {
         #else
         .padding(.bottom, ComposerBarLayout.expandedMargin)
         .composerFocusRequests()
+        .toolbar {
+            if let item, item.task.workspaceID != nil {
+                ToolbarItem(placement: .keyboard) {
+                    // ⌘S puts the draft aside; on an empty composer it brings back the newest.
+                    Button("Scratchpad") {
+                        if composer.hasScratchpadContent {
+                            composer.addToScratchpad(of: item)
+                        } else if composer.messageEdit == nil, let newest = item.scratchpad.first {
+                            composer.restore(newest, from: item)
+                        }
+                    }
+                    .keyboardShortcut("s")
+                }
+            }
+        }
         #endif
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4, extraBounce: 0.05), value: isExpanded)
         .animation(.smooth(duration: 0.25), value: composer.draft.isEmpty)

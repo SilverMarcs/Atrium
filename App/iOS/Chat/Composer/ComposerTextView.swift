@@ -44,6 +44,7 @@ struct ComposerTextView: UIViewRepresentable {
         context.coordinator.isEditing = $isEditing
         editor.onReturn = onReturn
         editor.onSkillReturn = onSkillReturn
+        editor.onAddToScratchpad = context.environment.addToScratchpad
         editor.placeholder = placeholder
         editor.isEditable = isEditable
         editor.isExpanded = isExpanded
@@ -110,6 +111,15 @@ struct ComposerTextView: UIViewRepresentable {
             return editor.onSkillReturn?() != true
         }
 
+        /// Selecting any of the draft offers to put all of it aside, images included.
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            guard range.length > 0, let addToScratchpad = (textView as? ComposerEditor)?.onAddToScratchpad else { return nil }
+            let action = UIAction(title: "Add to Scratchpad", image: UIImage(systemName: "note.text")) { _ in addToScratchpad() }
+            var actions = suggestedActions
+            actions.insert(UIMenu(options: .displayInline, children: [action]), at: min(1, actions.count))
+            return UIMenu(children: actions)
+        }
+
         func textViewDidBeginEditing(_ textView: UITextView) {
             isEditing.wrappedValue = true
             if !isFocused.wrappedValue { isFocused.wrappedValue = true }
@@ -127,6 +137,8 @@ struct ComposerTextView: UIViewRepresentable {
 final class ComposerEditor: UITextView, ComposerTextInserting {
     var onReturn: (() -> Void)?
     var onSkillReturn: (() -> Bool)?
+    /// Puts the whole draft aside in the project's scratchpad, from the edit menu.
+    var onAddToScratchpad: (() -> Void)?
 
     func insertDictation(_ transcript: String, in draft: String) -> String? {
         guard text == draft, markedTextRange == nil, isEditable else { return nil }
@@ -367,4 +379,9 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
               key.keyCode == .keyboardReturnOrEnter else { return false }
         return key.modifierFlags.isDisjoint(with: [.shift, .alternate, .command, .control])
     }
+}
+
+extension EnvironmentValues {
+    /// Puts the composer's draft aside in its project's scratchpad, if it has one.
+    @Entry var addToScratchpad: (() -> Void)?
 }

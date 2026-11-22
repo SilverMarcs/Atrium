@@ -341,6 +341,42 @@ final class TaskComposer {
         }
     }
 
+    /// Whether there's text or an image to put aside in the scratchpad.
+    var hasScratchpadContent: Bool {
+        messageEdit == nil && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty)
+    }
+
+    /// Moves the draft and its images into the project's scratchpad. One the
+    /// host turns down comes back to the composer, if it's still empty.
+    func addToScratchpad(of item: HostTask) {
+        guard hasScratchpadContent, let workspaceID = item.task.workspaceID else { return }
+        let text = draft
+        let images = images
+        draft = ""
+        self.images = []
+        Task {
+            do {
+                _ = try await item.host.request(.workspace(id: workspaceID, action: .addToScratchpad(text: text, images: images.map(\.data))))
+            } catch {
+                if !hasContent {
+                    draft = text
+                    self.images = images
+                }
+                item.host.actionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Takes a draft out of the project's scratchpad into the composer, ahead
+    /// of anything already drafted.
+    func restore(_ draft: ScratchpadDraft, from item: HostTask) {
+        guard let workspaceID = item.task.workspaceID else { return }
+        Task {
+            do { restore(try await item.host.takeScratchpadDraft(draft.id, from: workspaceID)) }
+            catch { item.host.actionError = error.localizedDescription }
+        }
+    }
+
     /// Stops the agent's turn. The prompt queued behind it comes back to the
     /// composer rather than starting the next turn.
     func stop(_ item: HostTask) {
@@ -354,8 +390,8 @@ final class TaskComposer {
         }
     }
 
-    /// Puts a prompt taken back from the queue in the ordinary draft, ahead
-    /// of anything already there.
+    /// Puts a prompt taken back from the queue or the scratchpad in the
+    /// ordinary draft, ahead of anything already there.
     private func restore(_ prompt: (text: String, images: [Data])) {
         if messageEdit?.isSubmitting != true { messageEdit = nil }
         takeBack(prompt.text, images: prompt.images)

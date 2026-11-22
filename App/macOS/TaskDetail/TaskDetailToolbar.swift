@@ -5,7 +5,7 @@ import SwiftUI
 /// The Mac toolbar of a task's detail view.
 struct TaskDetailToolbar: ToolbarContent {
     let item: HostTask
-    @Binding var showingScratchPad: Bool
+    @Binding var showingScratchpad: Bool
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
@@ -26,7 +26,7 @@ struct TaskDetailToolbar: ToolbarContent {
             }
         } else if item.task.workspaceID != nil {
             ToolbarItem(placement: .navigation) {
-                ScratchPadButton(isPresented: $showingScratchPad)
+                ScratchpadButton(isPresented: $showingScratchpad)
             }
         }
         if item.hasSubagents || item.task.isSideChat || item.task.actions.contains(.sideChat) || item.sideChat != nil {

@@ -136,6 +136,7 @@ final class WorkspaceStore {
             cmd.terminate()
         }
         workspace.clearCustomIcon()
+        for entry in workspace.scratchpad { entry.deleteImages() }
         workspaces.removeAll { $0.id == workspace.id }
         scheduleSave()
     }

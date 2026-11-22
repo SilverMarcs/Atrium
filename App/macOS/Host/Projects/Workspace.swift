@@ -1,3 +1,4 @@
+import AtriumProtocol
 import SwiftUI
 
 @Observable
@@ -11,7 +12,8 @@ final class Workspace: Identifiable, Hashable, Codable {
     /// repository's top folder gets Source Control; the rest show files only.
     private(set) var additionalFolders: [String] = []
     var projectTypeRaw: String
-    var scratchPad: String
+    /// Drafts put aside, newest first.
+    private(set) var scratchpad: [ScratchpadEntry] = []
     var isArchived: Bool = false
     private(set) var customIconFilename: String?
 
@@ -19,6 +21,8 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     @ObservationIgnored
     weak var store: WorkspaceStore?
+    /// Small previews of the scratchpad's images, made from their files once.
+    @ObservationIgnored private var scratchpadPreviews: [UUID: [Data]] = [:]
 
     var url: URL {
         URL(fileURLWithPath: directory)
@@ -93,14 +97,15 @@ final class Workspace: Identifiable, Hashable, Codable {
         self.directory = folders.first ?? ""
         self.additionalFolders = Array(folders.dropFirst())
         self.projectTypeRaw = ProjectType.unknown.rawValue
-        self.scratchPad = ""
         self.commands = []
     }
 
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, directory, additionalFolders, projectTypeRaw, scratchPad, isArchived
+        case id, name, directory, additionalFolders, projectTypeRaw, scratchpad, isArchived
+        /// The scratchpad's notes before it held drafts.
+        case scratchPad
         case customIconFilename
         case commands
     }
@@ -115,7 +120,12 @@ final class Workspace: Identifiable, Hashable, Codable {
         // Legacy: "xcode" was folded into "swiftPackage" (now displayed as "Swift")
         // since Xcode projects are just one flavor of Swift project.
         self.projectTypeRaw = rawProjectType == "xcode" ? ProjectType.swiftPackage.rawValue : rawProjectType
-        self.scratchPad = try c.decodeIfPresent(String.self, forKey: .scratchPad) ?? ""
+        var scratchpad = try c.decodeIfPresent([ScratchpadEntry].self, forKey: .scratchpad) ?? []
+        if let notes = try c.decodeIfPresent(String.self, forKey: .scratchPad),
+           !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            scratchpad.append(ScratchpadEntry(text: notes))
+        }
+        self.scratchpad = scratchpad
         self.isArchived = try c.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         self.customIconFilename = try c.decodeIfPresent(String.self, forKey: .customIconFilename)
         self.commands = try c.decodeIfPresent([Command].self, forKey: .commands) ?? []
@@ -129,10 +139,41 @@ final class Workspace: Identifiable, Hashable, Codable {
         try c.encode(directory, forKey: .directory)
         try c.encode(additionalFolders, forKey: .additionalFolders)
         try c.encode(projectTypeRaw, forKey: .projectTypeRaw)
-        try c.encode(scratchPad, forKey: .scratchPad)
+        try c.encode(scratchpad, forKey: .scratchpad)
         try c.encode(isArchived, forKey: .isArchived)
         try c.encodeIfPresent(customIconFilename, forKey: .customIconFilename)
         try c.encode(commands, forKey: .commands)
+    }
+
+    // MARK: - Scratchpad
+
+    /// The drafts for clients, with small previews of their images.
+    var scratchpadDrafts: [ScratchpadDraft] {
+        scratchpad.map { entry in
+            if scratchpadPreviews[entry.id] == nil {
+                scratchpadPreviews[entry.id] = entry.imageURLs.compactMap(TranscriptImage.thumbnail(at:))
+            }
+            return ScratchpadDraft(id: entry.id, text: entry.text, images: scratchpadPreviews[entry.id] ?? [])
+        }
+    }
+
+    func addToScratchpad(_ text: String, images: [Data]) throws {
+        scratchpad.insert(ScratchpadEntry(text: text, imageFiles: try ScratchpadEntry.save(images)), at: 0)
+    }
+
+    func editScratchpadDraft(_ id: UUID, text: String) {
+        guard let index = scratchpad.firstIndex(where: { $0.id == id }) else { return }
+        scratchpad[index].text = text
+    }
+
+    /// Removes a draft, deleting its image files.
+    /// - Returns: Its text and images as they were added.
+    func removeScratchpadDraft(_ id: UUID) -> (text: String, images: [Data])? {
+        guard let index = scratchpad.firstIndex(where: { $0.id == id }) else { return nil }
+        let entry = scratchpad.remove(at: index)
+        scratchpadPreviews[id] = nil
+        defer { entry.deleteImages() }
+        return (entry.text, entry.images())
     }
 
     // MARK: - Hashable
