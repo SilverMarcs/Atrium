@@ -4,12 +4,20 @@ import SwiftUI
 /// A task list row, shared by every client: the title and status, then the
 /// project and, when several hosts are listed, the host it's on, any snooze
 /// time, and the agent, grayed out once its session has ended.
+// TODO: Tapping a task that waits on an approval or question should offer
+// its answers right in the list (a popover or menu on the row), without
+// opening the chat.
 struct TaskRowContent<ProjectIcon: View>: View {
     let title: String
     let projectName: String
     var hostName: String? = nil
+    /// The symbol of the host it's on, shown with or instead of its name.
+    let hostSymbol: String
+    let hostLabel: TaskRowHostLabel
     let provider: AgentProvider
     let status: AgentThreadStatus
+    /// The request it's waiting on, which picks its status symbol.
+    var waitingOn: AgentInteraction? = nil
     let hasUnreadResult: Bool
     let isSettled: Bool
     let snoozedUntil: Date?
@@ -29,7 +37,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
                     DictatingIndicator()
                 }
 
-                TaskStatusIndicator(status: status, hasUnreadResult: hasUnreadResult, isSettled: isSettled)
+                TaskStatusIndicator(status: status, hasUnreadResult: hasUnreadResult, isSettled: isSettled, waitingOn: waitingOn)
                     .controlSize(.mini)
                     .font(.caption2)
             }
@@ -38,9 +46,11 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 Text(projectName)
                     .lineLimit(1)
                 if let hostName {
-                    Text(hostName)
+                    Label(hostName, systemImage: hostSymbol)
+                        .labelStyle(hostLabel)
                         .lineLimit(1)
                         .foregroundStyle(.tertiary)
+                        .help(hostName)
                 }
 
                 Spacer(minLength: 0)

@@ -113,7 +113,7 @@ struct AgentInteractionSheet: View {
 
             }
             .formStyle(.grouped)
-            .navigationTitle(!drafts.isEmpty && drafts.allSatisfy(\.question.isSecret) ? "Secret" : "Question")
+            .navigationTitle(request.kind == .secret ? "Secret" : "Question")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 if request.supportsResponse {

@@ -9,6 +9,7 @@ struct TaskRow: View {
     /// Whether its composer is recording, which iOS carries on with while
     /// the chat is closed.
     var isDictating = false
+    @AppStorage(TaskRowHostLabel.key) private var hostLabel = TaskRowHostLabel.iconAndName
 
     var body: some View {
         let task = item.task
@@ -19,8 +20,11 @@ struct TaskRow: View {
             title: task.title,
             projectName: task.projectName,
             hostName: showsHost ? item.host.name : nil,
+            hostSymbol: item.host.icon.symbolName,
+            hostLabel: hostLabel,
             provider: task.provider,
             status: needsInput ? .waiting : item.progressStatus,
+            waitingOn: item.pendingRequests.first,
             hasUnreadResult: task.hasUnreadResult,
             isSettled: task.isSettled,
             snoozedUntil: task.isSettled ? nil : task.snoozedUntil,

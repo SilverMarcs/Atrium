@@ -22,8 +22,6 @@ struct TaskDetailScreen: View {
     /// carries on with it in place.
     private var resolvedRef: TaskRef { TaskRef(hostID: ref.hostID, taskID: host?.resolvedTaskID(ref.taskID) ?? ref.taskID) }
 
-    private var hostTask: WireTask? { host?.task(resolvedRef.taskID) }
-
     /// Each task keeps its own draft and images while others are shown.
     private var composer: TaskComposer { hosts.composer(for: resolvedRef) }
 
@@ -133,8 +131,7 @@ struct TaskDetailScreen: View {
             }
         }
         .modifier(AgentInteractionPresentation(
-            // Requests from the work below this task come up here too, as those sessions aren't listed.
-            requests: (hostTask?.interactions ?? []) + (item?.subagentRequests ?? []),
+            requests: item?.pendingRequests ?? [],
             respond: { interaction, decision in
                 _ = try await host?.request(.task(id: interaction.taskID, action: .respond(interactionID: interaction.id, decision: decision)))
             },

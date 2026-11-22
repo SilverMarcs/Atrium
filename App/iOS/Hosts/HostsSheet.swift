@@ -25,6 +25,9 @@ struct HostsSheet: View {
                     }
                 }
                 SendModeSettingsSection()
+                Section("Task List") {
+                    TaskRowHostLabelPicker()
+                }
                 Section {
                     DiffLayoutPicker()
                 }

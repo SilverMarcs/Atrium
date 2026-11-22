@@ -57,8 +57,10 @@ extension HostTask {
     /// The session a subagent works for, when it's listed.
     var parent: WireTask? { host.tasks?.parent(of: task) }
 
-    /// Approvals and questions waiting in the subagents below this task, at any depth.
-    var subagentRequests: [AgentInteraction] {
-        (host.tasks?.descendants(of: task.id) ?? []).flatMap(\.interactions)
+    /// Approvals and questions waiting on the task, then in the subagents
+    /// below it at any depth, which come up with the task's own as those
+    /// sessions aren't listed.
+    var pendingRequests: [AgentInteraction] {
+        task.interactions + (host.tasks?.descendants(of: task.id) ?? []).flatMap(\.interactions)
     }
 }

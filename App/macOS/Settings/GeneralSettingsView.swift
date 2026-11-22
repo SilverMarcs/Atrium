@@ -26,6 +26,7 @@ struct GeneralSettingsView: View {
             SendModeSettingsSection()
 
             Section {
+                TaskRowHostLabelPicker()
                 Picker(selection: $settings.defaultSnooze) {
                     ForEach(SnoozeDuration.allCases) { duration in
                         Text(duration.title).tag(duration)
@@ -34,6 +35,8 @@ struct GeneralSettingsView: View {
                     Text("Snooze for")
                     Text("When you swipe to snooze a task")
                 }
+            } header: {
+                Text("Task List")
             }
 
             Section {
