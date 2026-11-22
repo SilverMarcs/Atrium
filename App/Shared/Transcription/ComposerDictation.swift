@@ -37,7 +37,7 @@ final class ComposerDictation {
     var isActive: Bool { isRecording || isBusy }
     private(set) var sessionID = UUID()
     private var finishRecording: (() -> Void)?
-    private var recorder: DictationAudioRecorder?
+    private var recorder: AVAudioRecorder?
     private var operation: Task<Void, Never>?
     /// Finishes a recording that reaches `maximumDuration`.
     @ObservationIgnored private var limit: Task<Void, Never>?
@@ -67,16 +67,9 @@ final class ComposerDictation {
         if isRecording, let recorder {
             finishRecording = nil
             let url = recorder.url
+            recorder.stop()
             self.recorder = nil
             isRecording = false
-            do {
-                try recorder.finish()
-            } catch {
-                recordingEnded()
-                try? FileManager.default.removeItem(at: url)
-                self.error = error.localizedDescription
-                return
-            }
             recordingEnded()
             isBusy = true
             #if os(iOS)
@@ -121,12 +114,7 @@ final class ComposerDictation {
                     try Task.checkCancellation()
                     #if os(iOS)
                     let session = AVAudioSession.sharedInstance()
-                    // Keep media playing quietly until the recording releases
-                    // the session, including playback over Bluetooth.
-                    try session.setCategory(
-                        .playAndRecord, mode: .default,
-                        options: [.duckOthers, .defaultToSpeaker, .allowBluetoothA2DP]
-                    )
+                    try session.setCategory(.record, mode: .default)
                     // Recording otherwise suppresses the microphone-ready and
                     // Send haptics while the audio session is active.
                     try? session.setAllowHapticsAndSystemSoundsDuringRecording(true)
@@ -134,9 +122,14 @@ final class ComposerDictation {
                     observeInterruptions()
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
-                    let recorder = try DictationAudioRecorder(url: url)
+                    let recorder = try AVAudioRecorder(url: url, settings: [
+                        AVFormatIDKey: kAudioFormatMPEG4AAC,
+                        AVSampleRateKey: 24_000,
+                        AVNumberOfChannelsKey: 1,
+                        AVEncoderBitRateKey: 64_000,
+                    ])
                     self.recorder = recorder
-                    try recorder.start()
+                    guard recorder.record() else { throw CocoaError(.fileWriteUnknown) }
                     isRecording = true
                     recordingStarted()
                     feedback(.recordingStarted)
@@ -167,7 +160,7 @@ final class ComposerDictation {
         operation?.cancel()
         operation = nil
         if let recorder {
-            recorder.cancel()
+            recorder.stop()
             try? FileManager.default.removeItem(at: recorder.url)
         }
         recorder = nil
@@ -236,7 +229,7 @@ final class ComposerDictation {
     private func resumeAfterInterruption() {
         guard isRecording, let recorder, !recorder.isRecording else { return }
         try? AVAudioSession.sharedInstance().setActive(true)
-        recorder.resume()
+        recorder.record()
     }
 
     private func beginBackgroundTask() {
