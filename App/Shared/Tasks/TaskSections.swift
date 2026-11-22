@@ -1,30 +1,39 @@
 import Foundation
 
+/// A sidebar section, which tasks move between from menus or by dragging.
+nonisolated enum TaskSection: Hashable, CaseIterable, Sendable {
+    case active
+    case snoozed
+    case settled
+}
+
 /// The sidebar's grouping: active tasks first, then snoozed, then settled.
-/// Settling takes precedence, so a settled task never also counts as snoozed.
 struct TaskSections<Task: Identifiable> {
     let active: [Task]
     let snoozed: [Task]
     let settled: [Task]
 
-    init(_ tasks: [Task], isSettled: (Task) -> Bool, isSnoozed: (Task) -> Bool) {
-        var active: [Task] = []
-        var snoozed: [Task] = []
-        var settled: [Task] = []
-        for task in tasks {
-            if isSettled(task) {
-                settled.append(task)
-            } else if isSnoozed(task) {
-                snoozed.append(task)
-            } else {
-                active.append(task)
-            }
+    init(_ tasks: [Task], section: (Task) -> TaskSection) {
+        var grouped: [TaskSection: [Task]] = [:]
+        for task in tasks { grouped[section(task), default: []].append(task) }
+        active = grouped[.active] ?? []
+        snoozed = grouped[.snoozed] ?? []
+        settled = grouped[.settled] ?? []
+    }
+
+    subscript(section: TaskSection) -> [Task] {
+        switch section {
+        case .active: active
+        case .snoozed: snoozed
+        case .settled: settled
         }
-        self.active = active
-        self.snoozed = snoozed
-        self.settled = settled
     }
 
     var isEmpty: Bool { active.isEmpty && snoozed.isEmpty && settled.isEmpty }
     var ids: [Task.ID] { (active + snoozed + settled).map(\.id) }
+
+    /// The tasks of the sections on screen, leaving out collapsed ones.
+    func ids(shown isShown: (TaskSection) -> Bool) -> [Task.ID] {
+        TaskSection.allCases.filter(isShown).flatMap { self[$0] }.map(\.id)
+    }
 }

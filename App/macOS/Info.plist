@@ -29,5 +29,18 @@
 	<string>https://raw.githubusercontent.com/SilverMarcs/Atrium/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>8BRrlyHV/3FRf7/67LxkeRGD6sfoK9ey+wN9oMh3lu8=</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.silvermarcs.atrium.tasks</string>
+			<key>UTTypeDescription</key>
+			<string>Atrium Tasks</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

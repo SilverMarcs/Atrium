@@ -18,7 +18,9 @@ struct ContentView: View {
                 .searchable(text: $searchText, placement: .sidebar, prompt: "Filter tasks or projects")
                 .searchFocused($isSearchFocused)
         } detail: {
-            if let task = app.selectedTask {
+            if app.selectedTasks.count > 1 {
+                MultipleTasksSelectedView()
+            } else if let task = app.selectedTask {
                 TaskDetailView(item: task)
             } else {
                 NewChatUnavailableView { app.selection = $0 }

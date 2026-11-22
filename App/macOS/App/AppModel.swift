@@ -14,8 +14,13 @@ final class AppModel {
     /// What Settings → Integrations turns on for this Mac's agents, which
     /// stays with this Mac's host; nothing else of the host is reachable here.
     let integrationSettings: IntegrationSettings
-    /// The task the window shows, on whichever host it lives.
-    var selection: TaskRef?
+    /// The tasks selected in the sidebar, on whichever hosts they live.
+    var selectedTasks: Set<TaskRef> = []
+    /// The task the window shows: the selection when it's a single task.
+    var selection: TaskRef? {
+        get { selectedTasks.count == 1 ? selectedTasks.first : nil }
+        set { selectedTasks = newValue.map { [$0] } ?? [] }
+    }
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true

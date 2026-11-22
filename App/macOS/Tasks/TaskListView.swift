@@ -7,10 +7,12 @@ struct TaskListView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.undoManager) private var undoManager
     let searchText: String
-    @State private var taskToDelete: HostTask?
+    @State private var tasksToDelete: [HostTask] = []
     @State private var taskToRename: HostTask?
     @State private var isSettledExpanded = false
     @State private var isSnoozedExpanded = false
+    /// The tasks the last drag from this list took, for which sections they can go to.
+    @State private var draggedTasks: [TaskRef] = []
 
     private var hosts: HostDirectory { app.hosts }
 
@@ -36,22 +38,36 @@ struct TaskListView: View {
     }
 
     var body: some View {
-        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: \.task.isSnoozed)
+        let sections = TaskSections(tasks, section: \.task.menuState.section)
+
+        let dropTargets = Set(TaskSection.allCases.filter { !hosts.moves(draggedTasks, to: $0).isEmpty })
+        let shownIDs = sections.ids(shown: isShown)
 
         // A subagent on screen isn't listed, so no row is selected and choosing its session's row goes back.
-        List(selection: Bindable(app).selection) {
-            rows(sections.active)
+        List(selection: Bindable(app).selectedTasks) {
+            rows(sections.active, in: .active, dropTargets: dropTargets)
             if !sections.snoozed.isEmpty {
-                Section("Snoozed", isExpanded: Binding(get: { isSearching || isSnoozedExpanded }, set: { isSnoozedExpanded = $0 }).animation()) {
-                    rows(sections.snoozed)
+                Section(isExpanded: Binding(get: { isShown(.snoozed) }, set: { isSnoozedExpanded = $0 }).animation()) {
+                    rows(sections.snoozed, in: .snoozed, dropTargets: dropTargets)
+                } header: {
+                    header("Snoozed", for: .snoozed, dropTargets: dropTargets)
                 }
             }
             if !sections.settled.isEmpty {
-                Section("Settled", isExpanded: Binding(get: { isSearching || isSettledExpanded }, set: { isSettledExpanded = $0 }).animation()) {
-                    rows(sections.settled)
+                Section(isExpanded: Binding(get: { isShown(.settled) }, set: { isSettledExpanded = $0 }).animation()) {
+                    rows(sections.settled, in: .settled, dropTargets: dropTargets)
+                } header: {
+                    header("Settled", for: .settled, dropTargets: dropTargets)
                 }
             }
         }
+        .contextMenu(forSelectionType: TaskRef.self) { refs in
+            TaskSelectionMenu(items: tasks.filter { refs.contains($0.id) }) { perform($0, on: $1) }
+        }
+        // Several selected tasks keep to those in view, outside collapsed
+        // sections, so group actions only reach tasks that can be seen.
+        .onChange(of: shownIDs) { _, ids in keepSelection(in: ids) }
+        .onChange(of: app.selectedTasks) { keepSelection(in: shownIDs) }
         .listStyle(.sidebar)
         .animation(.default, value: sections.ids)
         .environment(\.sidebarRowSize, .medium)
@@ -68,7 +84,7 @@ struct TaskListView: View {
                     .disabled(!hosts.canStartNewChat)
             }
         }
-        .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
+        .taskConfirmations(rename: $taskToRename, delete: $tasksToDelete)
         .alert("Couldn’t Update Thread", isPresented: Binding(
             get: { hosts.actionError != nil && !app.showingProjects && taskToRename == nil },
             set: { if !$0 { hosts.actionError = nil } }
@@ -79,15 +95,56 @@ struct TaskListView: View {
         }
     }
 
-    private func rows(_ items: [HostTask]) -> some View {
+    private func rows(_ items: [HostTask], in section: TaskSection, dropTargets: Set<TaskSection>) -> some View {
         ForEach(items) { item in
             TaskRow(item: item, showsHost: hosts.showsHostNames)
                 .tag(item.id)
-                .contextMenu {
-                    TaskContextMenu(state: item.menuState) { perform($0, on: item) }
-                }
-                .taskSwipeActions(item.task.menuState) { perform($0, on: item) }
+                .draggable(drag(item))
+                .taskDropTarget(isEnabled: dropTargets.contains(section)) { drop($0, into: section) }
+                .taskSwipeActions(item.task.menuState) { perform($0, on: [item]) }
         }
+    }
+
+    /// A section's header, which takes dropped tasks whether the section is expanded or not.
+    private func header(_ title: String, for section: TaskSection, dropTargets: Set<TaskSection>) -> some View {
+        Text(title)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+            .taskDropTarget(isEnabled: dropTargets.contains(section)) { drop($0, into: section) }
+    }
+
+    /// Whether the section's rows are on screen: active always, the others
+    /// while expanded or searching.
+    private func isShown(_ section: TaskSection) -> Bool {
+        switch section {
+        case .active: true
+        case .snoozed: isSearching || isSnoozedExpanded
+        case .settled: isSearching || isSettledExpanded
+        }
+    }
+
+    /// Leaves out selected tasks that can't be seen. What's left only stays
+    /// selected while it's still several, so a chat never opens on its own.
+    private func keepSelection(in ids: [TaskRef]) {
+        guard app.selectedTasks.count > 1 else { return }
+        let listed = app.selectedTasks.intersection(ids)
+        if listed != app.selectedTasks { app.selectedTasks = listed.count > 1 ? listed : [] }
+    }
+
+    /// The dragged row's task, or every selected one when it's among them:
+    /// the list drags all the selected rows, each with this, and the drop
+    /// counts each task once. It runs as the drag starts.
+    private func drag(_ item: HostTask) -> TaskDrag {
+        let selected = app.selectedTasks
+        let refs = selected.count > 1 && selected.contains(item.id) ? tasks.map(\.id).filter(selected.contains) : [item.id]
+        draggedTasks = refs
+        return TaskDrag(tasks: refs)
+    }
+
+    private func drop(_ refs: [TaskRef], into section: TaskSection) {
+        draggedTasks = []
+        let moves = Dictionary(grouping: hosts.moves(refs, to: section), by: \.action)
+        for (action, moves) in moves { perform(action, on: moves.map(\.item)) }
     }
 
     @ViewBuilder
@@ -134,15 +191,18 @@ struct TaskListView: View {
     }
 
     /// Menu actions, undoable where the sidebar always allowed it.
-    private func perform(_ action: TaskMenuAction, on item: HostTask) {
+    private func perform(_ action: TaskMenuAction, on items: [HostTask]) {
         switch action {
         case .rename:
-            taskToRename = item
+            taskToRename = items.first
         case .delete:
-            taskToDelete = item
+            tasksToDelete = items
         default:
-            hosts.perform(action, on: item)
-            registerUndo(of: action, on: item)
+            for item in items {
+                hosts.perform(action, on: item)
+                registerUndo(of: action, on: item)
+            }
+            undoManager?.setActionName(action.title(count: items.count))
         }
     }
 
@@ -162,6 +222,5 @@ struct TaskListView: View {
         undoManager?.registerUndo(withTarget: host) { host in
             host.send(.task(id: id, action: reverse))
         }
-        undoManager?.setActionName(action.title)
     }
 }

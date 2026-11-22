@@ -18,14 +18,14 @@ struct TasksScreen: View {
     @State private var isSettledExpanded = false
     @State private var showingProjects = false
     @State private var taskToRename: HostTask?
-    @State private var taskToDelete: HostTask?
+    @State private var tasksToDelete: [HostTask] = []
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     var body: some View {
         let matches = { (item: HostTask) in TaskSearch.matches(searchText, item) }
         let tasks = hosts.listedTasks.filter(matches)
-        let sections = TaskSections(tasks, isSettled: \.task.isSettled, isSnoozed: \.task.isSnoozed)
+        let sections = TaskSections(tasks, section: \.task.menuState.section)
         let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         // The same sections are always declared and only shown or hidden, so
@@ -104,7 +104,7 @@ struct TasksScreen: View {
         .sheet(isPresented: $showingProjects) {
             ProjectsSheet(hosts: hosts)
         }
-        .taskConfirmations(rename: $taskToRename, delete: $taskToDelete)
+        .taskConfirmations(rename: $taskToRename, delete: $tasksToDelete)
     }
 
     /// Searching, or filtering to this section alone, keeps it expanded, as the
@@ -136,7 +136,7 @@ struct TasksScreen: View {
     private func perform(_ action: TaskMenuAction, on item: HostTask) {
         switch action {
         case .rename: taskToRename = item
-        case .delete: taskToDelete = item
+        case .delete: tasksToDelete = [item]
         default: hosts.perform(action, on: item)
         }
     }
