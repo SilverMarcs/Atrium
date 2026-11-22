@@ -67,9 +67,16 @@ final class ComposerDictation {
         if isRecording, let recorder {
             finishRecording = nil
             let url = recorder.url
-            recorder.stop()
             self.recorder = nil
             isRecording = false
+            do {
+                try recorder.finish()
+            } catch {
+                recordingEnded()
+                try? FileManager.default.removeItem(at: url)
+                self.error = error.localizedDescription
+                return
+            }
             recordingEnded()
             isBusy = true
             #if os(iOS)
@@ -85,9 +92,6 @@ final class ComposerDictation {
                     #endif
                 }
                 do {
-                    #if os(macOS)
-                    if let error = recorder.recordingError { throw error }
-                    #endif
                     let text = try await provider.transcribe(audio: url)
                     try Task.checkCancellation()
                     if !text.isEmpty { append(text) }
@@ -130,14 +134,9 @@ final class ComposerDictation {
                     observeInterruptions()
                     #endif
                     let url = URL.temporaryDirectory.appending(path: "dictation-\(UUID().uuidString).m4a")
-                    let recorder = try DictationAudioRecorder(url: url, settings: [
-                        AVFormatIDKey: kAudioFormatMPEG4AAC,
-                        AVSampleRateKey: 24_000,
-                        AVNumberOfChannelsKey: 1,
-                        AVEncoderBitRateKey: 64_000,
-                    ])
+                    let recorder = try DictationAudioRecorder(url: url)
                     self.recorder = recorder
-                    guard try recorder.record() else { throw CocoaError(.fileWriteUnknown) }
+                    try recorder.start()
                     isRecording = true
                     recordingStarted()
                     feedback(.recordingStarted)
@@ -168,7 +167,7 @@ final class ComposerDictation {
         operation?.cancel()
         operation = nil
         if let recorder {
-            recorder.stop()
+            recorder.cancel()
             try? FileManager.default.removeItem(at: recorder.url)
         }
         recorder = nil
@@ -237,7 +236,7 @@ final class ComposerDictation {
     private func resumeAfterInterruption() {
         guard isRecording, let recorder, !recorder.isRecording else { return }
         try? AVAudioSession.sharedInstance().setActive(true)
-        recorder.record()
+        recorder.resume()
     }
 
     private func beginBackgroundTask() {
