@@ -72,8 +72,10 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// hears. A command-line client's stop drops only a prompt its own agent
     /// queued.
     case interrupt(taskID: String)
-    /// Adds a folder on the host as a project. Only the host itself may.
-    case addWorkspace(path: String)
+    /// Adds folders on the host as one project, the first being its primary
+    /// folder. A single folder that's already a project's primary folder
+    /// finds that project. Only the host itself may.
+    case addWorkspace(paths: [String])
     case workspace(id: UUID, action: WorkspaceAction)
     case command(workspaceID: UUID, commandID: UUID, action: CommandAction)
     case git(workspaceID: UUID, repository: URL, operation: GitOperation)
@@ -143,6 +145,9 @@ public nonisolated enum WorkspaceAction: Codable, Sendable {
     /// Removes the project from the host, leaving its folder alone. Only the host itself may.
     case remove
     case addCommand(title: String, script: String?)
+    /// Replaces the project's folders, the first becoming its primary one.
+    /// Only the host itself may.
+    case setFolders([String])
 }
 
 public nonisolated enum CommandAction: Codable, Sendable {

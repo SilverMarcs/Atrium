@@ -17,12 +17,30 @@ nonisolated enum AgentInstructions {
         case secrets
     }
 
-    static func text(_ blocks: Set<Block>) -> String {
+    /// The blocks, then the project's other folders when it has any, last so
+    /// the rest of the prompt stays cached when they change.
+    static func text(_ blocks: Set<Block>, directory: String? = nil, otherFolders: [String] = []) -> String {
         [
             base, blocks.contains(.pages) ? pages : nil, blocks.contains(.orchestrator) ? orchestrator : nil,
             blocks.contains(.secrets) ? secrets : nil,
+            directory.flatMap { otherFolders.isEmpty ? nil : folders(working: $0, others: otherFolders) },
         ]
             .compactMap(\.self).joined(separator: "\n\n")
+    }
+
+    /// Names the folders a project spans beside the one the agent works in.
+    static func folders(working directory: String, others: [String]) -> String {
+        let lines = ([directory] + others).map { path in
+            let kind = GitCheckout(rootedAt: URL(filePath: path, directoryHint: .isDirectory)) == nil ? "folder" : "Git repository"
+            return "- \(URL(filePath: path).lastPathComponent) (\(kind)): `\(path)`"
+        }
+        return """
+            ## Project folders
+
+            This project spans several folders. You work in the first; the others are part of the project too, and you may read and change them. Run Git commands inside the repository you change, and commit each repository on its own.
+
+            \(lines.joined(separator: "\n"))
+            """
     }
 
     private static let base = """
@@ -105,8 +123,24 @@ final class ChatInstructions {
         blocks[id] ?? [.pages]
     }
 
-    func text(for id: String) -> String {
-        AgentInstructions.text(blocks(for: id))
+    /// The folders of the project a chat's folder belongs to, and which of
+    /// them the chat works in, for a folder in a project. The host sets it.
+    var projectFolders: (String) -> (all: [String], own: String)? = { _ in nil }
+
+    /// A chat's instructions, naming its project's other folders when it has any.
+    func text(for id: String, directory: String) -> String {
+        text(blocks(for: id), directory: directory)
+    }
+
+    /// Instructions with these blocks, naming the project's other folders when it has any.
+    func text(_ blocks: Set<AgentInstructions.Block>, directory: String) -> String {
+        AgentInstructions.text(blocks, directory: directory, otherFolders: otherFolders(for: directory))
+    }
+
+    /// The project's folders besides the one a chat works in, which it may also change.
+    func otherFolders(for directory: String) -> [String] {
+        guard let folders = projectFolders(directory) else { return [] }
+        return folders.all.filter { $0 != folders.own }
     }
 
     func record(_ blocks: Set<AgentInstructions.Block>, for id: String) {

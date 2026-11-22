@@ -23,11 +23,15 @@ nonisolated struct GitCheckout: Equatable, Sendable {
                     return
                 }
                 // A linked worktree's `.git` file names its admin directory, whose `commondir`
-                // leads back to the main `.git`. Submodules have no `commondir`; bare
-                // repositories have no main checkout.
-                guard let adminURL = Self.adminDirectory(ofWorktree: candidate),
-                      let commonDir = try? String(contentsOf: adminURL.appending(path: "commondir"), encoding: .utf8)
-                    .trimmingCharacters(in: .whitespacesAndNewlines), !commonDir.isEmpty else { return nil }
+                // leads back to the main `.git`. A submodule's has no `commondir`, so the
+                // submodule is a main checkout of its own; bare repositories have no main checkout.
+                guard let adminURL = Self.adminDirectory(ofWorktree: candidate) else { return nil }
+                guard let commonDir = try? String(contentsOf: adminURL.appending(path: "commondir"), encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !commonDir.isEmpty else {
+                    mainCheckoutURL = Self.directoryURL(candidate.path)
+                    linkedWorktreeURL = nil
+                    return
+                }
                 let commonURL = Self.resolve(commonDir, against: adminURL)
                 guard commonURL.lastPathComponent == ".git" else { return nil }
                 mainCheckoutURL = Self.directoryURL(commonURL.deletingLastPathComponent().path)
@@ -37,6 +41,21 @@ nonisolated struct GitCheckout: Equatable, Sendable {
             guard candidate.pathComponents.count > 1 else { return nil }
             candidate = candidate.deletingLastPathComponent()
         }
+    }
+
+    /// The main checkouts of the repositories whose top folders these are,
+    /// as paths: what a project's tasks are followed into.
+    static func repositories(of folders: [String]) -> Set<String> {
+        Set(folders.compactMap { GitCheckout(rootedAt: URL(filePath: $0, directoryHint: .isDirectory))?.mainCheckoutURL.filePath })
+    }
+
+    /// The checkout whose top folder this is, main or linked; nil for a
+    /// folder inside one or outside any.
+    init?(rootedAt directoryURL: URL) {
+        guard let checkout = GitCheckout(containing: directoryURL),
+              (checkout.linkedWorktreeURL ?? checkout.mainCheckoutURL).filePath
+                == directoryURL.standardizedFileURL.resolvingSymlinksInPath().filePath else { return nil }
+        self = checkout
     }
 
     /// The checkout a folder recorded a while ago is in now. When the folder

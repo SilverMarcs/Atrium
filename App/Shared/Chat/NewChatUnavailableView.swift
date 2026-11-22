@@ -28,7 +28,7 @@ struct NewChatUnavailableView: View {
                 }
                 // The new chat opens in it once the host lists it.
                 .fileImporter(isPresented: $showingFolderImporter, allowedContentTypes: [.folder]) { result in
-                    if case .success(let url) = result { host.send(.addWorkspace(path: url.path(percentEncoded: false))) }
+                    if case .success(let url) = result { host.send(.addWorkspace(paths: [url.path(percentEncoded: false)])) }
                 }
             } else {
                 ContentUnavailableView(

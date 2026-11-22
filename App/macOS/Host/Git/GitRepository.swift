@@ -5,29 +5,15 @@ actor GitRepository {
     static let shared = GitRepository()
 
     private let executor = GitExecutor()
-    private var repositoryRootsCache: [URL: (fingerprint: [String], roots: [URL])] = [:]
     private var lastFetchAttempts: [URL: Date] = [:]
 
-    /// `worktreeOverrides` maps a repository's main root to a linked worktree root;
-    /// an overridden repository is snapshotted at the worktree instead, so one repo
-    /// can be viewed through a worktree without affecting its siblings.
-    func statusSnapshots(in directoryURL: URL, worktreeOverrides: [URL: URL] = [:]) async throws -> [GitRepositoryStatus] {
-        let directoryURL = directoryURL.standardizedFileURL
-        // An overridden root can collide with a worktree that was also discovered
-        // directly (worktree folder inside the scanned directory) — dedupe.
-        var seenRootURLs = Set<URL>()
-        let repositoryRootURLs = await self.repositoryRoots(in: directoryURL)
-            .map { rootURL in
-                guard let worktreeURL = worktreeOverrides[rootURL],
-                      FileManager.default.fileExists(atPath: worktreeURL.path) else { return rootURL }
-                return worktreeURL.standardizedFileURL.resolvingSymlinksInPath()
-            }
-            .filter { seenRootURLs.insert($0).inserted }
-
-        return try await withThrowingTaskGroup(of: GitRepositoryStatus.self) { group in
+    /// The status of each checkout, in the order given, leaving out any Git
+    /// can't read, so one broken repository doesn't hide the rest.
+    func statusSnapshots(at repositoryRootURLs: [URL]) async -> [GitRepositoryStatus] {
+        let snapshots = await withTaskGroup(of: GitRepositoryStatus?.self) { group in
             for repositoryRootURL in repositoryRootURLs {
                 group.addTask {
-                    var status = try await self.executor.execute(GitStatusCommand(), at: repositoryRootURL)
+                    guard var status = try? await self.executor.execute(GitStatusCommand(), at: repositoryRootURL) else { return nil }
 
                     if !status.hasUpstream, let branchName = status.branchName {
                         let remoteRef = "origin/\(branchName)"
@@ -56,18 +42,12 @@ actor GitRepository {
                     var stagedFiles: [GitChangedFile] = []
                     var unstagedFiles: [GitChangedFile] = []
 
-                    // Scoping only narrows the view when the directory is a subfolder
-                    // of the repo; an overridden worktree lives outside the directory
-                    // entirely and must not be filtered against it.
-                    let scopeURL = repositoryRootURL.isAncestor(of: directoryURL) ? directoryURL : repositoryRootURL
-
                     for entry in status.entries {
-                        if let stagedKind = entry.stagedKind,
-                           let fileURL = Self.fileURL(for: entry.path, in: repositoryRootURL, scopedTo: scopeURL) {
+                        let fileURL = repositoryRootURL.appending(path: entry.path).standardizedFileURL
+                        if let stagedKind = entry.stagedKind {
                             stagedFiles.append(GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: stagedKind))
                         }
-                        if let unstagedKind = entry.unstagedKind,
-                           let fileURL = Self.fileURL(for: entry.path, in: repositoryRootURL, scopedTo: scopeURL) {
+                        if let unstagedKind = entry.unstagedKind {
                             unstagedFiles.append(GitChangedFile(fileURL: fileURL, repositoryRelativePath: entry.path, kind: unstagedKind))
                         }
                     }
@@ -87,11 +67,12 @@ actor GitRepository {
             }
 
             var snapshots: [GitRepositoryStatus] = []
-            for try await snapshot in group {
-                snapshots.append(snapshot)
+            for await snapshot in group {
+                if let snapshot { snapshots.append(snapshot) }
             }
-            return snapshots.sorted { $0.repositoryRootURL.path < $1.repositoryRootURL.path }
+            return snapshots
         }
+        return repositoryRootURLs.compactMap { root in snapshots.first { $0.repositoryRootURL == root } }
     }
 
     func initializeRepository(at directoryURL: URL) async throws {
@@ -99,18 +80,14 @@ actor GitRepository {
     }
 
     /// A working file's staged and unstaged changes, as raw diffs for the editor's gutter.
-    func gutterDiff(for fileURL: URL, in directoryURL: URL) async throws -> (staged: String, unstaged: String) {
-        let directoryURL = directoryURL.standardizedFileURL
+    func gutterDiff(for fileURL: URL, at repositoryRootURL: URL) async throws -> (staged: String, unstaged: String) {
         let filePath = fileURL.standardizedFileURL.path(percentEncoded: false)
-        for rootURL in await self.repositoryRoots(in: directoryURL) {
-            let rootPath = rootURL.path(percentEncoded: false)
-            guard filePath.hasPrefix(rootPath) else { continue }
-            let relativePath = String(filePath.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            async let unstaged = self.executor.execute(GitGutterDiffCommand(relativePath: relativePath, stage: .unstaged), at: rootURL)
-            async let staged = self.executor.execute(GitGutterDiffCommand(relativePath: relativePath, stage: .staged), at: rootURL)
-            return (try await staged, try await unstaged)
-        }
-        return ("", "")
+        let rootPath = repositoryRootURL.standardizedFileURL.path(percentEncoded: false)
+        guard filePath.hasPrefix(rootPath) else { return ("", "") }
+        let relativePath = String(filePath.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        async let unstaged = self.executor.execute(GitGutterDiffCommand(relativePath: relativePath, stage: .unstaged), at: repositoryRootURL)
+        async let staged = self.executor.execute(GitGutterDiffCommand(relativePath: relativePath, stage: .staged), at: repositoryRootURL)
+        return (try await staged, try await unstaged)
     }
 
     /// Unified diff text for one file. Untracked files get a synthetic all-added diff.
@@ -457,82 +434,6 @@ actor GitRepository {
         }
     }
 
-    private func repositoryRoots(in directoryURL: URL) async -> [URL] {
-        let directoryURL = directoryURL.standardizedFileURL.resolvingSymlinksInPath()
-        let candidates = self.candidateDirectories(in: directoryURL)
-
-        let fingerprint = Self.repositoryLayoutFingerprint(directoryURL: directoryURL, candidates: candidates)
-        if let cached = repositoryRootsCache[directoryURL], cached.fingerprint == fingerprint {
-            return cached.roots
-        }
-
-        let roots = await self.discoverRepositoryRoots(in: directoryURL, candidates: candidates)
-        repositoryRootsCache[directoryURL] = (fingerprint, roots)
-        return roots
-    }
-
-    /// Cheap stat-based summary of everything root discovery depends on. Discovery
-    /// spawns a `git rev-parse` process per child directory and the FS watcher
-    /// re-triggers it up to once a second during active work, so it only re-runs
-    /// when this changes: a candidate folder or a `.git` entry (file or directory)
-    /// appears, disappears, or moves — including in the nearest ancestor.
-    private nonisolated static func repositoryLayoutFingerprint(directoryURL: URL, candidates: [URL]) -> [String] {
-        let fm = FileManager.default
-        var fingerprint = candidates
-            .map { "\($0.path)|\(fm.fileExists(atPath: $0.appendingPathComponent(".git").path))" }
-            .sorted()
-        var ancestor = directoryURL.deletingLastPathComponent()
-        while ancestor.pathComponents.count > 1 {
-            if fm.fileExists(atPath: ancestor.appendingPathComponent(".git").path) {
-                fingerprint.append("ancestor|\(ancestor.path)")
-                break
-            }
-            ancestor = ancestor.deletingLastPathComponent()
-        }
-        return fingerprint
-    }
-
-    private func discoverRepositoryRoots(in directoryURL: URL, candidates: [URL]) async -> [URL] {
-        await withTaskGroup(of: URL?.self) { group in
-            for candidateDirectoryURL in candidates {
-                group.addTask {
-                    guard let repositoryRootURL = try? await self.executor.execute(
-                        GitRepositoryRootCommand(), at: candidateDirectoryURL
-                    ) else { return nil }
-
-                    let resolvedRoot = repositoryRootURL.standardizedFileURL.resolvingSymlinksInPath()
-
-                    // Accept if: workspace is inside or equal to the repo root,
-                    // OR the repo root is inside the workspace (nested repo)
-                    guard resolvedRoot == directoryURL
-                            || resolvedRoot.isAncestor(of: directoryURL)
-                            || directoryURL.isAncestor(of: resolvedRoot)
-                    else { return nil }
-
-                    return resolvedRoot
-                }
-            }
-
-            var repositoryRootURLs: Set<URL> = []
-            for await rootURL in group {
-                if let rootURL { repositoryRootURLs.insert(rootURL) }
-            }
-            return repositoryRootURLs.sorted { $0.path < $1.path }
-        }
-    }
-
-    private func candidateDirectories(in directoryURL: URL) -> [URL] {
-        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isPackageKey, .isHiddenKey]
-
-        let childDirectoryURLs = (try? FileManager.default.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: Array(resourceKeys)))?
-            .filter {
-                guard let values = try? $0.resourceValues(forKeys: resourceKeys) else { return false }
-                return values.isDirectory == true && values.isPackage != true && values.isHidden != true
-            } ?? []
-
-        return [directoryURL] + childDirectoryURLs
-    }
-
     private func untrackedDiff(_ reference: GitDiffReference) throws -> String {
         let data = try Data(contentsOf: reference.fileURL)
         guard let string = String(data: data, encoding: .utf8) else { return "" }
@@ -545,40 +446,6 @@ actor GitRepository {
         @@ -0,0 +1,\(max(lines.count, 1)) @@
         \(lines.map { "+" + $0 }.joined(separator: "\n"))
         """
-    }
-
-    private nonisolated static func fileURL(for path: String, in repositoryRootURL: URL, scopedTo directoryURL: URL) -> URL? {
-        let fileURL = repositoryRootURL.appending(path: path).standardizedFileURL
-        let resolvedDir = directoryURL.standardizedFileURL.resolvingSymlinksInPath()
-        let resolvedFile = fileURL.resolvingSymlinksInPath()
-
-        guard resolvedFile == resolvedDir || resolvedDir.isAncestor(of: resolvedFile) else { return nil }
-
-        // Return the non-resolved URL so it matches FileItem URLs built from the original directory
-        return fileURL
-    }
-}
-
-// MARK: - URL Extension
-
-extension URL {
-    func isAncestor(of url: URL) -> Bool {
-        let ancestorComponents = self.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-        let childComponents = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-        guard ancestorComponents.count < childComponents.count else { return false }
-        return zip(ancestorComponents, childComponents).allSatisfy(==)
-    }
-}
-
-// MARK: - Git Repository Root Command
-
-private struct GitRepositoryRootCommand: GitCommand {
-    var arguments: [String] {
-        ["rev-parse", "--show-toplevel"]
-    }
-
-    func parse(output: String) throws -> URL {
-        URL(filePath: output.trimmingCharacters(in: .whitespacesAndNewlines), directoryHint: .isDirectory)
     }
 }
 

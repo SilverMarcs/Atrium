@@ -27,7 +27,9 @@ final class TasksFeed: TopicFeed {
     private var watchedRepositories: Set<URL> = []
     private var worktreeWatcher: FileSystemWatcher?
     private let worktreeChanges = WorktreeChanges()
-    private var projectsSignature: [UUID: String] = [:]
+    /// Project → the main checkouts of the repositories its folders are, for one pass.
+    private var projectRepositories: [UUID: Set<String>] = [:]
+    private var projectsSignature: [UUID: [String]] = [:]
     private var observation: Task<Void, Never>?
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
 
@@ -189,8 +191,8 @@ final class TasksFeed: TopicFeed {
         WireWorkspace(
             id: workspace.id,
             name: workspace.name,
-            path: workspace.directory,
             directory: abbreviated(workspace.directory),
+            folders: workspace.folders,
             projectType: workspace.projectTypeRaw,
             projectIcon: workspace.projectType.iconName.isEmpty ? nil : workspace.projectType.iconName,
             customIconKey: workspace.customIconFilename,
@@ -214,12 +216,12 @@ final class TasksFeed: TopicFeed {
     /// included; and the one it works in now: the last it changed, or else the
     /// one its commands last ran in, or else its own folder's; and when it
     /// first changed files in each repository, as far as its edits go back.
-    /// Changes to other projects' repositories or to files outside any are
-    /// left out.
+    /// Changes to repositories that aren't one of its project's folders, or to
+    /// files outside any, are left out.
     private func checkouts(of thread: AgentThread, edits: AgentEdits, in project: Workspace?) -> TaskCheckouts {
-        let folder = project.map { URL(filePath: $0.directory, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath() }
+        let repositories = project.map(repositories(of:)) ?? []
         func inProject(_ checkout: TaskCheckout) -> Bool {
-            folder.map { $0.contains(checkout.repository) || checkout.repository.contains($0) } ?? false
+            repositories.contains(checkout.repository.filePath)
         }
         var changed: [TaskCheckout] = []
         var firstChanges: [URL: Date] = [:]
@@ -277,8 +279,18 @@ final class TasksFeed: TopicFeed {
         return !inside.contains("/") || inside.hasSuffix("/gitdir")
     }
 
+    /// The main checkouts of the repositories a project's folders are.
+    private func repositories(of project: Workspace) -> Set<String> {
+        if let cached = projectRepositories[project.id] { return cached }
+        let repositories = GitCheckout.repositories(of: project.folders)
+        projectRepositories[project.id] = repositories
+        return repositories
+    }
+
     private func invalidateProjectsIfNeeded() {
-        let signature = Dictionary(workspaces.workspaces.map { ($0.id, $0.directory) }, uniquingKeysWith: { $1 })
+        // Read again on every pass, so a folder made a repository since is followed.
+        projectRepositories.removeAll()
+        let signature = Dictionary(workspaces.workspaces.map { ($0.id, $0.folders) }, uniquingKeysWith: { $1 })
         guard signature != projectsSignature else { return }
         projectsSignature = signature
         projects.removeAll()

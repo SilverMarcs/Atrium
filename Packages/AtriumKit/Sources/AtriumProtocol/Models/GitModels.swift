@@ -11,6 +11,8 @@ public nonisolated struct GitRepositoryStatus: Codable, Sendable, Equatable {
     public var unpushedCommits: [GitUnpushedCommit]
     public var remoteAheadCount: Int
     public var hasTrackingBranch: Bool
+    /// The project folder this repository is, spelled as the project lists it.
+    public var projectFolder: String?
 
     public init(
         repositoryRootURL: URL,

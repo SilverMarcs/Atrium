@@ -5,7 +5,11 @@ final class Workspace: Identifiable, Hashable, Codable {
     var id: UUID
     var name: String
 
-    var directory: String
+    /// The primary folder: agents start here and commands run here.
+    private(set) var directory: String
+    /// The project's other folders, anywhere on the host. Each one that's a
+    /// repository's top folder gets Source Control; the rest show files only.
+    private(set) var additionalFolders: [String] = []
     var projectTypeRaw: String
     var scratchPad: String
     var isArchived: Bool = false
@@ -18,6 +22,20 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     var url: URL {
         URL(fileURLWithPath: directory)
+    }
+
+    /// Every folder of the project, the primary one first.
+    var folders: [String] { [directory] + additionalFolders }
+
+    /// What clients may reach through the project.
+    var access: WorkspaceAccess { WorkspaceAccess(folders: folders) }
+
+    /// Replaces the project's folders, the first becoming the primary one.
+    func setFolders(_ folders: [String]) {
+        guard let primary = folders.first else { return }
+        directory = primary
+        additionalFolders = Array(folders.dropFirst())
+        store?.scheduleSave()
     }
 
     var projectType: ProjectType {
@@ -69,10 +87,11 @@ final class Workspace: Identifiable, Hashable, Codable {
         store?.scheduleSave()
     }
 
-    init(name: String, directory: String) {
+    init(name: String, folders: [String]) {
         self.id = UUID()
         self.name = name
-        self.directory = directory
+        self.directory = folders.first ?? ""
+        self.additionalFolders = Array(folders.dropFirst())
         self.projectTypeRaw = ProjectType.unknown.rawValue
         self.scratchPad = ""
         self.commands = []
@@ -81,7 +100,7 @@ final class Workspace: Identifiable, Hashable, Codable {
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, directory, projectTypeRaw, scratchPad, isArchived
+        case id, name, directory, additionalFolders, projectTypeRaw, scratchPad, isArchived
         case customIconFilename
         case commands
     }
@@ -91,6 +110,7 @@ final class Workspace: Identifiable, Hashable, Codable {
         self.id = try c.decode(UUID.self, forKey: .id)
         self.name = try c.decode(String.self, forKey: .name)
         self.directory = try c.decode(String.self, forKey: .directory)
+        self.additionalFolders = try c.decodeIfPresent([String].self, forKey: .additionalFolders) ?? []
         let rawProjectType = try c.decodeIfPresent(String.self, forKey: .projectTypeRaw) ?? ProjectType.unknown.rawValue
         // Legacy: "xcode" was folded into "swiftPackage" (now displayed as "Swift")
         // since Xcode projects are just one flavor of Swift project.
@@ -107,6 +127,7 @@ final class Workspace: Identifiable, Hashable, Codable {
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
         try c.encode(directory, forKey: .directory)
+        try c.encode(additionalFolders, forKey: .additionalFolders)
         try c.encode(projectTypeRaw, forKey: .projectTypeRaw)
         try c.encode(scratchPad, forKey: .scratchPad)
         try c.encode(isArchived, forKey: .isArchived)

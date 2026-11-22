@@ -55,7 +55,7 @@ final class SourceControl {
     }
 
     func initializeRepository() async {
-        await perform(.initialize, in: scope.root, success: "Repository initialized")
+        await perform(.initialize, in: scope.filesRoot, success: "Repository initialized")
     }
 
     // MARK: - Remote

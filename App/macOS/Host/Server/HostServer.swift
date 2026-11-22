@@ -146,9 +146,11 @@ final class HostServer {
         let savedName = UserDefaults.standard.string(forKey: Self.customHostNameKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         customHostName = savedName?.isEmpty == false ? savedName : nil
         hostIcon = UserDefaults.standard.string(forKey: Self.hostIconKey).flatMap(HostIcon.init(rawValue:)) ?? .default
-        workspaces = WorkspaceStore()
+        let store = WorkspaceStore()
+        workspaces = store
         let bridge = AgentBridgeServer()
         let instructions = ChatInstructions(settings: integrationSettings)
+        instructions.projectFolders = { directory in store.folders(forDirectory: directory) }
         integrations = AgentIntegrationStore(adapters: [
             CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions),
             AntigravityAgentAdapter(instructions: instructions),
@@ -455,15 +457,21 @@ final class HostServer {
             return await tasks.skills(forTask: taskID, provider: provider, workspaceID: workspaceID)
         case .interrupt(let taskID):
             return await tasks.interrupt(taskID, byPerson: connection.device?.kind != .commandLine, caller: connection.caller)
-        case .addWorkspace(let path):
+        case .addWorkspace(let paths):
             guard connection.isLocal else { return .hostOnly }
-            let reply = WorkspaceService(workspaces: workspaces).add(path: path)
+            let reply = WorkspaceService(workspaces: workspaces).add(paths: paths)
             // Clients list the project before the reply, so they open it.
             publishTasks(.tasks(tasksFeed.snapshot()))
             return reply
         case .workspace(let id, let action):
             guard let workspace = workspace(id) else { return .missingProject }
-            return WorkspaceService(workspaces: workspaces).perform(action, on: workspace, isLocal: connection.isLocal)
+            let reply = WorkspaceService(workspaces: workspaces).perform(action, on: workspace, isLocal: connection.isLocal)
+            if case .setFolders = action {
+                // Clients see the folders and their status before the reply.
+                publishTasks(.tasks(tasksFeed.snapshot()))
+                await refreshGit(of: id)
+            }
+            return reply
         case .command(let workspaceID, let commandID, let action):
             guard let workspace = workspace(workspaceID),
                   let command = workspace.commands.first(where: { $0.id == commandID }) else {
@@ -528,10 +536,10 @@ final class HostServer {
             guard let command = workspace(workspaceID)?.commands.first(where: { $0.id == commandID }) else { return nil }
             feed = CommandOutputFeed(workspaceID: workspaceID, command: command)
         case .directory(let workspaceID, let path):
-            guard let workspace = workspace(workspaceID), WorkspaceAccess(directory: workspace.directory).allows(path) else { return nil }
+            guard let workspace = workspace(workspaceID), workspace.access.allows(path) else { return nil }
             feed = DirectoryFeed(workspaceID: workspaceID, path: path)
         case .file(let workspaceID, let path):
-            guard let workspace = workspace(workspaceID), WorkspaceAccess(directory: workspace.directory).allows(path) else { return nil }
+            guard let workspace = workspace(workspaceID), workspace.access.allows(path) else { return nil }
             feed = FileFeed(workspaceID: workspaceID, path: path)
         }
         feeds[topic] = feed

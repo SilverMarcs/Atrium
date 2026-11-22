@@ -74,7 +74,7 @@ struct SearchInspectorView: View {
             .padding(.top, 9)
         }
         .safeAreaBar(edge: .bottom) {
-            InspectorScopeFooter(project: project, includesProjectFolder: true)
+            InspectorScopeFooter(project: project)
         }
         // Searching again below the folder now shown, so no result points into another checkout.
         .onChange(of: project.filesRoot) { state.search() }

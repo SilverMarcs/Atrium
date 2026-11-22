@@ -1,14 +1,14 @@
 import AtriumProtocol
 import Foundation
 
-/// What a project lets clients reach: its folder, and the linked worktrees of
-/// repositories in it, wherever those live. Paths are resolved first, so
-/// neither `..` nor a symbolic link leads outside.
+/// What a project lets clients reach: its folders, and the linked worktrees
+/// of the repositories they are, wherever those live. Paths are resolved
+/// first, so neither `..` nor a symbolic link leads outside.
 nonisolated struct WorkspaceAccess: Sendable {
-    let folder: URL
+    let folders: [URL]
 
-    init(directory: String) {
-        folder = URL(filePath: directory, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath()
+    init(folders: [String]) {
+        self.folders = folders.map { URL(filePath: $0, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath() }
     }
 
     func allows(_ path: String) -> Bool {
@@ -18,8 +18,8 @@ nonisolated struct WorkspaceAccess: Sendable {
     func allows(_ url: URL) -> Bool {
         let url = url.standardizedFileURL.resolvingSymlinksInPath()
         guard url.path.hasPrefix("/") else { return false }
-        if folder.contains(url) { return true }
+        if folders.contains(where: { $0.contains(url) }) { return true }
         guard let checkout = GitCheckout(containing: url), checkout.linkedWorktreeURL != nil else { return false }
-        return folder.contains(checkout.mainCheckoutURL) || checkout.mainCheckoutURL.contains(folder)
+        return folders.contains { GitCheckout(rootedAt: $0)?.mainCheckoutURL == checkout.mainCheckoutURL }
     }
 }

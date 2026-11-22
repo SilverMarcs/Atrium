@@ -7,19 +7,29 @@ import Foundation
 struct WorkspaceService {
     let workspaces: WorkspaceStore
 
-    func add(path: String) -> HostReply {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            return .failed(message: "That folder no longer exists.")
-        }
-        let url = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
-        if let existing = workspaces.workspaces.first(where: { $0.url.standardizedFileURL == url }) {
+    func add(paths: [String]) -> HostReply {
+        guard let folders = Self.folders(paths) else { return .failed(message: "That folder no longer exists.") }
+        guard let primary = folders.first else { return .failed(message: "Choose a folder for the project.") }
+        if folders.count == 1, let existing = workspaces.workspaces.first(where: { $0.url.resolvingSymlinksInPath().filePath == primary }) {
             return .workspace(id: existing.id)
         }
-        let workspace = Workspace(name: url.lastPathComponent, directory: url.path(percentEncoded: false))
+        let workspace = Workspace(name: URL(filePath: primary).lastPathComponent, folders: folders)
         workspace.detectProjectType()
         workspaces.addWorkspace(workspace)
         return .workspace(id: workspace.id)
+    }
+
+    /// The folders' paths as the host spells them, each once in the order
+    /// given, or nil when one isn't a folder.
+    private static func folders(_ paths: [String]) -> [String]? {
+        var folders: [String] = []
+        for path in paths {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+            let folder = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL.resolvingSymlinksInPath().filePath
+            if !folders.contains(folder) { folders.append(folder) }
+        }
+        return folders
     }
 
     func perform(_ action: WorkspaceAction, on workspace: Workspace, isLocal: Bool) -> HostReply {
@@ -53,6 +63,11 @@ struct WorkspaceService {
             workspaces.deleteWorkspace(workspace)
         case .addCommand(let title, let script):
             return .command(id: workspace.addCommand(title: title, script: script).id)
+        case .setFolders(let paths):
+            guard isLocal else { return .hostOnly }
+            guard let folders = Self.folders(paths) else { return .failed(message: "That folder no longer exists.") }
+            guard !folders.isEmpty else { return .failed(message: "A project needs at least one folder.") }
+            workspace.setFolders(folders)
         }
         return .done
     }
@@ -60,7 +75,7 @@ struct WorkspaceService {
     func perform(_ action: CommandAction, on command: Command, in workspace: Workspace) -> HostReply {
         switch action {
         case .run(let directory, let script):
-            guard WorkspaceAccess(directory: workspace.directory).allows(directory) else {
+            guard workspace.access.allows(directory) else {
                 return .failed(message: "That folder isn’t part of this project.")
             }
             command.run(in: directory, script: script)

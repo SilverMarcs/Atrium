@@ -132,7 +132,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         let pending = pendingSettings[thread.sessionID] ?? [:]
         var params: [String: Any] = [
             "threadId": thread.sessionID, "ephemeral": true, "excludeTurns": true,
-            "developerInstructions": developerInstructions(instructions.blocks(for: thread.id)) + "\n\n" + CodexSideChat.developerInstructions
+            "developerInstructions": developerInstructions(instructions.blocks(for: thread.id), directory: thread.directory)
+                + "\n\n" + CodexSideChat.developerInstructions
         ]
         if let model = pending["model"] ?? thread.model { params["model"] = model }
         if let effort = pending["effort"] ?? thread.reasoningEffort { params["config"] = ["model_reasoning_effort": effort] }
@@ -312,20 +313,27 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// What Codex tells a thread's agent as developer instructions: the
     /// user's own, then Atrium's, with the chat's blocks. Codex takes them
     /// when it starts or resumes a thread, so threads it already has loaded keep theirs.
-    private func developerInstructions(_ blocks: Set<AgentInstructions.Block>) -> String {
-        [userDeveloperInstructions, AgentInstructions.text(blocks)].compactMap(\.self).joined(separator: "\n\n")
+    private func developerInstructions(_ blocks: Set<AgentInstructions.Block>, directory: String) -> String {
+        [userDeveloperInstructions, instructions.text(blocks, directory: directory)].compactMap(\.self).joined(separator: "\n\n")
     }
 
-    /// Config every thread Atrium runs gets: the bundled `atrium` client first on its commands' PATH.
-    private static var threadConfig: [String: Any] {
-        ["shell_environment_policy.set.PATH": IntegrationProcess.agentPath]
+    /// Config every thread Atrium runs gets: the bundled `atrium` client first
+    /// on its commands' PATH, and its project's other folders writable in the
+    /// workspace-write sandbox.
+    private func threadConfig(directory: String) -> [String: Any] {
+        var config: [String: Any] = ["shell_environment_policy.set.PATH": IntegrationProcess.agentPath]
+        let folders = instructions.otherFolders(for: directory)
+        if !folders.isEmpty { config["sandbox_workspace_write.writable_roots"] = folders }
+        return config
     }
 
     /// Starts or forks a thread with a chat's instruction blocks, which it keeps from then on.
-    private func startThread(_ method: String, params: [String: Any], blocks: Set<AgentInstructions.Block>) async throws -> [String: Any] {
+    private func startThread(
+        _ method: String, params: [String: Any], blocks: Set<AgentInstructions.Block>, directory: String
+    ) async throws -> [String: Any] {
         var params = params
-        params["developerInstructions"] = developerInstructions(blocks)
-        params["config"] = (params["config"] as? [String: Any] ?? [:]).merging(Self.threadConfig) { $1 }
+        params["developerInstructions"] = developerInstructions(blocks, directory: directory)
+        params["config"] = (params["config"] as? [String: Any] ?? [:]).merging(threadConfig(directory: directory)) { $1 }
         let data = try await request(method, params: params)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               result["thread"] is [String: Any] else {
@@ -343,7 +351,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         if let model = settings?.model { params["model"] = model }
         if let mode = settings?.permissionMode { params.merge(CodexPermissions.threadParams(mode)) { $1 } }
         let blocks = instructions.forNewChat
-        let result = try await startThread("thread/start", params: params, blocks: blocks)
+        let result = try await startThread("thread/start", params: params, blocks: blocks, directory: directory)
         guard let row = result["thread"] as? [String: Any], var thread = withDefaults(Self.thread(row)) else {
             throw IntegrationError(message: "Codex did not return a new thread.")
         }
@@ -387,7 +395,9 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await connect()
         try await trustWorkspace(directory: thread.directory)
         let blocks = instructions.blocks(for: thread.id)
-        let result = try await startThread("thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true], blocks: blocks)
+        let result = try await startThread(
+            "thread/fork", params: ["threadId": thread.sessionID, "excludeTurns": true], blocks: blocks, directory: thread.directory
+        )
         guard let row = result["thread"] as? [String: Any], var fork = Self.thread(row),
               fork.sessionID != thread.sessionID else {
             throw IntegrationError(message: "Codex did not return a forked thread.")
@@ -444,7 +454,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             try await self.trustWorkspace(directory: thread.directory)
             let resumed = try await self.request("thread/resume", params: [
                 "threadId": thread.sessionID, "excludeTurns": true,
-                "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id)), "config": Self.threadConfig
+                "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id), directory: thread.directory),
+                "config": self.threadConfig(directory: thread.directory),
             ])
             if let result = try? JSONSerialization.jsonObject(with: resumed) as? [String: Any] {
                 self.permissionModes[thread.sessionID] = CodexPermissions.mode(in: result)
@@ -493,7 +504,10 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             let permissionMode = pendingPermissionModes[thread.sessionID]
             var params: [String: Any] = ["threadId": thread.sessionID, "input": input]
             params.merge(settings) { $1 }
-            if let permissionMode { params.merge(CodexPermissions.turnParams(permissionMode)) { $1 } }
+            if let permissionMode {
+                let roots = instructions.otherFolders(for: thread.directory)
+                params.merge(CodexPermissions.turnParams(permissionMode, writableRoots: roots)) { $1 }
+            }
             startingTurnThreadIDs.insert(thread.sessionID)
             defer { startingTurnThreadIDs.remove(thread.sessionID) }
             let data = try await request("turn/start", params: params)

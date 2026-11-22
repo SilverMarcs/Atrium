@@ -23,15 +23,17 @@ private struct ProjectScopeTitle: ViewModifier {
 
     func body(content: Content) -> some View {
         let status = source.status
+        let folders = source.scope.folders
+        let selected = source.repositories == nil ? nil : source.scope.selected
         let titled = content
-            .navigationTitle(title ?? status.map { $0.branchName ?? "Detached HEAD" } ?? placeholder)
-            .navigationSubtitle(title == nil && (source.repositories?.count ?? 0) > 1 ? status?.name ?? "" : "")
+            .navigationTitle(title ?? status.map { $0.branchName ?? "Detached HEAD" } ?? selected?.name ?? placeholder)
+            .navigationSubtitle(title == nil && status != nil && folders.count > 1 ? selected?.name ?? "" : "")
             .toolbarTitleDisplayMode(.inline)
             .task(id: source.scope.gitScope) {
                 await source.host.follow(.git(source.scope.gitScope))
             }
             .sourceControlAlerts(source)
-        if title == nil, let status, BranchMenuItems.hasChoices(in: status, repositories: source.repositories) {
+        if title == nil, selected != nil, BranchMenuItems.hasChoices(in: status, folders: folders) {
             titled.toolbarTitleMenu {
                 BranchMenuItems(source: source, status: status, onNewBranch: onNewBranch)
             }

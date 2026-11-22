@@ -4,7 +4,7 @@ import Foundation
 /// Runs a client's Git operation in one of a project's repositories.
 enum GitService {
     static func handle(_ operation: GitOperation, in repository: URL, workspace: Workspace) async -> HostReply {
-        let access = WorkspaceAccess(directory: workspace.directory)
+        let access = workspace.access
         guard access.allows(repository), operation.urls.allSatisfy(access.allows) else {
             return .failed(message: "That repository isn’t part of this project.")
         }
@@ -83,7 +83,7 @@ enum GitService {
             let images = await git.imageDiff(for: reference)
             return .images(old: images.old, new: images.new)
         case .gutterDiff(let file):
-            let diff = try await git.gutterDiff(for: file, in: root)
+            let diff = try await git.gutterDiff(for: file, at: root)
             return .gutter(staged: diff.staged, unstaged: diff.unstaged)
         }
         return .done

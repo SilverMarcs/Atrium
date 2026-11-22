@@ -68,14 +68,14 @@ struct SourceControlChangesList: View {
             }
         }
         .overlay {
-            if let repositories = source.repositories {
+            if source.repositories != nil {
                 if let status, status.unpushedCommits.isEmpty && status.stagedFiles.isEmpty && status.unstagedFiles.isEmpty {
                     ContentUnavailableView("No Changes", systemImage: "checkmark.circle", description: Text("The working tree is clean."))
-                } else if repositories.isEmpty {
+                } else if status == nil {
                     ContentUnavailableView(
                         "No Repository",
                         systemImage: "arrow.triangle.branch",
-                        description: Text("This project folder isn’t a Git repository.")
+                        description: Text("This folder isn’t a Git repository.")
                     )
                 }
             } else {

@@ -68,7 +68,7 @@ struct SearchScreen: View {
     }
 
     private var folderName: String {
-        scope.selectedNestedRepository?.lastPathComponent ?? host.workspace(workspaceID)?.name ?? "this project"
+        scope.selected?.name ?? host.workspace(workspaceID)?.name ?? "this project"
     }
 
     private func search() async {

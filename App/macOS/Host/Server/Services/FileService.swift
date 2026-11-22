@@ -6,7 +6,7 @@ import Foundation
 /// capped previews and searches, and, for the host itself, edits.
 enum FileService {
     static func handle(_ request: FileRequest, in workspace: Workspace, isLocal: Bool) async -> HostReply {
-        let access = WorkspaceAccess(directory: workspace.directory)
+        let access = workspace.access
         guard request.paths.allSatisfy(access.allows) else {
             return .failed(message: "That file isn’t part of this project.")
         }
@@ -31,8 +31,8 @@ enum FileService {
         case .read(let path):
             return .preview(try await preview(of: path))
         case .resolveLink(let link, let directory):
-            let roots = [workspace.directory] + (directory.map { [$0] } ?? [])
-            guard let location = resolve(link, relativeTo: roots, access: WorkspaceAccess(directory: workspace.directory)) else {
+            let roots = workspace.folders + (directory.map { [$0] } ?? [])
+            guard let location = resolve(link, relativeTo: roots, access: workspace.access) else {
                 return .notFound
             }
             return .location(path: location.path, line: location.line)

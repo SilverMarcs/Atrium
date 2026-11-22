@@ -2,41 +2,37 @@ import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
-/// The checkout the inspector shows, at the foot of every tab: its branch,
-/// after its repository's name when the project holds several. Its menu
-/// switches the branch or worktree. With several repositories, each is a
-/// submenu of its own branches, so one pick shows that repository on the
-/// branch picked; the ones the task on screen changed files in come first.
-/// Files and Search show the repository picked on its own when it's inside
-/// the project folder. There, a project folder that only holds repositories
-/// comes first, showing all of it.
+/// The folder the inspector shows, at the foot of every tab. With one
+/// folder, a repository, it's that repository's branch, and its menu
+/// switches the branch or worktree. With several, it's the folder's name
+/// and its branch, and its menu picks the folder, listing each with its
+/// branch under it: a repository as a submenu of its branches, so one pick
+/// shows it on the branch picked, or a plain folder. The ones the task on
+/// screen changed files in come last, nearest the footer the menu opens up from.
 struct InspectorScopeFooter: View {
     let project: Project
-    /// Whether the whole project folder is a choice, for Files and Search.
-    var includesProjectFolder = false
 
     var body: some View {
         let scope = project.scope
-        if let repositories = scope.repositories, let status = scope.status {
-            let showsProjectFolder = includesProjectFolder && scope.showsProjectFolder
+        let folders = scope.folders
+        if scope.repositories != nil, let selected = scope.selected, folders.count > 1 || selected.status != nil {
             HStack {
                 Menu {
-                    if repositories.count > 1 {
-                        RepositoryMenus(
-                            project: project,
-                            repositories: repositories,
-                            selected: showsProjectFolder ? nil : status.mainRepositoryURL,
-                            includesProjectFolder: includesProjectFolder && scope.offersProjectFolder
-                        )
-                    } else {
+                    if folders.count > 1 {
+                        FolderMenus(project: project, selected: selected.key)
+                    } else if let status = selected.status {
                         BranchItems(project: project, repository: status)
                     }
                 } label: {
-                    if showsProjectFolder {
-                        Label(project.workspace?.name ?? "Project", systemImage: "folder")
-                    } else if repositories.count > 1 {
-                        Label { RepositoryTitle(repository: status) } icon: { Image(systemName: "arrow.triangle.branch") }
-                    } else {
+                    if folders.count > 1, let status = selected.status {
+                        Label {
+                            Text("\(selected.name) · \(Text(status.shownBranch).foregroundStyle(.secondary))")
+                        } icon: {
+                            Image(systemName: "arrow.triangle.branch")
+                        }
+                    } else if folders.count > 1 {
+                        Label(selected.name, systemImage: "folder")
+                    } else if let status = selected.status {
                         Label(status.shownBranch, systemImage: "arrow.triangle.branch")
                     }
                 }
@@ -54,88 +50,54 @@ struct InspectorScopeFooter: View {
     }
 }
 
-/// Each repository as a submenu of its branches: submodules, the rest, the
-/// project folder when that's a choice, then the ones changed in the task on
-/// screen last, nearest the footer the menu opens up from.
-private struct RepositoryMenus: View {
+/// Each folder, a repository as a submenu of its branches, in the order
+/// `ProjectScope.pickableFolders` gives.
+private struct FolderMenus: View {
     let project: Project
-    let repositories: [GitRepositoryStatus]
-    /// The repository shown, or nil for the project folder.
-    let selected: URL?
-    let includesProjectFolder: Bool
+    /// The `ProjectFolder.key` of the folder shown.
+    let selected: URL
 
     var body: some View {
-        let scope = project.scope
-        let changed = scope.changedRepositories
-        let submodules = repositories.filter { repository in
-            !scope.isChanged(repository) && repositories.contains {
-                $0.mainRepositoryURL != repository.mainRepositoryURL && $0.mainRepositoryURL.contains(repository.mainRepositoryURL)
-            }
-        }
-        let mainRepositories = repositories.filter { !scope.isChanged($0) && !submodules.contains($0) }
+        let (unchanged, changed) = project.scope.pickableFolders
 
-        if !submodules.isEmpty {
-            Section("Submodules") {
-                ForEach(submodules, id: \.mainRepositoryURL) { repository in
-                    RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
-                }
-            }
-        }
-
-        ForEach(mainRepositories, id: \.mainRepositoryURL) { repository in
-            RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
-        }
-
-        if includesProjectFolder {
-            if !mainRepositories.isEmpty || !submodules.isEmpty {
-                Divider()
-            }
-
-            Toggle(isOn: Binding(get: { selected == nil }, set: { _ in scope.selectedRepository = nil })) {
-                Label(project.workspace?.name ?? "Project", systemImage: "folder")
-            }
+        ForEach(unchanged) { folder in
+            FolderMenu(project: project, folder: folder, isSelected: folder.key == selected)
         }
 
         if !changed.isEmpty {
-            if includesProjectFolder || !mainRepositories.isEmpty || !submodules.isEmpty {
+            if !unchanged.isEmpty {
                 Divider()
             }
 
             Section("Changed in This Task") {
-                ForEach(changed, id: \.mainRepositoryURL) { repository in
-                    RepositoryMenu(project: project, repository: repository, isSelected: repository.mainRepositoryURL == selected)
+                ForEach(changed) { folder in
+                    FolderMenu(project: project, folder: folder, isSelected: folder.key == selected)
                 }
             }
         }
     }
 }
 
-/// A repository and the branch it shows, opening to its branches.
-private struct RepositoryMenu: View {
+/// A repository and the branch it shows, opening to its branches, or a plain folder.
+private struct FolderMenu: View {
     let project: Project
-    let repository: GitRepositoryStatus
+    let folder: ProjectFolder
     let isSelected: Bool
 
+    // Loose texts become the menu item's title and subtitle; a stack would
+    // leave only the first.
     var body: some View {
-        Menu {
-            BranchItems(project: project, repository: repository)
-        } label: {
-            if isSelected {
-                Label { RepositoryTitle(repository: repository) } icon: { Image(systemName: "checkmark") }
-            } else {
-                RepositoryTitle(repository: repository)
+        if let repository = folder.status {
+            Menu {
+                BranchItems(project: project, repository: repository)
+            } label: {
+                if isSelected { Image(systemName: "checkmark") }
+                Text(folder.name)
+                Text(repository.shownBranch)
             }
+        } else {
+            Toggle(folder.name, isOn: Binding(get: { isSelected }, set: { _ in project.scope.selectedFolder = folder.key }))
         }
-    }
-}
-
-/// A repository's name, then the branch it shows in secondary text, which a
-/// menu item keeps as its title's color.
-private struct RepositoryTitle: View {
-    let repository: GitRepositoryStatus
-
-    var body: some View {
-        Text("\(repository.name) · \(Text(repository.shownBranch).foregroundStyle(.secondary))")
     }
 }
 
@@ -173,12 +135,12 @@ private struct BranchItems: View {
     }
 
     private func select(branch: String) {
-        project.scope.selectedRepository = repository.mainRepositoryURL
+        project.scope.selectedFolder = repository.mainRepositoryURL
         Task { await project.git.model.selectBranch(branch, in: repository) }
     }
 
     private func select(worktree: GitWorktreeInfo) {
-        project.scope.selectedRepository = repository.mainRepositoryURL
+        project.scope.selectedFolder = repository.mainRepositoryURL
         guard !worktree.isCurrent else { return }
         project.git.activateWorktree(worktree, in: repository)
     }

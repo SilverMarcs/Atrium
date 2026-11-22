@@ -14,6 +14,7 @@ struct ProjectsSheet: View {
     @State private var iconWorkspace: WireWorkspace?
     @State private var showingIconImporter = false
     @State private var showingFolderImporter = false
+    @State private var foldersWorkspace: WireWorkspace?
 
     private var host: HostClient? { hosts.host(hostID) }
     private var connectedHosts: [HostClient] { hosts.hosts.filter(\.isConnected) }
@@ -35,6 +36,8 @@ struct ProjectsSheet: View {
                             } chooseIcon: {
                                 iconWorkspace = workspace
                                 showingIconImporter = true
+                            } editFolders: {
+                                foldersWorkspace = workspace
                             }
                         }
                     }
@@ -94,7 +97,7 @@ struct ProjectsSheet: View {
                 #endif
                 if host?.isLocal == true {
                     ToolbarItem {
-                        Button("Add Folder…", systemImage: "folder.badge.plus") { showingFolderImporter = true }
+                        Button("Add Project…", systemImage: "folder.badge.plus") { showingFolderImporter = true }
                     }
                 }
             }
@@ -102,8 +105,15 @@ struct ProjectsSheet: View {
         #if os(macOS)
         .frame(width: 420, height: 460)
         #endif
-        .fileImporter(isPresented: $showingFolderImporter, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { host?.send(.addWorkspace(path: url.path(percentEncoded: false))) }
+        // The folders picked make one project, which Folders… changes later.
+        .fileImporter(isPresented: $showingFolderImporter, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else { return }
+            host?.send(.addWorkspace(paths: urls.map { $0.path(percentEncoded: false) }))
+        }
+        .sheet(item: $foldersWorkspace) { workspace in
+            if let host {
+                ProjectFoldersSheet(host: host, workspaceID: workspace.id)
+            }
         }
         .alert("Rename Project", isPresented: Binding(
             get: { renaming != nil },
@@ -113,7 +123,7 @@ struct ProjectsSheet: View {
             Button("Cancel", role: .cancel) {}
             Button("Rename") { send(.rename(name), to: workspace) }
         } message: { _ in
-            Text("Leave it empty to use the folder’s name.")
+            Text("Leave it empty to use the primary folder’s name.")
         }
         .alert("Couldn’t Update Project", isPresented: Binding(
             get: { hosts.actionError != nil },
@@ -187,9 +197,11 @@ private struct ProjectMenu: View {
     let host: HostClient
     let rename: () -> Void
     let chooseIcon: () -> Void
+    let editFolders: () -> Void
 
     var body: some View {
         Button("Rename…", systemImage: "pencil", action: rename)
+        Button("Folders…", systemImage: "folder", action: editFolders)
 
         Menu {
             Picker("Project Type", selection: Binding(

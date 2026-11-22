@@ -66,7 +66,7 @@ struct FileTreeView: View {
                 .padding(.top, 9)
             }
             .safeAreaBar(edge: .bottom) {
-                InspectorScopeFooter(project: project, includesProjectFolder: true)
+                InspectorScopeFooter(project: project)
             }
             .onChange(of: model.shownFolders, initial: true) { _, folders in
                 model.follow(folders)

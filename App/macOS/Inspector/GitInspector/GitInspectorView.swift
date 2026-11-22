@@ -1,14 +1,16 @@
 import AtriumProtocol
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct GitInspectorView: View {
     @Bindable var state: GitInspectorState
 
     private var snapshot: GitRepositoryStatus? { state.currentSnapshot }
 
-    private var hasRepository: Bool {
-        state.model.repositories?.isEmpty == false
-    }
+    @State private var showingFolderImporter = false
+
+    /// Whether the folder shown is a repository.
+    private var hasRepository: Bool { snapshot != nil }
 
     var body: some View {
         // Sheets and alerts hang off this stable container: the status goes
@@ -69,13 +71,26 @@ struct GitInspectorView: View {
         } description: {
             Text("This folder is not a Git repository.")
         } actions: {
-            Button("Initialize Repository") {
-                Task { await state.model.initializeRepository() }
+            // Stacked, so both fit the inspector's narrowest width.
+            VStack {
+                Button("Initialize Repository") {
+                    Task { await state.model.initializeRepository() }
+                }
+                .buttonStyle(.borderedProminent)
+                if state.project.isLocal {
+                    Button("Add Folders…") { showingFolderImporter = true }
+                }
             }
-            .buttonStyle(.borderedProminent)
             .controlSize(.small)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaBar(edge: .bottom) {
+            InspectorScopeFooter(project: state.project)
+        }
+        .fileImporter(isPresented: $showingFolderImporter, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, let folders = state.project.workspace?.folders else { return }
+            state.project.send(.setFolders(folders + urls.map { $0.path(percentEncoded: false) }))
+        }
     }
 
     private var repositoryView: some View {

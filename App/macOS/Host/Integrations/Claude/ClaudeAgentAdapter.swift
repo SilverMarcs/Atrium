@@ -135,8 +135,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// the prompt Claude has cached for it.
     private func sideQuestionOptions(about sessionID: String, model: String?) -> [String] {
         let launch = backgroundIDs[sessionID].flatMap { try? daemon.launchOptions(jobID: $0) } ?? []
-        var options = ["--append-system-prompt", instructions.text(for: Self.taskID(sessionID))]
-        if let model = model ?? launch.firstIndex(of: "--model").flatMap({ launch.indices.contains($0 + 1) ? launch[$0 + 1] : nil }) {
+        func value(of option: String) -> String? {
+            launch.firstIndex(of: option).flatMap { launch.indices.contains($0 + 1) ? launch[$0 + 1] : nil }
+        }
+        let prompt = value(of: "--append-system-prompt")
+            ?? instructions.text(for: Self.taskID(sessionID), directory: backgroundSessions[sessionID]?.cwd ?? "")
+        var options = ["--append-system-prompt", prompt]
+        if let model = model ?? value(of: "--model") {
             options += ["--model", model]
         }
         return options
@@ -248,7 +253,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if let existing = sessions.first(where: { $0.kind == "background" && $0.sessionID == thread.sessionID && $0.isRunning }) {
             session = existing
         } else {
-            session = try await startBackgroundSession(directory: thread.directory, instructions: instructions.text(for: thread.id), resuming: thread.sessionID)
+            session = try await startBackgroundSession(directory: thread.directory, instructions: instructions.text(for: thread.id, directory: thread.directory), resuming: thread.sessionID)
         }
         guard let id = session.id else { throw IntegrationError(message: "Claude did not provide a background identifier.") }
         backgroundIDs[thread.sessionID] = id
@@ -346,7 +351,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             try await rewindSavedSession(forkID, before: messageID ?? commandID, lastSeen: commandID, directory: thread.directory)
             try await history.renameThread(forkID, to: thread.forkTitle, directory: thread.directory)
             let blocks = instructions.blocks(for: thread.id)
-            let session = try await startBackgroundSession(directory: thread.directory, instructions: AgentInstructions.text(blocks),
+            let session = try await startBackgroundSession(directory: thread.directory, instructions: instructions.text(blocks, directory: thread.directory),
                                                            resuming: forkID, name: thread.forkTitle)
             guard let fork = session.thread else { throw IntegrationError(message: "Claude did not provide a forked session identifier.") }
             instructions.record(blocks, for: fork.id)
@@ -552,7 +557,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         // Claude saves the name as the thread's title once it's saved, and lists it as the job's name until then.
         let blocks = instructions.forNewChat
-        let session = try await startBackgroundSession(directory: directory, instructions: AgentInstructions.text(blocks), name: title, settings: settings)
+        let session = try await startBackgroundSession(directory: directory, instructions: instructions.text(blocks, directory: directory), name: title, settings: settings)
         guard var thread = session.thread else {
             throw IntegrationError(message: "Claude did not provide a session identifier.")
         }
@@ -645,6 +650,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         var arguments = ["--bg"]
         if !existingBackground {
             arguments += ["--settings", settingsFile.path, "--append-system-prompt", instructions, ClaudePermissions.allowBypassFlag]
+            // The project's other folders, which its tools may reach too.
+            for folder in self.instructions.otherFolders(for: directory) { arguments += ["--add-dir", folder] }
         }
         if let mode = startSettings?.permissionMode { arguments += ["--permission-mode", ClaudePermissions.value(for: mode)] }
         if let model = startSettings?.model { arguments += ["--model", model] }
@@ -1048,7 +1055,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
               session.threadStatus != .processing, session.threadStatus != .waiting else { return false }
         var options = try daemon.launchOptions(jobID: jobID) + ["--settings", try await settingsForBridge().path]
         if !options.contains("--append-system-prompt") {
-            options += ["--append-system-prompt", instructions.text(for: thread.id)]
+            options += ["--append-system-prompt", instructions.text(for: thread.id, directory: thread.directory)]
         }
         if !options.contains(ClaudePermissions.allowBypassFlag) { options.append(ClaudePermissions.allowBypassFlag) }
         try await respawn(thread.sessionID, jobID: jobID, options: options)

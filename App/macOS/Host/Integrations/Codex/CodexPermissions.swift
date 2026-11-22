@@ -9,13 +9,14 @@ nonisolated enum CodexPermissions {
         ["approvalPolicy": approvalPolicy(mode), "sandbox": sandboxMode(mode), "approvalsReviewer": reviewer(mode)]
     }
 
-    /// For `turn/start`, which applies them to that turn and the thread's later ones.
-    static func turnParams(_ mode: PermissionMode) -> [String: Any] {
-        [
-            "approvalPolicy": approvalPolicy(mode),
-            "sandboxPolicy": ["type": mode == .fullAccess ? "dangerFullAccess" : "workspaceWrite"],
-            "approvalsReviewer": reviewer(mode)
-        ]
+    /// For `turn/start`, which applies them to that turn and the thread's
+    /// later ones. The workspace-write sandbox also lets the agent change
+    /// `writableRoots`, the project's other folders.
+    static func turnParams(_ mode: PermissionMode, writableRoots: [String] = []) -> [String: Any] {
+        let sandboxPolicy: [String: Any] = mode == .fullAccess
+            ? ["type": "dangerFullAccess"]
+            : ["type": "workspaceWrite", "writableRoots": writableRoots]
+        return ["approvalPolicy": approvalPolicy(mode), "sandboxPolicy": sandboxPolicy, "approvalsReviewer": reviewer(mode)]
     }
 
     /// The mode the settings a thread reports amount to, or nil for settings none of them uses.

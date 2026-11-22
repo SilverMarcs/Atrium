@@ -2,22 +2,38 @@ import AtriumProtocol
 import Foundation
 import Observation
 
+/// One of a project's folders as this device shows it: a repository, seen
+/// through the checkout chosen for it, or a plain folder.
+public struct ProjectFolder: Identifiable, Equatable, Sendable {
+    /// The folder as the project lists it.
+    public let path: URL
+    /// Its repository's status, or nil for a plain folder or before the host
+    /// has sent it.
+    public let status: GitRepositoryStatus?
+
+    public var id: String { path.filePath }
+    public var name: String { path.lastPathComponent }
+    /// What picks it: its repository's main checkout, or else the folder.
+    public var key: URL { status?.mainRepositoryURL ?? path }
+    /// Where its files are: the checkout shown, or the folder itself.
+    public var root: URL { status?.repositoryRootURL ?? path }
+}
+
 /// Which checkouts of a project this device shows, shared by every page of the
 /// project: Source Control, Files, Search and Commands. A repository is seen
 /// through its main checkout unless a linked worktree was chosen for it, by
 /// the user or by following a task that works there.
 ///
-/// When the project holds several repositories, Source Control picks one and
-/// shows it, or else the first. Files and Search show the picked one on its
-/// own when it's inside the project folder.
+/// Every page shows the folder picked, or else the primary one. Source
+/// Control shows it when it's a repository.
 @MainActor
 @Observable
 public final class ProjectScope {
     public let workspaceID: UUID
     /// Main checkout → linked worktree shown instead.
     public private(set) var worktrees: [URL: URL] = [:]
-    /// The main checkout of the repository picked, or nil for the project folder.
-    public var selectedRepository: URL?
+    /// The `ProjectFolder.key` of the folder picked, or nil for the primary one.
+    public var selectedFolder: URL?
     @ObservationIgnored private weak var host: HostClient?
 
     init(host: HostClient, workspaceID: UUID) {
@@ -29,73 +45,46 @@ public final class ProjectScope {
     /// The project's repositories, once its host has sent their status.
     public var repositories: [GitRepositoryStatus]? { host?.gitStatuses[gitScope] }
 
-    /// The project folder through the checkout chosen for its repository.
-    /// Commands run here, and the editor and links resolve against it.
-    public var root: URL {
-        guard let folder else { return URL(filePath: "/") }
-        return GitScope(workspaceID: workspaceID, worktrees: shownWorktrees).root(of: folder.filePath)
-    }
-
-    /// The folder Files and Search show: the repository picked inside the
-    /// project folder, through its chosen checkout, or else `root`.
-    public var filesRoot: URL {
-        guard let repository = selectedNestedRepository else { return root }
-        return shownWorktrees[repository] ?? repository
-    }
-
-    /// Repositories inside the project folder, which Files and Search show on their own once picked.
-    public var nestedRepositories: [GitRepositoryStatus] {
-        (repositories ?? []).filter { isNested($0.mainRepositoryURL) }
-    }
-
-    /// The repository picked in Source Control when Files and Search show it on its own.
-    public var selectedNestedRepository: URL? {
-        selectedRepository.flatMap { isNested($0) ? $0 : nil }
-    }
-
-    /// Whether the project folder is a choice of its own beside its
-    /// repositories: it holds several without being one itself.
-    public var offersProjectFolder: Bool {
-        guard let repositories, repositories.count > 1 else { return false }
-        return !repositories.contains(where: holdsFolder)
-    }
-
-    /// Whether the project folder is picked over its repositories, so Files
-    /// and Search show all of it. Source Control still shows `status`.
-    public var showsProjectFolder: Bool {
-        offersProjectFolder && selectedRepository == nil
-    }
-
-    /// The repository Source Control shows: the one picked, else the one
-    /// holding the project folder, else the first.
-    public var status: GitRepositoryStatus? {
-        guard let repositories else { return nil }
-        return repositories.first { $0.mainRepositoryURL == selectedRepository }
-            ?? repositories.first(where: holdsFolder)
-            ?? repositories.first
-    }
-
-    /// Names what Files and Search show: its branch, after the repository's
-    /// name for one inside the project folder. Nil while the status hasn't
-    /// arrived, and for a folder that only holds repositories.
-    public var title: String? {
-        if let repository = selectedNestedRepository {
-            guard let status = repositories?.first(where: { $0.mainRepositoryURL == repository }) else { return nil }
-            return "\(status.name) · \(Self.branch(of: status))"
+    /// The project's folders, the primary one first.
+    public var folders: [ProjectFolder] {
+        let statuses = repositories ?? []
+        return (host?.workspace(workspaceID)?.folders ?? []).map { path in
+            ProjectFolder(path: URL(filePath: path, directoryHint: .isDirectory), status: statuses.first { $0.projectFolder == path })
         }
-        return repositories?.first(where: holdsFolder).map(Self.branch)
     }
 
-    /// The repositories the task this scope follows changed files in, the
-    /// most recently changed first, among those the host shows.
-    public var changedRepositories: [GitRepositoryStatus] {
-        guard let repositories else { return [] }
-        return changedRepositoryURLs.compactMap { repository in repositories.first { $0.mainRepositoryURL == repository } }
+    /// The folder every page shows: the one picked, else the primary one.
+    public var selected: ProjectFolder? {
+        let folders = folders
+        return folders.first { $0.key.filePath == selectedFolder?.filePath } ?? folders.first
     }
 
-    /// Whether the task this scope follows changed files in a repository.
-    public func isChanged(_ repository: GitRepositoryStatus) -> Bool {
-        changedRepositoryURLs.contains(repository.mainRepositoryURL)
+    /// The primary folder through the checkout chosen for it. Commands run
+    /// here, and the editor and links resolve against it.
+    public var root: URL { folders.first?.root ?? URL(filePath: "/") }
+
+    /// The folder Files and Search show: the one picked, through its chosen checkout.
+    public var filesRoot: URL { selected?.root ?? root }
+
+    /// The repository Source Control shows: the folder picked when it's one.
+    public var status: GitRepositoryStatus? { selected?.status }
+
+    /// Names what the project's pages show: its branch, after the folder's
+    /// name when the project has several. Nil while the status hasn't arrived.
+    public var title: String? {
+        guard let selected else { return nil }
+        let branch = selected.status.map(Self.branch)
+        guard folders.count > 1 else { return branch }
+        return [selected.name, branch].compactMap(\.self).joined(separator: " · ")
+    }
+
+    /// The project's folders as pickers list them: those the task this scope
+    /// follows didn't change, in the project's order, then the repositories
+    /// it changed files in, the most recently changed first.
+    public var pickableFolders: (unchanged: [ProjectFolder], changed: [ProjectFolder]) {
+        let folders = folders
+        let changed = changedRepositoryURLs.compactMap { repository in folders.first { $0.status?.mainRepositoryURL == repository } }
+        return (folders.filter { !changed.contains($0) }, changed)
     }
 
     /// Main checkouts of the repositories the followed task changed files in.
@@ -130,44 +119,20 @@ public final class ProjectScope {
         for checkout in changed + [current] {
             worktrees[checkout.repository] = checkout.worktree?.standardizedFileURL
         }
-        selectedRepository = current.repository
+        selectedFolder = current.repository
     }
 
     /// Shows a repository through one of its linked worktrees, or through its
     /// main checkout for nil, and picks it.
     public func showWorktree(_ worktree: URL?, of repository: URL) {
         worktrees[repository] = worktree?.standardizedFileURL
-        selectedRepository = repository
+        selectedFolder = repository
     }
 
-    /// Makes Files and Search show a folder holding `url` when they don't:
-    /// the repository it's in, or else the whole project folder.
+    /// Makes Files and Search show the folder holding `url` when they don't.
     public func include(_ url: URL) {
         guard !filesRoot.contains(url) else { return }
-        selectedRepository = nestedRepositories.first { $0.repositoryRootURL.contains(url) }?.mainRepositoryURL
-    }
-
-    /// The project folder, once the host has listed the project.
-    private var folder: URL? {
-        host?.workspace(workspaceID).map { URL(filePath: $0.path, directoryHint: .isDirectory) }
-    }
-
-    private func isNested(_ repository: URL) -> Bool {
-        guard let folder else { return false }
-        return repository.filePath != folder.filePath && folder.contains(repository)
-    }
-
-    private func holdsFolder(_ repository: GitRepositoryStatus) -> Bool {
-        folder.map(repository.mainRepositoryURL.contains) ?? false
-    }
-
-    /// The worktrees chosen that the host still shows. One removed since is
-    /// shown through its main checkout, as the host does.
-    private var shownWorktrees: [URL: URL] {
-        guard let repositories else { return worktrees }
-        return worktrees.filter { repository, _ in
-            repositories.first { $0.mainRepositoryURL == repository }?.isLinkedWorktree ?? true
-        }
+        if let folder = folders.first(where: { $0.root.contains(url) }) { selectedFolder = folder.key }
     }
 
     private static func branch(of status: GitRepositoryStatus) -> String {

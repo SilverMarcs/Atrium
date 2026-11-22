@@ -90,9 +90,26 @@ final class WorkspaceStore {
         return nil
     }
 
+    /// The folders of the project a chat working in a folder belongs to, and
+    /// which of them it works in: the folder itself, or else the one whose
+    /// repository has the linked worktree it is.
+    func folders(forDirectory directory: String) -> (all: [String], own: String)? {
+        var url = URL(fileURLWithPath: directory)
+        if workspace(at: url) == nil, let checkout = GitCheckout(rootedAt: url), checkout.linkedWorktreeURL != nil {
+            url = checkout.mainCheckoutURL
+        }
+        let path = Self.path(of: url)
+        guard let workspace = workspace(at: url),
+              let own = workspace.folders.first(where: { Self.path(of: URL(fileURLWithPath: $0)) == path }) else { return nil }
+        return (workspace.folders, own)
+    }
+
+    /// The project whose primary folder this is, or else the first with it
+    /// among its other folders.
     private func workspace(at url: URL) -> Workspace? {
         let path = Self.path(of: url)
         return workspaces.first { Self.path(of: $0.url) == path }
+            ?? workspaces.first { $0.additionalFolders.contains { Self.path(of: URL(fileURLWithPath: $0)) == path } }
     }
 
     /// Directory URLs may or may not carry a trailing slash; compare paths without it.

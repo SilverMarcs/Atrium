@@ -217,8 +217,10 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             // The replay arrives before the reply, as updates for the session.
             sessions[id] = session
             do {
-                let reply = try await connection.request("session/load", ["sessionId": id, "cwd": thread.directory, "mcpServers": []],
-                                                         timeout: .seconds(120))
+                let reply = try await connection.request("session/load", [
+                    "sessionId": id, "cwd": thread.directory, "mcpServers": [],
+                    "additionalDirectories": instructions.otherFolders(for: thread.directory),
+                ], timeout: .seconds(120))
                 session.settings = AntigravitySettings(configOptions: reply["configOptions"] as? [[String: Any]] ?? [])
                 let thumbnails = await history.promptThumbnails(of: id)
                 session.conversation.restoreThumbnails(thumbnails)
@@ -243,8 +245,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let blocks = instructions.forNewChat
         // Antigravity keeps the appended prompt with the conversation, for every later load.
         let reply = try await connection.request("session/new", [
-            "cwd": directory, "mcpServers": [],
-            "_meta": ["antigravity": ["systemPrompt": ["append": AgentInstructions.text(blocks)]]],
+            "cwd": directory, "mcpServers": [], "additionalDirectories": instructions.otherFolders(for: directory),
+            "_meta": ["antigravity": ["systemPrompt": ["append": instructions.text(blocks, directory: directory)]]],
         ])
         guard let id = reply["sessionId"] as? String else { throw IntegrationError(message: "Antigravity didn’t start a session.") }
         let session = Session(id: id, directory: directory)
