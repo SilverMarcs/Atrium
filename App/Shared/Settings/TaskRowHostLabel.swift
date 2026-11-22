@@ -29,6 +29,8 @@ enum TaskRowHostLabel: String, CaseIterable, Identifiable, LabelStyle {
 
 /// Settings' choice of how task list rows name their host.
 struct TaskRowHostLabelPicker: View {
+    var title = "Host in task list"
+    var showsSubtitle = true
     @AppStorage(TaskRowHostLabel.key) private var label = TaskRowHostLabel.iconAndName
 
     var body: some View {
@@ -37,8 +39,10 @@ struct TaskRowHostLabelPicker: View {
                 Text(label.title).tag(label)
             }
         } label: {
-            Text("Host in task list")
-            Text("When tasks from several hosts are listed")
+            Text(title)
+            if showsSubtitle {
+                Text("When tasks from several hosts are listed")
+            }
         }
     }
 }

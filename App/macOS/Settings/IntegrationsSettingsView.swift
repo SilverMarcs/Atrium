@@ -19,8 +19,13 @@ struct IntegrationsSettingsView: View {
                 }
             } footer: {
                 Text("New chats get the instructions that are on when they start.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .formStyle(.grouped)
+        .navigationTitle("Integrations")
+        .toolbar {
+            ToolbarHeightPlaceholder()
+        }
     }
 }

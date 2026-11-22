@@ -5,7 +5,6 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("editorWrapLines") private var editorWrapLines = true
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
 
     var body: some View {
@@ -18,50 +17,41 @@ struct GeneralSettingsView: View {
                         Text(chatFontSize, format: .number.precision(.fractionLength(1)))
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
-                            .frame(width: 25, alignment: .trailing)
+                            .frame(width: 28, alignment: .trailing)
                     }
                 }
             }
 
-            SendModeSettingsSection()
-
             Section {
-                TaskRowHostLabelPicker()
-                Picker(selection: $settings.defaultSnooze) {
+                SendModePicker(showsSubtitle: false)
+                TaskRowHostLabelPicker(title: "Host indicator", showsSubtitle: false)
+                Picker("Swipe snooze duration", selection: $settings.defaultSnooze) {
                     ForEach(SnoozeDuration.allCases) { duration in
                         Text(duration.title).tag(duration)
                     }
-                } label: {
-                    Text("Snooze for")
-                    Text("When you swipe to snooze a task")
                 }
-            } header: {
-                Text("Task List")
             }
 
-            Section {
+            Section("Editor") {
                 Toggle("Wrap long lines", isOn: $editorWrapLines)
                 DiffLayoutPicker()
-            } header: {
-                Text("Editor")
             }
 
             DictationSettingsSection()
-
-            #if DEBUG
-            Section {
-                LabeledContent("Reset Onboarding") {
-                    Button("Launch") {
-                        hasCompletedOnboarding = false
-                    }
-                }
-            } header: {
-                Text("Debug")
-            } footer: {
-                Text("Resets the onboarding flag so the welcome sheet appears again on next launch.")
-            }
-            #endif
         }
         .formStyle(.grouped)
+        .navigationTitle("General")
+        .toolbar {
+            if chatFontSize != ChatFontSize.default {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Reset Font Size", systemImage: "arrow.counterclockwise") {
+                        chatFontSize = ChatFontSize.default
+                    }
+                    .help("Reset chat font size to default")
+                }
+            } else {
+                ToolbarHeightPlaceholder()
+            }
+        }
     }
 }

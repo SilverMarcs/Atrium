@@ -14,43 +14,55 @@ struct UpdatesSettingsView: View {
     var body: some View {
         @Bindable var updater = updater
 
-        if updater.isConfigured {
-            Form {
-                Section {
-                    Picker("Update channel", selection: $updater.channel) {
-                        ForEach(UpdateChannel.allCases) { channel in
-                            Text(channel.label).tag(channel)
+        Group {
+            if updater.isConfigured {
+                Form {
+                    Section {
+                        Picker("Update channel", selection: $updater.channel) {
+                            ForEach(UpdateChannel.allCases) { channel in
+                                Text(channel.label).tag(channel)
+                            }
                         }
+                    } footer: {
+                        Text("Nightly gets new features as soon as they're built. Stable releases always work with the iPhone app on the App Store.")
+                            .foregroundStyle(.secondary)
                     }
-                } footer: {
-                    Text("Nightly gets new features as soon as they're built. Stable releases always work with the iPhone app on the App Store.")
-                        .foregroundStyle(.secondary)
-                }
 
-                Section("Automatic Updates") {
-                    Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+                    Section {
+                        Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
 
-                    Picker("Check frequency", selection: $updater.updateCheckInterval) {
-                        ForEach(intervals, id: \.seconds) { interval in
-                            Text(interval.label).tag(interval.seconds)
+                        Picker("Check frequency", selection: $updater.updateCheckInterval) {
+                            ForEach(intervals, id: \.seconds) { interval in
+                                Text(interval.label).tag(interval.seconds)
+                            }
                         }
+                        .disabled(!updater.automaticallyChecksForUpdates)
                     }
-                    .disabled(!updater.automaticallyChecksForUpdates)
                 }
-                .sectionActions {
-                    Button("Check for Updates…") {
+                .formStyle(.grouped)
+            } else {
+                ContentUnavailableView(
+                    "Automatic Updates Unavailable",
+                    systemImage: "arrow.down.circle",
+                    description: Text("This build of Atrium does not support automatic updates.")
+                )
+            }
+        }
+        .navigationTitle("Updates")
+        .toolbar {
+            if updater.isConfigured {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
                         updater.checkForUpdates()
+                    } label: {
+                        Label("Check for Updates…", systemImage: "arrow.clockwise")
                     }
                     .disabled(!updater.canCheckForUpdates)
+                    .help("Check for Atrium updates now")
                 }
+            } else {
+                ToolbarHeightPlaceholder()
             }
-            .formStyle(.grouped)
-        } else {
-            ContentUnavailableView(
-                "Automatic Updates Unavailable",
-                systemImage: "arrow.down.circle",
-                description: Text("This build of Atrium does not support automatic updates.")
-            )
         }
     }
 }

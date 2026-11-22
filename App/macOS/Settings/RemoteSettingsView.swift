@@ -6,6 +6,8 @@ import SwiftUI
 /// itself included. Every connected host's tasks show in the window at once.
 struct RemoteSettingsView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
+    @State private var showingPairHost = false
 
     var body: some View {
         Form {
@@ -15,6 +17,29 @@ struct RemoteSettingsView: View {
             HostsSection(hosts: app.hosts)
         }
         .formStyle(.grouped)
+        .navigationTitle("Remote")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    showingPairHost = true
+                } label: {
+                    Label("Pair Host…", systemImage: "plus")
+                }
+                .help("Pair with another Mac running Atrium")
+
+                if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
+                    Button {
+                        openURL(url)
+                    } label: {
+                        Label("Get iOS App", systemImage: "iphone")
+                    }
+                    .help("Get the Atrium iOS Companion App")
+                }
+            }
+        }
+        .sheet(isPresented: $showingPairHost) {
+            PairHostSheet(hosts: app.hosts)
+        }
     }
 }
 
@@ -72,6 +97,7 @@ private struct ThisMacSections: View {
             Text("This Mac")
         } footer: {
             Text("Your iPhone and other Macs running Atrium connect to this Mac with end-to-end encryption and show its name and icon.")
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sectionActions {
             if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
@@ -92,16 +118,19 @@ private struct ThisMacSections: View {
                         .background(.white, in: .rect(cornerRadius: 8))
                     Spacer()
                 }
+                .frame(maxWidth: .infinity)
                 HStack {
                     Button("Copy Pairing Link", systemImage: "doc.on.doc") {
                         Pasteboard.copy(url.absoluteString)
                     }
+                    Spacer()
                     ShareLink("Share", item: url)
                 }
             } header: {
                 Text("Pair a Device")
             } footer: {
                 Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac or into `atrium pair` on another computer. Each link works once.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Section("Paired Devices") {
@@ -127,13 +156,16 @@ private struct ThisMacSections: View {
     }
 }
 
-/// Other Macs this Mac connects to as a client, and pairing with a new one.
+/// Other Macs this Mac connects to as a client.
 private struct HostsSection: View {
     let hosts: HostDirectory
-    @State private var link = ""
 
     var body: some View {
         Section {
+            if hosts.remoteHosts.isEmpty {
+                Text("No other hosts paired")
+                    .foregroundStyle(.secondary)
+            }
             ForEach(hosts.remoteHosts) { host in
                 LabeledContent {
                     Button("Remove", role: .destructive) { hosts.forget(host) }
@@ -141,35 +173,65 @@ private struct HostsSection: View {
                     HostLabel(host: host)
                 }
             }
+        } header: {
+            Text("Other Hosts")
+        } footer: {
+            Text("Use + in the toolbar to paste a pairing link from another Mac’s Atrium Settings.")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// Modal sheet to paste a pairing link from another Mac's Atrium Settings.
+private struct PairHostSheet: View {
+    let hosts: HostDirectory
+    @Environment(\.dismiss) private var dismiss
+    @State private var link = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Pair a Host")
+                .font(.headline)
+
+            Text("Copy the pairing link from Settings → Remote on another Mac running Atrium and paste it below.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("Pairing link", text: $link, prompt: Text("atrium://pair?…"))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(pair)
+
+            if let error = hosts.pairingError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
             HStack {
-                TextField("Pairing link", text: $link, prompt: Text("atrium://pair?…"))
-                    .labelsHidden()
-                    .onSubmit(pair)
+                Spacer()
                 if hosts.pairing != nil {
                     ProgressView()
                         .controlSize(.small)
                 }
+                Button("Cancel", role: .cancel) { dismiss() }
                 Button("Pair", action: pair)
+                    .buttonStyle(.borderedProminent)
                     .disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hosts.pairing != nil)
             }
-            if let error = hosts.pairingError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-            }
-        } header: {
-            Text("Other Hosts")
-        } footer: {
-            Text("To add another Mac, copy the pairing link from Atrium Settings there and paste it here.")
         }
-        .onChange(of: hosts.pairingCount) { link = "" }
+        .padding(20)
+        .frame(width: 440)
+        .onChange(of: hosts.pairingCount) { dismiss() }
     }
 
     private func pair() {
-        guard let link = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap(PairingLink.init(url:)) else {
+        guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let parsed = PairingLink(url: url) else {
             hosts.pairingFailed(message: "That isn’t an Atrium pairing link.")
             return
         }
-        hosts.pair(with: link)
+        hosts.pair(with: parsed)
     }
 }
 
