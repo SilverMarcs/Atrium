@@ -174,7 +174,7 @@ private struct ProjectsHostPicker: View {
     var body: some View {
         Picker("Host", selection: $selection) {
             ForEach(hosts) { host in
-                Text(host.name).tag(Optional(host.id))
+                Label(host.name, systemImage: host.icon.symbolName).tag(Optional(host.id))
             }
         }
     }

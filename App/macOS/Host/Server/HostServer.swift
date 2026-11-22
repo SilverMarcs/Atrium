@@ -40,17 +40,48 @@ final class HostServer {
         }
     }
 
-    /// What the pairing QR code and link carry.
-    private var pairingLink: PairingLink {
-        PairingLink(hostID: HostIdentity.hostID, publicKey: HostIdentity.publicKey, secret: pairing.secret, hostName: Self.hostName)
+    /// The name the user chose for this host, or nil to use this Mac's computer name.
+    private(set) var customHostName: String? {
+        didSet {
+            guard customHostName != oldValue else { return }
+            UserDefaults.standard.set(customHostName, forKey: Self.customHostNameKey)
+            hostIdentityDidChange()
+            localListener.updateName(hostName)
+        }
     }
 
-    let hello = HostHello(
-        hostID: HostIdentity.hostID,
-        hostName: HostServer.hostName,
-        protocolVersion: HostProtocol.version,
-        homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
-    )
+    /// The icon this host advertises for itself.
+    private(set) var hostIcon: HostIcon {
+        didSet {
+            guard hostIcon != oldValue else { return }
+            UserDefaults.standard.set(hostIcon.rawValue, forKey: Self.hostIconKey)
+            hostIdentityDidChange()
+        }
+    }
+
+    /// The name this host advertises to every client, itself included.
+    var hostName: String { customHostName ?? Self.defaultHostName }
+
+    /// What the pairing QR code and link carry.
+    private var pairingLink: PairingLink {
+        PairingLink(
+            hostID: HostIdentity.hostID,
+            publicKey: HostIdentity.publicKey,
+            secret: pairing.secret,
+            hostName: hostName,
+            hostIcon: hostIcon
+        )
+    }
+
+    var hello: HostHello {
+        HostHello(
+            hostID: HostIdentity.hostID,
+            hostName: hostName,
+            hostIcon: hostIcon,
+            protocolVersion: HostProtocol.version,
+            homeDirectory: homeDirectory
+        )
+    }
 
     /// Remote access as the host's own Mac UI sees it.
     var remoteAccess: WireRemoteAccess {
@@ -67,7 +98,9 @@ final class HostServer {
             pairingLink: isRemoteAccessEnabled ? pairingLink.url : nil,
             devices: pairing.devices.map {
                 WirePairedDevice(id: $0.id, name: $0.name, isConnected: connected.contains($0.id), lastConnectedAt: $0.lastConnectedAt)
-            }
+            },
+            customHostName: customHostName,
+            defaultHostName: Self.defaultHostName
         )
     }
 
@@ -96,16 +129,23 @@ final class HostServer {
     /// with, for the agents here to reach them; see `HostRequest.sharedHosts`.
     @ObservationIgnored var shareHosts: ((ClientDevice, Set<String>) async -> [SharedHost])?
 
+    @ObservationIgnored private let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+
     private static let remoteAccessKey = "companion.enabled"
+    private static let customHostNameKey = "host.name"
+    private static let hostIconKey = "host.icon"
     /// Unauthenticated connections are dropped after this long.
     private static let authenticationTimeout: Duration = .seconds(30)
 
-    static let hostName: String = {
+    static let defaultHostName: String = {
         guard let name = SCDynamicStoreCopyComputerName(nil, nil) as String?, !name.isEmpty else { return "Mac" }
         return name
     }()
 
     init() {
+        let savedName = UserDefaults.standard.string(forKey: Self.customHostNameKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        customHostName = savedName?.isEmpty == false ? savedName : nil
+        hostIcon = UserDefaults.standard.string(forKey: Self.hostIconKey).flatMap(HostIcon.init(rawValue:)) ?? .default
         workspaces = WorkspaceStore()
         let bridge = AgentBridgeServer()
         let instructions = ChatInstructions(settings: integrationSettings)
@@ -206,7 +246,10 @@ final class HostServer {
             channel.send(data)
         }, close: { channel.close() })
         connections[connection.id] = connection
-        channel.onReady = { [weak connection, hello] in connection?.sendHello(hello) }
+        channel.onReady = { [weak self, weak connection] in
+            guard let self, let connection else { return }
+            connection.sendHello(self.hello)
+        }
         channel.onMessage = { [weak self, weak channel, weak connection] data in
             guard let self, let channel, let connection else { return }
             guard let frame = try? HostCodec.decode(ClientFrame.self, from: data) else {
@@ -250,6 +293,14 @@ final class HostServer {
         connectedDevices = connections.values.compactMap(\.device).filter { seen.insert($0.id).inserted }
     }
 
+    /// Broadcasts this host's updated name and icon to every connected client.
+    private func hostIdentityDidChange() {
+        let hello = self.hello
+        for connection in connections.values where connection.isAuthenticated {
+            connection.sendHello(hello)
+        }
+    }
+
     // MARK: - Requests
 
     /// Answers a client's request. One sent with a key is performed once per
@@ -258,13 +309,13 @@ final class HostServer {
         switch request {
         case .pair(let secret, let device):
             guard let token = pairing.pair(secret: secret, device: device) else {
-                return .failed(message: "That pairing link has expired. Use the current one from Atrium Settings on \(Self.hostName).")
+                return .failed(message: "That pairing link has expired. Use the current one from Atrium Settings on \(hostName).")
             }
             authenticate(connection, as: device)
             return .paired(token: token)
         case .authenticate(let token, let deviceID):
             guard let paired = pairing.authenticate(token: token, deviceID: deviceID) else {
-                return .failed(message: "This device is no longer paired with \(Self.hostName). Pair it again from Atrium Settings there.")
+                return .failed(message: "This device is no longer paired with \(hostName). Pair it again from Atrium Settings there.")
             }
             authenticate(connection, as: ClientDevice(id: paired.id, name: paired.name, kind: paired.kind ?? .app))
             return .done
@@ -410,6 +461,15 @@ final class HostServer {
             guard connection.isLocal else { return .hostOnly }
             isRemoteAccessEnabled = isEnabled
             return .done
+        case .setHostName(let name):
+            guard connection.isLocal else { return .hostOnly }
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            customHostName = trimmed.isEmpty ? nil : trimmed
+            return .done
+        case .setHostIcon(let icon):
+            guard connection.isLocal else { return .hostOnly }
+            hostIcon = icon
+            return .done
         case .forgetDevice(let id):
             guard connection.isLocal else { return .hostOnly }
             forgetDevice(id)
@@ -513,7 +573,7 @@ final class HostServer {
         self.listener = listener
         listener.start()
         localListener.onChannel = { [weak self] channel in self?.accept(channel) }
-        localListener.start(name: Self.hostName)
+        localListener.start(name: hostName)
         #if DEBUG
         FileHandle.standardError.write(Data("Atrium pairing link: \(pairingLink.url?.absoluteString ?? "")\n".utf8))
         #endif

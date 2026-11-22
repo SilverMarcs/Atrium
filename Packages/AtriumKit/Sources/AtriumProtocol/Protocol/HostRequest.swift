@@ -78,6 +78,10 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case files(workspaceID: UUID, request: FileRequest)
     /// Turns reaching the host through the relay on or off. Only the host itself may.
     case setRemoteAccess(Bool)
+    /// Sets this host's advertised name; an empty name goes back to its computer name. Only the host itself may.
+    case setHostName(String)
+    /// Sets this host's advertised icon. Only the host itself may.
+    case setHostIcon(HostIcon)
     /// Revokes a paired device and disconnects it. Only the host itself may.
     case forgetDevice(UUID)
     /// A request this host doesn't know, from a newer client.

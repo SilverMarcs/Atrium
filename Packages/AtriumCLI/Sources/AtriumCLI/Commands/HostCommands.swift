@@ -57,10 +57,10 @@ let hostCommands: [Command] = [
         try arguments.allowPositionals(0)
         let client = Client()
         let store = try client.credentials()
-        await client.adoptAppHosts(timeout: .seconds(30))
+        let localHello = await client.adoptAppHosts(timeout: .seconds(30))
         var hosts = try client.pairedConnections().hosts.map(HostJSON.init)
         if LocalHost.socket != nil {
-            hosts.insert(HostJSON(id: "local", name: LocalHost.name, hostName: LocalHost.name), at: 0)
+            hosts.insert(HostJSON(id: "local", name: localHello?.hostName ?? LocalHost.name, icon: localHello?.hostIcon ?? .default), at: 0)
         }
         Output.write(HostsResult(device: store.device, hosts: hosts, local: LocalHost.socket != nil))
     },
@@ -124,17 +124,17 @@ private struct StatusResult: Encodable {
 struct HostJSON: Encodable {
     var id: String
     var name: String
-    var hostName: String
+    var icon: HostIcon
 
     init(_ host: HostClient) {
         id = host.hello?.hostID ?? host.id
         name = host.name
-        hostName = host.defaultName
+        icon = host.icon
     }
 
-    init(id: String, name: String, hostName: String) {
+    init(id: String, name: String, icon: HostIcon) {
         self.id = id
         self.name = name
-        self.hostName = hostName
+        self.icon = icon
     }
 }

@@ -15,12 +15,25 @@ public nonisolated struct WireRemoteAccess: Codable, Sendable, Equatable {
     /// The current one-time pairing link, while remote access is on.
     public var pairingLink: URL?
     public var devices: [WirePairedDevice]
+    /// The name the user chose for this host, or nil when using its computer name.
+    public var customHostName: String?
+    /// This Mac's computer name, advertised when `customHostName` is nil.
+    public var defaultHostName: String
 
-    public init(isEnabled: Bool, status: Status, pairingLink: URL? = nil, devices: [WirePairedDevice]) {
+    public init(
+        isEnabled: Bool,
+        status: Status,
+        pairingLink: URL? = nil,
+        devices: [WirePairedDevice],
+        customHostName: String? = nil,
+        defaultHostName: String
+    ) {
         self.isEnabled = isEnabled
         self.status = status
         self.pairingLink = pairingLink
         self.devices = devices
+        self.customHostName = customHostName
+        self.defaultHostName = defaultHostName
     }
 }
 
