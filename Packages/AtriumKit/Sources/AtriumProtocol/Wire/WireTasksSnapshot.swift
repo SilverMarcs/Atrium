@@ -15,9 +15,9 @@ public nonisolated struct WireTasksSnapshot: Codable, Sendable, Equatable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        tasks = try container.decode(ProviderRows<WireTask>.self, forKey: .tasks).values
-        workspaces = try container.decode([WireWorkspace].self, forKey: .workspaces)
-        providers = try container.decode(ProviderRows<WireProvider>.self, forKey: .providers).values
+        tasks = try container.decode(LossyRows<WireTask>.self, forKey: .tasks).values
+        workspaces = try container.decode(LossyRows<WireWorkspace>.self, forKey: .workspaces).values
+        providers = try container.decode(LossyRows<WireProvider>.self, forKey: .providers).values
         isRefreshing = try container.decodeIfPresent(Bool.self, forKey: .isRefreshing) ?? false
         snoozeDuration = try container.decodeIfPresent(SnoozeDuration.self, forKey: .snoozeDuration) ?? .default
     }

@@ -417,6 +417,12 @@ final class HostServer {
             return await media.image(path, maxPixelSize: maxPixelSize, inTask: taskID, pageKey: pageKey)
         case .promptImage(let taskID, let messageID, let index, let maxPixelSize):
             return await media.promptImage(index, of: messageID, maxPixelSize: maxPixelSize, inTask: taskID)
+        case .scratchpadImage(let key, let maxPixelSize):
+            guard workspaces.workspaces.contains(where: { $0.scratchpad.contains { $0.imageFiles.contains(key) } }),
+                  let data = await TranscriptImage.display(at: ScratchpadEntry.directory.appending(path: key), maxPixelSize: maxPixelSize) else {
+                return .failed(message: "That image is no longer available.")
+            }
+            return .image(data: data)
         case .refreshTasks:
             await integrations.refresh()
             return .done

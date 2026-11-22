@@ -4,6 +4,7 @@ struct PromptImageThumbnail: View {
     static let cornerRadius: CGFloat = 14
 
     let data: Data
+    var size: CGFloat = 96
 
     var body: some View {
         Group {
@@ -11,8 +12,8 @@ struct PromptImageThumbnail: View {
                 image.resizable().scaledToFill()
             }
         }
-        .frame(width: 96, height: 96)
-        .clipShape(.rect(cornerRadius: Self.cornerRadius))
+        .frame(width: size, height: size)
+        .clipShape(.rect(cornerRadius: Self.cornerRadius * size / 96))
         .accessibilityLabel("Attached image")
     }
 }

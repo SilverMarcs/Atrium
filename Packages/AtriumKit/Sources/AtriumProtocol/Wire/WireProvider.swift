@@ -30,6 +30,20 @@ public nonisolated struct WireProvider: Codable, Sendable, Hashable, Identifiabl
         self.deletionMessage = deletionMessage
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case provider, isAvailable, error, models, defaultSettings, deletionMessage
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decode(AgentProvider.self, forKey: .provider)
+        isAvailable = container.lenient(.isAvailable, or: false)
+        error = container.lenient(.error, or: nil)
+        models = container.lenient(.models, or: nil)
+        defaultSettings = container.lenient(.defaultSettings, or: nil)
+        deletionMessage = container.lenient(.deletionMessage, or: "")
+    }
+
     private enum EncodingKeys: String, CodingKey {
         case provider, isAvailable, isEnabled, error, models, defaultSettings, deletionMessage
     }

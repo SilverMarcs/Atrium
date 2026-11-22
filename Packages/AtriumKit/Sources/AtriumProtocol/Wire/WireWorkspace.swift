@@ -43,4 +43,17 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         self.scratchpad = scratchpad
         self.hasRunningCommand = hasRunningCommand
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = container.lenient(.name, or: "")
+        directory = container.lenient(.directory, or: "")
+        folders = container.lenient(.folders, or: [])
+        projectType = container.lenient(.projectType, or: "")
+        projectIcon = container.lenient(.projectIcon, or: nil)
+        customIconKey = container.lenient(.customIconKey, or: nil)
+        scratchpad = container.lenient(.scratchpad, or: [])
+        hasRunningCommand = container.lenient(.hasRunningCommand, or: false)
+    }
 }

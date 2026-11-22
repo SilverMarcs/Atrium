@@ -46,6 +46,9 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// message ID and the image's place among its images. Images wider or
     /// taller than `maxPixelSize` come back scaled down to fit it.
     case promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int)
+    /// Fetches an image of a draft in a project's scratchpad by its key,
+    /// scaled down to fit `maxPixelSize`.
+    case scratchpadImage(key: String, maxPixelSize: Int)
     case refreshTasks
     /// The client opened a linked pull request, so its task's PR badges need an update.
     case openedPullRequest(taskID: String)

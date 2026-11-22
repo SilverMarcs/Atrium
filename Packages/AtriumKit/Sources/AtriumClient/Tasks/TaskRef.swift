@@ -37,4 +37,6 @@ public struct HostTask: Identifiable {
 
     public var id: TaskRef { TaskRef(hostID: host.id, taskID: task.id) }
     public var workspace: WireWorkspace? { host.workspace(task.workspaceID) }
+    /// The drafts in its project's scratchpad, newest first.
+    public var scratchpad: [ScratchpadDraft] { workspace?.scratchpad ?? [] }
 }

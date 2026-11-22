@@ -37,7 +37,7 @@ struct ComposerAttachmentMenu<MenuLabel: View>: View {
                         Button {
                             composer.restore(draft, from: item)
                         } label: {
-                            Label(draft.title, systemImage: draft.text.isEmpty ? "photo" : "text.alignleft")
+                            Label(draft.title, systemImage: draft.hasText ? "text.alignleft" : "photo")
                             if let summary = draft.imageSummary { Text(summary) }
                         }
                     }

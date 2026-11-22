@@ -18,7 +18,7 @@ struct ScratchpadSheet: View {
                 } else {
                     List(drafts) { draft in
                         NavigationLink(value: draft.id) {
-                            ScratchpadDraftRow(draft: draft)
+                            ScratchpadDraftRow(draft: draft, host: item.host)
                         }
                         .contextMenu {
                             Button("Move to Composer", systemImage: "arrow.up.doc") {
@@ -61,8 +61,7 @@ struct ScratchpadSheet: View {
     }
 
     private func delete(_ draft: ScratchpadDraft) {
-        guard let workspaceID = item.task.workspaceID else { return }
-        item.host.send(.workspace(id: workspaceID, action: .removeScratchpadDraft(id: draft.id)))
+        item.deleteScratchpadDraft(draft.id)
     }
 }
 
@@ -88,12 +87,12 @@ private struct ScratchpadDraftEditor: View {
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     #endif
-                if !draft.images.isEmpty {
+                if !draft.imageKeys.isEmpty {
                     Divider()
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            ForEach(draft.images.indices, id: \.self) { index in
-                                ScratchpadImage(data: draft.images[index], size: 52)
+                            ForEach(draft.imageKeys, id: \.self) { key in
+                                ScratchpadImage(host: item.host, key: key, size: 52)
                             }
                         }
                         .padding(12)
@@ -114,9 +113,7 @@ private struct ScratchpadDraftEditor: View {
                     Button("Delete", systemImage: "trash", role: .destructive) {
                         saveTask?.cancel()
                         savedText = text
-                        if let workspaceID = item.task.workspaceID {
-                            item.host.send(.workspace(id: workspaceID, action: .removeScratchpadDraft(id: id)))
-                        }
+                        item.deleteScratchpadDraft(id)
                         pop()
                     }
                 }
@@ -172,65 +169,72 @@ private struct ScratchpadDraftEditor: View {
 
 private struct ScratchpadDraftRow: View {
     let draft: ScratchpadDraft
+    let host: HostClient
 
     var body: some View {
         HStack(spacing: 12) {
             Text(draft.title)
                 .lineLimit(2)
-                .foregroundStyle(draft.text.isEmpty ? .secondary : .primary)
+                .foregroundStyle(draft.hasText ? .primary : .secondary)
             Spacer(minLength: 0)
             // Up to three thumbnails fanned out.
             ZStack(alignment: .leading) {
-                ForEach(Array(draft.images.prefix(3).enumerated()), id: \.offset) { index, data in
-                    ScratchpadImage(data: data, size: 30)
+                ForEach(Array(draft.imageKeys.prefix(3).enumerated()), id: \.element) { index, key in
+                    ScratchpadImage(host: host, key: key, size: 30)
                         .overlay(RoundedRectangle(cornerRadius: 7).stroke(.background, lineWidth: 1.5))
                         .offset(x: CGFloat(index) * 14)
                         .zIndex(Double(-index))
                 }
             }
-            .padding(.trailing, CGFloat(max(min(draft.images.count, 3) - 1, 0)) * 14)
+            .padding(.trailing, CGFloat(max(min(draft.imageKeys.count, 3) - 1, 0)) * 14)
         }
         .frame(minHeight: 32)
         .padding(.vertical, 2)
     }
 }
 
+/// An image of a draft, fetched from its host.
 private struct ScratchpadImage: View {
-    let data: Data
+    let host: HostClient
+    let key: String
     let size: CGFloat
+    @State private var data: Data?
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         Group {
-            if let image = Image(data: data) {
-                image.resizable().scaledToFill()
+            if let data {
+                PromptImageThumbnail(data: data, size: size)
+            } else {
+                RoundedRectangle(cornerRadius: PromptImageThumbnail.cornerRadius * size / 96).fill(.quaternary)
             }
         }
         .frame(width: size, height: size)
-        .clipShape(.rect(cornerRadius: size * 0.22))
-        .accessibilityLabel("Attached image")
+        .task(id: key) { data = await host.scratchpadImage(key: key, maxPixelSize: Int(size * displayScale)) }
     }
 }
 
 extension HostTask {
-    /// The drafts in the task's project scratchpad, newest first.
-    var scratchpad: [ScratchpadDraft] {
-        host.workspace(task.workspaceID)?.scratchpad ?? []
+    func deleteScratchpadDraft(_ id: ScratchpadDraft.ID) {
+        guard let workspaceID = task.workspaceID else { return }
+        host.send(.workspace(id: workspaceID, action: .removeScratchpadDraft(id: id)))
     }
 }
 
 extension ScratchpadDraft {
+    var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     /// The text on one line, or what's attached when there's no text.
     var title: String {
-        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        return line.isEmpty ? imageCount : line
+        hasText ? text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces) : imageCount
     }
 
     /// The images, when there's text to title the draft.
     var imageSummary: String? {
-        text.isEmpty || images.isEmpty ? nil : imageCount
+        hasText && !imageKeys.isEmpty ? imageCount : nil
     }
 
     private var imageCount: String {
-        images.count == 1 ? "1 image" : "\(images.count) images"
+        imageKeys.count == 1 ? "1 image" : "\(imageKeys.count) images"
     }
 }

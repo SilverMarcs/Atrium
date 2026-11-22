@@ -341,29 +341,36 @@ final class TaskComposer {
         }
     }
 
-    /// Whether there's text or an image to put aside in the scratchpad.
-    var hasScratchpadContent: Bool {
-        messageEdit == nil && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty)
-    }
+    /// Whether there's a draft to put aside in the scratchpad.
+    var hasScratchpadContent: Bool { messageEdit == nil && hasContent }
 
-    /// Moves the draft and its images into the project's scratchpad. One the
-    /// host turns down comes back to the composer, if it's still empty.
+    /// Moves the draft, its quotes and its images into the project's
+    /// scratchpad. One the host turns down comes back to the composer, if
+    /// it's still empty.
     func addToScratchpad(of item: HostTask) {
         guard hasScratchpadContent, let workspaceID = item.task.workspaceID else { return }
-        let text = draft
-        let images = images
-        draft = ""
+        let (draft, images, quotes) = (draft, images, ordinaryQuotes)
+        self.draft = ""
         self.images = []
+        ordinaryQuotes = []
         Task {
             do {
+                let text = ComposerQuote.prompt(quoting: quotes, draft: draft)
                 _ = try await item.host.request(.workspace(id: workspaceID, action: .addToScratchpad(text: text, images: images.map(\.data))))
             } catch {
-                if !hasContent {
-                    draft = text
-                    self.images = images
-                }
+                if !hasContent { (self.draft, self.images, ordinaryQuotes) = (draft, images, quotes) }
                 item.host.actionError = error.localizedDescription
             }
+        }
+    }
+
+    /// ⌘S: puts the draft aside, or on an empty composer brings back the
+    /// newest draft in the scratchpad.
+    func addToScratchpadOrRestoreNewest(of item: HostTask) {
+        if hasScratchpadContent {
+            addToScratchpad(of: item)
+        } else if messageEdit == nil, let newest = item.scratchpad.first {
+            restore(newest, from: item)
         }
     }
 

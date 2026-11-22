@@ -38,12 +38,12 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
     // Empty lists are left out: most deltas touch a single task.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        upsertedTasks = try container.decodeIfPresent(ProviderRows<WireTask>.self, forKey: .upsertedTasks)?.values ?? []
+        upsertedTasks = try container.decodeIfPresent(LossyRows<WireTask>.self, forKey: .upsertedTasks)?.values ?? []
         removedTaskIDs = try container.decodeIfPresent([String].self, forKey: .removedTaskIDs) ?? []
-        upsertedWorkspaces = try container.decodeIfPresent([WireWorkspace].self, forKey: .upsertedWorkspaces) ?? []
+        upsertedWorkspaces = try container.decodeIfPresent(LossyRows<WireWorkspace>.self, forKey: .upsertedWorkspaces)?.values ?? []
         removedWorkspaceIDs = try container.decodeIfPresent([UUID].self, forKey: .removedWorkspaceIDs) ?? []
         workspaceOrder = try container.decodeIfPresent([UUID].self, forKey: .workspaceOrder)
-        providers = try container.decodeIfPresent(ProviderRows<WireProvider>.self, forKey: .providers)?.values
+        providers = try container.decodeIfPresent(LossyRows<WireProvider>.self, forKey: .providers)?.values
         isRefreshing = try container.decodeIfPresent(Bool.self, forKey: .isRefreshing)
         snoozeDuration = try container.decodeIfPresent(SnoozeDuration.self, forKey: .snoozeDuration)
     }

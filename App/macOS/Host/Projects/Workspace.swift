@@ -21,8 +21,6 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     @ObservationIgnored
     weak var store: WorkspaceStore?
-    /// Small previews of the scratchpad's images, made from their files once.
-    @ObservationIgnored private var scratchpadPreviews: [UUID: [Data]] = [:]
 
     var url: URL {
         URL(fileURLWithPath: directory)
@@ -147,14 +145,9 @@ final class Workspace: Identifiable, Hashable, Codable {
 
     // MARK: - Scratchpad
 
-    /// The drafts for clients, with small previews of their images.
+    /// The drafts for clients, which fetch their images by file name.
     var scratchpadDrafts: [ScratchpadDraft] {
-        scratchpad.map { entry in
-            if scratchpadPreviews[entry.id] == nil {
-                scratchpadPreviews[entry.id] = entry.imageURLs.compactMap(TranscriptImage.thumbnail(at:))
-            }
-            return ScratchpadDraft(id: entry.id, text: entry.text, images: scratchpadPreviews[entry.id] ?? [])
-        }
+        scratchpad.map { ScratchpadDraft(id: $0.id, text: $0.text, imageKeys: $0.imageFiles) }
     }
 
     func addToScratchpad(_ text: String, images: [Data]) throws {
@@ -171,7 +164,6 @@ final class Workspace: Identifiable, Hashable, Codable {
     func removeScratchpadDraft(_ id: UUID) -> (text: String, images: [Data])? {
         guard let index = scratchpad.firstIndex(where: { $0.id == id }) else { return nil }
         let entry = scratchpad.remove(at: index)
-        scratchpadPreviews[id] = nil
         defer { entry.deleteImages() }
         return (entry.text, entry.images())
     }

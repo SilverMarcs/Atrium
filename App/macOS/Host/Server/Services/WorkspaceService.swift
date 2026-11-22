@@ -39,6 +39,9 @@ struct WorkspaceService {
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             workspace.name = name.isEmpty ? workspace.url.lastPathComponent : name
         case .addToScratchpad(let text, let images):
+            guard images.count <= HostProtocol.maxPromptImages else {
+                return .failed(message: "A draft can have up to \(HostProtocol.maxPromptImages) images.")
+            }
             do { try workspace.addToScratchpad(text, images: images) }
             catch { return .failed(message: error.localizedDescription) }
         case .editScratchpadDraft(let id, let text):

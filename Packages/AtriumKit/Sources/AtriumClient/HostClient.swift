@@ -581,6 +581,15 @@ public final class HostClient: Identifiable {
         }
     }
 
+    /// An image of a draft in a project's scratchpad, scaled to fit
+    /// `maxPixelSize`, or nil if the host can't provide it.
+    public func scratchpadImage(key: String, maxPixelSize: Int) async -> Data? {
+        await media.value(for: "scratchpad-image/\(maxPixelSize)/\(key)") { [weak self] in
+            guard case .image(let data) = await self?.fetchMedia(.scratchpadImage(key: key, maxPixelSize: maxPixelSize)) else { return nil }
+            return data
+        }
+    }
+
     /// A chat asks for its media as soon as it shows, which can be while its
     /// host is still connecting or while a direct connection takes over from
     /// the relay, so a request that couldn't reach the host waits to try once more.

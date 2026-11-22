@@ -8,10 +8,12 @@ import Foundation
 /// host is there and through the relay otherwise. Requests carry an id
 /// and receive exactly one `HostReply`; state arrives as `HostEvent`s for the
 /// topics a client follows, first in full and then as changes. Anything a peer
-/// doesn't recognize decodes as `.unknown` and is ignored, so the version only
-/// tells a client that it's older than its host.
+/// doesn't recognize decodes as `.unknown` and is ignored, and the task
+/// list's rows decode field by field, skipping rows they can't read, so a
+/// field another build changed costs only that field. The version only tells
+/// a client that it's older than its host.
 public nonisolated enum HostProtocol {
-    public static let version = 12
+    public static let version = 13
     /// Bounds a single message so a corrupt or hostile peer can't exhaust memory.
     public static let maxMessageBytes = 16 * 1024 * 1024
 

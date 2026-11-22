@@ -226,7 +226,9 @@ struct ComposerBar: View {
                     )
                     #endif
                     #if os(iOS)
-                    .environment(\.addToScratchpad, item?.task.workspaceID == nil ? nil : { if let item { composer.addToScratchpad(of: item) } })
+                    .environment(\.addToScratchpad, item.flatMap { item in
+                        item.task.workspaceID == nil || composer.messageEdit != nil ? nil : { composer.addToScratchpad(of: item) }
+                    })
                     #endif
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { editorFrame = $0 }
                     .composerBarPart(.editor)
@@ -315,15 +317,10 @@ struct ComposerBar: View {
         .toolbar {
             if let item, item.task.workspaceID != nil {
                 ToolbarItem(placement: .keyboard) {
-                    // ⌘S puts the draft aside; on an empty composer it brings back the newest.
-                    Button("Scratchpad") {
-                        if composer.hasScratchpadContent {
-                            composer.addToScratchpad(of: item)
-                        } else if composer.messageEdit == nil, let newest = item.scratchpad.first {
-                            composer.restore(newest, from: item)
-                        }
-                    }
-                    .keyboardShortcut("s")
+                    Button("Scratchpad") { composer.addToScratchpadOrRestoreNewest(of: item) }
+                        .keyboardShortcut("s")
+                        // Leaves ⌘S to the file editor while it has focus.
+                        .disabled(!composer.isFocused)
                 }
             }
         }

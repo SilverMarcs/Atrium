@@ -32,20 +32,20 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
     public var permissionModesNeedingRestart: [PermissionMode]?
     /// How much of its model's context the conversation uses, when its provider says.
     public var contextUsage: WireContextUsage?
-    public var interactions: [AgentInteraction] = []
+    public var interactions: [AgentInteraction]
     /// The checkout the agent works in, when it's in a Git repository: the one
     /// it last changed files in, or else where it runs commands.
-    public var checkout: TaskCheckout? = nil
+    public var checkout: TaskCheckout?
     /// The checkouts of its project the agent changed files in, the most
     /// recently changed first, one for each repository. Nil from a host that
     /// doesn't say.
-    public var changedCheckouts: [TaskCheckout]? = nil
+    public var changedCheckouts: [TaskCheckout]?
     /// Pull requests opened from the branches it worked on, or linked by hand.
-    public var pullRequests: [PullRequest] = []
+    public var pullRequests: [PullRequest]
     /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
-    public var origin: WireTaskOrigin? = nil
+    public var origin: WireTaskOrigin?
     /// The prompt waiting for the agent's turn to end.
-    public var queuedPrompt: QueuedPrompt? = nil
+    public var queuedPrompt: QueuedPrompt?
 
     public init(
         id: String,
@@ -101,6 +101,36 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.pullRequests = pullRequests
         self.origin = origin
         self.queuedPrompt = queuedPrompt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        provider = try container.decode(AgentProvider.self, forKey: .provider)
+        title = container.lenient(.title, or: "")
+        status = container.lenient(.status, or: .unknown)
+        projectName = container.lenient(.projectName, or: "")
+        path = container.lenient(.path, or: "")
+        directory = container.lenient(.directory, or: "")
+        workspaceID = container.lenient(.workspaceID, or: nil)
+        updatedAt = container.lenient(.updatedAt, or: .distantPast)
+        hasUnreadResult = container.lenient(.hasUnreadResult, or: false)
+        isSettled = container.lenient(.isSettled, or: false)
+        snoozedUntil = container.lenient(.snoozedUntil, or: nil)
+        supportsDeletion = container.lenient(.supportsDeletion, or: false)
+        actions = container.lenient(.actions, or: [])
+        model = container.lenient(.model, or: nil)
+        reasoningEffort = container.lenient(.reasoningEffort, or: nil)
+        isFastMode = container.lenient(.isFastMode, or: nil)
+        permissionMode = container.lenient(.permissionMode, or: nil)
+        permissionModesNeedingRestart = container.lenient(.permissionModesNeedingRestart, or: nil)
+        contextUsage = container.lenient(.contextUsage, or: nil)
+        interactions = container.lenient(.interactions, or: [])
+        checkout = container.lenient(.checkout, or: nil)
+        changedCheckouts = container.lenient(.changedCheckouts, or: nil)
+        pullRequests = container.lenient(.pullRequests, or: [])
+        origin = container.lenient(.origin, or: nil)
+        queuedPrompt = container.lenient(.queuedPrompt, or: nil)
     }
 
     public var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
