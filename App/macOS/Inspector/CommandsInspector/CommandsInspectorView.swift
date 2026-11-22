@@ -32,12 +32,17 @@ struct CommandsInspectorView: View {
                     project.send(.move(toIndex: destination > index ? destination - 1 : destination), to: command)
                 }
                 if !project.backgroundSessions.isEmpty {
-                    Section("Background") {
+                    Section {
                         ForEach(project.backgroundSessions) { session in
                             BackgroundSessionRow(session: session)
                                 .tag(Project.CommandSelection.background(session.id))
                                 .listRowSeparator(.hidden)
                         }
+                    } header: {
+                        Text("Background")
+                            .font(.subheadline)
+                            .fontWeight(.regular)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
