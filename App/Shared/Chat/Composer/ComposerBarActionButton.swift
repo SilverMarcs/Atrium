@@ -42,7 +42,7 @@ struct ComposerBarActionButton: View {
                 .overlay {
                     if isBusy {
                         ProgressView()
-                            .controlSize(isExpanded ? .small : .regular)
+                            .controlSize(spinnerSize)
                             .tint(.white)
                             // AppKit's spinner follows its appearance, ignoring tint.
                             .environment(\.colorScheme, .dark)
@@ -86,6 +86,16 @@ struct ComposerBarActionButton: View {
         .body
         #else
         .title3
+        #endif
+    }
+
+    /// Close to the arrow's size. A regular Mac spinner is 32pt, wider than
+    /// the 30pt resting circle.
+    private var spinnerSize: ControlSize {
+        #if os(macOS)
+        .small
+        #else
+        isExpanded ? .small : .regular
         #endif
     }
 
