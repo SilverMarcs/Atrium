@@ -13,7 +13,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
     let hasUnreadResult: Bool
     let isSettled: Bool
     let snoozedUntil: Date?
-    var pullRequest: PullRequest? = nil
+    var pullRequests: [PullRequest] = []
     var isDictating = false
     @ViewBuilder let projectIcon: ProjectIcon
 
@@ -51,9 +51,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
                         .help("Snoozed until \(snoozedUntil.formatted(date: .abbreviated, time: .shortened))")
                 }
 
-                if let pullRequest {
-                    PullRequestIndicator(pullRequest: pullRequest)
-                }
+                PullRequestIndicator(pullRequests: pullRequests)
 
                 ProviderIcon(provider: provider, isLive: status.isLive)
                     .help(provider.name)

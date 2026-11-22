@@ -3,7 +3,7 @@ import AtriumProtocol
 import SwiftUI
 
 /// The pull requests linked to a task, in the Mac toolbar. Its icon shows
-/// the most pressing one's state.
+/// the most pressing one's state, badged with how many there are when more than one.
 struct PullRequestMenu: View {
     let item: HostTask
     private var pullRequests: [PullRequest] { item.task.pullRequests }
@@ -13,6 +13,8 @@ struct PullRequestMenu: View {
             Menu("Pull Requests", systemImage: lead.systemImage) {
                 PullRequestButtons(item: item)
             }
+            // A zero badge is hidden, so a lone pull request shows just its state.
+            .badge(pullRequests.count > 1 ? pullRequests.count : 0)
             #if os(macOS)
             .menuIndicator(.hidden)
             .help("\(lead.numberText): \(lead.summary)")

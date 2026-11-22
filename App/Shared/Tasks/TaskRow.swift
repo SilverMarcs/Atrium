@@ -24,7 +24,7 @@ struct TaskRow: View {
             hasUnreadResult: task.hasUnreadResult,
             isSettled: task.isSettled,
             snoozedUntil: task.isSettled ? nil : task.snoozedUntil,
-            pullRequest: task.pullRequests.mostPressing,
+            pullRequests: task.pullRequests,
             isDictating: isDictating
         ) {
             WorkspaceIcon(item.workspace, on: item.host, size: 13, relativeTo: .subheadline)

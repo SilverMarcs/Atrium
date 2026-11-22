@@ -104,18 +104,27 @@ extension [PullRequest] {
     var mostPressing: PullRequest? { self.max { $0.urgency < $1.urgency } }
 }
 
-/// The state of a task's most pressing pull request, for its sidebar row.
+/// The state of a task's most pressing pull request, for its sidebar row,
+/// followed by how many it has when more than one.
 /// Only failing checks and merges are tinted; they're what call for action.
 struct PullRequestIndicator: View {
-    let pullRequest: PullRequest
+    let pullRequests: [PullRequest]
 
     var body: some View {
-        Image(systemName: pullRequest.systemImage)
-            .foregroundStyle(tint)
+        if let pullRequest = pullRequests.mostPressing {
+            HStack(spacing: 2) {
+                Image(systemName: pullRequest.systemImage)
+                    .foregroundStyle(tint(pullRequest))
+                if pullRequests.count > 1 {
+                    Text(pullRequests.count, format: .number)
+                        .monospacedDigit()
+                }
+            }
             .help("\(pullRequest.numberText) \(pullRequest.summary)")
+        }
     }
 
-    private var tint: Color {
+    private func tint(_ pullRequest: PullRequest) -> Color {
         switch (pullRequest.state, pullRequest.checks) {
         case (.merged, _): .purple
         case (.open, .failing), (.draft, .failing): .red
