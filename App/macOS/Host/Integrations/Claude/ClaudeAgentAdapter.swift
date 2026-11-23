@@ -713,7 +713,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// already ran the session keeps from its own launch.
     private func startBackgroundSession(directory: String, instructions: String, resuming sessionID: String? = nil, name: String? = nil, settings startSettings: TaskStartSettings? = nil) async throws -> ClaudeBackgroundSession {
         try watchHistory()
-        try await ClaudeWorkspaceTrust.accept(directory: directory, configFile: globalConfigFile)
+        // Claude refuses an --add-dir folder it hasn't trusted, so trust the project's other folders too.
+        let otherFolders = self.instructions.otherFolders(for: directory)
+        for folder in [directory] + otherFolders {
+            try await ClaudeWorkspaceTrust.accept(directory: folder, configFile: globalConfigFile)
+        }
         try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
         let files = try await settingsForBridge()
         let existingBackground: Bool
@@ -726,7 +730,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         if !existingBackground {
             arguments += files.arguments + ["--append-system-prompt", instructions, ClaudePermissions.allowBypassFlag]
             // The project's other folders, which its tools may reach too.
-            for folder in self.instructions.otherFolders(for: directory) { arguments += ["--add-dir", folder] }
+            for folder in otherFolders { arguments += ["--add-dir", folder] }
         }
         if let mode = startSettings?.permissionMode { arguments += ["--permission-mode", ClaudePermissions.value(for: mode)] }
         if let model = startSettings?.model { arguments += ["--model", model] }
