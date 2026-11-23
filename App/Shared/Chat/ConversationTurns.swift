@@ -17,6 +17,9 @@ struct ConversationTurns {
     /// The last page in the newest turn's reply, so a page an agent just
     /// showed can open somewhere bigger as it arrives.
     let newestPage: ChatPageBlock?
+    /// The call the running turn's reply ended with, while nothing came after
+    /// it: no note since, and no prompt on its way.
+    let latestToolCall: TranscriptToolCall?
 
     init(messages: [TranscriptMessage], pendingPrompts: [PendingPrompt], status: AgentThreadStatus) {
         // A prompt on its way that isn't a steer starts a new turn, so the one
@@ -29,6 +32,8 @@ struct ConversationTurns {
         liveIDs = Set(running.filter { $0.role == .assistant }.map(\.id))
         earlierPageIDs = Set(Self.pageVersions(in: messages).flatMap { $0.dropLast() }.map(\.id))
         newestPage = Self.newestPage(in: messages)
+        latestToolCall = isRunning && pendingPrompts.isEmpty && running.last?.role == .assistant
+            ? running.last?.blocks.last?.latestToolCall : nil
     }
 
     private static func newestPage(in messages: [TranscriptMessage]) -> ChatPageBlock? {

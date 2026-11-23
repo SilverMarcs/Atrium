@@ -121,7 +121,7 @@ struct TaskChatView: View {
                                         .padding(.top, ChatMessageSpacing.before(
                                             .user, after: sections.turnPendingPrompts.isEmpty ? sections.turnMessages.last?.role : .user))
                                 }
-                                TaskChatStatusFooter(status: footerStatus)
+                                TaskChatStatusFooter(status: footerStatus, toolCall: turns.latestToolCall)
                                     .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                             }
                             .onGeometryChange(for: CGFloat.self) { geometry in
@@ -138,7 +138,7 @@ struct TaskChatView: View {
                                     .padding(.top, ChatMessageSpacing.before(
                                         .user, after: sections.historyPendingPrompts.isEmpty ? sections.historyMessages.last?.role : .user))
                             }
-                            TaskChatStatusFooter(status: footerStatus)
+                            TaskChatStatusFooter(status: footerStatus, toolCall: turns.latestToolCall)
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                                 .id(Self.footerID)
                         }

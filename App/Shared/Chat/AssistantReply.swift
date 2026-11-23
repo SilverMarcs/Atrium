@@ -35,8 +35,8 @@ struct AssistantReply {
         }
         var steps: [TranscriptBlock] = []
         for index in blocks.indices where !shown.contains(index) && blocks[index].page == nil {
-            if case .tools(let count, _) = blocks[index], case .tools(let previous, let id)? = steps.last {
-                steps[steps.endIndex - 1] = .tools(count: previous + count, id: id)
+            if case .tools(let count, let latest, _) = blocks[index], case .tools(let previous, _, let id)? = steps.last {
+                steps[steps.endIndex - 1] = .tools(count: previous + count, latest: latest, id: id)
             } else {
                 steps.append(blocks[index])
             }

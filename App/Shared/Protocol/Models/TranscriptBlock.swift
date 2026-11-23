@@ -3,9 +3,9 @@ import Foundation
 nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
     /// Markdown written by the user or the agent.
     case text(String, id: String)
-    /// A run of consecutive tool calls. Only how many there were is kept, so
-    /// long tasks stay small on the wire and in memory.
-    case tools(count: Int, id: String)
+    /// A run of consecutive tool calls. Only how many there were and the
+    /// latest one are kept, so long tasks stay small on the wire and in memory.
+    case tools(count: Int, latest: TranscriptToolCall?, id: String)
     /// A page the agent showed with the `show_page` tool, or in older chats
     /// wrote in its reply as an `atrium-page` block.
     case page(TranscriptPage, id: String)
@@ -15,7 +15,7 @@ nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
 
     var id: String {
         switch self {
-        case .text(_, let id), .tools(_, let id), .page(_, let id), .report(_, let id): id
+        case .text(_, let id), .tools(_, _, let id), .page(_, let id), .report(_, let id): id
         }
     }
 
@@ -26,7 +26,12 @@ nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
 
     /// How many calls a tools block stands for.
     var toolCount: Int {
-        if case .tools(let count, _) = self { count } else { 0 }
+        if case .tools(let count, _, _) = self { count } else { 0 }
+    }
+
+    /// The latest call a tools block stands for.
+    var latestToolCall: TranscriptToolCall? {
+        if case .tools(_, let latest, _) = self { latest } else { nil }
     }
 
     /// The page a page block shows.
@@ -57,11 +62,11 @@ nonisolated enum TranscriptBlock: Codable, Sendable, Hashable, Identifiable {
 
 nonisolated extension [TranscriptBlock] {
     /// Counts a tool call into the run it continues, or starts a run after text.
-    mutating func appendToolCall(id: String) {
-        if case .tools(let count, let runID)? = last {
-            self[endIndex - 1] = .tools(count: count + 1, id: runID)
+    mutating func appendToolCall(_ call: TranscriptToolCall?, id: String) {
+        if case .tools(let count, _, let runID)? = last {
+            self[endIndex - 1] = .tools(count: count + 1, latest: call, id: runID)
         } else {
-            append(.tools(count: 1, id: id))
+            append(.tools(count: 1, latest: call, id: id))
         }
     }
 }

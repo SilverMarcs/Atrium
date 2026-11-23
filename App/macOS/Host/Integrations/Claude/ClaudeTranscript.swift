@@ -329,7 +329,7 @@ nonisolated enum ClaudeTranscript {
             if let block = block(forTool: content["name"] as? String, input: content["input"], directory: directory, id: id) {
                 blocks.append(block)
             } else {
-                blocks.appendToolCall(id: id)
+                blocks.appendToolCall(TranscriptToolCall(name: content["name"] as? String, arguments: content["input"]), id: id)
             }
         default:
             break

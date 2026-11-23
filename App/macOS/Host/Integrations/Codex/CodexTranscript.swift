@@ -1,8 +1,9 @@
 import Foundation
 
 /// Turns Codex thread turns (app-server `ThreadItem`s) into transcript messages.
-/// Reasoning, hook and bookkeeping items are left out; tool items are only counted
-/// so clients never receive commands, output or diffs.
+/// Reasoning, hook and bookkeeping items are left out; tool items are counted,
+/// keeping only the latest call's name and one argument, so clients never
+/// receive output or diffs.
 nonisolated enum CodexTranscript {
     /// Each turn's messages are its own, so turns can be turned into messages apart.
     static func messages(fromTurns turns: some Sequence<[String: Any]>) -> [TranscriptMessage] {
@@ -60,7 +61,7 @@ nonisolated enum CodexTranscript {
                           let page = ChatPages.page(forTool: "\(item["server"] as? String ?? "")/\(item["tool"] as? String ?? "")", arguments: item["arguments"], id: id) {
                     blocks.append(page)
                 } else if toolTypes.contains(item["type"] as? String ?? "") {
-                    blocks.appendToolCall(id: id)
+                    blocks.appendToolCall(toolCall(item), id: id)
                 }
             }
             flushAssistant()
@@ -82,6 +83,15 @@ nonisolated enum CodexTranscript {
         guard item["type"] as? String == "imageGeneration", item["status"] as? String == "completed",
               let path = item["savedPath"] as? String, !path.isEmpty else { return nil }
         return MediaSource.markdownImage(path: path)
+    }
+
+    /// An item by the tool it called, or by its type for Codex's own tools,
+    /// with the arguments the call was given or the item's own fields.
+    private static func toolCall(_ item: [String: Any]) -> TranscriptToolCall? {
+        let tool = item["tool"] as? String
+        let name = [item["server"] as? String, tool].compactMap(\.self).joined(separator: "/")
+        let arguments = item["arguments"] ?? (item["changes"] as? [[String: Any]])?.first ?? item
+        return TranscriptToolCall(name: name.isEmpty ? item["type"] as? String : name, arguments: arguments)
     }
 
     private static let toolTypes: Set = ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch",

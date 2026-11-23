@@ -75,7 +75,7 @@ struct SessionChatView: View {
               }
               .transition(.identity)
             }
-            TaskChatStatusFooter(status: footerStatus)
+            TaskChatStatusFooter(status: footerStatus, toolCall: turns.latestToolCall)
               .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
               .transition(.identity)
             if let transcriptError {

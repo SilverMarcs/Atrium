@@ -37,7 +37,8 @@ final class ClaudeLiveTranscript {
                                               directory: event["cwd"] as? String, id: id) {
             messages[messages.count - 1].blocks.append(block)
         } else {
-            messages[messages.count - 1].blocks.appendToolCall(id: id)
+            messages[messages.count - 1].blocks.appendToolCall(
+                TranscriptToolCall(name: event["tool_name"] as? String, arguments: event["tool_input"]), id: id)
         }
     }
 

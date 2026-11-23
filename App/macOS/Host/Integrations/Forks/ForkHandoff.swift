@@ -90,7 +90,7 @@ nonisolated enum ForkHandoff {
         for block in message.blocks {
             switch block {
             case .text(let text, _): lines.append(text)
-            case .tools(let count, _): lines.append(count == 1 ? "[1 tool call]" : "[\(count) tool calls]")
+            case .tools(let count, _, _): lines.append(count == 1 ? "[1 tool call]" : "[\(count) tool calls]")
             case .page(let page, _): lines.append("[Showed a page: \(page.title)]")
             case .report(let sender, _): lines.append("[\(sender.name) reported back]")
             }

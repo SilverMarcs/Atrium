@@ -3,7 +3,8 @@ import Foundation
 /// A session's conversation, built from the `session/update`s Antigravity
 /// sends: `session/load` replays a saved one the way a turn streams, so both
 /// end up as the same messages with the same IDs. Thoughts are left out, and
-/// tool calls are only counted, so clients never receive commands, output or diffs.
+/// tool calls are counted, keeping only the latest call's name and one
+/// argument, so clients never receive output or diffs.
 nonisolated struct AntigravityConversation {
     private enum Entry {
         case prompt(text: String, thumbnails: [Data], isSteer: Bool)
@@ -12,7 +13,7 @@ nonisolated struct AntigravityConversation {
 
     private enum Part {
         case text(String)
-        case tools(Int)
+        case tools(Int, latest: TranscriptToolCall?)
         /// A page shown with Atrium's `show_page` tool.
         case page(TranscriptBlock)
     }
@@ -50,7 +51,7 @@ nonisolated struct AntigravityConversation {
                 for (index, part) in parts.enumerated() {
                     switch part {
                     case .text(let text): blocks.append(.text(text, id: "\(id).\(index)"))
-                    case .tools(let count): blocks.append(.tools(count: count, id: "\(id).\(index)"))
+                    case .tools(let count, let latest): blocks.append(.tools(count: count, latest: latest, id: "\(id).\(index)"))
                     case .page(let page): blocks.append(page)
                     }
                 }
@@ -129,11 +130,12 @@ nonisolated struct AntigravityConversation {
                 appendToReply { $0.append(.page(page)) }
                 return true
             }
+            let call = TranscriptToolCall(name: update["name"] as? String, arguments: update["rawInput"])
             appendToReply { parts in
-                if case .tools(let count)? = parts.last {
-                    parts[parts.count - 1] = .tools(count + 1)
+                if case .tools(let count, _)? = parts.last {
+                    parts[parts.count - 1] = .tools(count + 1, latest: call)
                 } else {
-                    parts.append(.tools(1))
+                    parts.append(.tools(1, latest: call))
                 }
             }
             return true

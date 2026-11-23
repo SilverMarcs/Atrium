@@ -525,7 +525,7 @@ actor AntigravityHistory {
                        parentID == nil || decodeArg(args["Recipient"]) == parentID {
                         assistantBlocks.append(.text(body, id: "\(sessionID).s\(stepIndex).m\(index)"))
                     } else {
-                        assistantBlocks.appendToolCall(id: "\(sessionID).s\(stepIndex).c\(index)")
+                        assistantBlocks.appendToolCall(TranscriptToolCall(name: name, arguments: args), id: "\(sessionID).s\(stepIndex).c\(index)")
                     }
                 }
 
