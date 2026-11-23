@@ -14,7 +14,7 @@ import SwiftUI
 /// the field, and only expands once the draft outgrows the field's one
 /// line. Expanded, its row also holds the chat's permission menu after the
 /// attachment button and its model menu before dictation.
-struct ComposerBar: View {
+struct ComposerBar<Accessory: View>: View {
     @Environment(TaskComposer.self) private var composer
     @Environment(DictationSettings.self) private var dictationSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,6 +23,9 @@ struct ComposerBar: View {
     /// Sends the draft from the field at the given frame, if known, returning
     /// whether it was sent.
     let submit: (CGRect?) -> Bool
+    /// Shown above everything else the composer holds, such as where a new
+    /// chat starts.
+    @ViewBuilder let accessory: Accessory
 
     @State private var editFocusTask: Task<Void, Never>?
     @State private var editorFrame = CGRect.zero
@@ -122,6 +125,7 @@ struct ComposerBar: View {
         @Bindable var composer = composer
 
         VStack(spacing: 0) {
+            accessory
             // What the prompt carries sits above the composer, as it did above
             // the bottom bar.
             if let edit = composer.messageEdit {
@@ -423,6 +427,12 @@ struct ComposerBar: View {
     }
 
     /// About as long as the sent prompt takes to fly up to the top.
-    private static let keyboardCloseDelay: Duration = .milliseconds(200)
+    private static var keyboardCloseDelay: Duration { .milliseconds(200) }
 
+}
+
+extension ComposerBar where Accessory == EmptyView {
+    init(item: HostTask?, prompt: String, submit: @escaping (CGRect?) -> Bool) {
+        self.init(item: item, prompt: prompt, submit: submit) { EmptyView() }
+    }
 }

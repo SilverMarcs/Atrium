@@ -12,6 +12,14 @@ extension HostClient {
         return draft.id
     }
 
+    /// A new task's draft until it has a conversation, while it shows where
+    /// it starts above the composer.
+    func newChatDraft(_ id: String) -> TaskDraft? {
+        guard conversations.transcripts[id]?.isEmpty == true,
+              conversations.pendingPrompts[id]?.isEmpty != false else { return nil }
+        return drafts[id]
+    }
+
     /// A draft whose first prompt hasn't been sent, which can still change.
     func unsentDraft(_ id: String) -> TaskDraft? {
         drafts[id].flatMap { !$0.isCreating && $0.taskID == nil ? $0 : nil }

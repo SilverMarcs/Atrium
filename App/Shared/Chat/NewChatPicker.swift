@@ -25,8 +25,11 @@ struct NewChatPicker: View {
         .padding(.horizontal)
         .padding(.bottom, 12.5)
         #else
-        // At the end of the timeline, within its margins.
-        .padding(.leading, 16)
+        // Its icons line up with the timeline's text: the timeline's 15 pt
+        // margin and 16 more.
+        .padding(.leading, 31)
+        .padding(.trailing, 16)
+        .padding(.bottom, 26)
         #endif
     }
 }

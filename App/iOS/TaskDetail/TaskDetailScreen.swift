@@ -110,7 +110,11 @@ struct TaskDetailScreen: View {
         // A subagent answers only to its own agent, so it has no composer.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if item?.task.isSubagent != true {
-                ComposerBar(item: item, prompt: composerPrompt, submit: sendDraft)
+                ComposerBar(item: item, prompt: composerPrompt, submit: sendDraft) {
+                    if let item, let draft = item.host.newChatDraft(item.task.id) {
+                        NewChatPicker(hosts: hosts, host: item.host, draft: draft)
+                    }
+                }
             }
         }
         .composerAttachmentPickers(composer)

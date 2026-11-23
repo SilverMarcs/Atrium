@@ -17,6 +17,7 @@ struct SessionChatView: View {
   @State private var pagePresenter = ChatPagePresenter()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  private static let topID = "top"
   private static let bottomID = "bottom"
   /// Space below the newest message, so it reads as the end of the timeline
   /// rather than running into the composer.
@@ -52,61 +53,63 @@ struct SessionChatView: View {
     }
     ScrollViewReader { proxy in
       ScrollView {
-        // Bottom-aligns short chats; the `.alignment` scroll anchor would stretch the toolbar down to the first row.
-        ZStack(alignment: .bottom) {
+        // A chat shorter than the view rests at its top, so the composer
+        // growing or shrinking below it leaves its rows where they are.
+        LazyVStack(alignment: .leading, spacing: 0) {
+          // Where a chat shorter than the view rests, as a row rather than
+          // padding so scrolling to it lands at the top exactly.
           Color.clear
-            .containerRelativeFrame(.vertical)
-          LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(rows.enumerated(), id: \.element.id) { index, row in
-              SessionChatMessageRow(
-                message: row.message,
-                isStreaming: turns.liveIDs.contains(row.id),
-                isRewindable: row.pendingPrompt == nil && row.message.editTarget != nil,
-                pendingPrompt: row.pendingPrompt,
-                queuedPrompt: row.queuedPrompt,
-                replyFork: replyForks[row.id]
-              )
-              .equatable()
-              // The first message has the usual gap above it too, so held at
-              // the top it sits as far below the toolbar as a later prompt.
-              .padding(.top, index == 0 ? ChatMessageSpacing.standard : ChatMessageSpacing.before(row.message.role, after: rows[index - 1].message.role))
-              .background {
-                if row.id == anchorID { TurnTopReporter(fill: turnFill) }
-              }
-              .transition(.identity)
+            .frame(height: 4)
+            .id(Self.topID)
+            .accessibilityHidden(true)
+          ForEach(rows.enumerated(), id: \.element.id) { index, row in
+            SessionChatMessageRow(
+              message: row.message,
+              isStreaming: turns.liveIDs.contains(row.id),
+              isRewindable: row.pendingPrompt == nil && row.message.editTarget != nil,
+              pendingPrompt: row.pendingPrompt,
+              queuedPrompt: row.queuedPrompt,
+              replyFork: replyForks[row.id]
+            )
+            .equatable()
+            // The first message has the usual gap above it too, so held at
+            // the top it sits as far below the toolbar as a later prompt.
+            .padding(.top, index == 0 ? ChatMessageSpacing.standard : ChatMessageSpacing.before(row.message.role, after: rows[index - 1].message.role))
+            .background {
+              if row.id == anchorID { TurnTopReporter(fill: turnFill) }
             }
-            TaskChatStatusFooter(status: footerStatus, toolCall: turns.latestToolCall)
-              .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
-              .transition(.identity)
-            if let transcriptError {
-              Label(transcriptError, systemImage: "exclamationmark.triangle")
-                .padding(.top, ChatMessageSpacing.standard)
-                .frame(maxWidth: .infinity)
-                .foregroundStyle(.red)
-                .padding(.vertical)
-
-              Button("Retry") { host.reload(.transcript(taskID: task.id)) }
-                .padding(.top, ChatMessageSpacing.standard)
-            }
-            TurnFiller(fill: turnFill, anchorSpace: anchorSpace, isHolding: anchorID != nil, bottomGap: Self.bottomGap)
-            // The end is a row of the lazy stack, so scrolling to it lays out
-            // the rows above it from the end.
-            Color.clear
-              .frame(height: Self.bottomGap)
-              .id(Self.bottomID)
-              .accessibilityHidden(true)
+            .transition(.identity)
           }
-          .coordinateSpace(.named(TurnFill.coordinateSpace))
-          .modifier(ReplyPrefetch(rows: rows, liveIDs: turns.liveIDs))
-          .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
-          // Only across: the rows' frame in the window moves with every scrolled frame.
-          .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: { flights.rowsMaxX = $0 }
-          .background { TimelineScrollViewFinder(flights: flights) }
-          .padding(.horizontal, 16)
-          .padding(.top, 4)
-          .frame(maxWidth: SessionChatLayout.maximumWidth)
-          .frame(maxWidth: .infinity)
+          TaskChatStatusFooter(status: footerStatus, toolCall: turns.latestToolCall)
+            .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
+            .transition(.identity)
+          if let transcriptError {
+            Label(transcriptError, systemImage: "exclamationmark.triangle")
+              .padding(.top, ChatMessageSpacing.standard)
+              .frame(maxWidth: .infinity)
+              .foregroundStyle(.red)
+              .padding(.vertical)
+
+            Button("Retry") { host.reload(.transcript(taskID: task.id)) }
+              .padding(.top, ChatMessageSpacing.standard)
+          }
+          TurnFiller(fill: turnFill, anchorSpace: anchorSpace, isHolding: anchorID != nil, bottomGap: Self.bottomGap)
+          // The end is a row of the lazy stack, so scrolling to it lays out
+          // the rows above it from the end.
+          Color.clear
+            .frame(height: Self.bottomGap)
+            .id(Self.bottomID)
+            .accessibilityHidden(true)
         }
+        .coordinateSpace(.named(TurnFill.coordinateSpace))
+        .modifier(ReplyPrefetch(rows: rows, liveIDs: turns.liveIDs))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { flights.rowWidth = $0 }
+        // Only across: the rows' frame in the window moves with every scrolled frame.
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: { flights.rowsMaxX = $0 }
+        .background { TimelineScrollViewFinder(flights: flights) }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: SessionChatLayout.maximumWidth)
+        .frame(maxWidth: .infinity)
       }
       // Pages and images agents show in replies load from the task's host.
       .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
@@ -149,6 +152,7 @@ struct SessionChatView: View {
         CGSize(width: geometry.containerSize.height, height: geometry.contentSize.height)
       } action: { old, new in
         flights.noteLayout()
+        pin.contentFits = new.height <= new.width
         guard composer.messageEdit == nil, new != old, pin.isPinned, !pin.isReaderScrolling, anchorID == nil else { return }
         let grew = new.height > old.height || new.width < old.width
         scrollToLatest(proxy, holding: nil, animated: grew && scrollPolicy.animatesGrowth && !flights.isSending)
@@ -165,20 +169,19 @@ struct SessionChatView: View {
       }
       .font(.system(size: chatFontSize))
       .safeAreaInset(edge: .bottom) {
-        VStack(spacing: 0) {
-          if transcript?.isEmpty == true, prompts.isEmpty, let draft = host.drafts[task.id] {
-            NewChatPicker(hosts: app.hosts, host: host, draft: draft)
-              .padding(.top, 8)
-          }
-          // A subagent answers only to its own agent.
-          if !task.isSubagent {
-            ComposerBar(item: item, prompt: "Message \(task.provider.name)…") { frame in
-              send(composer, from: frame, mode: sendMode)
+        // A subagent answers only to its own agent.
+        if !task.isSubagent {
+          ComposerBar(item: item, prompt: "Message \(task.provider.name)…") { frame in
+            send(composer, from: frame, mode: sendMode)
+          } accessory: {
+            if let draft = host.newChatDraft(task.id) {
+              NewChatPicker(hosts: app.hosts, host: host, draft: draft)
+                .padding(.top, 8)
             }
           }
+          .frame(maxWidth: SessionChatLayout.maximumWidth)
+          .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: SessionChatLayout.maximumWidth)
-        .frame(maxWidth: .infinity)
       }
       // Another task, or a transcript arriving for the first time, opens at
       // its newest message, pinned.
@@ -365,7 +368,9 @@ struct SessionChatView: View {
       if let promptID {
         proxy.scrollTo(promptID, anchor: .top)
       } else {
-        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        // SwiftUI takes a short chat asked to show its end past its top, by
+        // as much as the top inset, as the composer resizes.
+        proxy.scrollTo(pin.contentFits ? Self.topID : Self.bottomID, anchor: pin.contentFits ? .top : .bottom)
       }
     }
   }

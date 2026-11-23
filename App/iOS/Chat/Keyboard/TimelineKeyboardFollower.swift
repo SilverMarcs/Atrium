@@ -25,13 +25,17 @@ final class TimelineKeyboardFollower {
     private struct Follow {
         /// When the latest move began; another can begin before one ends.
         var startTime: CFTimeInterval
+        /// Where the timeline was drawn when the follow began.
+        var startOffset: CGFloat
         /// The timeline's safe area in the last pass, and when it last changed.
         var safeAreaBottom: CGFloat
         var safeAreaChangedAt: CFTimeInterval
         /// The held additive offset drawn in the last commit.
         var additive: CGFloat = 0
-        /// The composer's keyboard spring the timeline mirrors.
+        /// The composer's keyboard spring the timeline mirrors, and the
+        /// offset the timeline's copy of it starts from.
         var mirrored: KeyboardSpring.ID?
+        var mirroredFrom: CGFloat = 0
     }
 
     /// The key UIKit animates scroll offset corrections under.
@@ -154,7 +158,9 @@ final class TimelineKeyboardFollower {
 
     private func startFollow(in scrollView: UIScrollView) {
         let now = CACurrentMediaTime()
-        follow = Follow(startTime: now, safeAreaBottom: scrollView.safeAreaInsets.bottom, safeAreaChangedAt: now)
+        follow = Follow(
+            startTime: now, startOffset: scrollView.layer.presentation()?.bounds.origin.y ?? scrollView.contentOffset.y,
+            safeAreaBottom: scrollView.safeAreaInsets.bottom, safeAreaChangedAt: now)
         startObserving()
         // SwiftUI may set the offset again during the commit, as layout runs.
         offsetObservation = scrollView.observe(\.contentOffset) { [weak self] scrollView, _ in
@@ -212,6 +218,7 @@ final class TimelineKeyboardFollower {
         guard var follow else { return }
         var layoutLag: CGFloat = 0
         var unmirrored: CGFloat = 0
+        var mirroredNow: CGFloat = 0
         if let composer = currentComposer(), let window = scrollView.window {
             // The spring counts as handled only once it's mirrored, in the
             // same commit as this. Until SwiftUI adds it, the composer is
@@ -219,10 +226,14 @@ final class TimelineKeyboardFollower {
             var springDisplacement: CGFloat = 0
             if let spring = keyboardSpring(above: composer) {
                 if follow.mirrored != spring.id {
-                    mirror(spring, in: scrollView)
+                    follow.mirroredFrom = mirror(spring, in: scrollView, startOffset: follow.startOffset)
                     follow.mirrored = spring.id
                 }
                 springDisplacement = spring.displacement
+                // Where the copy draws the timeline now: as far through its
+                // way as the composer is through the spring.
+                let progress = (spring.displacement - spring.to) / (spring.from - spring.to)
+                mirroredNow = -spring.to + (follow.mirroredFrom + spring.to) * progress
             }
             unmirrored = composerDisplacement(of: composer) - springDisplacement
             // The composer's anchor tops its bar, at the safe area's edge
@@ -230,7 +241,15 @@ final class TimelineKeyboardFollower {
             let safeAreaEdge = scrollView.convert(scrollView.bounds, to: window).maxY - scrollView.safeAreaInsets.bottom
             layoutLag = composer.convert(composer.bounds, to: window).minY - safeAreaEdge
         }
-        let additive = endOffset(of: scrollView) - scrollView.contentOffset.y - layoutLag - unmirrored
+        // Drawn, with the spring's copy, no further than between where the
+        // timeline was and where it's going: one whose top rests in view on
+        // one side of the move goes less far than the composer, and its end
+        // isn't held to it.
+        let end = endOffset(of: scrollView)
+        let offset = scrollView.contentOffset.y
+        let lowest = min(follow.startOffset, end) - offset - mirroredNow
+        let highest = max(follow.startOffset, end) - offset - mirroredNow
+        let additive = min(max(end - offset - layoutLag - unmirrored, lowest), highest)
         let layer = scrollView.layer
         // UIKit's own corrections would add to this one, and it moves the
         // chrome pinned to the viewport along with them.
@@ -255,10 +274,18 @@ final class TimelineKeyboardFollower {
 
     /// Copies the composer's keyboard spring onto the timeline, inverted: the
     /// composer drawn lower than its model means the timeline's end is too.
-    private func mirror(_ spring: KeyboardSpring, in scrollView: UIScrollView) {
-        guard let copy = spring.animation.copy() as? CABasicAnimation else { return }
+    /// - Returns: The offset the copy starts from.
+    private func mirror(_ spring: KeyboardSpring, in scrollView: UIScrollView, startOffset: CGFloat) -> CGFloat {
+        guard let copy = spring.animation.copy() as? CABasicAnimation else { return 0 }
         copy.isAdditive = true
-        copy.fromValue = NSValue(cgPoint: CGPoint(x: 0, y: -spring.from))
+        // A timeline whose top rests in view on one side of the move goes
+        // less far than the composer does: it starts from where it was drawn
+        // rather than as far back as the composer, which would first draw it
+        // that much further away.
+        var from = -spring.from
+        let moved = startOffset - endOffset(of: scrollView)
+        if abs(moved) < abs(from), moved * from >= 0 { from = moved }
+        copy.fromValue = NSValue(cgPoint: CGPoint(x: 0, y: from))
         copy.toValue = NSValue(cgPoint: CGPoint(x: 0, y: -spring.to))
         copy.isRemovedOnCompletion = true
         // Before it starts, it holds the timeline where the composer is drawn.
@@ -276,6 +303,7 @@ final class TimelineKeyboardFollower {
             pinned.keyPath = "position"
             view.layer.add(pinned, forKey: Self.mirrorKey)
         }
+        return from
     }
 
     /// How long a spring found running has been going, from how far it has

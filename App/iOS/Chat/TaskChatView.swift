@@ -16,6 +16,7 @@ struct TaskChatView: View {
     /// which otherwise sizes the rows it hasn't measured from the last task's.
     @State private var timelineID = 0
 
+    private static let topID = "top"
     private static let bottomID = "bottom"
     private static let footerID = "footer"
 
@@ -23,13 +24,6 @@ struct TaskChatView: View {
     private var host: HostClient { item.host }
     /// The skills its prompts tint, once the composer has listed them.
     private var skillNames: Set<String> { host.skillNames[task.id] ?? [] }
-
-    /// A new chat's draft, until its first prompt is sent.
-    private var newChatDraft: TaskDraft? {
-        guard host.conversations.transcripts[task.id]?.isEmpty == true,
-              host.conversations.pendingPrompts[task.id]?.isEmpty != false else { return nil }
-        return host.drafts[task.id]
-    }
 
     var body: some View {
         let messages = host.conversations.transcripts[task.id]
@@ -63,13 +57,16 @@ struct TaskChatView: View {
         // checked against.
         let endRowID = footerStatus == .processing || footerStatus == .waiting
             ? Self.footerID : sections.historyPendingPrompts.last?.timelineID ?? sections.historyMessages.last?.id
-        let firstRowID = sections.historyMessages.first?.id ?? sections.historyPendingPrompts.first?.timelineID
-            ?? (sections.hasTurn ? TimelineAnchorSpace.turnID : nil)
 
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        // Where a timeline shorter than the view rests.
+                        Color.clear
+                            .frame(height: 0)
+                            .id(Self.topID)
+                            .accessibilityHidden(true)
                         ForEach(sections.historyMessages.enumerated(), id: \.element.id) { index, message in
                             TranscriptMessageRow(
                                 message: message, isStreaming: turns.liveIDs.contains(message.id),
@@ -142,15 +139,6 @@ struct TaskChatView: View {
                                 .padding(.top, footerStatus == .processing || footerStatus == .waiting ? ChatMessageSpacing.standard : 0)
                                 .id(Self.footerID)
                         }
-                        // A new chat's timeline holds where it starts, at its
-                        // end like any short timeline's rows, and scrolls where
-                        // that doesn't fit above the keyboard.
-                        if let draft = newChatDraft {
-                            NewChatPicker(hosts: hosts, host: host, draft: draft)
-                                // Choosing where a new chat starts keeps writing
-                                // its prompt.
-                                .keepsComposerOpenOnTap()
-                        }
                         // The end is a row of the lazy stack, so scrolling to it
                         // lays out the rows above it from the end. Placed after
                         // the stack, it's put where the stack's estimate of the
@@ -167,8 +155,10 @@ struct TaskChatView: View {
                 .background { TimelineScrollViewFinder(flights: flights) }
                 // A prompt just sent closes the keyboard in the same turn, before
                 // its turn has been measured, but it always fits below itself.
+                // A timeline that fits in the view rests at its top while the
+                // composer moves over the space below it.
                 .followsComposerOnKeyboard { [host, anchorSpace, composer, taskID = task.id] in
-                    (pin.isPinned || pin.isNearEnd) && !pin.isReaderScrolling && composer.messageEdit == nil
+                    (pin.isPinned || pin.isNearEnd) && !pin.contentFits && !pin.isReaderScrolling && composer.messageEdit == nil
                         && host.conversations.pendingPrompts[taskID]?.isEmpty != false && !anchorSpace.isHolding
                 }
                 .dismissesComposerOnTap { [composer] in
@@ -195,14 +185,16 @@ struct TaskChatView: View {
             .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
             .environment(\.skillNames, skillNames)
             .environment(\.earlierPageIDs, turns.earlierPageIDs)
+            // Opens at the end. Content shorter than the view rests at its
+            // top: aligning it to the bottom gives the scroll view a top inset
+            // that SwiftUI moves the offset by whenever it changes, as the
+            // keyboard and composer come and go, past where it can rest.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(.bottom, for: .alignment)
             .contentMargins(.top, 10, for: .scrollContent)
             .contentMargins(.horizontal, 15, for: .scrollContent)
             // Three times the gap between messages, so the last one reads as
             // the end of the timeline rather than running into the composer.
-            // A new chat's pickers sit closer, as the composer's own settings.
-            .contentMargins(.bottom, newChatDraft == nil ? ChatMessageSpacing.standard * 3 : 15, for: .scrollContent)
+            .contentMargins(.bottom, ChatMessageSpacing.standard * 3, for: .scrollContent)
             .scrollDismissesKeyboard(.interactively)
             .scrollsOnComposerFocus {
                 // A reader who scrolled more than a screen back through the
@@ -297,9 +289,15 @@ struct TaskChatView: View {
             // The composer growing, as the keyboard comes up or the draft gains
             // a line, takes a timeline kept at its end along; the keyboard
             // follower draws the move in step with the composer.
-            .onScrollGeometryChange(for: CGFloat.self, of: \.contentInsets.bottom) { oldInset, newInset in
-                guard newInset > oldInset, composer.messageEdit == nil, pin.isPinned, !pin.isReaderScrolling,
-                      !sections.hasTurn else { return }
+            .onScrollGeometryChange(for: FittingValue.self) { geometry in
+                FittingValue(geometry.contentInsets.bottom, in: geometry)
+            } action: { old, new in
+                pin.contentFits = new.fits
+                // Shrinking until the timeline fits, SwiftUI puts it where its
+                // last scroll to the end now lands, past its top; see
+                // `scrollToLatest`.
+                guard new.value > old.value || (new.fits && !old.fits), composer.messageEdit == nil, pin.isPinned,
+                      !pin.isReaderScrolling, !sections.hasTurn else { return }
                 scrollToLatest(with: proxy, animated: false)
             }
             // Dragging the keyboard away scrolls the timeline a little off its
@@ -313,16 +311,7 @@ struct TaskChatView: View {
                 switch phase {
                 case .tracking, .interacting:
                     pin.isReaderScrolling = true
-                case .animating:
-                    pin.isAnimatingScroll = true
-                case .idle:
-                    // A scroll on its way only rests once it lands.
-                    if pin.isAnimatingScroll {
-                        pin.isAnimatingScroll = false
-                        pin.correctedLayout = nil
-                        restoreRestingPlace(firstRowID: firstRowID, with: proxy)
-                    }
-                    guard pin.isReaderScrolling else { return }
+                case .idle where pin.isReaderScrolling:
                     pin.isReaderScrolling = false
                     pin.isPinned = context.geometry.isAtBottom
                 default:
@@ -339,32 +328,22 @@ struct TaskChatView: View {
             // asked to go. SwiftUI can move the offset a few times before the
             // jump settles. A timeline shorter than the view shows all its rows.
             .onScrollGeometryChange(for: CGFloat?.self) { geometry in
-                geometry.contentSize.height > geometry.containerSize.height ? geometry.contentOffset.y : nil
+                geometry.contentFits ? nil : geometry.contentOffset.y
             } action: { _, offset in
                 guard offset != nil, pin.endChecks > 0 else { return }
                 pin.endChecks -= 1
                 settleAtEnd(endRowID, sections: sections, with: proxy)
-            }
-            // SwiftUI aligns a timeline shorter than the view to its bottom
-            // with a top inset, and moves the offset by as much as that inset
-            // changes, even when a jump to the end in the same update has
-            // already put it there, as when a transcript or a new chat's
-            // pickers arrive. Nothing scrolls it back, so the timeline rests
-            // past its end or above its top, drawn behind the bars or the
-            // composer, until the reader drags it. A resting timeline outside
-            // what it can scroll to goes back to its nearest edge.
-            .onScrollGeometryChange(for: TimelineRestingRange.self) { geometry in
-                TimelineRestingRange(geometry)
-            } action: { _, range in
-                pin.resting = range
-                restoreRestingPlace(firstRowID: firstRowID, with: proxy)
             }
             // Content growing below a pinned timeline (a streaming reply, the
             // working indicator) carries it along, retargeting any scroll
             // already on its way. Content shrinking under it, as the lazy stack
             // measures rows it had estimated, puts it straight back at the end:
             // SwiftUI pulls the offset in, but leaves the rows now in view hidden.
-            .onScrollGeometryChange(for: CGFloat.self, of: \.contentSize.height) { oldHeight, newHeight in
+            .onScrollGeometryChange(for: FittingValue.self) { geometry in
+                FittingValue(geometry.contentSize.height, in: geometry)
+            } action: { old, new in
+                pin.contentFits = new.fits
+                let oldHeight = old.value, newHeight = new.value
                 guard composer.messageEdit == nil, newHeight != oldHeight, pin.isPinned, !pin.isReaderScrolling else { return }
                 // A reply outgrowing the turn below a prompt held at the top
                 // leaves the prompt where it is.
@@ -402,41 +381,12 @@ struct TaskChatView: View {
         withTransaction(transaction) { proxy.scrollTo(endRowID, anchor: .bottom) }
     }
 
-    /// Puts a timeline resting outside what it can scroll to back at its
-    /// end, or, when the reader left the end and it's above its top, at its
-    /// first row.
-    private func restoreRestingPlace(firstRowID: String?, with proxy: ScrollViewProxy) {
-        guard !pin.isReaderScrolling, !pin.isAnimatingScroll, composer.messageEdit == nil,
-              pin.resting.place != .within else { return }
-        // Putting it back again while its layout stays the same lands it where
-        // it went the last time. A chat popped with the keyboard up is laid out
-        // against the keyboard's inset but sized without it, so the end it's
-        // put back to is past the end it's checked against, and the timeline
-        // went back and forth without end, freezing the app. However else it
-        // happens, it's put back at most a few times in one layout pass.
-        guard pin.resting.layout != pin.correctedLayout, pin.correctionsThisTurn < 4 else { return }
-        pin.correctedLayout = pin.resting.layout
-        if pin.correctionsThisTurn == 0 {
-            Task { @MainActor [pin] in pin.correctionsThisTurn = 0 }
-        }
-        pin.correctionsThisTurn += 1
-        switch pin.resting.place {
-        case .within:
-            break
-        case .beforeTop where !pin.isPinned:
-            guard let firstRowID else { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { proxy.scrollTo(firstRowID, anchor: .top) }
-        case .beforeTop, .pastEnd:
-            scrollToLatest(with: proxy, animated: false)
-        }
-    }
-
     private func scrollToEditingMessage(_ id: String, with proxy: ScrollViewProxy) {
         pin.isPinned = false
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
-            proxy.scrollTo(id, anchor: .bottom)
+            // A timeline that fits shows the message where it rests; see
+            // `scrollToLatest`.
+            proxy.scrollTo(pin.contentFits ? Self.topID : id, anchor: pin.contentFits ? .top : .bottom)
         }
     }
 
@@ -459,10 +409,27 @@ struct TaskChatView: View {
         withTransaction(transaction) {
             if holdsPrompt {
                 proxy.scrollTo(TimelineAnchorSpace.turnID, anchor: .top)
+            } else if pin.contentFits {
+                // SwiftUI takes a short timeline asked to show its end past
+                // its top, by as much as the top inset, and asks for that
+                // again as the insets change.
+                proxy.scrollTo(Self.topID, anchor: .top)
             } else {
                 if !shouldAnimate { pin.endChecks = 3 }
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
         }
+    }
+}
+
+/// A value of the timeline's scroll geometry, with whether its content
+/// fits in the view, which a scroll to its end has to know first.
+private struct FittingValue: Equatable {
+    let value: CGFloat
+    let fits: Bool
+
+    init(_ value: CGFloat, in geometry: ScrollGeometry) {
+        self.value = value
+        fits = geometry.contentFits
     }
 }
