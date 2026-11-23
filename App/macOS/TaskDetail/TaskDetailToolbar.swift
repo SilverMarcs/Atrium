@@ -8,17 +8,6 @@ struct TaskDetailToolbar: ToolbarContent {
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        if !item.task.pullRequests.isEmpty {
-            ToolbarItem {
-                PullRequestMenu(item: item)
-            }
-        }
-        // The terminal runs on the task's host, so only this Mac's own tasks open in one.
-        if item.host.isLocal, item.task.actions.contains(.openTerminal) {
-            ToolbarItem {
-                TaskTerminalButton(item: item)
-            }
-        }
         if let parent = item.parent {
             ToolbarItem(placement: .navigation) {
                 TaskParentButton(parent: parent, hostID: item.host.id) { app.selection = $0 }
@@ -30,22 +19,32 @@ struct TaskDetailToolbar: ToolbarContent {
                     .disabled(!app.hosts.canStartNewChat)
             }
         }
-        if item.hasSubagents || item.task.isSideChat || item.task.actions.contains(.sideChat) || item.sideChat != nil {
-            ToolbarSpacer(.fixed)
+        // Pull requests and subagents share one group; the side chat sits on its own.
+        if !item.task.pullRequests.isEmpty {
+            ToolbarItem {
+                PullRequestMenu(item: item)
+            }
         }
         if item.hasSubagents {
             ToolbarItem {
                 SubagentMenu(item: item) { app.selection = $0 }
             }
         }
+        if hasSideChatButton, !item.task.pullRequests.isEmpty || item.hasSubagents {
+            ToolbarSpacer(.fixed)
+        }
         if item.task.isSideChat {
             ToolbarItem {
                 NewSideChatButton(sideChat: item) { app.selection = $0 }
             }
-        } else if item.task.actions.contains(.sideChat) || item.sideChat != nil {
+        } else if hasSideChatButton {
             ToolbarItem {
                 SideChatButton(item: item) { app.selection = $0 }
             }
         }
+    }
+
+    private var hasSideChatButton: Bool {
+        item.task.isSideChat || item.task.actions.contains(.sideChat) || item.sideChat != nil
     }
 }

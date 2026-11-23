@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
@@ -14,6 +15,11 @@ struct AppCommands: Commands {
 
     /// Whether the focused window is the main Atrium window.
     private var mainWindowActive: Bool { isMainWindow == true }
+
+    private var canOpenTerminal: Bool {
+        guard let task = app.selectedTask else { return false }
+        return task.host.isLocal && task.task.actions.contains(.openTerminal)
+    }
 
     var body: some Commands {
         // Replace the default "About Atrium" item with one that opens our
@@ -45,6 +51,13 @@ struct AppCommands: Commands {
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(!app.hosts.canStartNewChat)
+
+                // The terminal runs on the task's host, so only this Mac's own chats open in one.
+                Button("Open in Terminal", systemImage: "terminal") {
+                    guard let task = app.selectedTask else { return }
+                    task.host.send(.task(id: task.task.id, action: .openTerminal))
+                }
+                .disabled(!canOpenTerminal)
             }
 
             CommandGroup(after: .sidebar) {
