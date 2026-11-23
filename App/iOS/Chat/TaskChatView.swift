@@ -23,7 +23,7 @@ struct TaskChatView: View {
     private var task: WireTask { item.task }
     private var host: HostClient { item.host }
     /// The skills its prompts tint, once the composer has listed them.
-    private var skillNames: Set<String> { host.skillNames[task.id] ?? [] }
+    private var skillNames: Set<String> { host.skillNames(for: task) }
 
     var body: some View {
         let messages = host.conversations.transcripts[task.id]

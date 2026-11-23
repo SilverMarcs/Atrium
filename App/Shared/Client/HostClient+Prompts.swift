@@ -3,13 +3,23 @@ import Foundation
 extension HostClient {
     // MARK: - Prompts
 
-    func skills(for task: WireTask) async throws -> [AgentSkill] {
-        guard case .skills(let skills) = try await request(.skills(taskID: task.id, provider: task.provider, workspaceID: task.workspaceID)) else {
+    /// Asks the host which skills `task`'s agent can use, for `skills(for:)`.
+    func listSkills(for task: WireTask) async throws {
+        guard case .skills(let listed) = try await request(.skills(taskID: task.id, provider: task.provider, workspaceID: task.workspaceID)) else {
             throw HostClientError.unexpectedReply
         }
-        let names = Set(skills.map(\.name))
-        if skillNames[task.id] != names { skillNames[task.id] = names }
-        return skills
+        let scope = SkillScope(task)
+        if listedSkills[scope] != listed { listedSkills[scope] = listed }
+    }
+
+    /// The skills `task`'s agent can use, as last listed.
+    func skills(for task: WireTask) -> [AgentSkill] {
+        listedSkills[SkillScope(task)] ?? []
+    }
+
+    /// The names of the skills `task`'s agent can use, as last listed.
+    func skillNames(for task: WireTask) -> Set<String> {
+        Set(skills(for: task).map(\.name))
     }
 
     /// Sends a prompt to a task's agent, showing it in the timeline at once.
@@ -101,5 +111,19 @@ extension HostClient {
         } status: { [weak self] in
             self?.task(taskID)?.status
         }
+    }
+}
+
+/// What a task's skills depend on: a new chat keeps its ID while its
+/// provider or project changes.
+struct SkillScope: Hashable {
+    let taskID: String
+    let provider: AgentProvider
+    let workspaceID: UUID?
+
+    init(_ task: WireTask) {
+        taskID = task.id
+        provider = task.provider
+        workspaceID = task.workspaceID
     }
 }

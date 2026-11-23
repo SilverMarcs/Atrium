@@ -148,18 +148,24 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
     func insertDictation(_ transcript: String, in draft: String) -> String? {
         guard text == draft, markedTextRange == nil, isEditable else { return nil }
         let insertion = ComposerDictationInsertion(transcript: transcript, draft: draft, selection: selectedRange)
-        selectedRange = insertion.range
-        insertText(insertion.text)
-        textDidChange()
+        insert(insertion.text, over: insertion.range)
         return text
     }
 
     func replace(_ range: NSRange, with replacement: String, in draft: String) -> String? {
         guard text == draft, markedTextRange == nil, isEditable else { return nil }
-        selectedRange = range
-        insertText(replacement)
-        textDidChange()
+        insert(replacement, over: range)
         return text
+    }
+
+    /// Types `string` over `range`, telling the keyboard about an edit it
+    /// didn't make; until it hears, it ignores swipe typing.
+    private func insert(_ string: String, over range: NSRange) {
+        inputDelegate?.textWillChange(self)
+        selectedRange = range
+        insertText(string)
+        inputDelegate?.textDidChange(self)
+        textDidChange()
     }
 
     var placeholder = "" {

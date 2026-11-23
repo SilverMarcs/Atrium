@@ -28,7 +28,7 @@ struct SessionChatView: View {
   private var conversation: ConversationStore { host.conversations }
   private var transcriptError: String? { host.transcriptErrors[task.id] }
   /// The skills its prompts tint, once the composer has listed them.
-  private var skillNames: Set<String> { host.skillNames[task.id] ?? [] }
+  private var skillNames: Set<String> { host.skillNames(for: task) }
 
   var body: some View {
     let composer = app.hosts.composer(for: item.id)

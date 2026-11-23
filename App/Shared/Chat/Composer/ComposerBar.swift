@@ -31,7 +31,6 @@ struct ComposerBar<Accessory: View>: View {
     @State private var editorFrame = CGRect.zero
     @State private var width: CGFloat = 0
     @State private var keyboardCloseTask: Task<Void, Never>?
-    @State private var skills: [AgentSkill] = []
     @State private var isLoadingSkills = false
     @State private var skillLoadFailed = false
     @State private var showsSkillPopover = false
@@ -107,17 +106,26 @@ struct ComposerBar<Accessory: View>: View {
         return "\(item.host.id)/\(item.task.id)/\(item.task.provider.rawValue)/\(item.task.workspaceID?.uuidString ?? "")"
     }
 
-    /// The skills the editor tints, as the host last listed them for the task.
+    /// The task's skills as the host last listed them, which the menu shows
+    /// while it lists them again.
+    private var skills: [AgentSkill] {
+        guard let item else { return [] }
+        return item.host.skills(for: item.task)
+    }
+
+    /// The skills the editor tints.
     private var skillNames: Set<String> {
         guard let item else { return [] }
-        return item.host.skillNames[item.task.id] ?? []
+        return item.host.skillNames(for: item.task)
     }
 
     /// Why the skill suggestions list none, if they don't.
     private var skillStatus: String? {
-        if isLoadingSkills { return "Loading Skills…" }
-        if skillLoadFailed { return "Skills Unavailable" }
-        if skills.isEmpty { return "No Skills Available" }
+        if skills.isEmpty {
+            if isLoadingSkills { return "Loading Skills…" }
+            if skillLoadFailed { return "Skills Unavailable" }
+            return "No Skills Available"
+        }
         return composer.matchingSkills(in: skills).isEmpty ? "No Matching Skills" : nil
     }
 
@@ -346,26 +354,22 @@ struct ComposerBar<Accessory: View>: View {
         .animation(.smooth(duration: 0.25), value: expandedEditorHeight)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .modifier(ComposerHaptics(composer: composer, item: item))
+        // Lists the skills again each time a skill is asked for, so ones
+        // added since show up.
         .task(id: skillLoadKey) {
-            guard let item, composer.skillQuery != nil else {
-                skills = []
-                skillLoadFailed = false
-                isLoadingSkills = false
-                return
-            }
-            skills = []
             skillLoadFailed = false
+            guard let item, composer.skillQuery != nil else { return }
             isLoadingSkills = true
             defer { isLoadingSkills = false }
-            do { skills = try await item.host.skills(for: item.task) }
+            do { try await item.host.listSkills(for: item.task) }
             catch is CancellationError { }
             catch { skillLoadFailed = true }
         }
         // Lists the task's skills, so the ones a draft names are tinted
-        // without opening the skill menu.
+        // and the skill menu opens with them.
         .task(id: taskSkillsKey) {
             guard let item else { return }
-            _ = try? await item.host.skills(for: item.task)
+            try? await item.host.listSkills(for: item.task)
         }
         .onChange(of: composer.skillQuery) { _, query in
             showsSkillPopover = item != nil && composer.isFocused && query != nil
