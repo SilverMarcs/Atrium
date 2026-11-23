@@ -26,6 +26,8 @@ struct SessionChatView: View {
   private var task: WireTask { item.task }
   private var conversation: ConversationStore { host.conversations }
   private var transcriptError: String? { host.transcriptErrors[task.id] }
+  /// The skills its prompts tint, once the composer has listed them.
+  private var skillNames: Set<String> { host.skillNames[task.id] ?? [] }
 
   var body: some View {
     let composer = app.hosts.composer(for: item.id)
@@ -108,6 +110,8 @@ struct SessionChatView: View {
       }
       // Pages and images agents show in replies load from the task's host.
       .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
+      .environment(\.skillNames, skillNames)
+      .onChange(of: skillNames, initial: true) { flights.skillNames = skillNames }
       .environment(\.promptActions, actions)
       .environment(\.earlierPageIDs, turns.earlierPageIDs)
       .environment(\.chatPagePresenter, pagePresenter)

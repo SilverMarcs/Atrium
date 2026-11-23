@@ -18,6 +18,8 @@ struct ComposerTextView: UIViewRepresentable {
     let isExpanded: Bool
     let isEditable: Bool
     let pasteDelegate: ComposerPasteDelegate
+    /// The skills to tint where the draft names them.
+    let skillNames: Set<String>
     let onSkillReturn: () -> Bool
     let onReturn: () -> Void
 
@@ -55,6 +57,8 @@ struct ComposerTextView: UIViewRepresentable {
             editor.textDidChange()
             context.coordinator.textViewDidChangeSelection(editor)
         }
+        editor.skillNames = skillNames
+        editor.styleSkills()
         // Focus changes from outside UIKit land after this update, so they
         // don't run inside SwiftUI's view update.
         if isFocused != editor.isFirstResponder {
@@ -102,6 +106,7 @@ struct ComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
+            (textView as? ComposerEditor)?.plainTypingColor()
             if composer?.selection != textView.selectedRange { composer?.selection = textView.selectedRange }
         }
 
@@ -226,8 +231,27 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
     /// The height the expanded editor is growing or shrinking to.
     private var targetHeight: CGFloat = 0
 
+    var skillNames: Set<String> = []
+    private var skillStyling = SkillMentions.Styling()
+
+    /// Tints the skills the draft names. Text being composed waits until
+    /// it's done.
+    func styleSkills() {
+        guard markedTextRange == nil else { return }
+        skillStyling = SkillMentions.style(textStorage, names: skillNames, previous: skillStyling, textColor: .label)
+        plainTypingColor()
+    }
+
+    /// The caret taking a skill's tint from the letter before it would tint
+    /// what's typed next.
+    func plainTypingColor() {
+        guard markedTextRange == nil, typingAttributes[.foregroundColor] as? UIColor != .label else { return }
+        typingAttributes[.foregroundColor] = UIColor.label
+    }
+
     func textDidChange() {
         placeholderLabel.isHidden = !text.isEmpty
+        styleSkills()
         if isExpanded, bounds.width > 0 {
             let height = Self.expandedHeight(of: text, width: bounds.width, maximumLines: ComposerTextView.maximumLines)
             if height != targetHeight {

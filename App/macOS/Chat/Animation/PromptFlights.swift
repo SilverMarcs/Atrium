@@ -24,6 +24,8 @@ final class PromptFlights: PromptSendAnimating {
   /// The chat's text size, for the copy.
   @ObservationIgnored var fontSize: CGFloat = 13
   @ObservationIgnored var reduceMotion = false
+  /// The chat's skills, which the copy tints as its bubble does.
+  @ObservationIgnored var skillNames: Set<String> = []
 
   /// The timeline's scroll view, whose content slides on the render server.
   @ObservationIgnored weak var scrollView: NSScrollView?
@@ -372,6 +374,7 @@ final class PromptFlights: PromptSendAnimating {
     let isDark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     let renderer = ImageRenderer(content: PromptBubble(text: bubble.text, isFromAgent: bubble.isFromAgent, accent: Color("AccentColor"))
       .font(.system(size: bubble.fontSize))
+      .environment(\.skillNames, skillNames)
       .environment(\.colorScheme, isDark ? .dark : .light))
     renderer.proposedSize = ProposedViewSize(width: width, height: nil)
     renderer.scale = view.window?.backingScaleFactor ?? 2

@@ -96,7 +96,18 @@ struct ComposerBar: View {
     }
     private var skillLoadKey: String {
         guard let item, composer.skillQuery != nil else { return "" }
+        return taskSkillsKey
+    }
+
+    private var taskSkillsKey: String {
+        guard let item else { return "" }
         return "\(item.host.id)/\(item.task.id)/\(item.task.provider.rawValue)/\(item.task.workspaceID?.uuidString ?? "")"
+    }
+
+    /// The skills the editor tints, as the host last listed them for the task.
+    private var skillNames: Set<String> {
+        guard let item else { return [] }
+        return item.host.skillNames[item.task.id] ?? []
     }
 
     /// Why the skill suggestions list none, if they don't.
@@ -204,6 +215,7 @@ struct ComposerBar: View {
                         isExpanded: isExpanded,
                         isEditable: !isSubmittingEdit,
                         pasteDelegate: composer.pasteDelegate,
+                        skillNames: skillNames,
                         onSkillReturn: {
                             guard composer.skillQuery != nil,
                                   let first = composer.matchingSkills(in: skills).first else { return false }
@@ -344,6 +356,12 @@ struct ComposerBar: View {
             do { skills = try await item.host.skills(for: item.task) }
             catch is CancellationError { }
             catch { skillLoadFailed = true }
+        }
+        // Lists the task's skills, so the ones a draft names are tinted
+        // without opening the skill menu.
+        .task(id: taskSkillsKey) {
+            guard let item else { return }
+            _ = try? await item.host.skills(for: item.task)
         }
         .onChange(of: composer.skillQuery) { _, query in
             showsSkillPopover = item != nil && composer.isFocused && query != nil

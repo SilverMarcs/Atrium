@@ -9,6 +9,7 @@ struct PromptBubble: View {
     var isFromAgent = false
     /// The app's accent, which an off-screen render doesn't pick up by itself.
     var accent: Color = .accentColor
+    @Environment(\.skillNames) private var skillNames
 
     var body: some View {
         Group {
@@ -25,7 +26,7 @@ struct PromptBubble: View {
                 }
                 .textSelection(.enabled)
             } else {
-                ExpandableText(text: text)
+                ExpandableText(text: text, skillNames: skillNames, skillTint: accent)
             }
         }
             #if os(macOS)

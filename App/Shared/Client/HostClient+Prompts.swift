@@ -7,6 +7,8 @@ extension HostClient {
         guard case .skills(let skills) = try await request(.skills(taskID: task.id, provider: task.provider, workspaceID: task.workspaceID)) else {
             throw HostClientError.unexpectedReply
         }
+        let names = Set(skills.map(\.name))
+        if skillNames[task.id] != names { skillNames[task.id] = names }
         return skills
     }
 

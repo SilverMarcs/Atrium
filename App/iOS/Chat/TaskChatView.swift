@@ -21,6 +21,8 @@ struct TaskChatView: View {
 
     private var task: WireTask { item.task }
     private var host: HostClient { item.host }
+    /// The skills its prompts tint, once the composer has listed them.
+    private var skillNames: Set<String> { host.skillNames[task.id] ?? [] }
 
     /// A new chat's draft, until its first prompt is sent.
     private var newChatDraft: TaskDraft? {
@@ -191,6 +193,7 @@ struct TaskChatView: View {
             }
             // Pages and images agents show in replies load from the task's host.
             .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
+            .environment(\.skillNames, skillNames)
             .environment(\.earlierPageIDs, turns.earlierPageIDs)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(.bottom, for: .alignment)
@@ -224,6 +227,7 @@ struct TaskChatView: View {
             .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
             .onChange(of: dynamicTypeSize, initial: true) { flights.dynamicTypeSize = dynamicTypeSize }
             .onChange(of: colorScheme, initial: true) { flights.colorScheme = colorScheme }
+            .onChange(of: skillNames, initial: true) { flights.skillNames = skillNames }
             // Another task, or a transcript arriving for the first time, opens
             // at its newest message, pinned. The scroll view itself is kept
             // rather than recreated with a new identity, so the keyboard

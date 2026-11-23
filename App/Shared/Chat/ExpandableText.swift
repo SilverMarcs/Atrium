@@ -13,20 +13,25 @@ import SwiftUI
 struct ExpandableText: View {
     let text: String
     let maxCharacters: Int
+    /// Skills to tint where the text names them.
+    let skillNames: Set<String>
+    let skillTint: Color
 
     @State private var isExpanded = false
     @State private var showingFullText = false
     private let needsExpansion: Bool
 
-    init(text: String, maxCharacters: Int = 400) {
+    init(text: String, maxCharacters: Int = 400, skillNames: Set<String>, skillTint: Color) {
         self.text = text
         self.maxCharacters = maxCharacters
+        self.skillNames = skillNames
+        self.skillTint = skillTint
         self.needsExpansion = text.count > maxCharacters
     }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Text(displayedText)
+            Text(SkillMentions.attributed(displayedText, names: skillNames, tint: skillTint))
                 .textSelection(.enabled)
                 .lineSpacing(2)
 

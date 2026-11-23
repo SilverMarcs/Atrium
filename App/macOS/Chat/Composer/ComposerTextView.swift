@@ -19,6 +19,8 @@ struct ComposerTextView: NSViewRepresentable {
     let isExpanded: Bool
     let isEditable: Bool
     let pasteDelegate: ComposerPasteDelegate
+    /// The skills to tint where the draft names them.
+    let skillNames: Set<String>
     let onSkillReturn: () -> Bool
     let onReturn: () -> Void
 
@@ -71,6 +73,8 @@ struct ComposerTextView: NSViewRepresentable {
             editor.string = text
             editor.needsDisplay = true
         }
+        editor.skillNames = skillNames
+        editor.styleSkills()
         // Focus changes from outside AppKit land after this update, so they
         // don't run inside SwiftUI's view update.
         if isFocused != editor.isFirstResponder {
@@ -106,6 +110,7 @@ struct ComposerTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? ComposerEditor else { return }
             editor.needsDisplay = true
+            editor.styleSkills()
             if text.wrappedValue != editor.string {
                 text.wrappedValue = editor.string
             }
@@ -113,6 +118,7 @@ struct ComposerTextView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let editor = notification.object as? ComposerEditor, !editor.hasMarkedText() else { return }
+            editor.plainTypingColor()
             let selection = editor.selectedRange()
             if composer?.selection != selection { composer?.selection = selection }
         }
@@ -142,6 +148,24 @@ final class ComposerEditor: NSTextView, ComposerTextInserting {
 
     var onReturn: (() -> Void)?
     var onSkillReturn: (() -> Bool)?
+    var skillNames: Set<String> = []
+    private var skillStyling = SkillMentions.Styling()
+
+    /// Tints the skills the draft names. Text being composed waits until
+    /// it's done.
+    func styleSkills() {
+        guard !hasMarkedText(), let textStorage else { return }
+        skillStyling = SkillMentions.style(textStorage, names: skillNames, previous: skillStyling, textColor: .labelColor)
+        plainTypingColor()
+    }
+
+    /// The caret taking a skill's tint from the letter before it would tint
+    /// what's typed next.
+    func plainTypingColor() {
+        guard typingAttributes[.foregroundColor] as? NSColor != .labelColor else { return }
+        typingAttributes[.foregroundColor] = NSColor.labelColor
+    }
+
     var onFocusChange: ((Bool) -> Void)?
     weak var pasteDelegate: ComposerPasteDelegate?
 

@@ -72,6 +72,9 @@ final class HostClient: Identifiable {
     private(set) var remoteAccess: WireRemoteAccess?
     /// Bumped each time a followed file changes on the host, by its `.file` topic.
     private(set) var fileRevisions: [HostTopic: Int] = [:]
+    /// The names of the skills each task's agent can use, once its composer
+    /// has asked, so its prompts can tint them.
+    var skillNames: [String: Set<String>] = [:]
     let conversations = ConversationStore()
     /// Why a followed conversation couldn't be loaded, by task.
     private(set) var transcriptErrors: [String: String] = [:]

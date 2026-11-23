@@ -26,6 +26,8 @@ final class PromptFlights: PromptSendAnimating {
     /// How the timeline draws its bubbles, for the copy.
     @ObservationIgnored var dynamicTypeSize: DynamicTypeSize = .large
     @ObservationIgnored var colorScheme: ColorScheme = .light
+    /// The chat's skills, which the copy tints as its bubble does.
+    @ObservationIgnored var skillNames: Set<String> = []
     /// How wide the timeline's rows are, which sizes the copy before its row lays out.
     @ObservationIgnored var rowWidth: CGFloat = 0
     /// The timeline's scroll view, whose content slides on the render server.
@@ -362,6 +364,7 @@ final class PromptFlights: PromptSendAnimating {
         guard width > 0 else { return nil }
         let renderer = ImageRenderer(content: PromptBubble(text: text, accent: Color("AccentColor"))
             .environment(\.dynamicTypeSize, dynamicTypeSize)
+            .environment(\.skillNames, skillNames)
             .environment(\.colorScheme, colorScheme))
         renderer.proposedSize = ProposedViewSize(width: width, height: nil)
         renderer.scale = scrollView?.traitCollection.displayScale ?? 3
