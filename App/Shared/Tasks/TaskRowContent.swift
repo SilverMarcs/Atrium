@@ -2,7 +2,8 @@ import SwiftUI
 
 /// A task list row, shared by every client: the title and status, then the
 /// project and, when several hosts are listed, the host it's on, any snooze
-/// time, and the agent, grayed out once its session has ended.
+/// time, any background shell its agent left running, and the agent, grayed
+/// out once its session has ended.
 // TODO: Tapping a task that waits on an approval or question should offer
 // its answers right in the list (a popover or menu on the row), without
 // opening the chat.
@@ -21,6 +22,8 @@ struct TaskRowContent<ProjectIcon: View>: View {
     let isSettled: Bool
     let snoozedUntil: Date?
     var pullRequests: [PullRequest] = []
+    /// Titles of the background shells its agent started that still run.
+    var backgroundShells: [String] = []
     var isDictating = false
     @ViewBuilder let projectIcon: ProjectIcon
 
@@ -61,6 +64,12 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 }
 
                 PullRequestIndicator(pullRequests: pullRequests)
+
+                if !backgroundShells.isEmpty {
+                    Image(systemName: "terminal.fill")
+                        .accessibilityLabel("Background shell running")
+                        .help(backgroundShells.joined(separator: "\n"))
+                }
 
                 ProviderIcon(provider: provider, isLive: status.isLive)
                     .help(provider.name)

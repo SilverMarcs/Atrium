@@ -27,6 +27,7 @@ struct TaskRow: View {
             isSettled: task.isSettled,
             snoozedUntil: task.isSettled ? nil : task.snoozedUntil,
             pullRequests: task.pullRequests,
+            backgroundShells: item.backgroundSessions.map(\.title),
             isDictating: isDictating
         ) {
             WorkspaceIcon(item.workspace, on: item.host, size: 13, relativeTo: .subheadline)

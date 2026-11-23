@@ -23,4 +23,8 @@ struct HostTask: Identifiable {
     var workspace: WireWorkspace? { host.workspace(task.workspaceID) }
     /// The drafts in its project's scratchpad, newest first.
     var scratchpad: [ScratchpadDraft] { workspace?.scratchpad ?? [] }
+    /// Background shells this task's agent started that are still running.
+    var backgroundSessions: [WireBackgroundSession] {
+        workspace?.backgroundSessions.filter { $0.taskID == task.id } ?? []
+    }
 }
