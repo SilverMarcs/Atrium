@@ -26,7 +26,9 @@ struct TaskChatView: View {
     private var skillNames: Set<String> { host.skillNames(for: task) }
 
     var body: some View {
-        let messages = host.conversations.transcripts[task.id]
+        // A prompt the transcript shows keeps its pending row's ID, so the
+        // row stays put and its turn isn't held at the top again.
+        let messages = host.conversations.transcripts[task.id].map { _ in host.conversations.displayMessages(for: task.id) }
         let pendingPrompts = host.conversations.pendingPrompts[task.id] ?? []
         // Waiting for the turn to end, until the host sends it as a prompt on its way.
         let queuedPrompt = task.queuedPrompt.flatMap { queued in
