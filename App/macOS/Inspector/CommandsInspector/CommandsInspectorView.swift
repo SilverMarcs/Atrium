@@ -57,12 +57,15 @@ struct CommandsInspectorView: View {
             .scrollContentBackground(.hidden)
             .layoutPriority(1)
 
-            // A selected background session shows nothing below.
             Group {
                 if case .command(let id) = project.selectedCommand,
                    let command = project.commands.first(where: { $0.id == id }) {
                     CommandConsoleView(command: command, console: project.console(for: command), project: project)
                         .id(command.id)
+                } else if case .background(let id) = project.selectedCommand,
+                          let session = project.backgroundSessions.first(where: { $0.id == id }) {
+                    BackgroundSessionOutputView(session: session, project: project)
+                        .id(session.id)
                 } else {
                     Color.clear
                 }

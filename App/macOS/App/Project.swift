@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 /// A project open in the window, on whichever host it lives: its inspector
@@ -91,12 +91,21 @@ final class Project: Identifiable {
         fileTree.reveal(url)
     }
 
-    /// Opens a link from chat or a command's output when it names a file in the project.
-    func openLink(_ link: String, from directory: String? = nil) async -> Bool {
-        guard case .location(let path, let line) = try? await files(.resolveLink(link, directory: directory ?? root.path)) else {
-            return false
+    /// Opens a link from chat or command output: a web page in the browser, a
+    /// file in the project in its editor, a file elsewhere on this Mac in Finder.
+    /// Relative paths resolve from `directory`, or the project folder.
+    func openLink(_ link: String, from directory: String? = nil) {
+        if let url = URL(string: link), url.scheme == "http" || url.scheme == "https" {
+            NSWorkspace.shared.open(url)
+            return
         }
-        editor.openFile(URL(filePath: path), scrollToLine: line)
-        return true
+        let directory = directory.flatMap { $0.isEmpty ? nil : $0 } ?? root.filePath
+        Task {
+            if case .location(let path, let line) = try? await files(.resolveLink(link, directory: directory)) {
+                editor.openFile(URL(filePath: path), scrollToLine: line)
+            } else if isLocal {
+                FileService.openOutsideProject(link, relativeTo: directory)
+            }
+        }
     }
 }

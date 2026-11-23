@@ -5,8 +5,11 @@ import SwiftUI
 /// long output by changing only the lines that changed, follows new output
 /// while scrolled to the end, and makes file paths and web links clickable.
 struct CommandOutputTextView: NSViewRepresentable {
+    /// Saved commands used a fixed 12-point font in the embedded terminal.
+    static let fontSize: Double = 12
+
     let output: WireCommandOutput?
-    let fontSize: Double
+    var fontSize = Self.fontSize
     let openLink: (String) -> Void
 
     func makeNSView(context: Context) -> NSScrollView {

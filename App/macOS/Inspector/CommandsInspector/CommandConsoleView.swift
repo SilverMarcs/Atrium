@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// A command's output and what's typed into it, on whichever host the project is.
@@ -6,32 +5,18 @@ struct CommandConsoleView: View {
     let command: WireCommand
     let console: CommandConsole
     let project: Project
-    // Saved commands used a fixed 12-point font in the embedded terminal.
-    private let fontSize: Double = 12
+    private let fontSize = CommandOutputTextView.fontSize
 
     var body: some View {
         VStack(spacing: 0) {
             CommandConsoleHeader(command: command, console: console, project: project)
-            CommandOutputTextView(output: console.output, fontSize: fontSize, openLink: openLink)
+            CommandOutputTextView(output: console.output, fontSize: fontSize) {
+                project.openLink($0, from: command.directory)
+            }
             Divider()
             CommandInputBar(command: command, console: console, fontSize: fontSize)
         }
         .task(id: command.id) { await project.host.follow(console.topic) }
-    }
-
-    /// Opens a link from the output as chat does: a file in the project in
-    /// its editor, a file elsewhere on this Mac in Finder, a web page in the browser.
-    private func openLink(_ link: String) {
-        if let url = URL(string: link), url.scheme == "http" || url.scheme == "https" {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        let directory = command.directory ?? project.root.filePath
-        Task {
-            if await !project.openLink(link, from: directory), project.isLocal {
-                FileService.openOutsideProject(link, relativeTo: directory)
-            }
-        }
     }
 }
 

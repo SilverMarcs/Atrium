@@ -396,11 +396,7 @@ final class ChatLinkOpener {
   private func open(_ url: URL) -> OpenURLAction.Result {
     guard let project, url.isFileURL || url.scheme == nil else { return .systemAction }
     let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
-    Task {
-      if await !project.openLink(link), project.isLocal {
-        FileService.openOutsideProject(link, relativeTo: project.root.path)
-      }
-    }
+    project.openLink(link)
     return .handled
   }
 }

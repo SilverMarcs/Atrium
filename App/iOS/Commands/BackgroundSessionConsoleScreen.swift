@@ -23,23 +23,14 @@ struct BackgroundSessionConsoleScreen: View {
                     systemImage: "terminal",
                     description: Text("This background session is no longer running.")
                 )
-            } else if session?.hasOutput == false {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let command = session?.command, !command.isEmpty {
-                            Text("$ \(command)")
-                                .font(.footnote.monospaced())
-                                .textSelection(.enabled)
-                        }
-                        Text("Live output isn’t available for this background session.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                }
             } else {
                 CommandOutputLines(output: output)
+                    .overlay {
+                        if output?.lines.isEmpty == true {
+                            Text("No Output")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
             }
         }
         .navigationTitle(session?.chatTitle ?? "Background Session")
