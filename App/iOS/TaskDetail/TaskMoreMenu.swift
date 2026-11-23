@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A task's project links, side chat and subagents in one menu.
+/// A task's pull requests, project links, side chat and subagents in one menu.
 struct TaskMoreMenu: View {
     let item: HostTask
     @Environment(\.openSubagent) private var openSubagent
@@ -8,9 +8,20 @@ struct TaskMoreMenu: View {
 
     var body: some View {
         Menu {
-            if !item.task.pullRequests.isEmpty {
+            // Like subagents: a lone pull request shows inline; several get their own menu.
+            let pullRequests = item.task.pullRequests
+            if pullRequests.count == 1 {
                 Section("Pull Requests") {
                     PullRequestButtons(item: item)
+                }
+            } else if let lead = pullRequests.mostPressing {
+                Section {
+                    Menu {
+                        PullRequestButtons(item: item)
+                    } label: {
+                        Label("Pull Requests", systemImage: lead.systemImage)
+                        Text(pullRequestSummary(pullRequests))
+                    }
                 }
             }
             if let workspaceID = item.task.workspaceID {
@@ -55,6 +66,11 @@ struct TaskMoreMenu: View {
 
     private var runningCommands: Int {
         item.task.workspaceID.flatMap { item.host.workspace($0)?.runningCount } ?? 0
+    }
+
+    private func pullRequestSummary(_ pullRequests: [PullRequest]) -> String {
+        let open = pullRequests.count(where: \.isOpen)
+        return open > 0 ? "\(open) open · \(pullRequests.count) total" : "\(pullRequests.count) total"
     }
 
     private func subagentSummary(count: Int) -> String {

@@ -10,6 +10,9 @@ extension PullRequest {
         }
     }
 
+    /// Whether it's still in progress, as a draft or open for review.
+    var isOpen: Bool { state == .open || state == .draft }
+
     var stateName: String {
         switch state {
         case .open: "Open"
@@ -35,7 +38,7 @@ extension PullRequest {
     /// The state, checks and review, for a menu item's subtitle.
     var detail: String {
         var parts = [stateName]
-        if state == .open || state == .draft {
+        if isOpen {
             switch checks {
             case .passing: parts.append("Checks passed")
             case .failing: parts.append("Checks failing")
