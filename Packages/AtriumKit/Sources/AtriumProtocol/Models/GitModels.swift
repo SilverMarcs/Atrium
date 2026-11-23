@@ -47,10 +47,6 @@ public nonisolated struct GitRepositoryStatus: Codable, Sendable, Equatable {
         return main.path.standardizedFileURL
     }
 
-    public var isLinkedWorktree: Bool {
-        worktrees.contains { $0.isCurrent && !$0.isMain }
-    }
-
     public var name: String { mainRepositoryURL.lastPathComponent }
 }
 

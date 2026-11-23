@@ -1,0 +1,92 @@
+import AppKit
+import AtriumProtocol
+import CoreGraphics
+
+/// One decision shared by Mac alerts and companion pushes: alerts go to the
+/// device in the foreground that was used last, unless it's already showing the
+/// task, and to every device when none is in the foreground.
+///
+/// Nothing is recorded per event. The Mac's last input is read from the system
+/// when an alert is routed, and the Mac counts as in the foreground only while
+/// that input is recent. A companion counts as used when it comes to the
+/// foreground, opens a task, or sends any request.
+@MainActor
+public final class NotificationRouting {
+    public static let shared = NotificationRouting()
+
+    private init() {}
+
+    /// Shows this Mac's alerts; the app the host runs in sets it.
+    public weak var mac: (any MacAlerts)?
+
+    /// Companions in the foreground, by connection.
+    private var companions: [UUID: NotificationPresence] = [:]
+    var macTaskID: String?
+    /// Both alert paths require current provider metadata, including for retained tasks.
+    var isMainTask: (String) -> Bool = { _ in false }
+    /// Atrium came to the front on a companion, or on this Mac when nil, so
+    /// everything counts as seen and the other devices drop their alerts.
+    var onCameToFront: (_ device: UUID?) -> Void = { _ in }
+
+    func update(_ activity: ClientActivity, deviceID: UUID, connectionID: UUID) {
+        let cameToFront = activity.isActive && companions[connectionID] == nil
+        companions[connectionID] = activity.isActive
+            ? NotificationPresence(deviceID: deviceID, taskID: activity.taskID, usedAt: .now)
+            : nil
+        if cameToFront { onCameToFront(deviceID) }
+    }
+
+    public func cameToFront(device: UUID?) {
+        onCameToFront(device)
+    }
+
+    /// Marks a companion in the foreground as just used.
+    func used(connectionID: UUID) {
+        companions[connectionID]?.usedAt = .now
+    }
+
+    func remove(connectionID: UUID) {
+        companions[connectionID] = nil
+    }
+
+    public func shouldNotifyMac(taskID: String) -> Bool {
+        guard isMainTask(taskID) else { return false }
+        guard let active = activeDevice() else { return true }
+        return active.deviceID == nil && active.taskID != taskID
+    }
+
+    func shouldNotify(_ deviceID: UUID, taskID: String) -> Bool {
+        guard isMainTask(taskID) else { return false }
+        guard let active = activeDevice() else { return true }
+        return active.deviceID == deviceID && active.taskID != taskID
+    }
+
+    private func activeDevice() -> (deviceID: UUID?, taskID: String?)? {
+        let companion = companions.values.max { $0.usedAt < $1.usedAt }
+        if let macUsedAt, macUsedAt >= companion?.usedAt ?? .distantPast {
+            return (nil, macTaskID)
+        }
+        if let companion { return (companion.deviceID, companion.taskID) }
+        return nil
+    }
+
+    /// How long the Mac goes without input before it stops counting as in use,
+    /// so a Mac left unlocked with Atrium in front doesn't keep every alert.
+    private static let macIdleTimeout: Duration = .seconds(5 * 60)
+
+    /// When the Mac last had keyboard or pointer input, if Atrium is frontmost
+    /// on an unlocked screen and that input was recent.
+    private var macUsedAt: Date? {
+        guard NSApplication.shared.isActive, !isScreenLocked,
+              let anyInput = CGEventType(rawValue: ~0) else { return nil }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        guard .seconds(idle) < Self.macIdleTimeout else { return nil }
+        return .now - idle
+    }
+
+    /// Atrium stays the active app while the screen is locked.
+    private var isScreenLocked: Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool == true
+    }
+}

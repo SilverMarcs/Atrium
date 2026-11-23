@@ -1,3 +1,4 @@
+import AtriumHost
 import SwiftUI
 
 /// What Atrium adds to the agents it runs. Each switch decides what new chats

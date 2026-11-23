@@ -1,4 +1,5 @@
 import AtriumClient
+import AtriumHost
 import AtriumProtocol
 import Observation
 import SwiftUI
@@ -25,10 +26,10 @@ final class AgentProviderModels {
         return created
     }
 
-    func refresh(_ provider: AgentProvider, antigravity: () async throws -> AgentUsageSnapshot) async {
+    func refresh(_ provider: AgentProvider, read: (AgentProvider) async throws -> AgentUsageSnapshot) async {
         let usageModel = usage(for: provider)
         let updatesModel = updates(for: provider)
-        async let account: Void = usageModel.refresh(provider, antigravity: antigravity)
+        async let account: Void = usageModel.refresh(provider, read: read)
         async let version: Void = updatesModel.refresh(provider)
         _ = await (account, version)
     }
@@ -60,7 +61,7 @@ struct AgentsSettingsView: View {
                         app.localHost?.send(.refreshTasks)
                         globalAgents.refresh()
                         if isAvailable {
-                            Task { await models.refresh(provider, antigravity: app.readAntigravityUsage) }
+                            Task { await models.refresh(provider, read: app.readUsage) }
                         }
                     }
                 }
@@ -71,10 +72,10 @@ struct AgentsSettingsView: View {
             globalAgents.refresh()
         }
         .task(id: refreshTaskKey) {
-            let readAntigravityUsage = app.readAntigravityUsage
+            let readUsage = app.readUsage
             await withTaskGroup(of: Void.self) { group in
                 for provider in providers where provider.isAvailable {
-                    group.addTask { await models.refresh(provider.provider, antigravity: readAntigravityUsage) }
+                    group.addTask { await models.refresh(provider.provider, read: readUsage) }
                 }
             }
         }

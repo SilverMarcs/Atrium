@@ -1,3 +1,4 @@
+import AtriumProtocol
 import Foundation
 
 /// A file's unified diff split into hunks, with line numbers and the patch

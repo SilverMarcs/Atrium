@@ -1,5 +1,6 @@
 import AppKit
 import AtriumClient
+import AtriumHost
 import AtriumProtocol
 import Observation
 import SwiftUI
@@ -13,8 +14,8 @@ final class AppModel {
     let hosts: HostDirectory
     /// What Settings → Integrations turns on for this Mac's agents.
     let integrationSettings: IntegrationSettings
-    /// Local Settings reads account status without owning the host's connection.
-    let readAntigravityUsage: () async throws -> AgentUsageSnapshot
+    /// Reads a provider's account and usage for Settings → Agents.
+    let readUsage: (AgentProvider) async throws -> AgentUsageSnapshot
     /// The tasks selected in the sidebar, on whichever hosts they live.
     var selectedTasks: Set<TaskRef> = []
     /// The task the window shows: the selection when it's a single task.
@@ -46,7 +47,7 @@ final class AppModel {
         let server = HostServer()
         self.server = server
         integrationSettings = server.integrationSettings
-        readAntigravityUsage = server.readAntigravityUsage
+        readUsage = server.usage(of:)
         let localHost = HostClient(localID: server.hello.hostID, name: server.hostName, icon: server.hostIcon) {
             LoopbackConnection(server: server)
         }

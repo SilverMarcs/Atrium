@@ -52,6 +52,14 @@ The host runs one MCP server with one set of tools, and what a caller may use de
 
 Each provider requires its CLI to be installed separately. Codex conversations use its shared app-server and item events. Claude conversations use `--bg`, a local supervisor connection, and authenticated HTTP hooks delivered directly to Atrium. Antigravity conversations use `agy acp`, its Agent Client Protocol server, which Atrium runs as one child process for all of them; What ACP lacks, forking, rewinding, renaming and deleting conversations, Atrium asks of the server's own local language server, as Antigravity's terminal app does; side chats are forks Atrium deletes when they end. Its permission modes are the ones Antigravity's ACP server offers, plus Full Access, which runs in Antigravity's Default mode while Atrium approves every tool request.
 
+## Repository layout
+
+- `Packages/AtriumKit`, shared by the apps and the host: `AtriumProtocol` is what hosts and clients say to each other and the encrypted channels they say it over; `AtriumClient` connects to hosts and keeps what each one reports.
+- `Packages/AtriumHost`, the host every Mac runs (macOS only): projects, Git, files, the agent integrations, the tools agents use, and the server clients reach it through. The Mac app links it and talks to it in process like any other client.
+- `App/Shared`, `App/macOS` and `App/iOS`, the SwiftUI apps, which are clients of a host; the Mac app also links AtriumHost to run its own host and reach that host's settings and pairing; `App/NotificationService` is the iOS app's push extension.
+- `relay`, the Cloudflare Worker: relay rooms, APNs pushes and ChatGPT's MCP gateway. `npm run check` type-checks it.
+- `scripts`, for running and releasing the apps.
+
 ## License
 
 [MIT](LICENSE)

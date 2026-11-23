@@ -1,12 +1,16 @@
 import AppKit
 import AtriumClient
+import AtriumHost
 import AtriumProtocol
 import UserNotifications
 
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+/// Launch, quit, and this Mac's alerts: the host decides when to alert, and
+/// this shows the alerts and opens what they're about when clicked.
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, MacAlerts {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
         Self.raiseOpenFileLimit()
+        NotificationRouting.shared.mac = self
     }
 
     /// Lifts launchd's default of 256 open files: the host's connections,
@@ -56,12 +60,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 project.selectedCommand = .command(commandID)
             }
         }
-        AppDelegate.clearBadge()
+        clearBadge()
         completionHandler()
     }
 
-    /// Tells the user a saved command asked for attention by ringing the bell.
-    static func sendNotification(workspaceID: UUID, commandID: UUID, workspaceName: String, commandName: String) {
+    // MARK: - MacAlerts
+
+    func alert(commandID: UUID, commandName: String, workspaceID: UUID?, workspaceName: String?) {
+        bounceDockIcon()
+        if !NSApplication.shared.isActive { showBadge() }
+        guard let workspaceID, let workspaceName else { return }
         let content = UNMutableNotificationContent()
         content.title = workspaceName
         content.body = "\(commandName) needs attention"
@@ -79,45 +87,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// Alerts about a task under its project's name, which a task relocated
-    /// into a linked worktree keeps, rather than the worktree folder's.
-    static func sendThreadNotification(_ thread: AgentThread, workspace: Workspace?) {
-        guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
-        let projectName = workspace?.name ?? thread.projectName
+    func alert(taskID: String, title: String, projectName: String, needsInput: Bool, projectIcon: Data?) {
         let content = UNMutableNotificationContent()
         content.title = projectName
-        content.subtitle = thread.title
-        content.body = thread.status == .waiting ? "Needs your input" : "Done"
+        content.subtitle = title
+        content.body = needsInput ? "Needs your input" : "Done"
         content.sound = .default
-        content.userInfo = ["threadID": thread.id]
-        let icon = ProjectNotificationIcon.pngData(at: workspace?.customIconURL)
+        content.userInfo = ["threadID": taskID]
         Task { @MainActor in
             let notification: UNNotificationContent
-            if let icon,
+            if let projectIcon,
                let updated = try? await ProjectNotificationContent.updating(
-                content: content, title: projectName, imageData: icon, conversationID: thread.id
+                content: content, title: projectName, imageData: projectIcon, conversationID: taskID
                ) {
                 notification = updated
             } else {
                 notification = content
             }
-            guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
-            let request = UNNotificationRequest(identifier: "thread:\(thread.id)", content: notification, trigger: nil)
+            // Atrium may have come to the front while the avatar was made.
+            guard NotificationRouting.shared.shouldNotifyMac(taskID: taskID) else { return }
+            let request = UNNotificationRequest(identifier: "thread:\(taskID)", content: notification, trigger: nil)
             try? await UNUserNotificationCenter.current().add(request)
             bounceDockIcon()
             if !NSApplication.shared.isActive { showBadge() }
         }
     }
 
-    static func bounceDockIcon() {
+    func clearAlerts() {
+        DeliveredNotifications.clearAll()
+        clearBadge()
+    }
+
+    private func bounceDockIcon() {
         NSApplication.shared.requestUserAttention(.criticalRequest)
     }
 
-    static func showBadge() {
+    private func showBadge() {
         NSApplication.shared.dockTile.badgeLabel = " "
     }
 
-    static func clearBadge() {
+    private func clearBadge() {
         NSApplication.shared.dockTile.badgeLabel = nil
     }
 

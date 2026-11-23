@@ -1,9 +1,10 @@
 # Atrium relay
 
-The Cloudflare Worker that joins the Atrium iPhone app to a Mac and sends the
-Mac's task alerts to phones through APNs. It runs at
-`wss://atrium-relay.lynksphere.com`, which both apps have built in
-(`CompanionProtocol.relayURL`). See `src/index.ts` for the protocol.
+The Cloudflare Worker that joins the Atrium iPhone app (or another Mac) to a
+Mac, sends the Mac's task alerts to phones through APNs, and serves the MCP
+gateway ChatGPT connects to. It runs at `wss://atrium-relay.lynksphere.com`,
+which the apps have built in (`HostProtocol.relayURL`). See `src/index.ts` for
+the protocol and `src/gateway.ts` for the gateway.
 
 ## Deploy
 

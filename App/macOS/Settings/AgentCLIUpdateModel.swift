@@ -1,3 +1,4 @@
+import AtriumHost
 import AtriumProtocol
 import Foundation
 import Observation
@@ -54,11 +55,12 @@ final class AgentCLIUpdateModel {
         isUpdating = true
         defer { isUpdating = false }
         do {
-            _ = try await IntegrationProcess.run(installation.updateCommand, arguments: installation.updateArguments, timeout: .seconds(300))
+            try await installation.update()
             let updated = try await AgentCLIInstallation.read(provider)
             self.installation = updated
-            guard updated.version.compare(latestVersion, options: .numeric) != .orderedAscending else {
-                throw IntegrationError(message: "The updater finished, but \(provider.name) is still reporting version \(updated.version).")
+            if updated.version.compare(latestVersion, options: .numeric) == .orderedAscending {
+                errorMessage = "The updater finished, but \(provider.name) is still reporting version \(updated.version)."
+                showingError = true
             }
         } catch {
             errorMessage = error.localizedDescription
