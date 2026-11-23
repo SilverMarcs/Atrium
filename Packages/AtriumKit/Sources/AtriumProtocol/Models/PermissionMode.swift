@@ -1,5 +1,7 @@
 /// How freely an agent acts without asking. Each provider maps these to its
-/// own settings; a mode it can't use isn't offered.
+/// own settings; a mode it can't use isn't offered. The cases run from
+/// narrowest to broadest, which the host relies on to cap what an agent hands
+/// on, so keep that order.
 public nonisolated enum PermissionMode: String, Codable, Sendable, Hashable, CaseIterable {
     /// Asks before edits and commands.
     case supervised

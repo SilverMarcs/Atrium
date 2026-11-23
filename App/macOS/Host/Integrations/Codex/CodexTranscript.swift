@@ -57,6 +57,9 @@ nonisolated enum CodexTranscript {
                     if let text = item["text"] as? String, !text.isEmpty { blocks.append(.text(text, id: id)) }
                 } else if let image = generatedImage(in: item) {
                     blocks.append(.text(image, id: id))
+                } else if item["type"] as? String == "mcpToolCall",
+                          let page = ChatPages.page(forTool: "\(item["server"] as? String ?? "")/\(item["tool"] as? String ?? "")", arguments: item["arguments"], id: id) {
+                    blocks.append(page)
                 } else if toolTypes.contains(item["type"] as? String ?? "") {
                     blocks.appendToolCall(id: id)
                 }

@@ -298,6 +298,7 @@ nonisolated enum ClaudeTranscript {
     /// as Markdown, or the report a subagent hands back, which closes its
     /// reply. Nil for a call that's only counted.
     static func block(forTool name: String?, input: Any?, directory: String?, id: String) -> TranscriptBlock? {
+        if let page = ChatPages.page(forTool: name, arguments: input, id: id) { return page }
         switch name {
         case "SubagentHandback":
             guard let report = (input as? [String: Any])?["message"] as? String,

@@ -1,4 +1,3 @@
-#if canImport(Network)
 import Network
 
 public extension NWParameters {
@@ -17,4 +16,3 @@ public extension NWParameters {
         return NWParameters(tls: secure ? NWProtocolTLS.Options() : nil, tcp: tcp)
     }
 }
-#endif

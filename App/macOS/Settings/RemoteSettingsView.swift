@@ -129,7 +129,7 @@ private struct ThisMacSections: View {
             } header: {
                 Text("Pair a Device")
             } footer: {
-                Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac or into `atrium pair` on another computer. Each link works once.")
+                Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac. Each link works once.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 

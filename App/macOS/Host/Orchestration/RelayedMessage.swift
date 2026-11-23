@@ -63,7 +63,7 @@ nonisolated enum RelayedMessage {
             The agent is waiting for an answer:
             \(lines.joined(separator: "\n"))
 
-            Answer with `atrium respond \(sessionID) <interaction> --answer <question>=<answer>`, or ask the user if you can't.
+            Answer with Atrium's `respond` tool, giving session \(sessionID), the interaction and answers by question, or ask the user if you can't.
             """
     }
 

@@ -4,8 +4,6 @@ import Foundation
 // Only process creation and storage are replaced. These checks exercise the
 // production ACP transport and HTTP reader against a local fixture.
 enum IntegrationProcess {
-    static var agentPath: String { ProcessInfo.processInfo.environment["PATH"] ?? "" }
-
     static func make(_ command: String, arguments: [String], directory: String?) -> Process {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/env")

@@ -18,7 +18,7 @@ struct IntegrationsSettingsView: View {
                     Text("Agents can show charts, diagrams and mockups in the conversation.")
                 }
             } footer: {
-                Text("New chats get the instructions that are on when they start.")
+                Text("Agents lose these tools at once and get them when a chat starts or reconnects. New chats get the matching instructions when they start.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

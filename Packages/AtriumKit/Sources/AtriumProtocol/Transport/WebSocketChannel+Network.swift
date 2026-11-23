@@ -1,4 +1,3 @@
-#if canImport(Network)
 import Foundation
 import Network
 
@@ -120,4 +119,3 @@ public final class WebSocketChannel: HostChannel {
         onClose?(reason)
     }
 }
-#endif

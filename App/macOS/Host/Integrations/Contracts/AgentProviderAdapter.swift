@@ -58,6 +58,9 @@ protocol AgentProviderAdapter: AnyObject {
     func setEnabled(_ isEnabled: Bool)
     /// Live output for a provider-buffered background session, or nil when unavailable.
     func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput?
+    /// The session that made an MCP tool call to Atrium, from the call's
+    /// `_meta`, or nil when the call isn't one of this provider's.
+    func toolCallSession(meta: [String: Any]) -> String?
 }
 
 extension AgentProviderAdapter {
@@ -70,4 +73,5 @@ extension AgentProviderAdapter {
     }
 
     func backgroundSessionOutput(for session: AgentBackgroundSession) async -> WireCommandOutput? { nil }
+    func toolCallSession(meta: [String: Any]) -> String? { nil }
 }

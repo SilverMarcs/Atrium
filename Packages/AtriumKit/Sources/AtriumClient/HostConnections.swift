@@ -1,8 +1,6 @@
 import AtriumProtocol
 import Foundation
-#if canImport(Network)
 import Network
-#endif
 import Observation
 
 /// Every host this device is paired with, plus a Mac's own host, each kept
@@ -28,12 +26,10 @@ public final class HostConnections {
     /// tried without one, and are tried again as soon as there is one.
     @ObservationIgnored public private(set) var hasNetwork = true
     @ObservationIgnored private var pairingResult: CheckedContinuation<HostClient, any Error>?
-    #if canImport(Network)
     @ObservationIgnored private let localNetwork = LocalHostBrowser()
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
     /// The network interfaces last available, such as Wi-Fi and cellular.
     @ObservationIgnored private var interfaces: Set<String>?
-    #endif
 
     public init(localHost: HostClient? = nil, credentials: any CredentialStore) {
         self.credentials = credentials
@@ -49,7 +45,6 @@ public final class HostConnections {
     /// follows the network to reconnect as soon as it's back. A client that
     /// wants only some hosts starts those instead.
     public func start() {
-        #if canImport(Network)
         localNetwork.onChange = { [weak self] in
             for host in self?.hosts ?? [] { host.localNetworkChanged() }
         }
@@ -60,7 +55,6 @@ public final class HostConnections {
             MainActor.assumeIsolated { self?.networkChanged(hasNetwork, interfaces: interfaces) }
         }
         pathMonitor.start(queue: .main)
-        #endif
         for host in hosts { host.start() }
     }
 
@@ -68,13 +62,10 @@ public final class HostConnections {
     /// connected, as when the app returns to the foreground. A host found
     /// nearby moves off the relay.
     public func resume() {
-        #if canImport(Network)
         localNetwork.restart()
-        #endif
         for host in hosts where !host.isConnected { host.retryNow() }
     }
 
-    #if canImport(Network)
     private func networkChanged(_ hasNetwork: Bool, interfaces: Set<String>) {
         // Joining or leaving a network, such as another Wi-Fi network or Wi-Fi
         // alongside cellular, can bring a host nearby, even one that was
@@ -89,21 +80,14 @@ public final class HostConnections {
             for host in hosts where !host.isConnected { host.retryNow() }
         }
     }
-    #endif
 
-    #if canImport(Network)
     /// Where a host advertises itself on the local network, if it does.
     func localEndpoint(for hostID: String) -> NWEndpoint? {
         localNetwork.endpoints[hostID]
     }
-    #endif
 
     func isOnLocalNetwork(_ hostID: String) -> Bool {
-        #if canImport(Network)
         localEndpoint(for: hostID) != nil
-        #else
-        false
-        #endif
     }
 
     public var localHost: HostClient? { hosts.first(where: \.isLocal) }
@@ -162,31 +146,6 @@ public final class HostConnections {
         hosts.removeAll { $0 === host }
         if let reason { forgottenReason = reason }
         delegate?.hostWasForgotten(host)
-    }
-
-    /// Pairs `device`, the command-line client bundled in this Mac app, with
-    /// every connected host this app is paired with that isn't in `known`,
-    /// vouching for it in place of a pairing link, and reports the latest
-    /// advertised name and icon for hosts in `known`. A host that's offline or
-    /// too old to vouch to is left out until a later ask.
-    public func share(with device: ClientDevice, except known: Set<String>) async -> [SharedHost] {
-        var shared: [SharedHost] = []
-        for host in remoteHosts {
-            guard let paired = host.pairedHost else { continue }
-            if known.contains(host.id) {
-                shared.append(SharedHost(
-                    hostID: paired.hostID, publicKey: paired.publicKey, hostName: host.name,
-                    hostIcon: host.icon, token: nil
-                ))
-            } else if host.isConnected,
-                      case .paired(let token)? = try? await host.request(.pairCommandLine(device)) {
-                shared.append(SharedHost(
-                    hostID: paired.hostID, publicKey: paired.publicKey, hostName: host.name,
-                    hostIcon: host.icon, token: token
-                ))
-            }
-        }
-        return shared
     }
 }
 

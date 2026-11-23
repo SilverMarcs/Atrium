@@ -1,11 +1,11 @@
 import AtriumProtocol
 import Foundation
 
-/// Lets sessions hand work to each other through the command-line client, and
+/// Lets sessions hand work to each other through Atrium's session tools, and
 /// brings each one's result back to the session that asked.
 ///
 /// Two links are kept apart. Who a session belongs to is settled when it's
-/// started: one an agent on this Mac starts with `atrium` is listed under the
+/// started: one an agent on this Mac starts with `start_session` is listed under the
 /// agent's session, alerts as it and stops with it, unless it's started
 /// standalone. Who a turn reports to is settled by each prompt: when an
 /// agent prompts any session, its prompt is relayed, marked as the other
@@ -27,7 +27,7 @@ final class Orchestrator {
     /// start its next turn right after one ends, as Claude does when a
     /// background subagent reports back.
     private static let settleDelay: Duration = .seconds(2)
-    /// The longest result sent inline; `atrium read` has the rest.
+    /// The longest result sent inline; `read_session` has the rest.
     private static let resultLength = 12_000
 
     private let integrations: AgentIntegrationStore
@@ -70,7 +70,7 @@ final class Orchestrator {
     /// The session to alert the user about when a session finishes or needs
     /// input. Sessions working for another are listed under it, so they alert
     /// as it, and only when they need an answer: their result goes to that
-    /// session anyway. Sessions a command-line client started likewise alert
+    /// session anyway. Sessions a paired agent started likewise alert
     /// only when they need one, as that client reports the rest.
     func attentionTarget(for thread: AgentThread) -> AgentThread? {
         var target = thread
@@ -98,19 +98,15 @@ final class Orchestrator {
 
     // MARK: - Starting work
 
-    /// The session among a command-line client's candidates that runs it: the
-    /// one that's working, as an agent is while it runs a command. A subagent
-    /// works for its session, which counts as the caller.
-    func caller(among candidates: [String]) async -> String? {
-        for id in candidates {
-            guard let thread = await integrations.lookUpThread(id) else { continue }
-            let session = thread.parentID.flatMap(self.thread) ?? thread
-            if thread.status.isWorking || session.status.isWorking { return session.id }
-        }
-        return nil
+    /// The session a tool call comes from, when it's working, as an agent is
+    /// while it calls a tool. A subagent works for its session, which counts as the caller.
+    func caller(for id: String) async -> String? {
+        guard let thread = await integrations.lookUpThread(id) else { return nil }
+        let session = thread.parentID.flatMap(self.thread) ?? thread
+        return thread.status.isWorking || session.status.isWorking ? session.id : nil
     }
 
-    /// Records the local caller or paired device that started a session.
+    /// Records the local caller or paired agent that started a session.
     func started(_ id: String, by device: ClientDevice, caller: String?) {
         if let caller { store.parents[id] = caller } else { store.devices[id] = device.name }
     }
@@ -132,7 +128,7 @@ final class Orchestrator {
         if let previous, previous.requester != callerID {
             return .failed(message: """
                 That session is still on a turn another session asked for. Try again once its result has gone back, \
-                or read it with `atrium read`.
+                or read it with `read_session`.
                 """)
         }
         // Its turn starts, and reports back, once the queue sends it.
@@ -353,7 +349,7 @@ final class Orchestrator {
                 guard !holdsResults else { continue }
                 var text = turn.result ?? ""
                 if text.count > Self.resultLength {
-                    text = String(text.suffix(Self.resultLength)) + "\n\n(Shortened: `atrium read \(id)` has all of it.)"
+                    text = String(text.suffix(Self.resultLength)) + "\n\n(Shortened: `read_session` with session \(id) has all of it.)"
                 }
                 items.append(.init(sessionID: id, agent: name(of: child), text: text, outcome: turn.outcome))
             } else if !questions.isEmpty {

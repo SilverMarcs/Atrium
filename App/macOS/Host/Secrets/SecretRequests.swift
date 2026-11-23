@@ -2,27 +2,55 @@ import AtriumProtocol
 import Foundation
 import OSLog
 
-/// Agents' requests for a secret the user has, such as a token or password.
+/// How a request for secrets ended.
+nonisolated enum SecretAnswer: Sendable, Hashable {
+    /// Each value is in its own owner-only file, by field name, which the host
+    /// deletes a day later. A request without fields has one, named `value`.
+    case saved(files: [String: String])
+    /// The user chose not to give it.
+    case declined
+    /// The agent's turn ended, or its call was cancelled, before an answer.
+    case cancelled
+    /// No answer came in time.
+    case timedOut
+}
+
+/// Agents' requests for secrets the user has, such as a token or password.
 ///
-/// Each shows in the agent's chat as a question with a secure field. The
-/// answer goes to an owner-only file that the agent's commands read, so it
-/// never enters the conversation, the transcript or the agent's context unless
-/// the agent prints it. Files are deleted a day after they're written. A
-/// request lasts as long as the command that made it: it's withdrawn when the
-/// command gives up waiting or its connection closes.
+/// Each shows in the agent's chat as a question with one field per value,
+/// secure unless a field says otherwise. The answers go to owner-only files
+/// that the agent's commands read, so they never enter the conversation, the
+/// transcript or the agent's context unless the agent prints them. Files are
+/// deleted a day after they're written. A request lasts only as long as the
+/// turn and the tool call that made it, so it can't be answered into a later
+/// one: it's withdrawn when the turn ends, the call is cancelled or it times out.
 @MainActor
 final class SecretRequests {
-    private static let idPrefix = "secret:"
-    private static let questionID = "value"
+    /// One value a request asks for.
+    struct Field {
+        let name: String
+        let label: String
+        /// Whether the value is hidden as it's typed, as a password is and an email isn't.
+        var isSecret = true
+    }
+
+    /// How long a request waits for the user unless the agent says otherwise, and at most.
+    static let defaultWait: Duration = .seconds(600)
+    static let longestWait: Duration = .seconds(3600)
+    static let singleField = "value"
+    private nonisolated static let idPrefix = "secret:"
     private static let lifetime: TimeInterval = 24 * 60 * 60
 
     private let integrations: AgentIntegrationStore
     private let directory: URL
-    /// Each pending request, by ID: the connection that made it and what waits on its answer.
+    /// What waits on each pending request's answer, by ID.
     private var pending: [String: Pending] = [:]
+    /// Requests by the agent's retry key, so a repeated call shows no second
+    /// question and gets the first one's answer.
+    private var retries: [String: Task<SecretAnswer, any Error>] = [:]
     private let logger = Logger(subsystem: "com.SilverMarcs.Atrium", category: "SecretRequests")
 
-    static func isRequest(_ interactionID: String) -> Bool {
+    nonisolated static func isRequest(_ interactionID: String) -> Bool {
         interactionID.hasPrefix(idPrefix)
     }
 
@@ -33,44 +61,82 @@ final class SecretRequests {
     }
 
     /// Shows the request in the task's chat and waits for the user's answer.
-    func request(label: String, reason: String, link: URL?, forTask taskID: String, connection: UUID) async -> HostReply {
+    /// The same `retryKey` from the same task returns the first request's answer.
+    func request(
+        label: String, reason: String, link: URL?, fields: [Field], wait: Duration,
+        retryKey: String?, forTask taskID: String
+    ) async throws -> SecretAnswer {
+        guard let retryKey else {
+            return try await ask(label: label, reason: reason, link: link, fields: fields, wait: wait, forTask: taskID)
+        }
+        let key = taskID + "\n" + retryKey
+        if let earlier = retries[key] { return try await earlier.value }
+        if retries.count >= 50 { retries.removeAll() }
+        let asking = Task { try await ask(label: label, reason: reason, link: link, fields: fields, wait: wait, forTask: taskID) }
+        retries[key] = asking
+        return try await withTaskCancellationHandler { try await asking.value } onCancel: { asking.cancel() }
+    }
+
+    /// Saves a secret the user already pasted in the chat to a file, with no question.
+    func savePasted(_ value: String) throws -> String {
+        try save(value).path(percentEncoded: false)
+    }
+
+    private func ask(label: String, reason: String, link: URL?, fields: [Field], wait: Duration, forTask taskID: String) async throws -> SecretAnswer {
         let id = Self.idPrefix + UUID().uuidString
         var note = reason
         if let link, ["http", "https"].contains(link.scheme?.lowercased()) {
             note += "\n\n[Open \(link.host() ?? "Link")](\(link.absoluteString))"
         }
-        let request = AgentInteraction(
-            id: id, taskID: taskID, title: label, detail: reason,
-            questions: [AgentQuestion(id: Self.questionID, title: label, options: [], isSecret: true, note: note)]
-        )
-        // Nil when the task is gone, `.some(nil)` when the request is withdrawn.
-        let decision: AgentDecision?? = await withCheckedContinuation { continuation in
-            guard integrations.present(request, respond: { [weak self] in self?.finish(id, with: $0) }) else {
-                return continuation.resume(returning: nil)
-            }
-            let expiry = Task { [weak self] in
-                try? await Task.sleep(for: SecretAnswer.wait)
-                guard !Task.isCancelled else { return }
-                self?.integrations.withdraw(id)
-            }
-            pending[id] = Pending(connection: connection, continuation: continuation, expiry: expiry)
+        let fields = fields.isEmpty ? [Field(name: Self.singleField, label: label)] : fields
+        // The reason shows once, under the last field.
+        let questions = fields.enumerated().map { index, field in
+            AgentQuestion(id: field.name, title: field.label, options: [], isSecret: field.isSecret, note: index == fields.count - 1 ? note : nil)
         }
-        switch decision {
+        let request = AgentInteraction(id: id, taskID: taskID, title: label, detail: reason, questions: questions)
+        // Nil when the task is gone.
+        let ending: Ending? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard integrations.present(request, respond: { [weak self] in self?.finish(id, with: $0) }) else {
+                    return continuation.resume(returning: nil)
+                }
+                pending[id] = Pending(continuation: continuation, watch: watch(id, task: taskID, wait: wait))
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.integrations.withdraw(id) }
+        }
+        switch ending {
         case nil:
-            return .failed(message: "This session no longer exists.")
-        case .some(nil):
-            return .secret(.timedOut)
-        case .some(let answer?):
-            guard answer.allowed else { return .secret(.declined) }
-            guard let value = answer.answers[Self.questionID]?.first, !value.isEmpty else { return .secret(.declined) }
-            do { return .secret(.saved(file: try save(value).path(percentEncoded: false))) }
-            catch { return .failed(message: "Couldn’t save the secret: \(error.localizedDescription)") }
+            throw IntegrationError(message: "This session no longer exists.")
+        case .withdrawn(let reason):
+            return reason
+        case .answered(let answer):
+            guard answer.allowed else { return .declined }
+            let values = fields.map { (name: $0.name, value: answer.answers[$0.name]?.first ?? "") }
+            guard values.allSatisfy({ !$0.value.isEmpty }) else { return .declined }
+            do {
+                var files: [String: String] = [:]
+                for value in values { files[value.name] = try save(value.value).path(percentEncoded: false) }
+                return .saved(files: files)
+            } catch {
+                throw IntegrationError(message: "Couldn’t save the secret: \(error.localizedDescription)")
+            }
         }
     }
 
-    /// Withdraws the requests a connection made, as when its command was stopped.
-    func connectionClosed(_ connection: UUID) {
-        for (id, request) in pending where request.connection == connection {
+    /// Withdraws the request once it times out or its task's turn ends.
+    private func watch(_ id: String, task taskID: String, wait: Duration) -> Task<Void, Never> {
+        Task { [weak self] in
+            let deadline = ContinuousClock.now + wait
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                if integrations.threads.first(where: { $0.id == taskID })?.status.isWorking != true {
+                    return integrations.withdraw(id)
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            pending[id]?.timedOut = true
             integrations.withdraw(id)
         }
     }
@@ -78,14 +144,19 @@ final class SecretRequests {
     /// Ends a request with the user's answer, or nil once it's withdrawn.
     private func finish(_ id: String, with decision: AgentDecision?) {
         guard let request = pending.removeValue(forKey: id) else { return }
-        request.expiry.cancel()
-        request.continuation.resume(returning: .some(decision))
+        request.watch.cancel()
+        request.continuation.resume(returning: decision.map(Ending.answered) ?? .withdrawn(request.timedOut ? .timedOut : .cancelled))
+    }
+
+    private enum Ending {
+        case answered(AgentDecision)
+        case withdrawn(SecretAnswer)
     }
 
     private struct Pending {
-        let connection: UUID
-        let continuation: CheckedContinuation<AgentDecision??, Never>
-        let expiry: Task<Void, Never>
+        let continuation: CheckedContinuation<Ending?, Never>
+        let watch: Task<Void, Never>
+        var timedOut = false
     }
 
     private func save(_ value: String) throws -> URL {

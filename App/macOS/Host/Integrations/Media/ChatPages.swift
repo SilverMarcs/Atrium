@@ -3,15 +3,16 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-/// HTML pages agents show in their replies, each a fenced block whose info
-/// string is `atrium-page` and a title, as `AgentInstructions` asks, naming
-/// the page's file with `src` or, in older chats, holding the page itself.
+/// HTML pages agents show in their replies: each a call to Atrium's
+/// `show_page` tool naming the page's file and its title, or in older chats,
+/// a fenced block whose info string is `atrium-page` and a title, naming the
+/// file with `src` or holding the page itself.
 ///
-/// A page inside its fence stays in the agent's own history, as part of its
-/// reply, so it follows the chat through resumes, forks and rewinds. A page's
-/// file changes when the agent revises it, so the first reading of a reply
-/// copies the file to `copies`, and the reply shows that copy from then on,
-/// until the copy is a month old. Reading the history remembers each page
+/// The call or the fence stays in the agent's own history, as part of its
+/// reply, so the page follows the chat through resumes, forks and rewinds. A
+/// page's file changes when the agent revises it, so the first reading of a
+/// reply copies the file to `copies`, and the reply shows that copy from then
+/// on, until the copy is a month old. Reading the history remembers each page
 /// here, in memory, under a key named for its content, where clients fetch
 /// it, so transcripts only carry the key.
 nonisolated enum ChatPages {
@@ -65,6 +66,23 @@ nonisolated enum ChatPages {
         guard !pages.isEmpty else { return [.text(text, id: id)] }
         let rest = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return pages + (rest.isEmpty ? [] : [.text(rest, id: id)])
+    }
+
+    /// The tool agents show a page with.
+    static let toolName = "show_page"
+
+    /// The page a call to a tool shows, by the call's ID: a page when it's
+    /// `show_page`, as its provider names it, and the agent has written its
+    /// arguments, else nil.
+    static func page(forTool name: String?, arguments: Any?, id: String) -> TranscriptBlock? {
+        // Claude's, Codex's (server/tool) and Antigravity's names for it.
+        let server = ToolServer.name
+        guard let name, ["mcp__\(server)__\(toolName)", "\(server)/\(toolName)", "mcp_\(server)_\(toolName)"].contains(name) else { return nil }
+        let arguments = (arguments as? [String: Any])
+            ?? (arguments as? String).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        guard let file = arguments?["file"] as? String, !file.isEmpty else { return nil }
+        let title = (arguments?["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(maximumTitleLength)) } ?? "Page"
+        return .page(TranscriptPage(key: remember(file: file, shownBy: id), title: title), id: id)
     }
 
     /// Remembers a finished page for clients to fetch, under its key.

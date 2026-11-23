@@ -1,4 +1,3 @@
-#if canImport(Security)
 import AtriumProtocol
 import Foundation
 import Security
@@ -102,4 +101,3 @@ public final class KeychainCredentialStore: CredentialStore {
         return id
     }
 }
-#endif

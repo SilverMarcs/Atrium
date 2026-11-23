@@ -31,14 +31,20 @@ final class AppModel {
     var sidebarSearchFocusRequest = 0
     /// A running command the user asked to run again, awaiting confirmation.
     var pendingRunReplacement: (project: Project, command: WireCommand)?
+    /// ChatGPT asking to connect, awaiting the user's approval.
+    var pendingAgentConnection: AgentGateway.Request?
+    /// Why connecting ChatGPT failed.
+    var agentConnectionError: String?
 
     @ObservationIgnored private var projects: [WorkspaceRef: Project] = [:]
+    @ObservationIgnored private let server: HostServer
 
     /// The app delegate reaches the app through this for notification taps.
     static private(set) weak var shared: AppModel?
 
     init() {
         let server = HostServer()
+        self.server = server
         integrationSettings = server.integrationSettings
         readAntigravityUsage = server.readAntigravityUsage
         let localHost = HostClient(localID: server.hello.hostID, name: server.hostName, icon: server.hostIcon) {
@@ -46,12 +52,36 @@ final class AppModel {
         }
         let hosts = HostDirectory(localHost: localHost)
         self.hosts = hosts
-        // The agents this Mac runs reach every host this app is paired with.
-        server.shareHosts = { [weak hosts] device, known in
-            await hosts?.connections.share(with: device, except: known) ?? []
-        }
         hosts.start()
         Self.shared = self
+    }
+
+    /// A pairing link connects this Mac to another host; ChatGPT's request
+    /// to connect waits for the user to approve it.
+    func handle(_ url: URL) {
+        guard let request = AgentGateway.Request(url: url) else { return hosts.handle(url) }
+        #if DEBUG
+        // Development builds can approve at once and print where the browser
+        // would go, for tests that can't click.
+        // `readOnly` or a permission mode, such as `fullAccess`.
+        if let level = ProcessInfo.processInfo.environment["ATRIUM_DEBUG_APPROVE_AGENT"] {
+            let access = PermissionMode(rawValue: level).map(AgentAccess.upTo) ?? .readOnly
+            Task {
+                let redirect = try? await AgentGateway.approve(request, access: access, on: server)
+                FileHandle.standardError.write(Data("Atrium agent redirect: \(redirect?.absoluteString ?? "failed")\n".utf8))
+            }
+            return
+        }
+        #endif
+        pendingAgentConnection = request
+    }
+
+    /// Pairs ChatGPT with what the user lets it do, and sends the browser on to finish its sign-in.
+    func approve(_ request: AgentGateway.Request, access: AgentAccess) {
+        Task {
+            do { NSWorkspace.shared.open(try await AgentGateway.approve(request, access: access, on: server)) }
+            catch { agentConnectionError = error.localizedDescription }
+        }
     }
 
     var localHost: HostClient? { hosts.localHost }

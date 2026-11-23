@@ -14,6 +14,8 @@ nonisolated struct AntigravityConversation {
     private enum Part {
         case text(String)
         case tools(Int)
+        /// A page shown with Atrium's `show_page` tool.
+        case page(TranscriptBlock)
     }
 
     private var entries: [Entry] = []
@@ -50,6 +52,7 @@ nonisolated struct AntigravityConversation {
                     switch part {
                     case .text(let text): blocks.append(.text(text, id: "\(id).\(index)"))
                     case .tools(let count): blocks.append(.tools(count: count, id: "\(id).\(index)"))
+                    case .page(let page): blocks.append(page)
                     }
                 }
                 messages.append(TranscriptMessage(id: id, role: .assistant, blocks: blocks))
@@ -123,6 +126,10 @@ nonisolated struct AntigravityConversation {
             return true
         case "tool_call":
             guard let id = update["toolCallId"] as? String, toolCallIDs.insert(id).inserted else { return false }
+            if let page = ChatPages.page(forTool: update["name"] as? String, arguments: update["rawInput"], id: "\(sessionID).\(id)") {
+                appendToReply { $0.append(.page(page)) }
+                return true
+            }
             appendToReply { parts in
                 if case .tools(let count)? = parts.last {
                     parts[parts.count - 1] = .tools(count + 1)

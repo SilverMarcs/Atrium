@@ -27,8 +27,10 @@ final class Pairing {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         secret = defaults.string(forKey: Self.secretKey) ?? ""
+        // A device this build can't read, such as the retired command-line
+        // client, is dropped rather than taking every other pairing with it.
         devices = defaults.data(forKey: Self.devicesKey)
-            .flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
+            .flatMap { try? JSONDecoder().decode(LossyRows<PairedDevice>.self, from: $0).values } ?? []
         if secret.isEmpty { regenerateSecret() }
     }
 
@@ -49,21 +51,18 @@ final class Pairing {
         return admit(device)
     }
 
-    /// Pairs the command-line client a paired Mac app vouches for, the one
-    /// bundled in it, with no secret. It may replace an earlier pairing of
-    /// that client, never an app's.
-    func pair(commandLine device: ClientDevice) -> String? {
-        guard device.kind == .commandLine,
-              devices.allSatisfy({ $0.id != device.id || $0.kind == .commandLine }) else { return nil }
-        return admit(device)
+    /// Pairs an agent's gateway, such as ChatGPT's, that the user approved
+    /// on this Mac, with no secret. It can only use the host's tools.
+    func pair(agent device: ClientDevice, access: AgentAccess) -> String {
+        admit(ClientDevice(id: device.id, name: device.name, kind: .agent), access: access)
     }
 
     /// Issues a device its token, replacing any earlier pairing of it.
-    private func admit(_ device: ClientDevice) -> String {
+    private func admit(_ device: ClientDevice, access: AgentAccess? = nil) -> String {
         let token = Self.randomToken()
         devices.removeAll { $0.id == device.id }
         devices.append(PairedDevice(
-            id: device.id, name: device.name, kind: device.kind, tokenHash: Self.hash(token), pairedAt: .now, lastConnectedAt: .now
+            id: device.id, name: device.name, kind: device.kind, access: access, tokenHash: Self.hash(token), pairedAt: .now, lastConnectedAt: .now
         ))
         save()
         return token

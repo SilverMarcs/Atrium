@@ -6,9 +6,7 @@ public nonisolated enum HostReply: Codable, Sendable {
     case rewound(messages: [TranscriptMessage], images: [Data])
     case failed(message: String)
     case paired(token: String)
-    /// The hosts a Mac's app paired its command-line client with.
-    case sharedHosts([SharedHost])
-    /// The task a compose or side chat created, or the session a caller runs in.
+    /// The task a compose or side chat created.
     case task(id: String)
     case skills([AgentSkill])
     /// The task a fork created, with the original images of the prompt it
@@ -26,8 +24,8 @@ public nonisolated enum HostReply: Codable, Sendable {
     case image(data: Data)
     case git(GitReply)
     case files(FileReply)
-    /// How the user answered a secret request.
-    case secret(SecretAnswer)
+    /// The host's MCP reply to a `.mcp` message, empty for a notification.
+    case mcp(message: Data)
     /// A reply this client doesn't know, from a newer host.
     case unknown
 

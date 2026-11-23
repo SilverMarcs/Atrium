@@ -115,20 +115,7 @@ public nonisolated enum ServerFrame: Codable, Sendable {
     }
 }
 
-#if os(macOS)
 public nonisolated extension HostProtocol {
-    /// The socket an app's host accepts its own agents' command-line clients
-    /// on, in its Application Support folder, while the Orchestrator is on.
-    /// The bundled client finds it from the app it's inside.
-    static func localAgentsSocket(appBundleIdentifier identifier: String) -> URL {
-        #if DEBUG
-        let name = "agents-development.sock"
-        #else
-        let name = "agents.sock"
-        #endif
-        return applicationSupportFolder(appBundleIdentifier: identifier).appending(path: name)
-    }
-
     /// Where an app's host keeps its data. The released app keeps it under its
     /// name; test builds under their bundle ID, so each keeps its own.
     static func applicationSupportFolder(appBundleIdentifier identifier: String) -> URL {
@@ -136,4 +123,3 @@ public nonisolated extension HostProtocol {
         return URL.applicationSupportDirectory.appending(path: folder, directoryHint: .isDirectory)
     }
 }
-#endif

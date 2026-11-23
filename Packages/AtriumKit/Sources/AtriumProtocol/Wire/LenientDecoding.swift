@@ -11,10 +11,10 @@ extension KeyedDecodingContainer {
 
 /// A list that leaves out the rows it can't read, rather than failing whole,
 /// such as a task of a provider this build doesn't know.
-nonisolated struct LossyRows<Element: Decodable>: Decodable {
-    let values: [Element]
+public nonisolated struct LossyRows<Element: Decodable>: Decodable {
+    public let values: [Element]
 
-    init(from decoder: any Decoder) throws {
+    public init(from decoder: any Decoder) throws {
         var container = try decoder.unkeyedContainer()
         var values: [Element] = []
         while !container.isAtEnd {

@@ -18,6 +18,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
 
     private let connection = AntigravityConnection()
     private let instructions: ChatInstructions
+    private let bridge: AgentBridgeServer
     private let fullAccess = AntigravityFullAccess()
     private let history = AntigravityHistory()
     private var brainWatcher: FileSystemWatcher?
@@ -87,7 +88,8 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let sessionID: String
     }
 
-    init(instructions: ChatInstructions) {
+    init(bridge: AgentBridgeServer, instructions: ChatInstructions) {
+        self.bridge = bridge
         self.instructions = instructions
         connection.onNotification = { [weak self] method, params in self?.receive(method, params) }
         connection.onRequest = { [weak self] request in self?.receive(request) }
@@ -330,7 +332,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
             sessions[id] = session
             do {
                 let reply = try await connection.request("session/load", [
-                    "sessionId": id, "cwd": thread.directory, "mcpServers": [],
+                    "sessionId": id, "cwd": thread.directory, "mcpServers": try await toolServers(),
                     "additionalDirectories": instructions.otherFolders(for: thread.directory),
                 ], timeout: .seconds(120))
                 session.isLoading = false
@@ -353,13 +355,25 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         return session
     }
 
+    /// Atrium's tools, as a session's MCP servers.
+    private func toolServers() async throws -> [[String: Any]] {
+        let tools = try await bridge.toolServer()
+        return [["type": "http", "name": ToolServer.name, "url": tools.url, "headers": [["name": "Authorization", "value": tools.authorization]]]]
+    }
+
+    /// Antigravity names the conversation in every tool call's metadata.
+    func toolCallSession(meta: [String: Any]) -> String? {
+        meta["antigravity.google/conversation_id"] as? String
+    }
+
     func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await start()
         watchBrain()
         let blocks = instructions.forNewChat
         // Antigravity keeps the appended prompt with the conversation, for every later load.
         let reply = try await connection.request("session/new", [
-            "cwd": directory, "mcpServers": [], "additionalDirectories": instructions.otherFolders(for: directory),
+            "cwd": directory, "mcpServers": try await toolServers(),
+            "additionalDirectories": instructions.otherFolders(for: directory),
             "_meta": ["antigravity": ["systemPrompt": ["append": instructions.text(blocks, directory: directory)]]],
         ])
         guard let id = reply["sessionId"] as? String else { throw IntegrationError(message: "Antigravity didn’t start a session.") }

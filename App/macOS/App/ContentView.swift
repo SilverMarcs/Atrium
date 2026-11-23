@@ -77,8 +77,30 @@ struct ContentView: View {
         .task { await app.hosts.applyDebugLaunch() }
         #endif
         .focusedSceneValue(\.isMainWindow, true)
-        // A pairing link from another host's Settings connects this Mac to it.
-        .onOpenURL { url in app.hosts.handle(url) }
+        // A pairing link from another host's Settings connects this Mac to it,
+        // and ChatGPT's request to connect asks first.
+        .onOpenURL { url in app.handle(url) }
+        .alert(
+            "Connect ChatGPT to Atrium?",
+            isPresented: Binding(get: { app.pendingAgentConnection != nil }, set: { if !$0 { app.pendingAgentConnection = nil } }),
+            presenting: app.pendingAgentConnection
+        ) { request in
+            Button("Full Access") { app.approve(request, access: .upTo(.fullAccess)) }
+            Button("Supervised") { app.approve(request, access: .upTo(.supervised)) }
+            Button("Read Only") { app.approve(request, access: .readOnly) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Full Access: ChatGPT can start and prompt sessions on this Mac in any mode, and answer their questions and approvals. Supervised: sessions it hands work to ask you before edits and commands, and it can't approve them. Read Only: it can only list and read sessions. Remote access turns on so it can reach this Mac. Remove it any time in Settings → Remote.")
+        }
+        .alert(
+            "Couldn’t connect ChatGPT",
+            isPresented: Binding(get: { app.agentConnectionError != nil }, set: { if !$0 { app.agentConnectionError = nil } }),
+            presenting: app.agentConnectionError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
         // Opened from the sidebar menu, which a hidden sidebar takes away.
         .sheet(isPresented: $app.showingProjects) { ProjectsSheet(hosts: app.hosts) }
         .sheet(isPresented: $showingOnboarding) {

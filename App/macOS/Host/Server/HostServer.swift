@@ -10,9 +10,9 @@ import SystemConfiguration
 /// requests come in, events go out for the topics each client follows. The
 /// Mac's UI connects in process; with remote access on, other devices connect
 /// through the relay end-to-end encrypted, authenticated against paired
-/// devices. While the Orchestrator is on, the agents this Mac runs connect with
-/// their `atrium` command-line client through a socket only this user can open,
-/// as one built-in device. Feeds behind each topic run only while someone
+/// devices. Agents use the host's tools over MCP: the agents this Mac runs on
+/// its agent bridge, and paired agents such as ChatGPT through their gateway
+/// and the relay, which may do nothing else. Feeds behind each topic run only while someone
 /// follows it. When a task finishes or needs input, alerts follow the device
 /// currently in use.
 @MainActor
@@ -125,11 +125,8 @@ final class HostServer {
     /// Phones pushed an alert since Atrium last came to the front anywhere.
     @ObservationIgnored private var alertedDevices: Set<UUID> = []
     @ObservationIgnored private let localListener = LocalListener()
-    @ObservationIgnored private let agentsListener = LocalAgentsListener()
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
-    /// Pairs this Mac's command-line client with the hosts its app is paired
-    /// with, for the agents here to reach them; see `HostRequest.sharedHosts`.
-    @ObservationIgnored var shareHosts: ((ClientDevice, Set<String>) async -> [SharedHost])?
+    @ObservationIgnored private let tools: ToolServer
 
     @ObservationIgnored private let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
 
@@ -153,10 +150,10 @@ final class HostServer {
         let bridge = AgentBridgeServer()
         let instructions = ChatInstructions(settings: integrationSettings)
         instructions.projectFolders = { directory in store.folders(forDirectory: directory) }
-        let antigravity = AntigravityAgentAdapter(instructions: instructions)
+        let antigravity = AntigravityAgentAdapter(bridge: bridge, instructions: instructions)
         readAntigravityUsage = { try await antigravity.usageSnapshot() }
         integrations = AgentIntegrationStore(adapters: [
-            CodexAgentAdapter(instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions),
+            CodexAgentAdapter(bridge: bridge, instructions: instructions), ClaudeAgentAdapter(bridge: bridge, instructions: instructions),
             antigravity,
         ], settings: integrationSettings)
         sessions = TaskSessionController(integrations: integrations, workspaces: workspaces)
@@ -169,6 +166,10 @@ final class HostServer {
         tasksFeed = TasksFeed(
             integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue,
             pullRequests: pullRequests)
+        tools = ToolServer(settings: integrationSettings) { [integrations, orchestrator] meta in
+            guard let id = integrations.toolCaller(meta: meta) else { return nil }
+            return await orchestrator.caller(for: id)
+        }
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publishTasks(event) }
@@ -200,18 +201,26 @@ final class HostServer {
             queue.remove(id)
         }
         NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
+        tools.register(HostTools(
+            integrations: integrations, secrets: secrets, snapshot: { [tasksFeed] in tasksFeed.snapshot() },
+            defaultMode: { [integrationSettings] in integrationSettings.defaultPermissionMode },
+            perform: { [weak self] request, actor in
+                await self?.performTool(request, as: actor) ?? .failed(message: "This host has stopped.")
+            },
+            refreshTranscript: { [weak self] id in self?.feeds[.transcript(taskID: id)]?.refresh() }
+        ).tools)
+        bridge.onMCP = { [tools] body in await tools.handle(body, as: .localAgent) }
+        // Agents still running from before a relaunch call the tools at the saved endpoint.
+        Task { _ = try? await bridge.start() }
         Task { [weak self] in
             guard let self else { return }
             await integrations.refresh()
             isLoadingInitialTasks = false
-            if connections.values.contains(where: { $0.topics.contains(.tasks) && $0.device?.kind != .commandLine }) {
+            if connections.values.contains(where: { $0.topics.contains(.tasks) && $0.device?.kind != .agent }) {
                 tasksFeed.refreshPullRequests()
             }
         }
         if isRemoteAccessEnabled { startRemoteAccess() }
-        agentsListener.onChannel = { [weak self] channel in self?.accept(channel, as: .localAgents) }
-        integrationSettings.onOrchestratorChange = { [weak self] in self?.setAgentsAllowed($0) }
-        setAgentsAllowed(integrationSettings.isOrchestratorEnabled)
     }
 
     // MARK: - Connections
@@ -225,7 +234,6 @@ final class HostServer {
     }
 
     func disconnect(_ connection: ServerConnection) {
-        secrets.connectionClosed(connection.id)
         NotificationRouting.shared.remove(connectionID: connection.id)
         connections[connection.id] = nil
         pruneFeeds()
@@ -233,7 +241,7 @@ final class HostServer {
     }
 
     /// Revokes a device and disconnects it if it's online.
-    private func forgetDevice(_ id: UUID) {
+    func forgetDevice(_ id: UUID) {
         guard let device = pairing.devices.first(where: { $0.id == id }) else { return }
         pairing.remove(device)
         for connection in connections.values where connection.device?.id == id {
@@ -241,17 +249,19 @@ final class HostServer {
         }
     }
 
-    /// Lets the agents this Mac runs in, or shuts them out at once.
-    private func setAgentsAllowed(_ isAllowed: Bool) {
-        guard !isAllowed else { return agentsListener.start() }
-        agentsListener.stop()
-        for connection in connections.values where connection.isLocalAgent { connection.close() }
+    /// Pairs an agent's gateway the user approved on this Mac, such as
+    /// ChatGPT's, turning remote access on for it to reach this host. It can
+    /// only use the host's tools, as far as `access` lets it, and removing it
+    /// in Settings revokes it.
+    func pairAgent(named name: String, access: AgentAccess) -> (device: ClientDevice, token: String) {
+        let device = ClientDevice(id: UUID(), name: name, kind: .agent)
+        let token = pairing.pair(agent: device, access: access)
+        isRemoteAccessEnabled = true
+        return (device, token)
     }
 
-    /// Takes a client's connection: one that authenticates as a paired
-    /// device, or one of the agents on this Mac, which the socket's
-    /// permissions already let in.
-    private func accept(_ channel: any HostChannel, as device: ClientDevice? = nil) {
+    /// Takes a client's connection, which authenticates as a paired device.
+    private func accept(_ channel: any HostChannel) {
         // The connection owns its channel; the channel only refers back weakly.
         let connection = ServerConnection(isLocal: false, send: { event in
             guard let data = try? HostCodec.encode(ServerFrame.event(event)) else { return }
@@ -279,7 +289,6 @@ final class HostServer {
             self.disconnect(connection)
         }
         channel.start()
-        if let device { return authenticate(connection, as: device) }
         Task { [weak self, weak connection] in
             try? await Task.sleep(for: Self.authenticationTimeout)
             guard let connection, !connection.isAuthenticated, self != nil else { return }
@@ -291,7 +300,7 @@ final class HostServer {
         // A device that reconnects after its socket dropped replaces the stale
         // connection, whose foreground presence would otherwise keep steering
         // alerts. Connections that never reported presence, such as several
-        // commands from the command-line client at once, share their device.
+        // calls from an agent's gateway at once, share their device.
         for other in connections.values where other !== connection && other.device?.id == device.id && other.reportsActivity {
             NotificationRouting.shared.remove(connectionID: other.id)
             other.close()
@@ -333,6 +342,10 @@ final class HostServer {
             return .done
         default:
             guard connection.isAuthenticated else { return .failed(message: "Pair with this host first.") }
+            // An agent's gateway only uses the host's tools, which act for it.
+            if connection.device?.kind == .agent {
+                guard case .mcp = request else { return .failed(message: "This device can only use the host’s tools.") }
+            }
             // Any request from a device in the foreground means it's in use.
             if !connection.isLocal { NotificationRouting.shared.used(connectionID: connection.id) }
             guard let key else { return await handleAuthenticated(request, from: connection) }
@@ -343,31 +356,23 @@ final class HostServer {
         }
     }
 
+    /// Performs a tool's request as the device that called the tool, for the
+    /// session it calls from, the way a connected client's request would go.
+    private func performTool(_ request: HostRequest, as actor: HostTools.Actor) async -> HostReply {
+        let connection = ServerConnection(isLocal: false, send: { _ in })
+        connection.authenticated(as: actor.device)
+        connection.caller = actor.caller
+        return await handleAuthenticated(request, from: connection)
+    }
+
     private func handleAuthenticated(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
         switch request {
         case .pair, .authenticate:
             return .done
-        case .caller(let candidates):
-            guard connection.isLocalAgent else { return .done }
-            connection.callerCandidates = candidates
-            connection.caller = await orchestrator.caller(among: candidates)
-            return connection.caller.map { .task(id: $0) } ?? .done
-        case .pairCommandLine(let device):
-            // Only a paired Mac app vouches for the client bundled in it.
-            guard !connection.isLocal, !connection.isLocalAgent, connection.device?.kind == .app,
-                  let token = pairing.pair(commandLine: device) else {
-                return .failed(message: "Only a paired Atrium app can pair its command-line client.")
-            }
-            return .paired(token: token)
-        case .sharedHosts(let device, let known):
-            guard connection.isLocalAgent else { return .hostOnly }
-            return .sharedHosts(await shareHosts?(device, Set(known)) ?? [])
-        case .requestSecret(let label, let reason, let link):
-            guard connection.isLocalAgent else { return .hostOnly }
-            guard let caller = connection.caller else {
-                return .failed(message: "Only an agent Atrium runs on this Mac can ask for a secret, in its own chat.")
-            }
-            return await secrets.request(label: label, reason: reason, link: link, forTask: caller, connection: connection.id)
+        case .mcp(let message):
+            guard let device = connection.device, device.kind == .agent else { return .hostOnly }
+            let access = pairing.devices.first { $0.id == device.id }?.access ?? .readOnly
+            return .mcp(message: await tools.handle(message, as: .paired(device, access)) ?? Data())
         case .unsupported:
             return .unsupported
         case .activity(let activity):
@@ -397,7 +402,7 @@ final class HostServer {
             if let current = feed.current { connection.deliver(current, for: topic) }
             feed.refresh()
             switch topic {
-            case .tasks where !isLoadingInitialTasks && connection.device?.kind != .commandLine:
+            case .tasks where !isLoadingInitialTasks && connection.device?.kind != .agent:
                 tasksFeed.refreshPullRequests()
             case .transcript(let taskID):
                 tasksFeed.refreshPullRequests(taskID: taskID)
@@ -435,7 +440,7 @@ final class HostServer {
             return .done
         case .task(_, .openTerminal) where !connection.isLocal:
             return .hostOnly
-        case .task(let id, .settle) where connection.caller == id || connection.callerCandidates.contains(id):
+        case .task(let id, .settle) where connection.caller == id:
             // An agent settling its own session finishes its turn first.
             guard integrations.threads.contains(where: { $0.id == id }) else { return .failed(message: "This task no longer exists.") }
             orchestrator.settleWhenDone(id)
@@ -452,7 +457,7 @@ final class HostServer {
             return reply
         case .compose(let provider, let workspaceID, let settings, let standalone):
             let reply = await tasks.compose(provider: provider, workspaceID: workspaceID, settings: settings)
-            if case .task(let id) = reply, standalone != true, let device = connection.device, device.kind == .commandLine {
+            if case .task(let id) = reply, standalone != true, let device = connection.device, device.kind == .agent {
                 orchestrator.started(id, by: device, caller: connection.caller)
             }
             return reply
@@ -466,7 +471,7 @@ final class HostServer {
         case .skills(let taskID, let provider, let workspaceID):
             return await tasks.skills(forTask: taskID, provider: provider, workspaceID: workspaceID)
         case .interrupt(let taskID):
-            return await tasks.interrupt(taskID, byPerson: connection.device?.kind != .commandLine, caller: connection.caller)
+            return await tasks.interrupt(taskID, byPerson: connection.device?.kind != .agent, caller: connection.caller)
         case .addWorkspace(let paths):
             guard connection.isLocal else { return .hostOnly }
             let reply = WorkspaceService(workspaces: workspaces).add(paths: paths)
@@ -632,7 +637,7 @@ final class HostServer {
         localListener.stop()
         if let awakeActivity { ProcessInfo.processInfo.endActivity(awakeActivity) }
         awakeActivity = nil
-        for connection in connections.values where !connection.isLocal && !connection.isLocalAgent {
+        for connection in connections.values where !connection.isLocal {
             NotificationRouting.shared.remove(connectionID: connection.id)
             connection.close()
             connections[connection.id] = nil
@@ -644,7 +649,7 @@ final class HostServer {
 
     /// What a phone is alerted about, by the same rule as the Mac: sessions
     /// working for another alert as the session they're listed under, and they
-    /// and sessions a command-line client started only when they need an
+    /// and sessions a paired agent started only when they need an
     /// answer. Side chats never alert.
     private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
         guard task.origin != nil else { return task }

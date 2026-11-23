@@ -19,8 +19,11 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private let daemon: ClaudeDaemonClient
     private let bridge: AgentBridgeServer
     private let instructions: ChatInstructions
-    /// The settings file written for the bridge endpoint it points at.
-    private var launchSettings: (endpoint: AgentBridgeServer.Endpoint, file: URL)?
+    /// The settings and tool files written for the bridge endpoint they point at.
+    private var launchSettings: (endpoint: AgentBridgeServer.Endpoint, files: LaunchFiles)?
+    /// The session each of Atrium's tool calls comes from, by tool use ID,
+    /// as its PreToolUse hook reports just before Claude makes the call.
+    private var toolCallSessions: [String: String] = [:]
     private var live: [String: ClaudeLiveTranscript] = [:]
     private var transcriptLoads: [String: Task<[TranscriptMessage], Error>] = [:]
     private var subscriptions: [String: UnixJSONConnection] = [:]
@@ -337,7 +340,10 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try await openConversation(thread)
         guard let id = backgroundIDs[thread.sessionID] else { throw IntegrationError(message: "Claude is not connected.") }
         // A chat without hooks still takes the prompt; its turn shows from history once saved.
-        let hasHooks = try await hasHooks(jobID: id) ? true : await connectHooks(to: thread, jobID: id)
+        // One without Atrium's tools gets them too, once it isn't busy.
+        let missing = try await missingLaunchOptions(jobID: id)
+        var hasHooks = !missing.contains("--settings")
+        if !missing.isEmpty, await connectHooks(to: thread, jobID: id) { hasHooks = true }
         let references = images.map { PromptAttachments.reference(to: $0) }
         // Claude recognizes a skill only when its slash command begins the prompt.
         let prompt = (text.first == "/" ? [text] + references : references + (text.isEmpty ? [] : [text]))
@@ -709,7 +715,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         try watchHistory()
         try await ClaudeWorkspaceTrust.accept(directory: directory, configFile: globalConfigFile)
         try ClaudePermissionPrompts.accept(configDirectory: configDirectory)
-        let settingsFile = try await settingsForBridge()
+        let files = try await settingsForBridge()
         let existingBackground: Bool
         if let sessionID {
             existingBackground = try await listBackgroundSessions().contains { $0.kind == "background" && $0.sessionID == sessionID }
@@ -718,7 +724,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         // even if those options equal its old ones. Preserve the job's options.
         var arguments = ["--bg"]
         if !existingBackground {
-            arguments += ["--settings", settingsFile.path, "--append-system-prompt", instructions, ClaudePermissions.allowBypassFlag]
+            arguments += files.arguments + ["--append-system-prompt", instructions, ClaudePermissions.allowBypassFlag]
             // The project's other folders, which its tools may reach too.
             for folder in self.instructions.otherFolders(for: directory) { arguments += ["--add-dir", folder] }
         }
@@ -968,6 +974,13 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         guard let event = try JSONSerialization.jsonObject(with: body) as? [String: Any],
               let sessionID = event["session_id"] as? String, UUID(uuidString: sessionID) != nil,
               let name = event["hook_event_name"] as? String else { return Data("{}".utf8) }
+        // A call to Atrium's tools comes right after this hook; it's the session's, even from a subagent.
+        if name == "PreToolUse", let toolUseID = event["tool_use_id"] as? String,
+           (event["tool_name"] as? String)?.hasPrefix(Self.toolPrefix) == true {
+            // Each entry goes when its call comes; this only bounds calls that never did.
+            if toolCallSessions.count > 200 { toolCallSessions.removeAll() }
+            toolCallSessions[toolUseID] = sessionID
+        }
         // Subagent messages must not be mistaken for the main conversation's text or questions.
         if event["agent_id"] as? String != nil, name != "SubagentStart", name != "SubagentStop" { return Data("{}".utf8) }
         let transcript = try await liveTranscript(sessionID)
@@ -1097,9 +1110,20 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     /// Whether a job was launched with Atrium's hooks, which carry its chat and
     /// questions here. Claude keeps a job's launch options to restart it with.
     private func hasHooks(jobID: String) async throws -> Bool {
-        let settings = try await settingsForBridge().path
+        try await missingLaunchOptions(jobID: jobID).contains("--settings") == false
+    }
+
+    /// Atrium's launch options a job lacks: its hooks' settings, and its tools,
+    /// which a job from before Atrium had tools lacks.
+    private func missingLaunchOptions(jobID: String) async throws -> [String] {
         let options = try daemon.launchOptions(jobID: jobID)
-        return zip(options, options.dropFirst()).contains { $0 == "--settings" && $1 == settings }
+        let launched = Set(zip(options, options.dropFirst()).map { [$0, $1] })
+        let wanted = try await settingsForBridge().arguments
+        var missing: [String] = []
+        for index in stride(from: 0, to: wanted.count, by: 2) where !launched.contains([wanted[index], wanted[index + 1]]) {
+            missing += [wanted[index], wanted[index + 1]]
+        }
+        return missing
     }
 
     /// A job started outside Atrium has none of its hooks. Claude restarts a job
@@ -1123,9 +1147,14 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
     private func restartWithHooks(_ thread: AgentThread, jobID: String) async throws -> Bool {
         guard let session = backgroundSessions[thread.sessionID],
               session.threadStatus != .processing, session.threadStatus != .waiting else { return false }
-        var options = try daemon.launchOptions(jobID: jobID) + ["--settings", try await settingsForBridge().path]
-        if !options.contains("--append-system-prompt") {
-            options += ["--append-system-prompt", instructions.text(for: thread.id, directory: thread.directory)]
+        var options = try daemon.launchOptions(jobID: jobID) + (try await missingLaunchOptions(jobID: jobID))
+        // The chat's instructions as they are now: a job from before Atrium's
+        // tools was told about the command-line client they replace.
+        let text = instructions.text(for: thread.id, directory: thread.directory)
+        if let index = options.firstIndex(of: "--append-system-prompt"), options.indices.contains(index + 1) {
+            options[index + 1] = text
+        } else {
+            options += ["--append-system-prompt", text]
         }
         if !options.contains(ClaudePermissions.allowBypassFlag) { options.append(ClaudePermissions.allowBypassFlag) }
         try await respawn(thread.sessionID, jobID: jobID, options: options)
@@ -1208,21 +1237,40 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         }
     }
 
-    /// The settings that send Claude's hooks to Atrium, pointing at the
-    /// bridge's current endpoint.
-    private func settingsForBridge() async throws -> URL {
+    /// The files a job launches with to reach Atrium: the settings that send
+    /// its hooks, and Atrium's tools, which it may call without asking.
+    struct LaunchFiles {
+        let settings: URL
+        let tools: URL
+
+        var arguments: [String] { ["--settings", settings.path, "--mcp-config", tools.path] }
+    }
+
+    /// What Claude names Atrium's tools, and the permission rule that allows them all.
+    private static let toolRule = "mcp__\(ToolServer.name)"
+    private static let toolPrefix = toolRule + "__"
+
+    /// The launch files, pointing at the bridge's current endpoint.
+    private func settingsForBridge() async throws -> LaunchFiles {
         let endpoint = try await bridge.start()
-        if let launchSettings, launchSettings.endpoint == endpoint { return launchSettings.file }
+        if let launchSettings, launchSettings.endpoint == endpoint { return launchSettings.files }
         let events = ["UserPromptSubmit", "MessageDisplay", "PreToolUse", "PermissionRequest", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"]
         let hook: [String: Any] = ["type": "http", "url": endpoint.url("claude"), "headers": ["Authorization": endpoint.authorization], "timeout": 600]
         let hooks = Dictionary(uniqueKeysWithValues: events.map { ($0, [["hooks": [hook]]]) })
         let settings = try bridge.writePrivateFile([
             "hooks": hooks,
-            // The bundled `atrium` client comes first on its commands' PATH.
-            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1", "PATH": IntegrationProcess.agentPath]
+            "permissions": ["allow": [Self.toolRule]],
+            "env": ["CLAUDE_CODE_DISABLE_BG_EXIT_HANDOFF": "1"]
         ], named: "settings.json")
-        launchSettings = (endpoint, settings)
-        return settings
+        let server: [String: Any] = ["type": "http", "url": endpoint.url("mcp"), "headers": ["Authorization": endpoint.authorization]]
+        let tools = try bridge.writePrivateFile(["mcpServers": [ToolServer.name: server]], named: "mcp.json")
+        let files = LaunchFiles(settings: settings, tools: tools)
+        launchSettings = (endpoint, files)
+        return files
+    }
+
+    func toolCallSession(meta: [String: Any]) -> String? {
+        (meta["claudecode/toolUseId"] as? String).flatMap { toolCallSessions.removeValue(forKey: $0) }
     }
 
     /// Starting a worker is not starting a conversation turn, and a question or

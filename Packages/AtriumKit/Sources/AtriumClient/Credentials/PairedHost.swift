@@ -19,14 +19,6 @@ public nonisolated struct PairedHost: Codable, Hashable, Identifiable, Sendable 
         hostIcon = link.hostIcon
     }
 
-    /// A host the Mac app this client is bundled in shared with it.
-    public init(shared host: SharedHost) {
-        hostID = host.hostID
-        publicKey = host.publicKey
-        hostName = host.hostName
-        hostIcon = host.hostIcon
-    }
-
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hostID = try container.decode(String.self, forKey: .hostID)

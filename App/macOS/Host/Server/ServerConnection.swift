@@ -1,8 +1,8 @@
 import AtriumProtocol
 import Foundation
 
-/// One client of this host: the Mac's own UI in process, or a device through
-/// the relay. Holds its authentication and subscriptions and sends it events,
+/// One client of this host: the Mac's own UI in process, a device through
+/// the relay, or an agent's tool call. Holds its authentication and subscriptions and sends it events,
 /// turning task, transcript and command output states into changes against
 /// what it last got.
 @MainActor
@@ -21,15 +21,11 @@ final class ServerConnection {
     private let send: (HostEvent) -> Void
     private let closeChannel: () -> Void
 
-    /// The session the client runs in, for an agent's command-line client on this Mac.
+    /// The session an agent on this Mac calls a tool from, which what it
+    /// starts and prompts reports back to.
     var caller: String?
-    /// The sessions the client says it runs in, working or not: one settling
-    /// itself from a command that outlives its turn isn't working anymore.
-    var callerCandidates: [String] = []
 
     var isAuthenticated: Bool { isLocal || device != nil }
-    /// One of the agents this Mac runs, through its command-line client.
-    var isLocalAgent: Bool { device?.id == ClientDevice.localAgents.id }
 
     init(isLocal: Bool, send: @escaping (HostEvent) -> Void, close: @escaping () -> Void = {}) {
         self.isLocal = isLocal
@@ -123,4 +119,11 @@ final class ServerConnection {
             sentTranscripts[taskID] = messages
         }
     }
+}
+
+extension ClientDevice {
+    /// The agents this Mac runs, as their tool calls act.
+    static let localAgents = ClientDevice(
+        id: UUID(uuidString: "A7B1C2D3-0000-4000-8000-0000000A6E75") ?? UUID(), name: "Local agents", kind: .agent
+    )
 }

@@ -9,6 +9,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     var onEvent: ((AgentEvent) -> Void)?
     private let socket = CodexSocket()
     private let instructions: ChatInstructions
+    private let bridge: AgentBridgeServer
     private var connected = false
     private var connectionTask: Task<Void, Error>?
     private var nextID = 0
@@ -80,7 +81,8 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     /// Counts background terminal refreshes, so an older one's findings can't land last.
     private var backgroundRefreshes = 0
 
-    init(instructions: ChatInstructions) {
+    init(bridge: AgentBridgeServer, instructions: ChatInstructions) {
+        self.bridge = bridge
         self.instructions = instructions
         socket.onMessage = { [weak self] in self?.receive($0) }
         socket.onClose = { [weak self] in self?.disconnect(error: $0) }
@@ -489,14 +491,24 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         [userDeveloperInstructions, instructions.text(blocks, directory: directory)].compactMap(\.self).joined(separator: "\n\n")
     }
 
-    /// Config every thread Atrium runs gets: the bundled `atrium` client first
-    /// on its commands' PATH, and its project's other folders writable in the
-    /// workspace-write sandbox.
-    private func threadConfig(directory: String) -> [String: Any] {
-        var config: [String: Any] = ["shell_environment_policy.set.PATH": IntegrationProcess.agentPath]
+    /// Config every thread Atrium runs gets: Atrium's tools, which it calls
+    /// without asking and which can wait as long as the longest secret request, and
+    /// its project's other folders writable in the workspace-write sandbox.
+    private func threadConfig(directory: String) async throws -> [String: Any] {
+        let tools = try await bridge.toolServer()
+        var config: [String: Any] = ["mcp_servers.\(ToolServer.name)": [
+            "url": tools.url, "http_headers": ["Authorization": tools.authorization],
+            "default_tools_approval_mode": "approve", "tool_timeout_sec": SecretRequests.longestWait.components.seconds + 60,
+        ]]
         let folders = instructions.otherFolders(for: directory)
         if !folders.isEmpty { config["sandbox_workspace_write.writable_roots"] = folders }
         return config
+    }
+
+    /// Codex names the thread in every tool call's turn metadata.
+    func toolCallSession(meta: [String: Any]) -> String? {
+        guard let turn = meta["x-codex-turn-metadata"] as? [String: Any] else { return nil }
+        return turn["thread_id"] as? String
     }
 
     /// Starts or forks a thread with a chat's instruction blocks, which it keeps from then on.
@@ -505,7 +517,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
     ) async throws -> [String: Any] {
         var params = params
         params["developerInstructions"] = developerInstructions(blocks, directory: directory)
-        params["config"] = (params["config"] as? [String: Any] ?? [:]).merging(threadConfig(directory: directory)) { $1 }
+        params["config"] = (params["config"] as? [String: Any] ?? [:]).merging(try await threadConfig(directory: directory)) { $1 }
         let data = try await request(method, params: params)
         guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               result["thread"] is [String: Any] else {
@@ -627,7 +639,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
             let resumed = try await self.request("thread/resume", params: [
                 "threadId": thread.sessionID, "excludeTurns": true,
                 "developerInstructions": self.developerInstructions(self.instructions.blocks(for: thread.id), directory: thread.directory),
-                "config": self.threadConfig(directory: thread.directory),
+                "config": try await self.threadConfig(directory: thread.directory),
             ])
             if let result = try? JSONSerialization.jsonObject(with: resumed) as? [String: Any] {
                 self.permissionModes[thread.sessionID] = CodexPermissions.mode(in: result)

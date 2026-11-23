@@ -23,9 +23,6 @@
 		0A7C00000000000000000313 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000303 /* AtriumProtocol */; };
 		0A7C00000000000000000314 /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000304 /* AtriumClient */; };
 		0A7C00000000000000000315 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000305 /* AtriumProtocol */; };
-		0A7C0000000000000000060B /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000606 /* AtriumClient */; };
-		0A7C0000000000000000060C /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000607 /* AtriumProtocol */; };
-		0A7C00000000000000000610 /* atrium in Embed Command-Line Client */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000601 /* atrium */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,13 +32,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 0A7C00000000000000000200;
 			remoteInfo = AtriumNotificationService;
-		};
-		0A7C0000000000000000060D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 08D10C422F64897100754649 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0A7C00000000000000000603;
-			remoteInfo = AtriumCLI;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -57,17 +47,6 @@
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0A7C0000000000000000060F /* Embed Command-Line Client */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = Contents/Helpers;
-			dstSubfolderSpec = 1;
-			files = (
-				0A7C00000000000000000610 /* atrium in Embed Command-Line Client */,
-			);
-			name = "Embed Command-Line Client";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -80,7 +59,6 @@
 		0A7C00000000000000000213 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0A7C00000000000000000214 /* AtriumNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AtriumNotificationService.entitlements; sourceTree = "<group>"; };
 		0A7C00000000000000000215 /* ProjectNotificationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/Shared/Notifications/ProjectNotificationContent.swift; sourceTree = SOURCE_ROOT; };
-		0A7C00000000000000000601 /* atrium */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = atrium; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -124,12 +102,6 @@
 			path = macOS;
 			sourceTree = "<group>";
 		};
-		0A7C00000000000000000602 /* AtriumCLI */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			name = AtriumCLI;
-			path = AtriumCLI/Sources/AtriumCLI;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,15 +136,6 @@
 			files = ();
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0A7C00000000000000000605 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0A7C0000000000000000060B /* AtriumClient in Frameworks */,
-				0A7C0000000000000000060C /* AtriumProtocol in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -199,7 +162,6 @@
 		0A7C00000000000000000702 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				0A7C00000000000000000602 /* AtriumCLI */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -210,7 +172,6 @@
 				08D10C4A2F64897100754649 /* Atrium.app */,
 				0A7C00000000000000000001 /* Atrium.app */,
 				0A7C00000000000000000201 /* AtriumNotificationService.appex */,
-				0A7C00000000000000000601 /* atrium */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -238,12 +199,10 @@
 				08D10C462F64897100754649 /* Sources */,
 				08D10C472F64897100754649 /* Frameworks */,
 				08D10C482F64897100754649 /* Resources */,
-				0A7C0000000000000000060F /* Embed Command-Line Client */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				0A7C0000000000000000060E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				08D10C4C2F64897100754649 /* macOS */,
@@ -307,29 +266,6 @@
 			productReference = 0A7C00000000000000000201 /* AtriumNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		0A7C00000000000000000603 /* AtriumCLI */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 0A7C00000000000000000608 /* Build configuration list for PBXNativeTarget "AtriumCLI" */;
-			buildPhases = (
-				0A7C00000000000000000604 /* Sources */,
-				0A7C00000000000000000605 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				0A7C00000000000000000602 /* AtriumCLI */,
-			);
-			name = AtriumCLI;
-			packageProductDependencies = (
-				0A7C00000000000000000606 /* AtriumClient */,
-				0A7C00000000000000000607 /* AtriumProtocol */,
-			);
-			productName = atrium;
-			productReference = 0A7C00000000000000000601 /* atrium */;
-			productType = "com.apple.product-type.tool";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -384,7 +320,6 @@
 				08D10C492F64897100754649 /* Atrium */,
 				0A7C00000000000000000005 /* AtriumiOS */,
 				0A7C00000000000000000200 /* AtriumNotificationService */,
-				0A7C00000000000000000603 /* AtriumCLI */,
 			);
 		};
 /* End PBXProject section */
@@ -438,13 +373,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0A7C00000000000000000604 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -452,11 +380,6 @@
 			isa = PBXTargetDependency;
 			target = 0A7C00000000000000000200 /* AtriumNotificationService */;
 			targetProxy = 0A7C0000000000000000020A /* PBXContainerItemProxy */;
-		};
-		0A7C0000000000000000060E /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0A7C00000000000000000603 /* AtriumCLI */;
-			targetProxy = 0A7C0000000000000000060D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -832,48 +755,6 @@
 			};
 			name = Release;
 		};
-		0A7C00000000000000000609 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CREATE_INFOPLIST_SECTION_IN_BINARY = NO;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium.cli;
-				PRODUCT_NAME = atrium;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		0A7C0000000000000000060A /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CREATE_INFOPLIST_SECTION_IN_BINARY = NO;
-				DEVELOPMENT_TEAM = J52QUTREBS;
-				ENABLE_HARDENED_RUNTIME = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.SilverMarcs.Atrium.cli;
-				PRODUCT_NAME = atrium;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -909,15 +790,6 @@
 			buildConfigurations = (
 				0A7C00000000000000000204 /* Debug */,
 				0A7C00000000000000000205 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		0A7C00000000000000000608 /* Build configuration list for PBXNativeTarget "AtriumCLI" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0A7C00000000000000000609 /* Debug */,
-				0A7C0000000000000000060A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1003,16 +875,6 @@
 			productName = AtriumClient;
 		};
 		0A7C00000000000000000305 /* AtriumProtocol */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumProtocol;
-		};
-		0A7C00000000000000000606 /* AtriumClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumClient;
-		};
-		0A7C00000000000000000607 /* AtriumProtocol */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
 			productName = AtriumProtocol;

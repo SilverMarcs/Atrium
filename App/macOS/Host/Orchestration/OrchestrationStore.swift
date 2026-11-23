@@ -2,7 +2,7 @@ import AtriumProtocol
 import Foundation
 import Observation
 
-/// Which sessions belong to which, which ones a command-line client started,
+/// Which sessions belong to which, which ones a paired agent started,
 /// and the delegated turns still to report back, saved as they change so a
 /// restart loses neither the links nor a result. Task lists observe it to
 /// list sessions under whoever started them.
@@ -11,7 +11,7 @@ import Observation
 final class OrchestrationStore {
     /// The session whose agent started each session for its work, by task ID.
     var parents: [String: String] = [:] { didSet { save() } }
-    /// The command-line device that started each session it started on its own, by task ID.
+    /// The paired agent that started each session it started on its own, by task ID.
     var devices: [String: String] = [:] { didSet { save() } }
     /// Delegated turns not yet reported back, by the delegated session's task ID.
     var turns: [String: DelegatedTurn] = [:] { didSet { save() } }

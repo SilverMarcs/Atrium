@@ -518,7 +518,9 @@ actor AntigravityHistory {
                     let name = call["name"] as? String ?? ""
                     let args = call["args"] as? [String: Any] ?? [:]
                     // A subagent's report sent back to its parent via `send_message` is its deliverable.
-                    if name == "send_message",
+                    if let page = ChatPages.page(forTool: name, arguments: args, id: "\(sessionID).s\(stepIndex).c\(index)") {
+                        assistantBlocks.append(page)
+                    } else if name == "send_message",
                        let body = decodeArg(args["Message"])?.trimmingCharacters(in: .whitespacesAndNewlines),
                        !body.isEmpty,
                        parentID == nil || decodeArg(args["Recipient"]) == parentID {

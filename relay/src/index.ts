@@ -18,13 +18,17 @@
  * phone and its data connection unchanged. They're end-to-end encrypted (Noise
  * NK), so the relay can neither read them nor pose as the Mac. Rooms use
  * WebSocket hibernation, so idle connections cost nothing.
+ *
+ * The same Worker serves the MCP gateway ChatGPT connects to (see gateway.ts),
+ * which reaches a Mac through its room as one of its paired devices. Unlike
+ * a phone's traffic, ChatGPT's is readable inside the gateway, which ends its
+ * HTTPS; the room still only passes ciphertext.
  */
 
 import { type APNsEnv, type APNsEnvironment, deliver } from "./apns";
+import { type GatewayEnv, handleGateway, isGatewayPath } from "./gateway";
 
-interface Env extends APNsEnv {
-  ROOMS: DurableObjectNamespace;
-}
+interface Env extends APNsEnv, GatewayEnv {}
 
 /** A task alert the Mac asks the relay to send to one of its phones. */
 interface PushRequest {
@@ -111,6 +115,7 @@ function isPushRequest(value: unknown): value is PushRequest {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const pathname = new URL(request.url).pathname;
+    if (isGatewayPath(pathname)) return handleGateway(request, env);
     const icon = pathname.match(iconRoute);
     if (icon && request.method === "GET") {
       return env.ROOMS.get(env.ROOMS.idFromName(icon[1])).fetch(request);

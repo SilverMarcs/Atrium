@@ -1,9 +1,9 @@
 import Foundation
 import Network
 
-/// Agents call directly into Atrium on the loopback interface: Claude's hooks at
-/// `/claude`, with the bridge's own token. A persistent endpoint lets running
-/// agents reconnect after relaunch.
+/// Agents call directly into Atrium on the loopback interface, with the
+/// bridge's own token: Claude's hooks at `/claude`, and every agent's MCP
+/// tool calls at `/mcp`. A persistent endpoint lets running agents reconnect after relaunch.
 @MainActor
 final class AgentBridgeServer {
     struct Endpoint: Equatable {
@@ -16,6 +16,8 @@ final class AgentBridgeServer {
     }
 
     var onClaudeHook: ((Data) async throws -> Data)?
+    /// Answers an MCP message, or returns nil for a notification.
+    var onMCP: ((Data) async -> Data?)?
     /// Where agents' launch files that point at the endpoint are kept.
     let storage: URL
     private var listener: NWListener?
@@ -55,9 +57,22 @@ final class AgentBridgeServer {
                 // A hook that cannot reach its native UI must leave Claude's terminal fallback usable.
                 return BridgeResponse(status: 200, body: Data("{}".utf8))
             }
+        case "/mcp":
+            guard request.headers["authorization"] == "Bearer " + token else { return BridgeResponse(status: 401) }
+            // Each message is answered in its response; there's no stream to open.
+            guard request.method == "POST" else { return BridgeResponse(status: 405, headers: ["Allow": "POST"]) }
+            guard let onMCP else { return BridgeResponse(status: 503) }
+            guard let reply = await onMCP(request.body) else { return BridgeResponse(status: 202) }
+            return BridgeResponse(status: 200, body: reply)
         default:
             return BridgeResponse(status: 404)
         }
+    }
+
+    /// The MCP server agents get, with the endpoint's token.
+    func toolServer() async throws -> (url: String, authorization: String) {
+        let endpoint = try await start()
+        return (endpoint.url("mcp"), endpoint.authorization)
     }
 
     private func listen() async throws -> Endpoint {

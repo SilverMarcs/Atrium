@@ -61,8 +61,6 @@ final class AntigravityConnection {
         self.log = log
         languageServerPort = nil
         let process = IntegrationProcess.make("agy", arguments: ["acp", "--log-file", log.filePath], directory: Self.folder.filePath)
-        // Agents find the bundled `atrium` first.
-        process.environment?["PATH"] = IntegrationProcess.agentPath
         let input = Pipe()
         // A write after the server quits fails rather than raising SIGPIPE.
         _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)

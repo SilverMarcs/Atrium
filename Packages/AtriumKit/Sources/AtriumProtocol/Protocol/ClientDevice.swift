@@ -5,9 +5,10 @@ public nonisolated struct ClientDevice: Codable, Sendable, Hashable, Identifiabl
     public enum Kind: String, Codable, Sendable {
         /// The Mac or iOS app, used by a person.
         case app
-        /// The `atrium` command-line client, usually run by an agent. Hosts
-        /// list the sessions it starts apart, under its name.
-        case commandLine
+        /// An agent that uses the host's tools, such as ChatGPT through its
+        /// gateway, or the agents the host runs. Hosts list the sessions it
+        /// starts apart, under its name.
+        case agent
     }
 
     public var id: UUID

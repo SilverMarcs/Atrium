@@ -1,32 +1,5 @@
 // swift-tools-version: 6.2
-import Foundation
 import PackageDescription
-
-// Apple platforms use CryptoKit and Network. On Linux, swift-crypto and SwiftNIO
-// stand in for them. They're declared only for a Linux build, so the apps never
-// fetch or resolve them: when Linux evaluates this manifest, or when a Mac
-// cross-compiles the Linux command-line client with the static Linux SDK and
-// sets ATRIUM_LINUX=1, as scripts/release.sh does.
-#if os(Linux)
-let buildsForLinux = true
-#else
-let buildsForLinux = ProcessInfo.processInfo.environment["ATRIUM_LINUX"] == "1"
-#endif
-let onLinux = TargetDependencyCondition.when(platforms: [.linux])
-let platformPackages: [Package.Dependency] = buildsForLinux ? [
-    .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
-    .package(url: "https://github.com/apple/swift-nio.git", from: "2.81.0"),
-    .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.29.0"),
-] : []
-let platformProducts: [Target.Dependency] = buildsForLinux ? [
-    .product(name: "Crypto", package: "swift-crypto", condition: onLinux),
-    .product(name: "NIOCore", package: "swift-nio", condition: onLinux),
-    .product(name: "NIOPosix", package: "swift-nio", condition: onLinux),
-    .product(name: "NIOHTTP1", package: "swift-nio", condition: onLinux),
-    .product(name: "NIOWebSocket", package: "swift-nio", condition: onLinux),
-    .product(name: "NIOFoundationCompat", package: "swift-nio", condition: onLinux),
-    .product(name: "NIOSSL", package: "swift-nio-ssl", condition: onLinux),
-] : []
 
 /// Matches the apps: code is main-actor isolated unless it says otherwise.
 let mainActorByDefault: [SwiftSetting] = [
@@ -44,9 +17,8 @@ let package = Package(
         /// Connections to paired hosts and the state each mirrors, for every Atrium client.
         .library(name: "AtriumClient", targets: ["AtriumClient"]),
     ],
-    dependencies: platformPackages,
     targets: [
-        .target(name: "AtriumProtocol", dependencies: platformProducts, swiftSettings: mainActorByDefault),
+        .target(name: "AtriumProtocol", swiftSettings: mainActorByDefault),
         .target(name: "AtriumClient", dependencies: ["AtriumProtocol"], swiftSettings: mainActorByDefault),
     ]
 )

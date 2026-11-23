@@ -6,11 +6,11 @@ public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     /// One of the subagents a session's agent runs itself, by that session's
     /// task ID. It can be read but not prompted: its agent talks to it.
     case subagent(String)
-    /// Started by another session's agent through the command-line client,
+    /// Started by another session's agent with the host's session tools,
     /// by that session's task ID. It stops with that session.
     case session(String)
-    /// Started by a paired command-line client, such as an agent on another
-    /// computer, by that device's name. It has no session to list it under.
+    /// Started by a paired agent, such as ChatGPT, by that device's name.
+    /// It has no session to list it under.
     case device(String)
     /// A side chat about a session's conversation, by that session's task ID:
     /// the provider's own, which sees the conversation without changing it.
@@ -25,7 +25,7 @@ public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
         }
     }
 
-    /// The device that started the session, for one a command-line client started.
+    /// The device that started the session, for one a paired agent started.
     public var deviceName: String? {
         if case .device(let name) = self { name } else { nil }
     }

@@ -4,27 +4,10 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// Trades the one-time secret from a host's pairing link for a long-lived device token.
     case pair(secret: String, device: ClientDevice)
     case authenticate(token: String, deviceID: UUID)
-    /// The agent sessions a command-line client on the host itself may be
-    /// running in, as task IDs from its environment, nearest first. The host
-    /// takes the first that's working as the caller: sessions the client
-    /// starts are listed under it, and the turns it prompts report back to
-    /// it. Other clients' are ignored.
-    case caller(taskIDs: [String])
-    /// Pairs the command-line client on the same Mac as this paired app, the
-    /// `atrium` bundled in it, so the agents that Mac runs reach this host too.
-    /// The app vouches for it in place of a pairing link. Replies `.paired`.
-    case pairCommandLine(ClientDevice)
-    /// Every host this Mac's app is paired with, each paired for `device`,
-    /// the command-line client asking, except those in `known`, which it
-    /// already is. Only the agents on the Mac itself may ask.
-    case sharedHosts(device: ClientDevice, known: [String])
-    /// Asks the user for a secret, such as a token or password, for the
-    /// session the command-line client runs in. Its chat shows the question
-    /// with a secure field. The host saves the answer to an owner-only file
-    /// and replies with its path once the user answers, declines or
-    /// `SecretAnswer.wait` passes, so the value never enters the conversation. Only the
-    /// agents on the Mac itself may ask.
-    case requestSecret(label: String, reason: String, link: URL?)
+    /// One MCP JSON-RPC message for the host's tools, from an agent's
+    /// gateway such as ChatGPT's. The host decides what the device may call.
+    /// Replies `.mcp`, empty for a notification.
+    case mcp(message: Data)
     /// Whether this client is in the foreground and which task it shows.
     case activity(ClientActivity)
     /// Where the host sends this phone's task alerts. Sent after each authentication.
@@ -56,9 +39,9 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// Skills for a task, or for a new chat's provider and project before the task exists.
     case skills(taskID: String, provider: AgentProvider, workspaceID: UUID?)
     /// Creates a task in a project.
-    /// A command-line client's task is listed under whoever started it, the
-    /// session it runs in or else its device, unless it's `standalone`: then
-    /// it's listed on its own, as one the user started, and reports to no one.
+    /// An agent's task is listed under whoever started it, its session or
+    /// else its device, unless it's `standalone`: then it's listed on its
+    /// own, as one the user started, and reports to no one.
     case compose(
         provider: AgentProvider, workspaceID: UUID, settings: TaskStartSettings? = nil,
         standalone: Bool? = nil
@@ -72,8 +55,7 @@ public nonisolated enum HostRequest: Codable, Sendable {
     /// Stops the agent's current turn. The user's prompt queued behind it, if
     /// any, comes back as `.queuedPrompt` for the composer rather than
     /// starting the next turn, and an agent's is dropped, which that agent
-    /// hears. A command-line client's stop drops only a prompt its own agent
-    /// queued.
+    /// hears. An agent's stop drops only a prompt it queued.
     case interrupt(taskID: String)
     /// Adds folders on the host as one project, the first being its primary
     /// folder. A single folder that's already a project's primary folder

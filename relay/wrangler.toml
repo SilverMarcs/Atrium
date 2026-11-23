@@ -4,12 +4,16 @@ compatibility_date = "2026-09-01"
 workers_dev = false
 routes = [{ pattern = "atrium-relay.lynksphere.com", custom_domain = true }]
 
-# APNS_KEY_ID and APNS_PRIVATE_KEY (the .p8 file) are Worker secrets:
+# APNS_KEY_ID and APNS_PRIVATE_KEY (the .p8 file) are Worker secrets, and so
+# is GATEWAY_KEY, 32 random bytes base64url that seal the MCP gateway's tokens:
 #   npx wrangler secret put APNS_KEY_ID
 #   npx wrangler secret put APNS_PRIVATE_KEY < AuthKey_XXXXXXXXXX.p8
+#   openssl rand 32 | basenc --base64url | tr -d = | npx wrangler secret put GATEWAY_KEY
 [vars]
 APNS_TEAM_ID = "J52QUTREBS"
 APNS_TOPIC = "com.SilverMarcs.Atrium"
+# Where the MCP gateway's OAuth may send ChatGPT back to.
+REDIRECT_HOSTS = "chatgpt.com,chat.openai.com"
 
 [[durable_objects.bindings]]
 name = "ROOMS"

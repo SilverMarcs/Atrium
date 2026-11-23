@@ -879,6 +879,15 @@ final class AgentIntegrationStore {
         return try? await adapters[provider]?.readThread(parts[1])
     }
 
+    /// The task a local agent's tool call comes from, as its provider tells from the call's `_meta`.
+    func toolCaller(meta: [String: Any]) -> String? {
+        for provider in available {
+            guard let adapter = adapters[provider], let sessionID = adapter.toolCallSession(meta: meta) else { continue }
+            return "\(provider.rawValue):\(sessionID)"
+        }
+        return nil
+    }
+
     func capabilities(of provider: AgentProvider) -> AgentCapabilities {
         adapters[provider]?.capabilities ?? []
     }

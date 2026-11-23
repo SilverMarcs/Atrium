@@ -7,7 +7,6 @@
 #   ./release.sh <version>        explicit version (e.g. 2.5.0)
 #   ./release.sh --check          verify setup without preparing a version
 #   add --nightly                 release to the nightly channel only
-#   add --app-only                leave out a command-line client that changed
 #   ./release.sh --promote <tag>  make a nightly release (e.g. v1.3.70) stable
 #   add --force                   release or promote to stable even if the App Store
 #                                 iPhone app is behind
@@ -22,18 +21,9 @@
 # Macs always work with App Store iPhones.
 #
 # Releases whatever is on origin/main, whatever this checkout's branch or
-# uncommitted changes: it builds in its own worktree under .asc/release. One
-# release carries the notarized macOS app and the command-line client for x86_64
-# and arm64 Linux. The client is only rebuilt when AtriumCLI or AtriumKit changed
-# since the last release that has it; otherwise that release's binaries are
-# attached again. The build number always increments by 1; the version bump and
-# the Sparkle feed are committed onto main.
-#
-# Building the client needs swiftly with the swift.org toolchain and its static
-# Linux SDK (SWIFT_LINUX, STATIC_SDK_URL and STATIC_SDK_CHECKSUM below):
-#   brew install swiftly && swiftly init
-#   swiftly install 6.4.1
-#   swiftly run swift sdk install <STATIC_SDK_URL> --checksum <STATIC_SDK_CHECKSUM> +6.4.1
+# uncommitted changes: it builds in its own worktree under .asc/release. A
+# release carries the notarized macOS app. The build number always increments
+# by 1; the version bump and the Sparkle feed are committed onto main.
 set -euo pipefail
 
 # ----- Config -----
@@ -56,15 +46,6 @@ APPCAST_BASE_URL="https://github.com/${REPO}/releases/download"
 IOS_BUNDLE_ID="com.SilverMarcs.Atrium"
 PROTOCOL_SWIFT="Packages/AtriumKit/Sources/AtriumProtocol/Protocol/HostProtocol.swift"
 
-# The command-line client: what it's built from, and the toolchain that
-# cross-compiles it into static Linux binaries.
-CLI_PATHS=(Packages/AtriumCLI/Package.swift Packages/AtriumCLI/Package.resolved Packages/AtriumCLI/Sources Packages/AtriumKit/Package.swift Packages/AtriumKit/Sources)
-CLI_ARCHS=(x86_64 aarch64)
-CLI_ASSET_NAMES=(atrium-linux-x86_64.tar.gz atrium-linux-aarch64.tar.gz atrium-linux-sha256.txt)
-SWIFT_LINUX="6.4.1"
-STATIC_SDK="swift-6.4.1-RELEASE_static-linux-0.1.0"
-STATIC_SDK_URL="https://download.swift.org/swift-6.4.1-release/static-sdk/swift-6.4.1-RELEASE/${STATIC_SDK}.artifactbundle.tar.gz"
-STATIC_SDK_CHECKSUM="cef5592d7430ed3c5ae1ddda479849c6f5252bd94a5723db1559f984caf38a7c"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Temporary release checkout, removed after a successful release or --check.
@@ -91,39 +72,6 @@ find_sign_update() {
     "$HOME"/Library/Developer/Xcode/DerivedData/*/SourcePackages/checkouts/Sparkle/bin/sign_update; do
     [[ -x "$candidate" ]] && { echo "$candidate"; return; }
   done
-}
-
-# Whether this Mac can cross-compile the command-line client.
-can_build_cli() {
-  command -v swiftly >/dev/null 2>&1 \
-    && swiftly run swift sdk list "+$SWIFT_LINUX" 2>/dev/null | grep -qx "$STATIC_SDK"
-}
-
-# The newest release that carries the command-line client, if any.
-latest_cli_release() {
-  local tag
-  for tag in $(gh release list --repo "$REPO" --limit 30 --json tagName --jq '.[].tagName'); do
-    if gh release view "$tag" --repo "$REPO" --json assets --jq '.assets[].name' | grep -qx "${CLI_ASSET_NAMES[0]}"; then
-      echo "$tag"
-      return
-    fi
-  done
-}
-
-# Cross-compiles the client for each architecture into $1, reporting version $2.
-build_cli() {
-  local out="$1" version="$2" stamp="Packages/AtriumCLI/Sources/AtriumCLI/Version.swift" arch bin
-  printf '/// The Atrium release this build belongs to.\nlet atriumVersion = "%s"\n' "$version" > "$stamp"
-  mkdir -p "$out"
-  for arch in "${CLI_ARCHS[@]}"; do
-    local args=(--package-path Packages/AtriumCLI -c release --swift-sdk "$arch-swift-linux-musl" -Xlinker --strip-all)
-    # AtriumKit declares its Linux packages only for a Linux build.
-    ATRIUM_LINUX=1 swiftly run swift build "${args[@]}" "+$SWIFT_LINUX"
-    bin="$(ATRIUM_LINUX=1 swiftly run swift build "${args[@]}" --show-bin-path "+$SWIFT_LINUX")"
-    tar -C "$bin" -czf "$out/atrium-linux-$arch.tar.gz" atrium
-  done
-  git checkout --quiet -- "$stamp"
-  (cd "$out" && shasum -a 256 atrium-linux-*.tar.gz > atrium-linux-sha256.txt)
 }
 
 # Pushes this checkout's HEAD to main, replaying it on top if main moved.
@@ -224,7 +172,6 @@ PYPROMOTE
 }
 
 # ----- Arguments -----
-APP_ONLY=false
 NIGHTLY=false
 FORCE=false
 PROMOTE_TAG=""
@@ -232,7 +179,6 @@ ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
-    --app-only) APP_ONLY=true ;;
     --nightly) NIGHTLY=true ;;
     --force) FORCE=true ;;
     --promote) [[ $# -ge 2 ]] || fatal "--promote needs a tag, e.g. --promote v1.3.70"
@@ -286,8 +232,7 @@ if [[ ! -e "$WORKTREE/.git" ]]; then
   git worktree add --detach "$WORKTREE" origin/main >/dev/null
 fi
 git -C "$WORKTREE" checkout --detach --force origin/main --quiet
-# Keep SwiftPM's build folders, so the command-line client builds incrementally.
-git -C "$WORKTREE" clean -fdxq -e .build
+git -C "$WORKTREE" clean -fdxq
 BASE=$(git -C "$WORKTREE" rev-parse HEAD)
 cd "$WORKTREE"
 
@@ -304,24 +249,6 @@ GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
 PUBLIC_KEY="$("$GENERATE_KEYS" --account "$SPARKLE_ACCOUNT" -p)"
 APP_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' App/macOS/Info.plist)
 [[ "$PUBLIC_KEY" == "$APP_KEY" ]] || fatal "Atrium Sparkle Keychain account does not match SUPublicEDKey."
-
-# ----- Plan the command-line client -----
-CLI_FROM="$(latest_cli_release)"
-if [[ ! -f Packages/AtriumCLI/Package.swift ]]; then
-  CLI_PLAN="none"
-  log "No command-line client on main yet; releasing the app alone"
-elif [[ -n "$CLI_FROM" ]] && git diff --quiet "$CLI_FROM" "$BASE" -- "${CLI_PATHS[@]}"; then
-  CLI_PLAN="reuse"
-  log "Command-line client unchanged since $CLI_FROM; its binaries go out again"
-elif [[ "$APP_ONLY" == true ]]; then
-  CLI_PLAN="none"
-  warn "Command-line client changed${CLI_FROM:+ since $CLI_FROM}; --app-only leaves it out of this release"
-elif can_build_cli; then
-  CLI_PLAN="build"
-  log "Command-line client changed${CLI_FROM:+ since $CLI_FROM}; building it for Linux"
-else
-  fatal "The command-line client changed and needs building, but swiftly with Swift $SWIFT_LINUX and $STATIC_SDK isn't set up (see the top of $0). Or pass --app-only."
-fi
 
 if [[ "$CHECK_ONLY" == true ]]; then
   log "Release prerequisites passed for $(git log -1 --format='%h %s'). No version, build, feed, or release changed."
@@ -382,7 +309,6 @@ ARCHIVE_PATH="$OUT_DIR/${APP_NAME}.xcarchive"
 EXPORT_DIR="$OUT_DIR/export"
 DMG_PATH="$OUT_DIR/$DMG_NAME"
 DMG_STAGE="$OUT_DIR/dmg-stage"
-CLI_DIR="$OUT_DIR/cli"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
@@ -415,21 +341,6 @@ xcodebuild -exportArchive \
 # The bundle is named after PRODUCT_NAME (Diffs), not the scheme.
 APP_PATH="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.app' | head -1)"
 [[ -d "$APP_PATH" ]] || fatal "Exported app missing from $EXPORT_DIR"
-
-# ----- Command-line client, built while notarization waits on Apple -----
-CLI_PID=""
-case "$CLI_PLAN" in
-  build)
-    log "Building the command-line client for Linux in the background (log: $OUT_DIR/cli.log)"
-    build_cli "$CLI_DIR" "$NEW_VER" > "$OUT_DIR/cli.log" 2>&1 &
-    CLI_PID=$!
-    ;;
-  reuse)
-    log "Downloading the command-line client from $CLI_FROM"
-    gh release download "$CLI_FROM" --repo "$REPO" --dir "$CLI_DIR" \
-      --pattern "${CLI_ASSET_NAMES[0]}" --pattern "${CLI_ASSET_NAMES[1]}" --pattern "${CLI_ASSET_NAMES[2]}"
-    ;;
-esac
 
 # ----- Build DMG (hdiutil; no create-dmg dependency) -----
 # LZFSE compresses smaller than zlib and mounts faster, for downloads and Sparkle updates alike.
@@ -469,20 +380,6 @@ fi
 ED_SIG=$(printf '%s\n' "$SIG_OUT" | sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')
 LEN=$(printf '%s\n' "$SIG_OUT" | sed -nE 's/.*length="([0-9]+)".*/\1/p')
 [[ -n "$ED_SIG" && -n "$LEN" ]] || fatal "Failed to parse sign_update output: $SIG_OUT"
-
-# ----- Collect the command-line client -----
-CLI_ASSETS=()
-if [[ -n "$CLI_PID" ]]; then
-  log "Waiting for the command-line client"
-  wait "$CLI_PID" || fatal "Building the command-line client failed; see $OUT_DIR/cli.log"
-fi
-if [[ "$CLI_PLAN" != none ]]; then
-  for name in "${CLI_ASSET_NAMES[@]}"; do
-    [[ -s "$CLI_DIR/$name" ]] || fatal "The command-line client is missing $name."
-    CLI_ASSETS+=("$CLI_DIR/$name")
-  done
-  (cd "$CLI_DIR" && shasum -a 256 -c atrium-linux-sha256.txt >/dev/null) || fatal "The command-line client's checksums don't match."
-fi
 
 # ----- Insert appcast item -----
 log "Updating $APPCAST"
@@ -535,19 +432,6 @@ git push --quiet origin "$RELEASE_COMMIT:refs/tags/$TAG"
 log "Creating GitHub release $TAG"
 NOTES="$OUT_DIR/notes.md"
 : > "$NOTES"
-if [[ ${#CLI_ASSETS[@]} -gt 0 ]]; then
-  CLI_BUILT_FOR="$NEW_VER"
-  [[ "$CLI_PLAN" == reuse ]] && CLI_BUILT_FOR="${CLI_FROM#v}"
-  cat > "$NOTES" <<NOTES
-## Command-line client
-
-Static binaries for Linux (from Atrium ${CLI_BUILT_FOR}), for driving this Mac's sessions from another computer, such as an agent's Linux shell. See [Packages/AtriumCLI/README.md](https://github.com/${REPO}/blob/${TAG}/Packages/AtriumCLI/README.md).
-
-\`\`\`sh
-curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/atrium-linux-\$(uname -m).tar.gz | tar -xz -C ~/.local/bin atrium
-\`\`\`
-NOTES
-fi
 RELEASE_FLAGS=(--latest)
 TITLE="Atrium $NEW_VER"
 if [[ "$NIGHTLY" == true ]]; then
@@ -555,7 +439,7 @@ if [[ "$NIGHTLY" == true ]]; then
   RELEASE_FLAGS=(--prerelease --latest=false)
   TITLE="Atrium $NEW_VER (Nightly)"
 fi
-gh release create "$TAG" "$DMG_PATH" ${CLI_ASSETS[@]+"${CLI_ASSETS[@]}"} \
+gh release create "$TAG" "$DMG_PATH" \
   --repo "$REPO" \
   --verify-tag \
   "${RELEASE_FLAGS[@]}" \

@@ -8,12 +8,11 @@ nonisolated enum AgentInstructions {
     /// A block Settings → Integrations can leave out of new chats. Showing
     /// images is always there.
     enum Block: String, Codable, Sendable {
-        /// Showing HTML pages, such as charts and diagrams.
+        /// Showing HTML pages, such as charts and diagrams, with the `show_page` tool.
         case pages
-        /// Handing work to other sessions with the `atrium` command.
+        /// Handing work to other sessions with Atrium's session tools.
         case orchestrator
-        /// Asking the user for secrets with `atrium secret`. It needs the
-        /// command, so chats get it while the Orchestrator is on.
+        /// Asking the user for secrets with the `request_secret` tool.
         case secrets
     }
 
@@ -56,12 +55,7 @@ nonisolated enum AgentInstructions {
 
         ## Pages
 
-        To show a page, write one complete HTML document to its own `.html` file in a temporary folder, then put an empty fenced block in your final reply whose info string is `atrium-page`, a short title and the file's absolute path:
-
-        ```atrium-page title="Build times this week" src="/tmp/atrium-pages/build-times.html"
-        ```
-
-        Atrium shows a card for the page above your reply's text instead of the block, and opens the page from it. Show it once it's final, at most one per reply, and don't announce, describe or restate it in your text. To revise a page, edit its file rather than rewriting it, then show it again under the same title; Atrium keeps a copy of each version a reply showed, so earlier versions stay in the chat. Atrium groups pages by title as versions of one page, so keep a page's title exactly the same when you revise it, and give each new page a title no other page in this chat has.
+        To show a page, write one complete HTML document to its own `.html` file in a temporary folder, then call Atrium's `show_page` tool with a short title and the file's absolute path. Atrium shows a card for the page in your reply and opens the page from it. Show it once it's final, at most one per reply, and don't announce, describe or restate it in your text. To revise a page, edit its file rather than rewriting it, then show it again under the same title; Atrium keeps a copy of each version a reply showed, so earlier versions stay in the chat. Atrium groups pages by title as versions of one page, so keep a page's title exactly the same when you revise it, and give each new page a title no other page in this chat has.
 
         Keep it light: one clear point, about a screen tall at most (under 600px). Help the user understand without overwhelming them; when there is more to show, put it behind tabs, a picker or toggles rather than making the page longer.
         Inline any <style> or <script> you need. Reference local images by absolute path, as in <img src="/path/to/chart.png">, or relative to the task folder; remote URLs load as-is. JavaScript and CSS can build image paths normally. Keep images outside the task folder together, and write their absolute folder path as a quoted string ending in `/`, such as `const base='/path/to/images/';`. Atrium lets that page load images from that folder. Keep image files available for later viewing.
@@ -74,19 +68,19 @@ nonisolated enum AgentInstructions {
     private static let orchestrator = """
         ## Other agents
 
-        For cross-provider delegation, always use `atrium start` and `atrium send`; `atrium help` explains them. Never launch another provider directly through shell commands or subprocesses. Atrium needs this flow to track parent sessions, deliver results, and keep delegated sessions out of the main task list. Native subagent tools remain allowed.
+        For cross-provider delegation, always use Atrium's `start_session` and `send_prompt` tools. Never launch another provider directly through shell commands or subprocesses. Atrium needs this flow to track parent sessions, deliver results, and keep delegated sessions out of the main task list. Native subagent tools remain allowed.
 
-        Start or prompt a session, then end your turn: Atrium sends you any question it asks as a new message, and its result once every session you handed work to is done, all results together. `atrium send` to a session that's still working queues your prompt to start its next turn once the current one ends; add `--steer` only when the agent must take it in now, such as a correction to what it's doing. Delegate only when it helps, to a few sessions at most, and never hand on work that was handed to you.
+        Start or prompt a session, then end your turn: Atrium sends you any question it asks as a new message, which you answer with `respond`, and its result once every session you handed work to is done, all results together. `send_prompt` to a session that's still working queues your prompt to start its next turn once the current one ends; set `steer` only when the agent must take it in now, such as a correction to what it's doing. Delegate only when it helps, to a few sessions at most, and never hand on work that was handed to you.
 
-        Only when the user explicitly asks for a separate session of its own, one they'll continue themselves, start it with `atrium start --standalone`: it's listed as the user's own and doesn't report back to you.
+        Only when the user explicitly asks for a separate session of its own, one they'll continue themselves, start it with `standalone` set: it's listed as the user's own and doesn't report back to you.
 
-        When the user asks you to consult several models, start one session per model they name (or a mix from `atrium models` if they don't), each with the same self-contained brief, asking for its own approach without editing files, then end your turn. Ask one to clarify with `atrium send` when its idea is unclear. Then weigh the ideas, combine the best of them, and continue the user's request with that, saying which ideas you took from whom.
+        When the user asks you to consult several models, start one session per model they name (or a mix from `list_projects` if they don't), each with the same self-contained brief, asking for its own approach without editing files, then end your turn. Ask one to clarify with `send_prompt` when its idea is unclear. Then weigh the ideas, combine the best of them, and continue the user's request with that, saying which ideas you took from whom.
         """
 
     private static let secrets = """
         ## Secrets
 
-        When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Run `atrium secret --label "<what it is>" --reason "<what it's for and where to find it>"` as soon as you need it, adding `--url` for its sign-in or setup page, with a tool timeout of 10 minutes. It waits up to 9 minutes while the user answers in a private question, then prints `{"status":"saved","file":"<path>"}`, an owner-only file holding the value, or `declined` or `timed_out` as the status. Read the file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Ask for one secret per command, and don't ask again after the user declines.
+        When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Call Atrium's `request_secret` tool as soon as you need it, with what it is, what it's for and where to find it, and its sign-in or setup page when there is one; ask for values that go together, such as an email and password, in one call. The user answers in a private question, and the tool returns owner-only files holding the values. Read a file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Don't ask again after the user declines.
         """
 }
 
@@ -113,9 +107,9 @@ final class ChatInstructions {
 
     /// The blocks a chat created now gets: those Settings turns on.
     var forNewChat: Set<AgentInstructions.Block> {
-        var blocks: Set<AgentInstructions.Block> = []
+        var blocks: Set<AgentInstructions.Block> = [.secrets]
         if settings.isVisualizationsEnabled { blocks.insert(.pages) }
-        if settings.isOrchestratorEnabled { blocks.formUnion([.orchestrator, .secrets]) }
+        if settings.isOrchestratorEnabled { blocks.insert(.orchestrator) }
         return blocks
     }
 
