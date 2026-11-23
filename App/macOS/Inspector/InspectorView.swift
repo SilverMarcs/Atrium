@@ -98,7 +98,6 @@ private struct InspectorTabPicker: View {
         let newestPage = item.flatMap { ConversationTurns.pageVersions(in: $0.host.conversations.displayMessages(for: $0.task.id)).first?.last }
         let showsPage = item.flatMap { app.inspectorPages.frontPage(for: $0.id) } != nil
         let showsPageSegment = newestPage != nil || showsPage
-        let segmentCount = InspectorTab.allCases.count + (showsPageSegment ? 1 : 0)
         let runningCount = project.runningCount
         Picker("Inspector", selection: Binding {
             showsPage ? InspectorPane.page : .tab(project.selectedTab)
@@ -130,27 +129,6 @@ private struct InspectorTabPicker: View {
         .controlSize(.large)
         .buttonSizing(.flexible)
         .labelsHidden()
-        // Segmented Picker wraps NSSegmentedControl, which ignores SwiftUI's .badge(_:) modifier;
-        // draw a small badge capsule on the Commands segment instead.
-        .overlay {
-            if runningCount > 0 {
-                GeometryReader { proxy in
-                    let segmentWidth = proxy.size.width / CGFloat(segmentCount)
-                    let commandsIndex = CGFloat(InspectorTab.commands.rawValue)
-                    let centerX = segmentWidth * (commandsIndex + 0.5)
-                    let segmentRight = segmentWidth * (commandsIndex + 1)
-                    Text(runningCount > 99 ? "99+" : "\(runningCount)")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 14, minHeight: 14)
-                        .background(.red, in: .capsule)
-                        .position(x: min(centerX + 12, segmentRight - 6), y: 5)
-                }
-                .allowsHitTesting(false)
-            }
-        }
         .padding(.horizontal, 10)
     }
 
