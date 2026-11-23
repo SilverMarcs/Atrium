@@ -19,6 +19,9 @@ public nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Id
     /// Whether live output can be streamed for this session.
     public var hasOutput: Bool
 
+    /// What lists show it as: the title of the chat that started it, else its own.
+    public var chatTitle: String { taskTitle.isEmpty ? title : taskTitle }
+
     public init(
         id: String,
         provider: AgentProvider,

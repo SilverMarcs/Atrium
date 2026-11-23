@@ -7,6 +7,7 @@ import SwiftUI
 struct CommandsScreen: View {
     let host: HostClient
     let workspaceID: UUID
+    @Environment(HostDirectory.self) private var hosts
 
     private var commands: [WireCommand]? { host.commands[workspaceID] }
     private var backgroundSessions: [WireBackgroundSession] { host.workspace(workspaceID)?.backgroundSessions ?? [] }
@@ -24,6 +25,11 @@ struct CommandsScreen: View {
                     ForEach(backgroundSessions) { session in
                         NavigationLink(value: Route.backgroundSession(workspaceRef, sessionID: session.id)) {
                             BackgroundSessionRowiOS(session: session)
+                        }
+                        .contextMenu {
+                            Button("Open Chat", systemImage: "bubble.left") {
+                                hosts.pendingTask = TaskRef(hostID: host.id, taskID: session.taskID)
+                            }
                         }
                     }
                 }
@@ -55,24 +61,12 @@ private struct BackgroundSessionRowiOS: View {
     var body: some View {
         Label {
             HStack(spacing: 6) {
-                Text(session.title)
+                Text(session.chatTitle)
                     .lineLimit(1)
                 ProgressView()
-            }
-            if let subtitle {
-                Text(subtitle)
-                    .lineLimit(1)
             }
         } icon: {
             ProviderIcon(provider: session.provider)
         }
-    }
-
-    private var subtitle: String? {
-        let trimmed = session.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, trimmed != session.title {
-            return trimmed
-        }
-        return session.taskTitle.isEmpty ? session.provider.name : "\(session.provider.name) · \(session.taskTitle)"
     }
 }

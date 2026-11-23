@@ -44,16 +44,11 @@ struct BackgroundSessionConsoleScreen: View {
                 CommandOutputLines(output: output)
             }
         }
-        .navigationTitle(session?.title ?? "Background Session")
-        .navigationSubtitle(subtitle)
+        .navigationTitle(session?.chatTitle ?? "Background Session")
+        .navigationSubtitle(session?.command ?? "Ended")
         .toolbarTitleDisplayMode(.inline)
         .task(id: sessionID) {
             await host.follow(.backgroundSessionOutput(workspaceID: workspaceID, sessionID: sessionID))
         }
-    }
-
-    private var subtitle: String {
-        guard let session else { return "Ended" }
-        return session.taskTitle.isEmpty ? "\(session.provider.name) · Running" : "\(session.provider.name) · \(session.taskTitle)"
     }
 }

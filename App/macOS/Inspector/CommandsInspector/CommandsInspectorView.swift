@@ -1,3 +1,4 @@
+import AtriumClient
 import AtriumProtocol
 import SwiftUI
 
@@ -5,6 +6,7 @@ import SwiftUI
 /// output and input below the list.
 struct CommandsInspectorView: View {
     @Bindable var project: Project
+    @Environment(AppModel.self) private var app
     @State private var editing: CommandEditing?
 
     var body: some View {
@@ -37,6 +39,11 @@ struct CommandsInspectorView: View {
                             BackgroundSessionRow(session: session)
                                 .tag(Project.CommandSelection.background(session.id))
                                 .listRowSeparator(.hidden)
+                                .contextMenu {
+                                    Button("Open Chat", systemImage: "bubble.left") {
+                                        app.selection = TaskRef(hostID: project.host.id, taskID: session.taskID)
+                                    }
+                                }
                         }
                     } header: {
                         Text("Background")
@@ -52,23 +59,13 @@ struct CommandsInspectorView: View {
             .scrollContentBackground(.hidden)
             .layoutPriority(1)
 
+            // A selected background session shows nothing below.
             Group {
-                switch project.selectedCommand {
-                case .command(let id):
-                    if let command = project.commands.first(where: { $0.id == id }) {
-                        CommandConsoleView(command: command, console: project.console(for: command), project: project)
-                            .id(command.id)
-                    } else {
-                        Color.clear
-                    }
-                case .background(let id):
-                    if let session = project.backgroundSessions.first(where: { $0.id == id }) {
-                        BackgroundSessionConsoleView(session: session, project: project)
-                            .id(session.id)
-                    } else {
-                        Color.clear
-                    }
-                case nil:
+                if case .command(let id) = project.selectedCommand,
+                   let command = project.commands.first(where: { $0.id == id }) {
+                    CommandConsoleView(command: command, console: project.console(for: command), project: project)
+                        .id(command.id)
+                } else {
                     Color.clear
                 }
             }
