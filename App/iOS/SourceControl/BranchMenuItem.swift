@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A native checked menu item that keeps the selected checkout selected.

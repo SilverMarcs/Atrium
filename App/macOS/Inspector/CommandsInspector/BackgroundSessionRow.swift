@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// One running agent background shell session in the Commands inspector list.

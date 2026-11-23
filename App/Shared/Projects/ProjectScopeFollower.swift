@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Shows the checkouts a task works in, in its project's scope, when the task

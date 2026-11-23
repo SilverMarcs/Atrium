@@ -1,27 +1,27 @@
 import Foundation
 
 /// Changes since the last tasks snapshot or delta sent to this client.
-public nonisolated struct WireTasksDelta: Codable, Sendable {
-    public var upsertedTasks: [WireTask] = []
-    public var removedTaskIDs: [String] = []
-    public var upsertedWorkspaces: [WireWorkspace] = []
-    public var removedWorkspaceIDs: [UUID] = []
+nonisolated struct WireTasksDelta: Codable, Sendable {
+    var upsertedTasks: [WireTask] = []
+    var removedTaskIDs: [String] = []
+    var upsertedWorkspaces: [WireWorkspace] = []
+    var removedWorkspaceIDs: [UUID] = []
     /// The full project order, present only when it changed: projects can be
     /// reordered on the host, and new ones are added at the top.
-    public var workspaceOrder: [UUID]?
+    var workspaceOrder: [UUID]?
     /// The full provider list, present only when it changed.
-    public var providers: [WireProvider]?
+    var providers: [WireProvider]?
     /// Present only when it changed.
-    public var isRefreshing: Bool?
+    var isRefreshing: Bool?
     /// Present only when it changed.
-    public var snoozeDuration: SnoozeDuration?
+    var snoozeDuration: SnoozeDuration?
 
-    public var isEmpty: Bool {
+    var isEmpty: Bool {
         upsertedTasks.isEmpty && removedTaskIDs.isEmpty && upsertedWorkspaces.isEmpty
             && removedWorkspaceIDs.isEmpty && workspaceOrder == nil && providers == nil && isRefreshing == nil && snoozeDuration == nil
     }
 
-    public init(from old: WireTasksSnapshot, to new: WireTasksSnapshot) {
+    init(from old: WireTasksSnapshot, to new: WireTasksSnapshot) {
         (upsertedTasks, removedTaskIDs) = Self.changes(from: old.tasks, to: new.tasks)
         (upsertedWorkspaces, removedWorkspaceIDs) = Self.changes(from: old.workspaces, to: new.workspaces)
         let order = new.workspaces.map(\.id)
@@ -36,7 +36,7 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
     }
 
     // Empty lists are left out: most deltas touch a single task.
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         upsertedTasks = try container.decodeIfPresent(LossyRows<WireTask>.self, forKey: .upsertedTasks)?.values ?? []
         removedTaskIDs = try container.decodeIfPresent([String].self, forKey: .removedTaskIDs) ?? []
@@ -48,7 +48,7 @@ public nonisolated struct WireTasksDelta: Codable, Sendable {
         snoozeDuration = try container.decodeIfPresent(SnoozeDuration.self, forKey: .snoozeDuration)
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         if !upsertedTasks.isEmpty { try container.encode(upsertedTasks, forKey: .upsertedTasks) }
         if !removedTaskIDs.isEmpty { try container.encode(removedTaskIDs, forKey: .removedTaskIDs) }

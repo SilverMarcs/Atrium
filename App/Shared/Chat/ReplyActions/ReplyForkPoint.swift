@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 /// Where a fork through a finished reply ends: before the prompt that came
 /// after it, or at the chat's end for the latest reply. Providers fork at
 /// prompts, so a reply followed by a prompt the host can't fork at yet, such

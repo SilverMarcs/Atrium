@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// The page the inspector shows, loaded once for its web view and for the

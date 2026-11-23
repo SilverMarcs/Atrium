@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// What a project lets clients reach: its folders, and the linked worktrees

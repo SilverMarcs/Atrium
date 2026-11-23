@@ -1,7 +1,7 @@
 import Foundation
 
 /// How long a task stays snoozed before it comes back.
-public nonisolated enum SnoozeDuration: String, Codable, Sendable, Hashable, CaseIterable, Identifiable {
+nonisolated enum SnoozeDuration: String, Codable, Sendable, Hashable, CaseIterable, Identifiable {
     case oneHour = "1h"
     case threeHours = "3h"
     case sixHours = "6h"
@@ -11,13 +11,13 @@ public nonisolated enum SnoozeDuration: String, Codable, Sendable, Hashable, Cas
     case fiveDays = "5d"
 
     /// What swiping snoozes for until the host's setting is changed.
-    public static let `default`: SnoozeDuration = .oneDay
+    static let `default`: SnoozeDuration = .oneDay
 
-    public var id: Self { self }
+    var id: Self { self }
 
     /// When a snooze starting at `start` ends, in local time: a day keeps the
     /// time of day across daylight saving changes.
-    public func end(from start: Date = .now, in calendar: Calendar = .current) -> Date {
+    func end(from start: Date = .now, in calendar: Calendar = .current) -> Date {
         let (component, value): (Calendar.Component, Int) = switch self {
         case .oneHour: (.hour, 1)
         case .threeHours: (.hour, 3)

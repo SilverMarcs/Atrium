@@ -1,4 +1,3 @@
-import AtriumClient
 import SwiftUI
 
 /// The places a task's project opens, in the Mac inspector's order: its

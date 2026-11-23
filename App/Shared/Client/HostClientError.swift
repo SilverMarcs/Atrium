@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum HostClientError: LocalizedError, Equatable {
+nonisolated enum HostClientError: LocalizedError, Equatable {
     /// The request was never sent.
     case notConnected
     /// The connection closed after the request was sent and before its reply,
@@ -10,7 +10,7 @@ public nonisolated enum HostClientError: LocalizedError, Equatable {
     case rejected(String)
     case unexpectedReply
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .notConnected: "Not connected to this host."
         case .disconnected: "The connection to this host was lost."

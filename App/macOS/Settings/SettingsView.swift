@@ -1,6 +1,4 @@
 import AppKit
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {

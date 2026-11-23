@@ -6,26 +6,26 @@ import Network
 /// needs (a bare host and port won't upgrade). Callbacks run on the main queue,
 /// so handlers observe messages in the order they arrived.
 @MainActor
-public final class WebSocketChannel: HostChannel {
-    public var onReady: (() -> Void)?
-    public var onMessage: ((Data) -> Void)?
-    public var onClose: ((String?) -> Void)?
+final class WebSocketChannel: HostChannel {
+    var onReady: (() -> Void)?
+    var onMessage: ((Data) -> Void)?
+    var onClose: ((String?) -> Void)?
 
     private let connection: NWConnection
     private var isClosed = false
 
-    public init(connection: NWConnection) {
+    init(connection: NWConnection) {
         self.connection = connection
     }
 
     /// Dials `url`, sending `headers` with the WebSocket handshake.
-    public convenience init(url: URL, headers: [(name: String, value: String)] = []) {
+    convenience init(url: URL, headers: [(name: String, value: String)] = []) {
         let parameters = Self.parameters(secure: url.scheme == "wss", headers: headers)
         self.init(connection: NWConnection(to: .url(url), using: parameters))
     }
 
     /// A host connection's TCP, or TLS for `wss`, with a WebSocket application protocol.
-    public static func parameters(secure: Bool = false, headers: [(name: String, value: String)] = []) -> NWParameters {
+    static func parameters(secure: Bool = false, headers: [(name: String, value: String)] = []) -> NWParameters {
         let parameters = NWParameters.hostConnection(secure: secure)
         let webSocket = NWProtocolWebSocket.Options()
         webSocket.autoReplyPing = true
@@ -35,7 +35,7 @@ public final class WebSocketChannel: HostChannel {
         return parameters
     }
 
-    public func start() {
+    func start() {
         connection.stateUpdateHandler = { [weak self] state in
             MainActor.assumeIsolated { self?.handle(state) }
         }
@@ -48,12 +48,12 @@ public final class WebSocketChannel: HostChannel {
         receive()
     }
 
-    public func send(_ data: Data) {
+    func send(_ data: Data) {
         send(data, opcode: .binary)
     }
 
     /// Sends a text message, such as a keep-alive the far end matches as text.
-    public func send(text: String) {
+    func send(text: String) {
         send(Data(text.utf8), opcode: .text)
     }
 
@@ -67,7 +67,7 @@ public final class WebSocketChannel: HostChannel {
         })
     }
 
-    public func close() {
+    func close() {
         finish(nil)
     }
 

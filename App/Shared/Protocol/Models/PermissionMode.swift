@@ -2,7 +2,7 @@
 /// own settings; a mode it can't use isn't offered. The cases run from
 /// narrowest to broadest, which the host relies on to cap what an agent hands
 /// on, so keep that order.
-public nonisolated enum PermissionMode: String, Codable, Sendable, Hashable, CaseIterable {
+nonisolated enum PermissionMode: String, Codable, Sendable, Hashable, CaseIterable {
     /// Asks before edits and commands.
     case supervised
     /// Edits files without asking.
@@ -14,7 +14,7 @@ public nonisolated enum PermissionMode: String, Codable, Sendable, Hashable, Cas
 
     /// The mode a chat starts in for `preferred`: Supervised when the agent can't
     /// use that, or the first it can when it can't ask either.
-    public static func resolved(_ preferred: PermissionMode, allowed: [PermissionMode]?) -> PermissionMode {
+    static func resolved(_ preferred: PermissionMode, allowed: [PermissionMode]?) -> PermissionMode {
         guard let allowed, !allowed.contains(preferred) else { return preferred }
         return allowed.contains(.supervised) || allowed.isEmpty ? .supervised : allowed[0]
     }

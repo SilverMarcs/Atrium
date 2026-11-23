@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 extension SnoozeDuration {
     /// The durations a task's Snooze menu always shows.
     static let menu: [SnoozeDuration] = [.oneHour, .threeHours, .sixHours, .oneDay]

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A row of Claude's model picker, as its SDK `initialize` response lists it.

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// Keys to press in a running command, for prompts that want more than a typed reply.

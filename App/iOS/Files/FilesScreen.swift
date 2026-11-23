@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// One folder of a project on its host, loaded on its own and kept current

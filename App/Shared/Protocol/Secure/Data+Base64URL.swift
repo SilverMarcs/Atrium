@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated extension Data {
+nonisolated extension Data {
     func base64URLEncodedString() -> String {
         base64EncodedString()
             .replacing("+", with: "-")

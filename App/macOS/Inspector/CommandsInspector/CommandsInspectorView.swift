@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// A project's saved commands, which run on its host, with the selected one's

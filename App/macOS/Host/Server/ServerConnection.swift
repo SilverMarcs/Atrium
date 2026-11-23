@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// One client of this host: the Mac's own UI in process, a device through

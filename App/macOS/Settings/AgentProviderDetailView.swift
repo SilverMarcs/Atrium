@@ -1,6 +1,3 @@
-import AtriumClient
-import AtriumHost
-import AtriumProtocol
 import SwiftUI
 
 /// Dedicated detail view for one agent provider, pushed from `AgentsSettingsView`.

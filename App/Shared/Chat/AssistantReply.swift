@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Splits a reply into the text the timeline shows and the steps folded behind

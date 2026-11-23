@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Chooses where a new chat starts, above the composer.

@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import Observation
 
 /// The page each chat has open in the inspector, for the window's lifetime.

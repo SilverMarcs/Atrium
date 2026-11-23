@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 extension AgentProvider {
@@ -13,14 +12,14 @@ extension AgentProvider {
 
 /// Resolves the CLI Atrium actually launches and keeps updates with its existing installer.
 @MainActor
-public struct AgentCLIInstallation {
-    public let version: String
+struct AgentCLIInstallation {
+    let version: String
     let updateCommand: String
     let updateArguments: [String]
     let versionURL: URL
     let versionKeys: [String]
 
-    public static func read(_ provider: AgentProvider) async throws -> Self {
+    static func read(_ provider: AgentProvider) async throws -> Self {
         async let location = IntegrationProcess.run("/usr/bin/which", arguments: [provider.command])
         async let output = IntegrationProcess.run(provider.command, arguments: ["--version"])
         let path = String(decoding: try await location, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,7 +82,7 @@ public struct AgentCLIInstallation {
         return Self(version: version, updateCommand: command, updateArguments: arguments, versionURL: url, versionKeys: keys)
     }
 
-    public func latestVersion() async throws -> String {
+    func latestVersion() async throws -> String {
         let request = URLRequest(url: versionURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
@@ -102,7 +101,7 @@ public struct AgentCLIInstallation {
     }
 
     /// Runs the installer the CLI came from, as `updateCommand` names it.
-    public func update() async throws {
+    func update() async throws {
         _ = try await IntegrationProcess.run(updateCommand, arguments: updateArguments, timeout: .seconds(300))
     }
 

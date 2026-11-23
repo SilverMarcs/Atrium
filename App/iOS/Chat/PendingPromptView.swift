@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The bubble a prompt on its way shows in, which later gets confirmed. One

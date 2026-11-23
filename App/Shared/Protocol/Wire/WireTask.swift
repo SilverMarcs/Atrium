@@ -2,52 +2,52 @@ import Foundation
 
 /// One row of the Mac sidebar. Sections and ordering are derived from these
 /// fields on the companion with the same rules the Mac uses.
-public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
-    public var id: String
-    public var title: String
-    public var provider: AgentProvider
-    public var status: AgentThreadStatus
-    public var projectName: String
+nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
+    var id: String
+    var title: String
+    var provider: AgentProvider
+    var status: AgentThreadStatus
+    var projectName: String
     /// The checkout the task works in, on the host.
-    public var path: String
+    var path: String
     /// Home-relative path of the checkout, for display.
-    public var directory: String
+    var directory: String
     /// The Atrium project the task belongs to, when one exists on the Mac.
-    public var workspaceID: UUID?
-    public var updatedAt: Date
-    public var hasUnreadResult: Bool
-    public var isSettled: Bool
-    public var snoozedUntil: Date?
-    public var supportsDeletion: Bool
+    var workspaceID: UUID?
+    var updatedAt: Date
+    var hasUnreadResult: Bool
+    var isSettled: Bool
+    var snoozedUntil: Date?
+    var supportsDeletion: Bool
     /// Actions the Mac currently allows, so the companion never offers one it would reject.
-    public var actions: TaskActions
+    var actions: TaskActions
     /// The model the agent last ran with and its reasoning effort, when known.
-    public var model: String?
-    public var reasoningEffort: String?
+    var model: String?
+    var reasoningEffort: String?
     /// Whether the agent runs in fast mode, when its provider has one and it's known.
-    public var isFastMode: Bool?
+    var isFastMode: Bool?
     /// How freely the agent acts without asking, when known.
-    public var permissionMode: PermissionMode?
+    var permissionMode: PermissionMode?
     /// Modes the chat can switch to only by restarting it, which ends a running turn.
-    public var permissionModesNeedingRestart: [PermissionMode]?
+    var permissionModesNeedingRestart: [PermissionMode]?
     /// How much of its model's context the conversation uses, when its provider says.
-    public var contextUsage: WireContextUsage?
-    public var interactions: [AgentInteraction]
+    var contextUsage: WireContextUsage?
+    var interactions: [AgentInteraction]
     /// The checkout the agent works in, when it's in a Git repository: the one
     /// it last changed files in, or else where it runs commands.
-    public var checkout: TaskCheckout?
+    var checkout: TaskCheckout?
     /// The checkouts of its project the agent changed files in, the most
     /// recently changed first, one for each repository. Nil from a host that
     /// doesn't say.
-    public var changedCheckouts: [TaskCheckout]?
+    var changedCheckouts: [TaskCheckout]?
     /// Pull requests opened from the branches it worked on, or linked by hand.
-    public var pullRequests: [PullRequest]
+    var pullRequests: [PullRequest]
     /// Who started it for work they handed it, or the session a subagent or side chat belongs to.
-    public var origin: WireTaskOrigin?
+    var origin: WireTaskOrigin?
     /// The prompt waiting for the agent's turn to end.
-    public var queuedPrompt: QueuedPrompt?
+    var queuedPrompt: QueuedPrompt?
 
-    public init(
+    init(
         id: String,
         title: String,
         provider: AgentProvider,
@@ -103,7 +103,7 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         self.queuedPrompt = queuedPrompt
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         provider = try container.decode(AgentProvider.self, forKey: .provider)
@@ -133,9 +133,9 @@ public nonisolated struct WireTask: Codable, Sendable, Hashable, Identifiable {
         queuedPrompt = container.lenient(.queuedPrompt, or: nil)
     }
 
-    public var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
+    var isSnoozed: Bool { snoozedUntil != nil && !isSettled }
 
-    public static func newestFirst(_ lhs: WireTask, _ rhs: WireTask) -> Bool {
+    static func newestFirst(_ lhs: WireTask, _ rhs: WireTask) -> Bool {
         lhs.updatedAt == rhs.updatedAt ? lhs.id < rhs.id : lhs.updatedAt > rhs.updatedAt
     }
 }

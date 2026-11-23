@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated extension WireTasksSnapshot {
+nonisolated extension WireTasksSnapshot {
     mutating func apply(_ delta: WireTasksDelta) {
         tasks = Self.merging(tasks, upserted: delta.upsertedTasks, removed: delta.removedTaskIDs)
         workspaces = Self.merging(workspaces, upserted: delta.upsertedWorkspaces, removed: delta.removedWorkspaceIDs)

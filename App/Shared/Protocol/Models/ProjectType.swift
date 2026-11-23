@@ -2,7 +2,7 @@ import Foundation
 
 /// What kind of project a folder holds, which picks its icon. Workspaces
 /// carry it by raw value.
-public nonisolated enum ProjectType: String, Codable, CaseIterable, Sendable {
+nonisolated enum ProjectType: String, Codable, CaseIterable, Sendable {
     case swiftPackage
     case nextjs
     case expo
@@ -21,7 +21,7 @@ public nonisolated enum ProjectType: String, Codable, CaseIterable, Sendable {
     case unknown
     case none
 
-    public var displayName: String {
+    var displayName: String {
         switch self {
         case .swiftPackage: "Swift"
         case .nextjs:       "Next.js"
@@ -44,7 +44,7 @@ public nonisolated enum ProjectType: String, Codable, CaseIterable, Sendable {
     }
 
     /// The asset clients draw for it, or empty for none.
-    public var iconName: String {
+    var iconName: String {
         switch self {
         case .swiftPackage: "swift"
         case .nextjs:       "nextdotjs"

@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 extension WireCommand {
     /// How the latest run is going, for a subtitle.
     var status: String? {

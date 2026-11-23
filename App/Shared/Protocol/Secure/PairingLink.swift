@@ -4,17 +4,17 @@ import Foundation
 /// What a host's pairing QR code or link carries: which host to reach through
 /// the relay and the key that proves it's really that host, plus a one-time
 /// secret that admits one client.
-public nonisolated struct PairingLink: Equatable, Sendable {
-    public var hostID: String
-    public var publicKey: Data
-    public var secret: String
-    public var hostName: String
-    public var hostIcon: HostIcon
+nonisolated struct PairingLink: Equatable, Sendable {
+    var hostID: String
+    var publicKey: Data
+    var secret: String
+    var hostName: String
+    var hostIcon: HostIcon
 
-    public static let scheme = "atrium"
+    static let scheme = "atrium"
     private static let version = "3"
 
-    public var url: URL? {
+    var url: URL? {
         var components = URLComponents()
         components.scheme = Self.scheme
         components.host = "pair"
@@ -29,7 +29,7 @@ public nonisolated struct PairingLink: Equatable, Sendable {
         return components.url
     }
 
-    public init(hostID: String, publicKey: Data, secret: String, hostName: String, hostIcon: HostIcon = .default) {
+    init(hostID: String, publicKey: Data, secret: String, hostName: String, hostIcon: HostIcon = .default) {
         self.hostID = hostID
         self.publicKey = publicKey
         self.secret = secret
@@ -37,7 +37,7 @@ public nonisolated struct PairingLink: Equatable, Sendable {
         self.hostIcon = hostIcon
     }
 
-    public init?(url: URL) {
+    init?(url: URL) {
         guard url.scheme == Self.scheme, url.host == "pair",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
@@ -55,7 +55,7 @@ public nonisolated struct PairingLink: Equatable, Sendable {
     }
 
     /// Binds the handshake to this host, so a key captured for one host can't be replayed for another.
-    public static func prologue(hostID: String) -> Data {
+    static func prologue(hostID: String) -> Data {
         Data("atrium-companion-relay-v1:\(hostID)".utf8)
     }
 }

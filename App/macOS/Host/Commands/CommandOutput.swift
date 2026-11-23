@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A command's output as plain text, read from what it writes to its terminal.

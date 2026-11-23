@@ -1,11 +1,11 @@
 import Foundation
 
-public nonisolated enum NoiseError: LocalizedError {
+nonisolated enum NoiseError: LocalizedError {
     case invalidMessage
     case nonceExhausted
     case handshakeIncomplete
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .invalidMessage: "The secure connection received a message it couldn’t verify."
         case .nonceExhausted: "The secure connection ran out of message numbers."

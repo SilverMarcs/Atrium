@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated extension WireTasksSnapshot {
+nonisolated extension WireTasksSnapshot {
     /// Tasks that have just finished or started waiting for input since
     /// `previous`, which is what the phone is alerted about. A task that's
     /// new, settled or snoozed doesn't count.

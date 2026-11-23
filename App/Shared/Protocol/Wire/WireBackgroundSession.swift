@@ -1,28 +1,28 @@
 import Foundation
 
 /// A background shell session currently running under one of a host's agents.
-public nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifiable {
-    public var id: String
-    public var provider: AgentProvider
+nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifiable {
+    var id: String
+    var provider: AgentProvider
     /// The Atrium task ID (`"<provider>:<sessionID>"`) that started it.
-    public var taskID: String
+    var taskID: String
     /// The title of the task that started it.
-    public var taskTitle: String
+    var taskTitle: String
     /// Agent-provided name or description, or a concise summary of the command.
-    public var title: String
+    var title: String
     /// The shell command running in the background.
-    public var command: String
+    var command: String
     /// Working directory where the background session runs.
-    public var directory: String
+    var directory: String
     /// When the background session started, if known.
-    public var startedAt: Date?
+    var startedAt: Date?
     /// Whether live output can be streamed for this session.
-    public var hasOutput: Bool
+    var hasOutput: Bool
 
     /// What lists show it as: the title of the chat that started it, else its own.
-    public var chatTitle: String { taskTitle.isEmpty ? title : taskTitle }
+    var chatTitle: String { taskTitle.isEmpty ? title : taskTitle }
 
-    public init(
+    init(
         id: String,
         provider: AgentProvider,
         taskID: String,
@@ -44,7 +44,7 @@ public nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Id
         self.hasOutput = hasOutput
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         provider = try container.decode(AgentProvider.self, forKey: .provider)

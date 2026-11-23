@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import Foundation
 
 /// How the sidebar search matches a task in both apps.

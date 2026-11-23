@@ -1,9 +1,8 @@
-import AtriumProtocol
 import Foundation
 
 /// How far a paired agent such as ChatGPT may go, as the user chose when
 /// approving it: only read sessions, or hand them work up to a permission mode.
-public nonisolated enum AgentAccess: Codable, Sendable, Hashable {
+nonisolated enum AgentAccess: Codable, Sendable, Hashable {
     case readOnly
     case upTo(PermissionMode)
 

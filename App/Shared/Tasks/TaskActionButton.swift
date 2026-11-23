@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// One task action as a button, worded the same in both apps.

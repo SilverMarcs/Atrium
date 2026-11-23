@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// An overlay on host state, discarded when its request succeeds or fails.

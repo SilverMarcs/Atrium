@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Images attached to prompts from clients, written to files the agent can

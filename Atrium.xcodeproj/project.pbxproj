@@ -19,11 +19,6 @@
 		0A7C00000000000000000222 /* RelayIconDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000212 /* RelayIconDownloader.swift */; };
 		0A7C00000000000000000223 /* ProjectNotificationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000215 /* ProjectNotificationContent.swift */; };
 		0A7C00000000000000000224 /* AtriumNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A7C00000000000000000201 /* AtriumNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		0A7C00000000000000000312 /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000302 /* AtriumClient */; };
-		0A7C00000000000000000313 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000303 /* AtriumProtocol */; };
-		0A7C00000000000000000314 /* AtriumClient in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000304 /* AtriumClient */; };
-		0A7C00000000000000000315 /* AtriumProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000305 /* AtriumProtocol */; };
-		0A7C00000000000000000316 /* AtriumHost in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000307 /* AtriumHost */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,9 +109,6 @@
 				0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */,
 				08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */,
 				08BEFC322F74722D009C3710 /* Highlightr in Frameworks */,
-				0A7C00000000000000000312 /* AtriumClient in Frameworks */,
-				0A7C00000000000000000313 /* AtriumProtocol in Frameworks */,
-				0A7C00000000000000000316 /* AtriumHost in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,8 +119,6 @@
 				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
 				0A7C00000000000000000106 /* Highlightr in Frameworks */,
 				0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */,
-				0A7C00000000000000000314 /* AtriumClient in Frameworks */,
-				0A7C00000000000000000315 /* AtriumProtocol in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,7 +135,6 @@
 			isa = PBXGroup;
 			children = (
 				0A7C00000000000000000701 /* App */,
-				0A7C00000000000000000702 /* Packages */,
 				08D10C4B2F64897100754649 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -159,13 +148,6 @@
 				0A7C00000000000000000202 /* NotificationService */,
 			);
 			path = App;
-			sourceTree = "<group>";
-		};
-		0A7C00000000000000000702 /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Packages;
 			sourceTree = "<group>";
 		};
 		08D10C4B2F64897100754649 /* Products */ = {
@@ -216,9 +198,6 @@
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
 				08BEFC292F74722D009C370E /* Sparkle */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
-				0A7C00000000000000000302 /* AtriumClient */,
-				0A7C00000000000000000303 /* AtriumProtocol */,
-				0A7C00000000000000000307 /* AtriumHost */,
 			);
 			productName = Atrium;
 			productReference = 08D10C4A2F64897100754649 /* Atrium.app */;
@@ -247,8 +226,6 @@
 				0A7C00000000000000000103 /* SwiftMarkdownView */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
-				0A7C00000000000000000304 /* AtriumClient */,
-				0A7C00000000000000000305 /* AtriumProtocol */,
 			);
 			productName = AtriumiOS;
 			productReference = 0A7C00000000000000000001 /* Atrium.app */;
@@ -313,8 +290,6 @@
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
 				0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */,
-				0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */,
-				0A7C00000000000000000306 /* XCLocalSwiftPackageReference "AtriumHost" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08D10C4B2F64897100754649 /* Products */;
@@ -800,17 +775,6 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/AtriumKit;
-		};
-		0A7C00000000000000000306 /* XCLocalSwiftPackageReference "AtriumHost" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/AtriumHost;
-		};
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin XCRemoteSwiftPackageReference section */
 		08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -866,31 +830,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */;
 			productName = SwiftMediaViewer;
-		};
-		0A7C00000000000000000302 /* AtriumClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumClient;
-		};
-		0A7C00000000000000000303 /* AtriumProtocol */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumProtocol;
-		};
-		0A7C00000000000000000304 /* AtriumClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumClient;
-		};
-		0A7C00000000000000000305 /* AtriumProtocol */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000301 /* XCLocalSwiftPackageReference "AtriumKit" */;
-			productName = AtriumProtocol;
-		};
-		0A7C00000000000000000307 /* AtriumHost */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0A7C00000000000000000306 /* XCLocalSwiftPackageReference "AtriumHost" */;
-			productName = AtriumHost;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

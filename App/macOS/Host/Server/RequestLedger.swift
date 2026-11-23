@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Changes clients sent with a key, so a client that lost a reply can send the

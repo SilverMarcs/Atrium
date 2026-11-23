@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The prompt waiting for the agent's turn to end, at the end of the timeline.

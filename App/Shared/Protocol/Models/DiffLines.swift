@@ -1,6 +1,6 @@
 import Foundation
 
-public extension StringProtocol {
+extension StringProtocol {
     /// The text's lines, split at each "\n" with any "\r" before it kept, so
     /// a patch rebuilt from them is byte for byte the same. Splitting on the
     /// Character "\n" misses CRLF endings: Swift reads "\r\n" as one Character.

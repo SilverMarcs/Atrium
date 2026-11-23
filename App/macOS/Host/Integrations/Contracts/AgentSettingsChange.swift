@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 /// A change to the settings a thread's next turns use, chosen from one the
 /// provider lists.
 enum AgentSettingsChange: Sendable {

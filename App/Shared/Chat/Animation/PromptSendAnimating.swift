@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Flies a just-sent prompt's bubble in from the composer: each platform's

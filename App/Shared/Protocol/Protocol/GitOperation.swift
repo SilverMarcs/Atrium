@@ -2,7 +2,7 @@ import Foundation
 
 /// Something to do in one of a project's repositories. Operations that change
 /// a repository refresh the project's Git status for every client.
-public nonisolated enum GitOperation: Codable, Sendable {
+nonisolated enum GitOperation: Codable, Sendable {
     case initialize
     case stage(paths: [String])
     case unstage(paths: [String])
@@ -43,7 +43,7 @@ public nonisolated enum GitOperation: Codable, Sendable {
     case gutterDiff(file: URL)
 
     /// Whether the operation can change what `git status` reports.
-    public var changesStatus: Bool {
+    var changesStatus: Bool {
         switch self {
         case .log, .commitFiles, .compare, .branches, .hasUncommittedChanges, .diff, .imageDiff, .gutterDiff, .fetchIfStale:
             false
@@ -53,7 +53,7 @@ public nonisolated enum GitOperation: Codable, Sendable {
     }
 }
 
-public nonisolated enum GitReply: Codable, Sendable {
+nonisolated enum GitReply: Codable, Sendable {
     case done
     case flag(Bool)
     case files([GitChangedFile])

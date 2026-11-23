@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 extension PermissionMode {
     var title: String {
         switch self {

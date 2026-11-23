@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 import Observation
 
@@ -15,15 +14,15 @@ import Observation
 /// with `setActivity(_:)` or a request.
 @MainActor
 @Observable
-public final class HostClient: Identifiable {
-    public nonisolated enum State: Equatable, Sendable {
+final class HostClient: Identifiable {
+    nonisolated enum State: Equatable, Sendable {
         case connecting
         case connected
         case offline(String)
     }
 
     /// How a paired host is reached.
-    public nonisolated enum Route: Sendable {
+    nonisolated enum Route: Sendable {
         case localNetwork
         case relay
     }
@@ -35,55 +34,55 @@ public final class HostClient: Identifiable {
         case token(String)
     }
 
-    public let id: String
+    let id: String
     /// Whether this is the host running in this app.
-    public let isLocal: Bool
-    public private(set) var pairedHost: PairedHost?
-    public private(set) var state: State = .connecting {
+    let isLocal: Bool
+    private(set) var pairedHost: PairedHost?
+    private(set) var state: State = .connecting {
         didSet { if state != oldValue { notify(.state(state)) } }
     }
     /// How the connection in use reaches a paired host.
-    public private(set) var route: Route?
-    public private(set) var hello: HostHello?
+    private(set) var route: Route?
+    private(set) var hello: HostHello?
     /// The latest failed action, shown as an alert.
-    public var actionError: String?
+    var actionError: String?
 
     @ObservationIgnored private var hostTasks: WireTasksSnapshot? { didSet { applyTaskUpdates() } }
     @ObservationIgnored private var taskUpdates: [OptimisticTaskUpdate] = [] { didSet { applyTaskUpdates() } }
     /// The host's tasks, projects and agents, with actions this client sent
     /// shown before the host confirms them. Kept rather than worked out on
     /// each read: lists, toolbars and every task lookup read it many times a second.
-    public private(set) var tasks: WireTasksSnapshot?
+    private(set) var tasks: WireTasksSnapshot?
 
     private func applyTaskUpdates() {
         guard var snapshot = hostTasks else { tasks = nil; return }
         for update in taskUpdates { update.apply(to: &snapshot) }
         tasks = snapshot
     }
-    public private(set) var gitStatuses: [GitScope: [GitRepositoryStatus]] = [:]
-    public private(set) var commands: [UUID: [WireCommand]] = [:]
+    private(set) var gitStatuses: [GitScope: [GitRepositoryStatus]] = [:]
+    private(set) var commands: [UUID: [WireCommand]] = [:]
     /// What followed commands printed, by command. Kept after they're no longer
     /// followed, until the host sends them again.
-    public private(set) var commandOutputs: [UUID: WireCommandOutput] = [:]
+    private(set) var commandOutputs: [UUID: WireCommandOutput] = [:]
     /// What followed agent background sessions printed, by session ID, while followed.
-    public private(set) var backgroundSessionOutputs: [String: WireCommandOutput] = [:]
+    private(set) var backgroundSessionOutputs: [String: WireCommandOutput] = [:]
     /// Entries of followed folders, by their `.directory` topic.
-    public private(set) var directories: [HostTopic: [FileEntry]] = [:]
+    private(set) var directories: [HostTopic: [FileEntry]] = [:]
     /// The host's remote access, while its own Mac UI follows it.
-    public private(set) var remoteAccess: WireRemoteAccess?
+    private(set) var remoteAccess: WireRemoteAccess?
     /// Bumped each time a followed file changes on the host, by its `.file` topic.
-    public private(set) var fileRevisions: [HostTopic: Int] = [:]
-    public let conversations = ConversationStore()
+    private(set) var fileRevisions: [HostTopic: Int] = [:]
+    let conversations = ConversationStore()
     /// Why a followed conversation couldn't be loaded, by task.
-    public private(set) var transcriptErrors: [String: String] = [:]
+    private(set) var transcriptErrors: [String: String] = [:]
     /// New tasks opened on this device, by draft ID. One stays after its first
     /// prompt until the task list shows the task the host created for it.
-    public internal(set) var drafts: [String: TaskDraft] = [:]
+    var drafts: [String: TaskDraft] = [:]
 
     /// Called as the transcript takes over showing a prompt sent from this
     /// device, with the message that now shows it, so a send animation still
     /// running carries on in that message's row.
-    @ObservationIgnored public var onPendingPromptShown: ((PendingPrompt.ID, TranscriptMessage.ID) -> Void)?
+    @ObservationIgnored var onPendingPromptShown: ((PendingPrompt.ID, TranscriptMessage.ID) -> Void)?
     @ObservationIgnored weak var connections: HostConnections?
 
     /// Connects to the Mac's own host; nil for a paired host.
@@ -113,7 +112,7 @@ public final class HostClient: Identifiable {
     @ObservationIgnored private var observers: [UUID: AsyncStream<HostClientChange>.Continuation] = [:]
 
     /// The Mac's own host.
-    public init(
+    init(
         localID: String,
         name: String,
         icon: HostIcon = .default,
@@ -150,26 +149,26 @@ public final class HostClient: Identifiable {
         }
     }
 
-    public var name: String { hello?.hostName ?? pairedHost?.hostName ?? localName }
-    public var icon: HostIcon { hello?.hostIcon ?? pairedHost?.hostIcon ?? localIcon }
-    public var isConnected: Bool { state == .connected }
+    var name: String { hello?.hostName ?? pairedHost?.hostName ?? localName }
+    var icon: HostIcon { hello?.hostIcon ?? pairedHost?.hostIcon ?? localIcon }
+    var isConnected: Bool { state == .connected }
     /// Whether the relay is holding a connection until the host comes online.
     private var isWaitingForHost: Bool {
         if case .offline = state { connection != nil } else { false }
     }
-    public var isPairing: Bool { if case .pair = authentication { true } else { false } }
+    var isPairing: Bool { if case .pair = authentication { true } else { false } }
     /// Whether the host speaks a newer protocol than this app.
-    public var needsAppUpdate: Bool { (hello?.protocolVersion ?? 0) > HostProtocol.version }
+    var needsAppUpdate: Bool { (hello?.protocolVersion ?? 0) > HostProtocol.version }
 
     // MARK: - Connection
 
     /// Connects, and keeps reconnecting while the host can't be reached.
-    public func start() {
+    func start() {
         connect()
     }
 
     /// Tries the host again now instead of waiting out the retry delay.
-    public func retryNow() {
+    func retryNow() {
         guard !isConnected else { return }
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -180,7 +179,7 @@ public final class HostClient: Identifiable {
         connect()
     }
 
-    public func stop() {
+    func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil
         upgrade?.close()
@@ -406,7 +405,7 @@ public final class HostClient: Identifiable {
     /// Tells the host whether this client is in use and which of its tasks it
     /// shows, which routes alerts and counts that task as read. Clients that
     /// never call this stay out of both.
-    public func setActivity(_ activity: ClientActivity) {
+    func setActivity(_ activity: ClientActivity) {
         guard activity != self.activity else { return }
         self.activity = activity
         if isConnected { send(.activity(activity)) }
@@ -415,7 +414,7 @@ public final class HostClient: Identifiable {
     // MARK: - Topics
 
     /// Keeps `topic` subscribed until the calling task is cancelled. Call from `.task`.
-    public func follow(_ topic: HostTopic) async {
+    func follow(_ topic: HostTopic) async {
         topicCounts[topic, default: 0] += 1
         if topicCounts[topic] == 1, isConnected { subscribe(topic) }
         await Task.waitUntilCancelled()
@@ -433,7 +432,7 @@ public final class HostClient: Identifiable {
     }
 
     /// Subscribes again, which has the host reload what it can.
-    public func reload(_ topic: HostTopic) {
+    func reload(_ topic: HostTopic) {
         if case .transcript(let taskID) = topic { transcriptErrors[taskID] = nil }
         if isConnected { subscribe(topic) }
     }
@@ -449,7 +448,7 @@ public final class HostClient: Identifiable {
 
     /// Every change of connection state and every event the host sends, each
     /// after this client has applied it, until the stream is dropped.
-    public func changes() -> AsyncStream<HostClientChange> {
+    func changes() -> AsyncStream<HostClientChange> {
         let (stream, continuation) = AsyncStream.makeStream(of: HostClientChange.self)
         let id = UUID()
         observers[id] = continuation
@@ -468,7 +467,7 @@ public final class HostClient: Identifiable {
     /// Sends a request and returns the host's reply, throwing when the host
     /// declines it. A `key` makes repeating the same change safe: the host
     /// performs it once and answers a repeat with the first success.
-    public func request(_ request: HostRequest, key: UUID? = nil) async throws -> HostReply {
+    func request(_ request: HostRequest, key: UUID? = nil) async throws -> HostReply {
         if let reply = performDraftRequest(request) {
             if case .failed(let message) = reply { throw HostClientError.rejected(message) }
             return reply
@@ -488,7 +487,7 @@ public final class HostClient: Identifiable {
     }
 
     /// Sends a request whose only result is success, reporting failures as `actionError`.
-    public func send(_ request: HostRequest) {
+    func send(_ request: HostRequest) {
         if let reply = performDraftRequest(request) {
             if case .failed(let message) = reply { actionError = message }
             return
@@ -497,7 +496,7 @@ public final class HostClient: Identifiable {
     }
 
     @discardableResult
-    public func perform(_ request: HostRequest) async -> HostReply? {
+    func perform(_ request: HostRequest) async -> HostReply? {
         do {
             return try await self.request(request)
         } catch is CancellationError {
@@ -512,14 +511,14 @@ public final class HostClient: Identifiable {
         }
     }
 
-    public func git(_ operation: GitOperation, in repository: URL, workspace workspaceID: UUID) async throws -> GitReply {
+    func git(_ operation: GitOperation, in repository: URL, workspace workspaceID: UUID) async throws -> GitReply {
         guard case .git(let reply) = try await request(.git(workspaceID: workspaceID, repository: repository, operation: operation)) else {
             throw HostClientError.unexpectedReply
         }
         return reply
     }
 
-    public func files(_ request: FileRequest, in workspaceID: UUID) async throws -> FileReply {
+    func files(_ request: FileRequest, in workspaceID: UUID) async throws -> FileReply {
         guard case .files(let reply) = try await self.request(.files(workspaceID: workspaceID, request: request)) else {
             throw HostClientError.unexpectedReply
         }
@@ -528,25 +527,25 @@ public final class HostClient: Identifiable {
 
     // MARK: - Lookup
 
-    public func workspace(_ id: UUID?) -> WireWorkspace? {
+    func workspace(_ id: UUID?) -> WireWorkspace? {
         tasks?.workspaces.first { $0.id == id }
     }
 
-    public func task(_ id: String) -> WireTask? {
+    func task(_ id: String) -> WireTask? {
         tasks?.tasks.first { $0.id == id }
     }
 
     /// The models a provider's tasks can switch to, as the host lists them.
-    public func models(for provider: AgentProvider) -> [AgentModel] {
+    func models(for provider: AgentProvider) -> [AgentModel] {
         tasks?.providers.first { $0.provider == provider }?.models ?? []
     }
 
-    public var availableProviders: [AgentProvider] {
+    var availableProviders: [AgentProvider] {
         tasks?.providers.filter(\.isAvailable).map(\.provider) ?? []
     }
 
     /// A custom project icon, fetched once and cached for the session.
-    public func icon(forKey key: String) async -> Data? {
+    func icon(forKey key: String) async -> Data? {
         if let data = icons[key] { return data }
         guard case .icon(let data) = try? await request(.icon(key: key)) else { return nil }
         icons[key] = data
@@ -554,7 +553,7 @@ public final class HostClient: Identifiable {
     }
 
     /// A page an agent showed in a task's transcript, or nil if the host can't provide it.
-    public func page(taskID: String, key: String) async -> String? {
+    func page(taskID: String, key: String) async -> String? {
         let data = await media.value(for: "page/\(taskID)/\(key)") { [weak self] in
             guard case .page(let html) = await self?.fetchMedia(.page(taskID: taskID, key: key)) else { return nil }
             return Data(html.utf8)
@@ -564,7 +563,7 @@ public final class HostClient: Identifiable {
 
     /// An image an agent showed in a task's transcript, by the path it wrote,
     /// scaled to fit `maxPixelSize`, or nil if the host can't provide it.
-    public func image(taskID: String, path: String, maxPixelSize: Int, pageKey: String? = nil) async -> Data? {
+    func image(taskID: String, path: String, maxPixelSize: Int, pageKey: String? = nil) async -> Data? {
         let scope = pageKey.map { "page:\($0)" } ?? "transcript"
         return await media.value(for: "image/\(taskID)/\(scope)/\(maxPixelSize)/\(path)") { [weak self] in
             guard case .image(let data) = await self?.fetchMedia(.image(taskID: taskID, path: path, maxPixelSize: maxPixelSize, pageKey: pageKey)) else { return nil }
@@ -574,7 +573,7 @@ public final class HostClient: Identifiable {
 
     /// An image attached to a prompt in a task's transcript as it was sent,
     /// scaled to fit `maxPixelSize`, or nil if the host can't provide it.
-    public func promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int) async -> Data? {
+    func promptImage(taskID: String, messageID: String, index: Int, maxPixelSize: Int) async -> Data? {
         await media.value(for: "prompt-image/\(taskID)/\(maxPixelSize)/\(messageID)/\(index)") { [weak self] in
             let request = HostRequest.promptImage(taskID: taskID, messageID: messageID, index: index, maxPixelSize: maxPixelSize)
             guard case .image(let data) = await self?.fetchMedia(request) else { return nil }
@@ -584,7 +583,7 @@ public final class HostClient: Identifiable {
 
     /// An image of a draft in a project's scratchpad, scaled to fit
     /// `maxPixelSize`, or nil if the host can't provide it.
-    public func scratchpadImage(key: String, maxPixelSize: Int) async -> Data? {
+    func scratchpadImage(key: String, maxPixelSize: Int) async -> Data? {
         await media.value(for: "scratchpad-image/\(maxPixelSize)/\(key)") { [weak self] in
             guard case .image(let data) = await self?.fetchMedia(.scratchpadImage(key: key, maxPixelSize: maxPixelSize)) else { return nil }
             return data
@@ -718,7 +717,7 @@ public final class HostClient: Identifiable {
 }
 
 /// Something that happened to a host's connection, as `HostClient.changes()` reports it.
-public nonisolated enum HostClientChange: Sendable {
+nonisolated enum HostClientChange: Sendable {
     case state(HostClient.State)
     case event(HostEvent)
     /// The host no longer accepts this device, which has forgotten it.
@@ -736,7 +735,7 @@ private extension HostRequest {
     }
 }
 
-public extension Task where Success == Never, Failure == Never {
+extension Task where Success == Never, Failure == Never {
     /// Suspends until the calling task is cancelled.
     static func waitUntilCancelled() async {
         while !Task.isCancelled {

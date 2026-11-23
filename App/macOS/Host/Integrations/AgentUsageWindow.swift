@@ -1,8 +1,8 @@
 import Foundation
 
-public struct AgentUsageWindow: Identifiable {
-    public let id: String
-    public let title: String
-    public let usedPercent: Double
-    public var resetsAt: Date?
+struct AgentUsageWindow: Identifiable {
+    let id: String
+    let title: String
+    let usedPercent: Double
+    var resetsAt: Date?
 }

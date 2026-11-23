@@ -1,7 +1,4 @@
 import AppKit
-import AtriumClient
-import AtriumHost
-import AtriumProtocol
 import UserNotifications
 
 /// Launch, quit, and this Mac's alerts: the host decides when to alert, and

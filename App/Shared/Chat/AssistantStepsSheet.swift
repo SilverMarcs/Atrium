@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// Every step behind a reply, in order: the agent's notes as plain text, each

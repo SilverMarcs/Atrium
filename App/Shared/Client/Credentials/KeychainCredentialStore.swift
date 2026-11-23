@@ -1,11 +1,10 @@
-import AtriumProtocol
 import Foundation
 import Security
 
 /// The apps' credentials. Tokens live in the Keychain; the hosts' relay IDs
 /// and public keys and this install's device id are not secret, so they live
 /// in user defaults.
-public final class KeychainCredentialStore: CredentialStore {
+final class KeychainCredentialStore: CredentialStore {
     private let deviceName: String
     private let defaults: UserDefaults
     private let keychainService: String
@@ -14,7 +13,7 @@ public final class KeychainCredentialStore: CredentialStore {
     private static let deviceIDKey = "clientDeviceID"
 
     /// - Parameter deviceName: What paired hosts list this device as.
-    public init(
+    init(
         deviceName: String,
         defaults: UserDefaults = .standard,
         keychainService: String = (Bundle.main.bundleIdentifier ?? "com.SilverMarcs.Atrium") + ".client"
@@ -24,15 +23,15 @@ public final class KeychainCredentialStore: CredentialStore {
         self.keychainService = keychainService
     }
 
-    public var device: ClientDevice {
+    var device: ClientDevice {
         ClientDevice(id: deviceID, name: deviceName)
     }
 
-    public var pairedHosts: [PairedHost] {
+    var pairedHosts: [PairedHost] {
         defaults.data(forKey: Self.pairedHostsKey).flatMap { try? JSONDecoder().decode([PairedHost].self, from: $0) } ?? []
     }
 
-    public func token(for host: PairedHost) -> String? {
+    func token(for host: PairedHost) -> String? {
         #if DEBUG
         return defaults.string(forKey: debugTokenKey(for: host))
         #endif
@@ -45,7 +44,7 @@ public final class KeychainCredentialStore: CredentialStore {
         return String(data: data, encoding: .utf8)
     }
 
-    public func save(_ host: PairedHost, token: String) {
+    func save(_ host: PairedHost, token: String) {
         #if DEBUG
         defaults.set(token, forKey: debugTokenKey(for: host))
         store(pairedHosts.adding(host))
@@ -59,11 +58,11 @@ public final class KeychainCredentialStore: CredentialStore {
         store(pairedHosts.adding(host))
     }
 
-    public func update(_ host: PairedHost) {
+    func update(_ host: PairedHost) {
         store(pairedHosts.updating(host))
     }
 
-    public func forget(_ host: PairedHost) {
+    func forget(_ host: PairedHost) {
         #if DEBUG
         defaults.removeObject(forKey: debugTokenKey(for: host))
         #else

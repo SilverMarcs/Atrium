@@ -6,10 +6,10 @@ import Foundation
 /// message is sealed with ChaCha20-Poly1305, so a relay in between only ever
 /// carries ciphertext and can't impersonate the host.
 @MainActor
-public final class NoiseChannel: HostChannel {
-    public var onReady: (() -> Void)?
-    public var onMessage: ((Data) -> Void)?
-    public var onClose: ((String?) -> Void)?
+final class NoiseChannel: HostChannel {
+    var onReady: (() -> Void)?
+    var onMessage: ((Data) -> Void)?
+    var onClose: ((String?) -> Void)?
 
     private let inner: any HostChannel
     private var handshake: NoiseHandshake
@@ -18,20 +18,20 @@ public final class NoiseChannel: HostChannel {
     private var receiveCipher: NoiseCipherState?
     private var isClosed = false
 
-    public init(inner: any HostChannel, role: NoiseHandshake.Role, prologue: Data) {
+    init(inner: any HostChannel, role: NoiseHandshake.Role, prologue: Data) {
         self.inner = inner
         handshake = NoiseHandshake(role: role, prologue: prologue)
         if case .initiator = role { isInitiator = true } else { isInitiator = false }
     }
 
-    public func start() {
+    func start() {
         inner.onReady = { [weak self] in self?.innerReady() }
         inner.onMessage = { [weak self] data in self?.receive(data) }
         inner.onClose = { [weak self] reason in self?.finish(reason) }
         inner.start()
     }
 
-    public func send(_ data: Data) {
+    func send(_ data: Data) {
         guard !isClosed, var cipher = sendCipher else { return }
         do {
             let sealed = try cipher.encrypt(data)
@@ -42,7 +42,7 @@ public final class NoiseChannel: HostChannel {
         }
     }
 
-    public func close() {
+    func close() {
         finish(nil)
     }
 

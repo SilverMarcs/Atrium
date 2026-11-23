@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import SwiftUI
 
 /// NSView subclass that fires a callback whenever AppKit changes its frame

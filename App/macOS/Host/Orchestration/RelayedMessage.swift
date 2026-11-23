@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The prompts Atrium writes into a session on another agent's behalf: work

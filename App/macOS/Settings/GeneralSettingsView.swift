@@ -1,6 +1,4 @@
 import AppKit
-import AtriumHost
-import AtriumProtocol
 import SwiftUI
 
 struct GeneralSettingsView: View {

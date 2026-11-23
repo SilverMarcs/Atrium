@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Runs a client's Git operation in one of a project's repositories.

@@ -4,7 +4,7 @@ import Foundation
 /// host. Implementations own reachability, framing and encryption, so neither
 /// side depends on how bytes travel.
 @MainActor
-public protocol HostChannel: AnyObject {
+protocol HostChannel: AnyObject {
     /// Called once the channel can carry messages.
     var onReady: (() -> Void)? { get set }
     var onMessage: ((Data) -> Void)? { get set }

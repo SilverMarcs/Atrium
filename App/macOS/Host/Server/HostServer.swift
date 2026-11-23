@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 import Observation
 import SystemConfiguration
@@ -17,7 +16,7 @@ import SystemConfiguration
 /// currently in use.
 @MainActor
 @Observable
-public final class HostServer {
+final class HostServer {
     enum Status: Equatable {
         case stopped
         case starting
@@ -51,7 +50,7 @@ public final class HostServer {
     }
 
     /// The icon this host advertises for itself.
-    public private(set) var hostIcon: HostIcon {
+    private(set) var hostIcon: HostIcon {
         didSet {
             guard hostIcon != oldValue else { return }
             UserDefaults.standard.set(hostIcon.rawValue, forKey: Self.hostIconKey)
@@ -60,7 +59,7 @@ public final class HostServer {
     }
 
     /// The name this host advertises to every client, itself included.
-    public var hostName: String { customHostName ?? Self.defaultHostName }
+    var hostName: String { customHostName ?? Self.defaultHostName }
 
     /// What the pairing QR code and link carry.
     private var pairingLink: PairingLink {
@@ -73,7 +72,7 @@ public final class HostServer {
         )
     }
 
-    public var hello: HostHello {
+    var hello: HostHello {
         HostHello(
             hostID: HostIdentity.hostID,
             hostName: hostName,
@@ -114,7 +113,7 @@ public final class HostServer {
     @ObservationIgnored private var isLoadingInitialTasks = true
     @ObservationIgnored private let secrets: SecretRequests
     /// What Settings → Integrations turns on, which stays with this Mac's host.
-    @ObservationIgnored public let integrationSettings = IntegrationSettings()
+    @ObservationIgnored let integrationSettings = IntegrationSettings()
     @ObservationIgnored private let antigravity: AntigravityAgentAdapter
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
@@ -140,7 +139,7 @@ public final class HostServer {
         return name
     }()
 
-    public init() {
+    init() {
         let savedName = UserDefaults.standard.string(forKey: Self.customHostNameKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         customHostName = savedName?.isEmpty == false ? savedName : nil
         hostIcon = UserDefaults.standard.string(forKey: Self.hostIconKey).flatMap(HostIcon.init(rawValue:)) ?? .default
@@ -223,7 +222,7 @@ public final class HostServer {
     }
 
     /// The account and usage a provider reports, for Settings → Agents.
-    public func usage(of provider: AgentProvider) async throws -> AgentUsageSnapshot {
+    func usage(of provider: AgentProvider) async throws -> AgentUsageSnapshot {
         switch provider {
         case .codex:
             // A separate, short-lived connection keeps Settings independent of

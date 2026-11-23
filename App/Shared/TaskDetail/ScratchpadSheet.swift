@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// A project's scratchpad: drafts put aside, newest first, kept on its host

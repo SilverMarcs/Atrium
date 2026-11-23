@@ -1,8 +1,6 @@
 #if os(macOS)
 import AppKit
 #endif
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Attaches images to the prompt, beside the composer, and brings back

@@ -1,4 +1,3 @@
-import AtriumClient
 import SwiftUI
 
 /// The paired hosts: forget one, or pair another, which opens the same pairing

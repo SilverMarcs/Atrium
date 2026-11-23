@@ -6,10 +6,10 @@ import Network
 /// listener; a client dials a host it found by browsing. Callbacks run on the
 /// main queue, in the order messages arrived.
 @MainActor
-public final class FramedChannel: HostChannel {
-    public var onReady: (() -> Void)?
-    public var onMessage: ((Data) -> Void)?
-    public var onClose: ((String?) -> Void)?
+final class FramedChannel: HostChannel {
+    var onReady: (() -> Void)?
+    var onMessage: ((Data) -> Void)?
+    var onClose: ((String?) -> Void)?
 
     private let connection: NWConnection
     /// How long a dialed connection may take to become ready before giving up.
@@ -17,17 +17,17 @@ public final class FramedChannel: HostChannel {
     private var timeout: Task<Void, Never>?
     private var isClosed = false
 
-    public init(connection: NWConnection, readyTimeout: Duration? = nil) {
+    init(connection: NWConnection, readyTimeout: Duration? = nil) {
         self.connection = connection
         self.readyTimeout = readyTimeout
     }
 
     /// Dials a host found on the local network.
-    public convenience init(endpoint: NWEndpoint) {
+    convenience init(endpoint: NWEndpoint) {
         self.init(connection: NWConnection(to: endpoint, using: .hostConnection()), readyTimeout: .seconds(5))
     }
 
-    public func start() {
+    func start() {
         connection.stateUpdateHandler = { [weak self] state in
             MainActor.assumeIsolated { self?.handle(state) }
         }
@@ -47,7 +47,7 @@ public final class FramedChannel: HostChannel {
         receiveLength()
     }
 
-    public func send(_ data: Data) {
+    func send(_ data: Data) {
         guard !isClosed else { return }
         var length = UInt32(data.count).bigEndian
         let frame = Data(bytes: &length, count: 4) + data
@@ -57,7 +57,7 @@ public final class FramedChannel: HostChannel {
         })
     }
 
-    public func close() {
+    func close() {
         finish(nil)
     }
 

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Asks the relay to clear a phone's badge and wake it to drop its alerts,

@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum GitChangeKind: String, Equatable, Hashable, Codable, Sendable {
+nonisolated enum GitChangeKind: String, Equatable, Hashable, Codable, Sendable {
     case added
     case modified
     case deleted
@@ -10,7 +10,7 @@ public nonisolated enum GitChangeKind: String, Equatable, Hashable, Codable, Sen
     case typeChanged
     case conflicted
 
-    public var statusSymbol: String {
+    var statusSymbol: String {
         switch self {
             case .added: "A"
             case .modified: "M"

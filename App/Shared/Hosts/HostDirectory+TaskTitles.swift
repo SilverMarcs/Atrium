@@ -1,6 +1,3 @@
-import AtriumClient
-import AtriumProtocol
-
 /// What a chat's screen is titled on every platform.
 extension HostDirectory {
     /// The chat's title. A side chat is titled by the session it asks about.

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 struct AgentThread: Identifiable, Codable, Sendable, Equatable {

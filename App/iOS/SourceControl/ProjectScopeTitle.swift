@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The title Source Control, Files, Search and Commands share: the branch the project's

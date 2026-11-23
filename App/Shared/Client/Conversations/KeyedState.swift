@@ -6,7 +6,7 @@ import Observation
 ///
 /// Iterating keys or values isn't observed; it's for model code.
 @MainActor
-public final class KeyedState<Value> {
+final class KeyedState<Value> {
     @Observable
     final class Slot {
         var value: Value?
@@ -15,7 +15,7 @@ public final class KeyedState<Value> {
 
     private var slots: [String: Slot] = [:]
 
-    public init() {}
+    init() {}
 
     private func slot(_ key: String) -> Slot {
         if let slot = slots[key] { return slot }
@@ -25,7 +25,7 @@ public final class KeyedState<Value> {
         return slot
     }
 
-    public internal(set) subscript(key: String) -> Value? {
+    subscript(key: String) -> Value? {
         get { slot(key).value }
         set {
             guard let slot = slots[key] else {
@@ -38,13 +38,13 @@ public final class KeyedState<Value> {
         }
     }
 
-    public internal(set) subscript(key: String, default defaultValue: @autoclosure () -> Value) -> Value {
+    subscript(key: String, default defaultValue: @autoclosure () -> Value) -> Value {
         get { self[key] ?? defaultValue() }
         set { self[key] = newValue }
     }
 
     /// Keys that hold a value.
-    public var keys: [String] { slots.compactMap { $0.value.value == nil ? nil : $0.key } }
+    var keys: [String] { slots.compactMap { $0.value.value == nil ? nil : $0.key } }
 
     @discardableResult
     func removeValue(forKey key: String) -> Value? {

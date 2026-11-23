@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The title menu of a project's pages: the branches and linked worktrees of

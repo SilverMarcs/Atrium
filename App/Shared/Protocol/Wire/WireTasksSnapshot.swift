@@ -1,19 +1,19 @@
 import Foundation
 
-public nonisolated struct WireTasksSnapshot: Codable, Sendable, Equatable {
-    public var tasks: [WireTask]
-    public var workspaces: [WireWorkspace]
-    public var providers: [WireProvider]
+nonisolated struct WireTasksSnapshot: Codable, Sendable, Equatable {
+    var tasks: [WireTask]
+    var workspaces: [WireWorkspace]
+    var providers: [WireProvider]
     /// Whether the host is reloading its tasks from their providers.
-    public var isRefreshing: Bool = false
+    var isRefreshing: Bool = false
     /// How long swiping a task snoozes it, as set on the host.
-    public var snoozeDuration: SnoozeDuration = .default
+    var snoozeDuration: SnoozeDuration = .default
 
     private enum CodingKeys: String, CodingKey {
         case tasks, workspaces, providers, isRefreshing, snoozeDuration
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tasks = try container.decode(LossyRows<WireTask>.self, forKey: .tasks).values
         workspaces = try container.decode(LossyRows<WireWorkspace>.self, forKey: .workspaces).values
@@ -22,7 +22,7 @@ public nonisolated struct WireTasksSnapshot: Codable, Sendable, Equatable {
         snoozeDuration = try container.decodeIfPresent(SnoozeDuration.self, forKey: .snoozeDuration) ?? .default
     }
 
-    public init(
+    init(
         tasks: [WireTask], workspaces: [WireWorkspace], providers: [WireProvider], isRefreshing: Bool = false,
         snoozeDuration: SnoozeDuration = .default
     ) {

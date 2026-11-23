@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import CoreGraphics
 
 /// One decision shared by Mac alerts and companion pushes: alerts go to the
@@ -11,13 +10,13 @@ import CoreGraphics
 /// that input is recent. A companion counts as used when it comes to the
 /// foreground, opens a task, or sends any request.
 @MainActor
-public final class NotificationRouting {
-    public static let shared = NotificationRouting()
+final class NotificationRouting {
+    static let shared = NotificationRouting()
 
     private init() {}
 
     /// Shows this Mac's alerts; the app the host runs in sets it.
-    public weak var mac: (any MacAlerts)?
+    weak var mac: (any MacAlerts)?
 
     /// Companions in the foreground, by connection.
     private var companions: [UUID: NotificationPresence] = [:]
@@ -36,7 +35,7 @@ public final class NotificationRouting {
         if cameToFront { onCameToFront(deviceID) }
     }
 
-    public func cameToFront(device: UUID?) {
+    func cameToFront(device: UUID?) {
         onCameToFront(device)
     }
 
@@ -49,7 +48,7 @@ public final class NotificationRouting {
         companions[connectionID] = nil
     }
 
-    public func shouldNotifyMac(taskID: String) -> Bool {
+    func shouldNotifyMac(taskID: String) -> Bool {
         guard isMainTask(taskID) else { return false }
         guard let active = activeDevice() else { return true }
         return active.deviceID == nil && active.taskID != taskID

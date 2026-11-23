@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A prompt's text in its bubble. A prompt another agent wrote is gray rather

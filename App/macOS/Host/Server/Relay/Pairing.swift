@@ -1,4 +1,3 @@
-import AtriumProtocol
 import CryptoKit
 import Foundation
 import Observation

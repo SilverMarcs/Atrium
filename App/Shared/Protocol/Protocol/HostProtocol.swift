@@ -12,14 +12,14 @@ import Foundation
 /// list's rows decode field by field, skipping rows they can't read, so a
 /// field another build changed costs only that field. The version only tells
 /// a client that it's older than its host.
-public nonisolated enum HostProtocol {
-    public static let version = 14
+nonisolated enum HostProtocol {
+    static let version = 14
     /// Bounds a single message so a corrupt or hostile peer can't exhaust memory.
-    public static let maxMessageBytes = 16 * 1024 * 1024
+    static let maxMessageBytes = 16 * 1024 * 1024
 
     /// The Atrium relay every host and client connect through. Development
     /// builds can point at a local relay with `ATRIUM_RELAY_URL`.
-    public static let relayURL: URL = {
+    static let relayURL: URL = {
         #if DEBUG
         if let override = ProcessInfo.processInfo.environment["ATRIUM_RELAY_URL"], let url = URL(string: override) {
             return url
@@ -30,30 +30,30 @@ public nonisolated enum HostProtocol {
 
     /// The Bonjour service hosts advertise on the local network, and the TXT
     /// record key carrying their host ID.
-    public static let localServiceType = "_atrium._tcp"
-    public static let localHostIDKey = "host"
+    static let localServiceType = "_atrium._tcp"
+    static let localHostIDKey = "host"
 
     /// Caps on what a single reply carries, keeping requests cheap over the internet.
-    public static let maxPreviewTextBytes: Int64 = 512 * 1024
-    public static let maxPreviewImageBytes: Int64 = 8 * 1024 * 1024
-    public static let maxDiffBytes = 2 * 1024 * 1024
-    public static let maxFoundFiles = 300
+    static let maxPreviewTextBytes: Int64 = 512 * 1024
+    static let maxPreviewImageBytes: Int64 = 8 * 1024 * 1024
+    static let maxDiffBytes = 2 * 1024 * 1024
+    static let maxFoundFiles = 300
     /// Images one prompt can attach. Hosts accept JPEG only.
-    public static let maxPromptImages = 10
-    public static let maxSearchFiles = 100
-    public static let maxSearchMatches = 1000
+    static let maxPromptImages = 10
+    static let maxSearchFiles = 100
+    static let maxSearchMatches = 1000
 }
 
 /// Encodes frames for the wire. Dates travel as epoch seconds and binary data
 /// as base64, which keeps messages compact and readable while debugging.
-public nonisolated enum HostCodec {
-    public static func encode(_ value: some Encodable) throws -> Data {
+nonisolated enum HostCodec {
+    static func encode(_ value: some Encodable) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         return try encoder.encode(value)
     }
 
-    public static func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
+    static func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         return try decoder.decode(type, from: data)
@@ -67,18 +67,18 @@ public nonisolated enum HostCodec {
 /// key once per device and answers a repeat with the first success, so a
 /// client that lost the reply to a prompt can send it again without the agent
 /// getting it twice.
-public nonisolated struct ClientFrame: Codable, Sendable {
-    public var id: UInt32
-    public var request: HostRequest
-    public var key: UUID?
+nonisolated struct ClientFrame: Codable, Sendable {
+    var id: UInt32
+    var request: HostRequest
+    var key: UUID?
 
-    public init(id: UInt32, request: HostRequest, key: UUID? = nil) {
+    init(id: UInt32, request: HostRequest, key: UUID? = nil) {
         self.id = id
         self.request = request
         self.key = key
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UInt32.self, forKey: .id)
         request = (try? container.decode(HostRequest.self, forKey: .request)) ?? .unsupported
@@ -86,7 +86,7 @@ public nonisolated struct ClientFrame: Codable, Sendable {
     }
 }
 
-public nonisolated enum ServerFrame: Codable, Sendable {
+nonisolated enum ServerFrame: Codable, Sendable {
     case reply(id: UInt32, reply: HostReply)
     case event(HostEvent)
 
@@ -94,7 +94,7 @@ public nonisolated enum ServerFrame: Codable, Sendable {
         case id, reply, event
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let id = try container.decodeIfPresent(UInt32.self, forKey: .id) {
             self = .reply(id: id, reply: (try? container.decode(HostReply.self, forKey: .reply)) ?? .unknown)
@@ -103,7 +103,7 @@ public nonisolated enum ServerFrame: Codable, Sendable {
         }
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .reply(let id, let reply):
@@ -115,7 +115,7 @@ public nonisolated enum ServerFrame: Codable, Sendable {
     }
 }
 
-public nonisolated extension HostProtocol {
+nonisolated extension HostProtocol {
     /// Where an app's host keeps its data. The released app keeps it under its
     /// name; test builds under their bundle ID, so each keeps its own.
     static func applicationSupportFolder(appBundleIdentifier identifier: String) -> URL {

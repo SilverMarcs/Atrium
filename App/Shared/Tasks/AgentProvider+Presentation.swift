@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 extension AgentProvider {

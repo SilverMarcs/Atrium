@@ -54,9 +54,9 @@ Each provider requires its CLI to be installed separately. Codex conversations u
 
 ## Repository layout
 
-- `Packages/AtriumKit`, shared by the apps and the host: `AtriumProtocol` is what hosts and clients say to each other and the encrypted channels they say it over; `AtriumClient` connects to hosts and keeps what each one reports.
-- `Packages/AtriumHost`, the host every Mac runs (macOS only): projects, Git, files, the agent integrations, the tools agents use, and the server clients reach it through. The Mac app links it and talks to it in process like any other client.
-- `App/Shared`, `App/macOS` and `App/iOS`, the SwiftUI apps, which are clients of a host; the Mac app also links AtriumHost to run its own host and reach that host's settings and pairing; `App/NotificationService` is the iOS app's push extension.
+- `App/Shared`, compiled into both apps: `Protocol` is what hosts and clients say to each other and the encrypted channels they say it over; `Client` connects to hosts and keeps what each one reports; the rest is SwiftUI shared by both apps.
+- `App/macOS`, the Mac app. `App/macOS/Host` is the host every Mac runs: projects, Git, files, the agent integrations, the tools agents use, and the server clients reach it through. The Mac app talks to its own host in process like any other client.
+- `App/iOS`, the iPhone and iPad app, a client of the hosts it pairs with; `App/NotificationService` is its push extension.
 - `relay`, the Cloudflare Worker: relay rooms, APNs pushes and ChatGPT's MCP gateway. `npm run check` type-checks it.
 - `scripts`, for running and releasing the apps.
 

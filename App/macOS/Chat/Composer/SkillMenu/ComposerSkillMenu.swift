@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import SwiftUI
 
 /// Presents the Mac composer's skill menu beside the / being typed, as a

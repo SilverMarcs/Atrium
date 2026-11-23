@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A session's conversation, built from the `session/update`s Antigravity

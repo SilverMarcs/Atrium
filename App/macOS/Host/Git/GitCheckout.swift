@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The Git checkout a folder belongs to, located from `.git` entries without spawning Git.

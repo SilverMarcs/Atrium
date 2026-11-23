@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 import Observation
 
@@ -9,26 +8,26 @@ import Observation
 /// instruction blocks new chats get.
 @MainActor
 @Observable
-public final class IntegrationSettings {
+final class IntegrationSettings {
     /// The agents this Mac runs can hand work to other sessions with
     /// Atrium's session tools. Off by default: it lets agents start other agents.
-    public var isOrchestratorEnabled: Bool {
+    var isOrchestratorEnabled: Bool {
         didSet { defaults.set(isOrchestratorEnabled, forKey: Self.orchestratorKey) }
     }
 
     /// Agents can show HTML pages, such as charts and diagrams, in the chat with the `show_page` tool.
-    public var isVisualizationsEnabled: Bool {
+    var isVisualizationsEnabled: Bool {
         didSet { defaults.set(isVisualizationsEnabled, forKey: Self.visualizationsKey) }
     }
 
     /// How freely new chats' agents act without asking, unless a chat is
     /// started with its own mode. Full access unless changed.
-    public var defaultPermissionMode: PermissionMode {
+    var defaultPermissionMode: PermissionMode {
         didSet { defaults.set(defaultPermissionMode.rawValue, forKey: Self.permissionModeKey) }
     }
 
     /// How long swiping a task snoozes it, on this Mac and its companions.
-    public var defaultSnooze: SnoozeDuration {
+    var defaultSnooze: SnoozeDuration {
         didSet { defaults.set(defaultSnooze.rawValue, forKey: Self.snoozeKey) }
     }
 

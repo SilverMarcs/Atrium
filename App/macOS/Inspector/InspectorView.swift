@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The column beside the chat: a page an agent showed, or the selected task's

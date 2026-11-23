@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A background shell session currently running under one of the host's agents.

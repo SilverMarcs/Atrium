@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated extension WireTasksSnapshot {
+nonisolated extension WireTasksSnapshot {
     /// The subagents a task's agent ran, newest first.
     func children(of id: String) -> [WireTask] {
         tasks.filter { $0.origin?.parentID == id && !$0.isSideChat }.sorted(by: WireTask.newestFirst)

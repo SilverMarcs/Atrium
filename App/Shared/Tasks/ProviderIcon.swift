@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// An agent's symbol in its color, or grayed out when its task has no live session.

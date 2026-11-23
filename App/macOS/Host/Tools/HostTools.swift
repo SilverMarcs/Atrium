@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The tools the host offers agents: handing work to sessions and following

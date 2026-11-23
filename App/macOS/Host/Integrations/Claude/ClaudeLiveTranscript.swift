@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A hooked session's chat: Claude's saved history plus what its hooks report as it works.

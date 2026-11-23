@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Returns from a subagent or side chat to the session it belongs to.

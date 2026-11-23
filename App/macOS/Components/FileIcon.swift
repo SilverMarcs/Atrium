@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import UniformTypeIdentifiers
 
 /// The Finder icon for a kind of file, by its name alone so it works for files

@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// This Mac as a host other devices connect to, and every host this Mac shows,

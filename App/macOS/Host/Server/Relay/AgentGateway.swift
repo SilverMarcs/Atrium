@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Connecting ChatGPT through the MCP gateway. ChatGPT's OAuth page opens
@@ -9,13 +8,13 @@ import Foundation
 /// revokes it. The gateway holds that token sealed in ChatGPT's OAuth tokens
 /// and speaks to the Mac as the device, so it sees ChatGPT's tool calls; the
 /// access level the user picks bounds what they can do.
-public enum AgentGateway {
+enum AgentGateway {
     /// A request to connect, sealed by the gateway, which only it can read.
-    public struct Request: Identifiable, Equatable {
-        public let id = UUID()
+    struct Request: Identifiable, Equatable {
+        let id = UUID()
         let sealed: String
 
-        public init?(url: URL) {
+        init?(url: URL) {
             guard url.scheme == PairingLink.scheme, url.host == "agent",
                   let sealed = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "request" })?.value,
                   !sealed.isEmpty else { return nil }
@@ -36,7 +35,7 @@ public enum AgentGateway {
 
     /// Pairs ChatGPT and returns where its sign-in continues in the browser.
     @MainActor
-    public static func approve(_ request: Request, access: AgentAccess, on server: HostServer) async throws -> URL {
+    static func approve(_ request: Request, access: AgentAccess, on server: HostServer) async throws -> URL {
         let (device, token) = server.pairAgent(named: "ChatGPT", access: access)
         do {
             var call = URLRequest(url: url.appending(path: "oauth/approve"))

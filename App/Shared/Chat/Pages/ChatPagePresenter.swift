@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// Opens a page an agent showed somewhere bigger than its reply. A chat keeps

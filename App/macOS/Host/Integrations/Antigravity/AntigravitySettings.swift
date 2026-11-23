@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A session's settings as Antigravity reports them with `session/new`,

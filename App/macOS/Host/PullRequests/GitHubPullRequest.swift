@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A pull request as `gh pr list --json` or GitHub's GraphQL API describes it.

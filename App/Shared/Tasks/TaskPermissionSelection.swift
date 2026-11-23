@@ -1,5 +1,3 @@
-import AtriumProtocol
-
 /// The permission-mode menu's state for a task, a new chat or a mirrored companion task.
 nonisolated struct TaskPermissionSelection: Equatable, Sendable {
     /// Nil while the agent runs in a mode Atrium doesn't offer, such as plan mode.

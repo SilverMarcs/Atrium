@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// How full a conversation keeps its model's context, counted the way its

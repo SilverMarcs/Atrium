@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The state behind one topic, kept current on the host while any client

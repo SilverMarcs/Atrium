@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A side chat about a Claude session, asked the way `/btw` asks: Claude answers

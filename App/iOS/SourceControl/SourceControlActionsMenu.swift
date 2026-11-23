@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// Committing and remote operations for the selected repository.

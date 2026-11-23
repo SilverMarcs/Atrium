@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The sidebar's toolbar control, in place of the system sidebar toggle:

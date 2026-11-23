@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Where a diff's hunks are staged, unstaged or discarded: a repository in a

@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum HostEvent: Codable, Sendable {
+nonisolated enum HostEvent: Codable, Sendable {
     /// Who this host is: sent first on every connection, and again whenever its
     /// name or icon changes.
     case hello(HostHello)
@@ -27,15 +27,15 @@ public nonisolated enum HostEvent: Codable, Sendable {
 
 /// Who a host is. Clients that are older than the host's protocol can tell
 /// their user to update instead of failing quietly.
-public nonisolated struct HostHello: Codable, Sendable, Equatable {
-    public var hostID: String
-    public var hostName: String
-    public var hostIcon: HostIcon
-    public var protocolVersion: Int
+nonisolated struct HostHello: Codable, Sendable, Equatable {
+    var hostID: String
+    var hostName: String
+    var hostIcon: HostIcon
+    var protocolVersion: Int
     /// The host's home folder, which paths are abbreviated against for display.
-    public var homeDirectory: String
+    var homeDirectory: String
 
-    public init(
+    init(
         hostID: String,
         hostName: String,
         hostIcon: HostIcon = .default,
@@ -49,7 +49,7 @@ public nonisolated struct HostHello: Codable, Sendable, Equatable {
         self.homeDirectory = homeDirectory
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hostID = try container.decode(String.self, forKey: .hostID)
         hostName = try container.decode(String.self, forKey: .hostName)

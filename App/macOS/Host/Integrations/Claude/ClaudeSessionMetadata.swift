@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The small part of a Claude transcript needed by the sidebar, read from

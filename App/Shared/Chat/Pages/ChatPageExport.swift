@@ -1,4 +1,3 @@
-import AtriumProtocol
 import CoreTransferable
 import Foundation
 import ImageIO

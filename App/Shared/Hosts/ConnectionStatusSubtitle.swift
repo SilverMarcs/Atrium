@@ -1,4 +1,3 @@
-import AtriumClient
 import SwiftUI
 
 /// Notes lost connections under the title instead of covering the screen, so

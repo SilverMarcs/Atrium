@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// How Atrium's permission modes map to Codex's approval policy, sandbox and

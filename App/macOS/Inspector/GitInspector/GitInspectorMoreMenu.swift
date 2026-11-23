@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// The Git tab's other actions, inside the commit bar: branches, the

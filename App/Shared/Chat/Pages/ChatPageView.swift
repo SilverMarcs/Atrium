@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A page an agent showed in its reply, as a card that opens it where it has

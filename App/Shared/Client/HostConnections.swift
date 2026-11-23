@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 import Network
 import Observation
@@ -8,30 +7,30 @@ import Observation
 /// this device, removes it.
 @MainActor
 @Observable
-public final class HostConnections {
-    public private(set) var hosts: [HostClient] = []
+final class HostConnections {
+    private(set) var hosts: [HostClient] = []
     /// A host being paired, until it answers.
-    public private(set) var pairing: HostClient?
-    public private(set) var pairingError: String?
+    private(set) var pairing: HostClient?
+    private(set) var pairingError: String?
     /// Changes each time a pairing succeeds, so a pairing sheet knows to close.
-    public private(set) var pairingCount = 0
+    private(set) var pairingCount = 0
     /// Why a host was last forgotten without being asked to, as when it
     /// revoked this device.
-    public var forgottenReason: String?
+    var forgottenReason: String?
 
     /// Learns what happens on every host, for what an app does in response.
-    @ObservationIgnored public weak var delegate: (any HostConnectionsDelegate)?
-    @ObservationIgnored public let credentials: any CredentialStore
+    @ObservationIgnored weak var delegate: (any HostConnectionsDelegate)?
+    @ObservationIgnored let credentials: any CredentialStore
     /// Whether this device has a network to reach hosts over. Hosts aren't
     /// tried without one, and are tried again as soon as there is one.
-    @ObservationIgnored public private(set) var hasNetwork = true
+    @ObservationIgnored private(set) var hasNetwork = true
     @ObservationIgnored private var pairingResult: CheckedContinuation<HostClient, any Error>?
     @ObservationIgnored private let localNetwork = LocalHostBrowser()
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
     /// The network interfaces last available, such as Wi-Fi and cellular.
     @ObservationIgnored private var interfaces: Set<String>?
 
-    public init(localHost: HostClient? = nil, credentials: any CredentialStore) {
+    init(localHost: HostClient? = nil, credentials: any CredentialStore) {
         self.credentials = credentials
         if let localHost { hosts.append(localHost) }
         for host in credentials.pairedHosts {
@@ -44,7 +43,7 @@ public final class HostConnections {
     /// Connects every host, directly when one is on the local network, and
     /// follows the network to reconnect as soon as it's back. A client that
     /// wants only some hosts starts those instead.
-    public func start() {
+    func start() {
         localNetwork.onChange = { [weak self] in
             for host in self?.hosts ?? [] { host.localNetworkChanged() }
         }
@@ -61,7 +60,7 @@ public final class HostConnections {
     /// Looks for hosts on the local network afresh and retries any that aren't
     /// connected, as when the app returns to the foreground. A host found
     /// nearby moves off the relay.
-    public func resume() {
+    func resume() {
         localNetwork.restart()
         for host in hosts where !host.isConnected { host.retryNow() }
     }
@@ -90,10 +89,10 @@ public final class HostConnections {
         localEndpoint(for: hostID) != nil
     }
 
-    public var localHost: HostClient? { hosts.first(where: \.isLocal) }
-    public var remoteHosts: [HostClient] { hosts.filter { !$0.isLocal } }
+    var localHost: HostClient? { hosts.first(where: \.isLocal) }
+    var remoteHosts: [HostClient] { hosts.filter { !$0.isLocal } }
 
-    public func host(_ id: String?) -> HostClient? {
+    func host(_ id: String?) -> HostClient? {
         hosts.first { $0.id == id }
     }
 
@@ -103,7 +102,7 @@ public final class HostConnections {
     /// replacing any pairing in progress. Returns the host once it has issued
     /// this device a token, which the credential store keeps.
     @discardableResult
-    public func pair(with link: PairingLink) async throws -> HostClient {
+    func pair(with link: PairingLink) async throws -> HostClient {
         pairing?.stop()
         pairingResult?.resume(throwing: CancellationError())
         pairingResult = nil
@@ -139,7 +138,7 @@ public final class HostConnections {
     }
 
     /// Forgets a host. Pairing it again needs a fresh link from its Settings.
-    public func forget(_ host: HostClient, reason: String? = nil) {
+    func forget(_ host: HostClient, reason: String? = nil) {
         guard let paired = host.pairedHost else { return }
         host.stop()
         credentials.forget(paired)
@@ -150,15 +149,15 @@ public final class HostConnections {
 }
 
 /// Why a pairing link didn't pair, such as the host having issued a newer one.
-public nonisolated struct PairingError: LocalizedError, Sendable {
-    public var message: String
-    public var errorDescription: String? { message }
+nonisolated struct PairingError: LocalizedError, Sendable {
+    var message: String
+    var errorDescription: String? { message }
 }
 
 /// What an app does as its hosts connect and change, such as registering for
 /// alerts or showing a task the host just created. Every method is optional.
 @MainActor
-public protocol HostConnectionsDelegate: AnyObject {
+protocol HostConnectionsDelegate: AnyObject {
     /// A host accepted this device's connection; requests can follow.
     func hostDidConnect(_ host: HostClient)
     /// A host sent its tasks in full, as it does on every connection.
@@ -173,7 +172,7 @@ public protocol HostConnectionsDelegate: AnyObject {
     func hostWasForgotten(_ host: HostClient)
 }
 
-public extension HostConnectionsDelegate {
+extension HostConnectionsDelegate {
     func hostDidConnect(_ host: HostClient) {}
     func hostDidLoadTasks(_ host: HostClient) {}
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft) {}

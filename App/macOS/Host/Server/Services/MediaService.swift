@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Serves the pages and images agents show in a task's chat, and the images

@@ -2,7 +2,7 @@ import Foundation
 
 /// Who started a session for work they handed it, when that wasn't the user.
 /// Apps nest sessions with a parent under that parent.
-public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
+nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     /// One of the subagents a session's agent runs itself, by that session's
     /// task ID. It can be read but not prompted: its agent talks to it.
     case subagent(String)
@@ -18,7 +18,7 @@ public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     case sideChat(String)
 
     /// The session a subagent or delegated session works for, or a side chat asks about.
-    public var parentID: String? {
+    var parentID: String? {
         switch self {
         case .subagent(let id), .session(let id), .sideChat(let id): id
         case .device: nil
@@ -26,12 +26,12 @@ public nonisolated enum WireTaskOrigin: Codable, Sendable, Hashable {
     }
 
     /// The device that started the session, for one a paired agent started.
-    public var deviceName: String? {
+    var deviceName: String? {
         if case .device(let name) = self { name } else { nil }
     }
 }
 
-public nonisolated extension WireTask {
+nonisolated extension WireTask {
     var isSubagent: Bool {
         if case .subagent = origin { true } else { false }
     }

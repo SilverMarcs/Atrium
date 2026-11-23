@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// The task's permission mode in the composer or a task toolbar.

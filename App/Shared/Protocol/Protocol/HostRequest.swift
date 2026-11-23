@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated enum HostRequest: Codable, Sendable {
+nonisolated enum HostRequest: Codable, Sendable {
     /// Trades the one-time secret from a host's pairing link for a long-lived device token.
     case pair(secret: String, device: ClientDevice)
     case authenticate(token: String, deviceID: UUID)
@@ -77,7 +77,7 @@ public nonisolated enum HostRequest: Codable, Sendable {
     case unsupported
 }
 
-public nonisolated enum TaskAction: Codable, Sendable {
+nonisolated enum TaskAction: Codable, Sendable {
     case settle
     case restore
     case snooze(until: Date)
@@ -116,7 +116,7 @@ public nonisolated enum TaskAction: Codable, Sendable {
     case respond(interactionID: String, decision: AgentDecision)
 }
 
-public nonisolated enum WorkspaceAction: Codable, Sendable {
+nonisolated enum WorkspaceAction: Codable, Sendable {
     /// Names the project; an empty name goes back to its folder's.
     case rename(String)
     /// Puts a draft aside in the project's scratchpad, newest first, with its
@@ -141,7 +141,7 @@ public nonisolated enum WorkspaceAction: Codable, Sendable {
     case setFolders([String])
 }
 
-public nonisolated enum CommandAction: Codable, Sendable {
+nonisolated enum CommandAction: Codable, Sendable {
     /// Runs the command's saved script, or `script` once in its place, in
     /// `directory`: the project folder, or the same folder in a linked worktree
     /// of its repository that the client shows. A running command restarts.

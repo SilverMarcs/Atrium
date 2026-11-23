@@ -1,6 +1,6 @@
 /**
  * The client side of the Noise NK handshake the Mac answers
- * (`Noise_NK_25519_ChaChaPoly_SHA256`, as in AtriumProtocol's NoiseHandshake),
+ * (`Noise_NK_25519_ChaChaPoly_SHA256`, as in the apps' NoiseHandshake),
  * so the gateway reaches the Mac through the relay like any paired device:
  * end-to-end encrypted against the Mac's key, with the relay passing only
  * ciphertext.

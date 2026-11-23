@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Lets sessions hand work to each other through Atrium's session tools, and

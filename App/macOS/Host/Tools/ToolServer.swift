@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The host's MCP server: one set of tools, which the agents this Mac runs

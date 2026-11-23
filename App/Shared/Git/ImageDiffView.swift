@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// An image file's change: the image before and after, side by side.

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 struct GitChangeBadge: View {

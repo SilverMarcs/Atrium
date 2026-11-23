@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Reads the language server's account metadata without opening a conversation.

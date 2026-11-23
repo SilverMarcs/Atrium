@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// The slash suggestions on iPhone and iPad: a glass panel resting just

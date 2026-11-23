@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The one confirmation currently presented by the branch manager.

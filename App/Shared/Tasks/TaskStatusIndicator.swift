@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// The sidebar's trailing indicator: a spinner while the agent works, a

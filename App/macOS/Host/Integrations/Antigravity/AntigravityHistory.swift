@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Reads Antigravity's on-disk conversation logs (`~/.gemini/antigravity-cli/brain/<id>/`)

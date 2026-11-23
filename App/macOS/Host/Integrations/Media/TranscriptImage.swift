@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers

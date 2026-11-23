@@ -1,6 +1,4 @@
 import AppKit
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// Desktop message geometry from the original chat detail, using normalized transcripts.

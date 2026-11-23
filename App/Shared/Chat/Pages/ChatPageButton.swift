@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// Opens a page an agent showed beside the chat on Mac, or else in a sheet:

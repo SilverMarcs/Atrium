@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// What a diff window shows, in a project on one of the hosts: one commit's

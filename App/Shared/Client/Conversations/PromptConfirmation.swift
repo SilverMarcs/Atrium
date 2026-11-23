@@ -1,6 +1,6 @@
 import Foundation
 
-public nonisolated struct PromptConfirmation: Sendable {
-  public let promptID: UUID
-  public let messageID: String
+nonisolated struct PromptConfirmation: Sendable {
+  let promptID: UUID
+  let messageID: String
 }

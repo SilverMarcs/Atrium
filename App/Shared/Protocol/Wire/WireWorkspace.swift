@@ -1,33 +1,33 @@
 import Foundation
 
-public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiable {
-    public var id: UUID
-    public var name: String
+nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiable {
+    var id: UUID
+    var name: String
     /// Home-relative path of the primary folder, for display.
-    public var directory: String
+    var directory: String
     /// Every folder of the project on the host, the primary one first. One
     /// that's a repository's top folder has Source Control.
-    public var folders: [String]
+    var folders: [String]
     /// The detected or chosen project type's raw value.
-    public var projectType: String
+    var projectType: String
     /// Asset name of the detected project type's icon, if any.
-    public var projectIcon: String?
+    var projectIcon: String?
     /// Fetch with `HostRequest.icon(key:)`; the key changes whenever the icon does.
-    public var customIconKey: String?
+    var customIconKey: String?
     /// Drafts put aside, newest first.
-    public var scratchpad: [ScratchpadDraft]
+    var scratchpad: [ScratchpadDraft]
     /// How many of the project's saved commands are running.
-    public var runningCommandCount: Int
+    var runningCommandCount: Int
     /// Background shell sessions agents are running in the project.
-    public var backgroundSessions: [WireBackgroundSession]
+    var backgroundSessions: [WireBackgroundSession]
 
     /// The project's primary folder on the host, where agents start and
     /// commands run.
-    public var path: String { folders.first ?? "" }
+    var path: String { folders.first ?? "" }
     /// Saved commands and agent background sessions running, for badges.
-    public var runningCount: Int { runningCommandCount + backgroundSessions.count }
+    var runningCount: Int { runningCommandCount + backgroundSessions.count }
 
-    public init(
+    init(
         id: UUID,
         name: String,
         directory: String,
@@ -51,7 +51,7 @@ public nonisolated struct WireWorkspace: Codable, Sendable, Hashable, Identifiab
         self.backgroundSessions = backgroundSessions
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         name = container.lenient(.name, or: "")

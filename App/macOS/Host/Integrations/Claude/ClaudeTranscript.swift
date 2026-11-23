@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Turns Claude Code transcript lines (`~/.claude/projects/…/<session>.jsonl`) into

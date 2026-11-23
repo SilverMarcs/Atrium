@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The pull requests linked to a task, in the Mac toolbar. Its icon shows

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// How Atrium's permission modes map to Claude's `--permission-mode`, and

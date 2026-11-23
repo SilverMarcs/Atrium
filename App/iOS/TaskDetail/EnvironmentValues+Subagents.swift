@@ -1,4 +1,3 @@
-import AtriumClient
 import SwiftUI
 
 extension EnvironmentValues {

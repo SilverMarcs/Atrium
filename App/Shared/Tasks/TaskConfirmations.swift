@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The rename and delete prompts for tasks, sending the result to their hosts.

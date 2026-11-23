@@ -1,6 +1,4 @@
-import AtriumProtocol
-
-public nonisolated extension [TranscriptMessage] {
+nonisolated extension [TranscriptMessage] {
     /// The user message showing the `position`th prompt sent after `anchor`,
     /// the newest user message when the first of them was sent, once the
     /// transcript shows it.

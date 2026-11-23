@@ -3,7 +3,7 @@ import Foundation
 /// Alerts on this Mac. The host decides when to alert, as it does for
 /// phones; the app it runs in shows the alerts and opens what they're about.
 @MainActor
-public protocol MacAlerts: AnyObject {
+protocol MacAlerts: AnyObject {
     /// A task finished, or needs an answer when `needsInput`.
     func alert(taskID: String, title: String, projectName: String, needsInput: Bool, projectIcon: Data?)
     /// A saved command rang the terminal bell, as a program waiting on a

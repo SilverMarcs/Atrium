@@ -3,7 +3,7 @@ import Foundation
 /// Where an image an agent showed comes from, as written in its Markdown or
 /// in a page's HTML. Host paths are fetched with `HostRequest.image`, which
 /// resolves them on the host: absolute, `~/`, or relative to the task's directory.
-public nonisolated enum MediaSource: Hashable, Sendable {
+nonisolated enum MediaSource: Hashable, Sendable {
     /// An `http`, `https` or `data` URL, which loads as-is.
     case web(URL)
     /// A file on the task's host.
@@ -11,7 +11,7 @@ public nonisolated enum MediaSource: Hashable, Sendable {
 
     /// The source a Markdown image or HTML attribute names, or nil for one
     /// that can't load, such as an empty source, a fragment, or another scheme.
-    public init?(_ source: String) {
+    init?(_ source: String) {
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !source.isEmpty, !source.hasPrefix("#"), !source.hasPrefix("?") else { return nil }
         let scheme = source.prefix { $0 != ":" && $0 != "/" }.lowercased()
@@ -38,7 +38,7 @@ public nonisolated enum MediaSource: Hashable, Sendable {
     /// The image sources in Markdown, such as `![chart](</tmp/a b.png>)`, in order.
     /// A path with spaces may also go without angle brackets when its image
     /// ends the line or comes before another, as SwiftMarkdownView shows it.
-    public static func markdownImages(in markdown: String) -> [String] {
+    static func markdownImages(in markdown: String) -> [String] {
         markdown.matches(of: markdownImage).compactMap { match in
             guard let destination = (match.output.1 ?? match.output.2).map(String.init) else { return nil }
             return destination.hasPrefix("<") && destination.hasSuffix(">")
@@ -49,14 +49,14 @@ public nonisolated enum MediaSource: Hashable, Sendable {
 
     /// The sources an HTML page loads images from: `src`, `srcset`, `poster`
     /// and CSS `url(…)`, in order. Entities like `&amp;` are decoded.
-    public static func htmlImages(in html: String) -> [String] {
+    static func htmlImages(in html: String) -> [String] {
         htmlImageSources(in: html).map(\.source)
     }
 
     /// The HTML with each image source `htmlImages(in:)` finds replaced by what
     /// `transform` returns for it, or left as it is for nil. Replacements are
     /// written as they are, so they shouldn't hold quotes, spaces or entities.
-    public static func replacingHTMLImages(in html: String, _ transform: (String) -> String?) -> String {
+    static func replacingHTMLImages(in html: String, _ transform: (String) -> String?) -> String {
         var html = html
         var end = html.endIndex
         // Back to front, so the ranges still ahead stay valid.
@@ -97,7 +97,7 @@ public nonisolated enum MediaSource: Hashable, Sendable {
     }
 
     /// Writes a host path as a Markdown image destination, safe for spaces and brackets.
-    public static func markdownImage(path: String, alt: String = "") -> String {
+    static func markdownImage(path: String, alt: String = "") -> String {
         let alt = alt.replacing("[", with: "\\[").replacing("]", with: "\\]").replacing("\n", with: " ")
         let destination = path.replacing("<", with: "\\<").replacing(">", with: "\\>").replacing("\n", with: "")
         return "![\(alt)](<\(destination)>)"

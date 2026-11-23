@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// A client's connection to a host through the relay. The relay answers "ready"

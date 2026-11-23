@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import SwiftUI
 
 struct GitCommitLogSheet: View {

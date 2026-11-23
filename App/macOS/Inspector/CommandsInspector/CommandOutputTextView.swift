@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import SwiftUI
 
 /// A command's output in a selectable, searchable text view. It keeps up with

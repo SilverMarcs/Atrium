@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import Foundation
 
 /// Where this device starts new tasks: on the host, in the project and with

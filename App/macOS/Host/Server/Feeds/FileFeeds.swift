@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// One folder's entries, relisted whenever something directly inside it changes.

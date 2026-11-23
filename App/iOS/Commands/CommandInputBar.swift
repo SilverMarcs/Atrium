@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A single-line command field with a permanent terminal keys menu beside it.

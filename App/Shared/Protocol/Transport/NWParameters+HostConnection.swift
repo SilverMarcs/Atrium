@@ -1,6 +1,6 @@
 import Network
 
-public extension NWParameters {
+extension NWParameters {
     /// TCP, or TLS over it, between a host and a client or the relay. Either
     /// end can drop off its network without the connection closing, as when
     /// it joins another Wi-Fi network or sleeps, and TCP alone takes minutes to

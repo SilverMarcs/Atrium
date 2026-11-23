@@ -1,4 +1,3 @@
-import AtriumClient
 import SwiftUI
 
 struct CompanionRootView: View {

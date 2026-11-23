@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// What the agent asks Atrium to decide: a tool's permission

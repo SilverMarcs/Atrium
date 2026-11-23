@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A prompt in the timeline: its images and its bubble. Only padding, desktop

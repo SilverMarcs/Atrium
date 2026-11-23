@@ -2,7 +2,7 @@ import Foundation
 
 /// State a client wants pushed to it. Subscribing sends the current state;
 /// the host then sends changes until the client unsubscribes or disconnects.
-public nonisolated enum HostTopic: Codable, Sendable, Hashable {
+nonisolated enum HostTopic: Codable, Sendable, Hashable {
     case tasks
     /// A task's conversation.
     case transcript(taskID: String)
@@ -29,7 +29,7 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
         case tasks, transcript, git, commands, commandOutput, backgroundSessionOutput, directory, file, remoteAccess
     }
 
-    public init(from decoder: any Decoder) throws {
+    init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         guard let kind = try? container.decode(Kind.self, forKey: .kind) else {
             self = .unknown
@@ -54,7 +54,7 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
         }
     }
 
-    public func encode(to encoder: any Encoder) throws {
+    func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .tasks:
@@ -94,18 +94,13 @@ public nonisolated enum HostTopic: Codable, Sendable, Hashable {
 
 /// Which checkouts a project's Git status covers: each repository in the
 /// project, seen through the linked worktree a client chose for it, if any.
-public nonisolated struct GitScope: Codable, Sendable, Hashable {
-    public var workspaceID: UUID
+nonisolated struct GitScope: Codable, Sendable, Hashable {
+    var workspaceID: UUID
     /// Main checkout root → linked worktree root.
-    public var worktrees: [URL: URL] = [:]
-
-    public init(workspaceID: UUID, worktrees: [URL: URL] = [:]) {
-        self.workspaceID = workspaceID
-        self.worktrees = worktrees
-    }
+    var worktrees: [URL: URL] = [:]
 }
 
-public nonisolated extension URL {
+nonisolated extension URL {
     /// The path as hosts and clients spell it: without percent encoding or a
     /// trailing slash, so a folder's path is the same however its URL was made.
     var filePath: String {

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Changes a host's projects and their saved commands for clients. Adding

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// Lists the user, project and enabled plugin skills Claude loads on this Mac.

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// An action offered on a task in the sidebar's menus and swipe actions.

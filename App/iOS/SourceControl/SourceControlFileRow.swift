@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// A changed file: opens its diff, swipes to stage, unstage or discard.

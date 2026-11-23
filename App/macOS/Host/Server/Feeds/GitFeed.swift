@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 /// The Git status of the project's folders that are repositories, each seen

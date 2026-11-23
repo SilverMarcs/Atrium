@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// How much of the model's context the chat uses, as a thin ring just before

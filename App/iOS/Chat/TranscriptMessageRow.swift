@@ -1,4 +1,3 @@
-import AtriumProtocol
 import SwiftUI
 
 /// One message of a task's transcript: the user's prompt, or the agent's reply.

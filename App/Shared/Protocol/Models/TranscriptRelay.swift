@@ -5,8 +5,8 @@ import Foundation
 /// reporting back or asking, whether sessions this one handed work to or its
 /// agent's own subagents. Agents only take input as user turns, so all arrive
 /// as one; apps show none as typed by the user.
-public nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
-    public enum Kind: String, Codable, Sendable {
+nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
+    enum Kind: String, Codable, Sendable {
         /// Work for this session, from another session through Atrium or from
         /// the agent running it as a subagent. Its text blocks hold only the request.
         case task
@@ -15,33 +15,28 @@ public nonisolated struct TranscriptRelay: Codable, Sendable, Hashable {
     }
 
     /// An agent the message is from.
-    public struct Sender: Codable, Sendable, Hashable {
+    struct Sender: Codable, Sendable, Hashable {
         /// Such as `Claude · Fix the failing tests`.
-        public var name: String
+        var name: String
         /// Whether it asks this session a question rather than reporting back.
-        public var asksQuestion: Bool
+        var asksQuestion: Bool
         /// The provider session it runs in, when the message says, so the host
         /// can name it as Atrium lists that session.
-        public var sessionID: String?
+        var sessionID: String?
 
-        public init(name: String, asksQuestion: Bool = false, sessionID: String? = nil) {
+        init(name: String, asksQuestion: Bool = false, sessionID: String? = nil) {
             self.name = name
             self.asksQuestion = asksQuestion
             self.sessionID = sessionID
         }
     }
 
-    public var kind: Kind
+    var kind: Kind
     /// A task's requester, or each agent reporting back or asking.
-    public var senders: [Sender]
-
-    public init(kind: Kind, senders: [Sender]) {
-        self.kind = kind
-        self.senders = senders
-    }
+    var senders: [Sender]
 }
 
-public nonisolated extension [TranscriptMessage] {
+nonisolated extension [TranscriptMessage] {
     /// The conversation as its user follows it: other agents' reports fold
     /// into the reply they arrived during, as steps naming who reported back or
     /// asked, so the only prompts left are the user's own and requests from other agents.

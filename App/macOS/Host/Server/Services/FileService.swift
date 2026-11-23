@@ -1,10 +1,9 @@
 import AppKit
-import AtriumProtocol
 import Foundation
 
 /// Serves a project's files to clients: folder listings one level at a time,
 /// capped previews and searches, and, for the host itself, edits.
-public enum FileService {
+enum FileService {
     static func handle(_ request: FileRequest, in workspace: Workspace, isLocal: Bool) async -> HostReply {
         let access = workspace.access
         guard request.paths.allSatisfy(access.allows) else {
@@ -228,7 +227,7 @@ public enum FileService {
     /// Opens a link that isn't a file in a project: a file or folder elsewhere
     /// on this Mac shows in Finder, and anything else, such as a web address,
     /// goes to its default app.
-    public static func openOutsideProject(_ link: String, relativeTo directory: String?) {
+    static func openOutsideProject(_ link: String, relativeTo directory: String?) {
         if let location = resolve(link, relativeTo: directory.map { [$0] } ?? [], access: nil) {
             NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: location.path)])
         } else if let url = URL(string: link), url.scheme != nil {

@@ -1,4 +1,3 @@
-import AtriumProtocol
 import Foundation
 
 actor GitRepository {

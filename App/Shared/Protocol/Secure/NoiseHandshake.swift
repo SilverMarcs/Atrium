@@ -9,8 +9,8 @@ import Foundation
 ///     ...
 ///     -> e, es
 ///     <- e, ee
-public nonisolated struct NoiseHandshake {
-    public enum Role {
+nonisolated struct NoiseHandshake {
+    enum Role {
         case initiator(responderStatic: Curve25519.KeyAgreement.PublicKey)
         case responder(staticKey: Curve25519.KeyAgreement.PrivateKey)
     }

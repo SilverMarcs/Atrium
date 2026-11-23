@@ -1,5 +1,3 @@
-import AtriumClient
-import AtriumProtocol
 import SwiftUI
 
 /// The task's composer, along the bottom edge above the keyboard, on iPhone

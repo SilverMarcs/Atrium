@@ -2,7 +2,7 @@ import Foundation
 
 /// Reads, and on the host itself writes, files inside a project or a linked
 /// worktree of one of its repositories. Paths are the host's absolute paths.
-public nonisolated enum FileRequest: Codable, Sendable {
+nonisolated enum FileRequest: Codable, Sendable {
     /// A folder's entries, once. Follow `HostTopic.directory` to keep them current.
     case list(path: String)
     /// Files whose name matches, below `root`, up to `HostProtocol.maxFoundFiles`.
@@ -21,7 +21,7 @@ public nonisolated enum FileRequest: Codable, Sendable {
     case trash(path: String)
 }
 
-public nonisolated enum FileReply: Codable, Sendable {
+nonisolated enum FileReply: Codable, Sendable {
     case done
     case entries([FileEntry])
     /// Paths relative to the root searched.

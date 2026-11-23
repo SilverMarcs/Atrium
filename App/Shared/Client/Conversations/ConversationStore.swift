@@ -1,15 +1,14 @@
-import AtriumProtocol
 import Foundation
 import Observation
 
 /// Transport-independent conversation state, shared by local and companion clients.
 @MainActor
 @Observable
-public final class ConversationStore {
+final class ConversationStore {
   // Per task, so a chat only updates for its own task's changes.
-  public let transcripts = KeyedState<[TranscriptMessage]>()
-  public let pendingPrompts = KeyedState<[PendingPrompt]>()
-  public let tasksAwaitingAgent = KeyedState<UUID>()
+  let transcripts = KeyedState<[TranscriptMessage]>()
+  let pendingPrompts = KeyedState<[PendingPrompt]>()
+  let tasksAwaitingAgent = KeyedState<UUID>()
   @ObservationIgnored private var deliveries: [UUID: Task<Void, Never>] = [:]
   /// Takes a prompt that couldn't be sent back to its task's composer, with why.
   @ObservationIgnored var onReturn: ((_ prompt: PendingPrompt, _ taskID: String, _ reason: String?) -> Void)?
@@ -138,7 +137,7 @@ public final class ConversationStore {
     }
   }
 
-  public func footerStatus(for taskID: String, status: AgentThreadStatus) -> AgentThreadStatus {
+  func footerStatus(for taskID: String, status: AgentThreadStatus) -> AgentThreadStatus {
     if tasksAwaitingAgent[taskID] != nil && status != .waiting { return .processing }
     // A provider may report worker startup as processing before any turn exists.
     if status == .processing, transcripts[taskID]?.isEmpty != false,
@@ -149,7 +148,7 @@ public final class ConversationStore {
   /// Recognizes prompts by their position after an anchor, including image-only
   /// prompts and providers that normalize the text stored in their transcripts.
   @discardableResult
-  public func reconcile(taskID: String) -> [PromptConfirmation] {
+  func reconcile(taskID: String) -> [PromptConfirmation] {
     let messages = transcripts[taskID] ?? []
     let prompts = pendingPrompts[taskID] ?? []
     var confirmations: [PromptConfirmation] = []
@@ -173,7 +172,7 @@ public final class ConversationStore {
     return confirmations
   }
 
-  public func displayMessages(for taskID: String) -> [TranscriptMessage] {
+  func displayMessages(for taskID: String) -> [TranscriptMessage] {
     let rowIDs = confirmedRowIDs[taskID] ?? [:]
     return (transcripts[taskID] ?? []).map { message in
       var message = message
@@ -182,7 +181,7 @@ public final class ConversationStore {
     }
   }
 
-  public func containsTimelineID(_ id: String, in taskID: String) -> Bool {
+  func containsTimelineID(_ id: String, in taskID: String) -> Bool {
     pendingPrompts[taskID]?.contains { $0.timelineID == id } == true
       || transcripts[taskID]?.contains { $0.id == id } == true
       || confirmedRowIDs[taskID]?.values.contains(id) == true

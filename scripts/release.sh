@@ -42,9 +42,8 @@ SPARKLE_KEY_FILE="${SPARKLE_KEY_FILE:-}"
 APPCAST="appcast.xml"
 EXPORT_PLIST="ExportOptions.plist"
 APPCAST_BASE_URL="https://github.com/${REPO}/releases/download"
-# What stable releases check: the App Store iPhone app, and where the host protocol version lives.
+# What stable releases check: the App Store iPhone app.
 IOS_BUNDLE_ID="com.SilverMarcs.Atrium"
-PROTOCOL_SWIFT="Packages/AtriumKit/Sources/AtriumProtocol/Protocol/HostProtocol.swift"
 
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -84,9 +83,9 @@ push_to_main() {
   fi
 }
 
-# The host protocol version in commit $1.
+# The host protocol version in commit $1, wherever HostProtocol.swift lived then.
 protocol_version_at() {
-  git show "$1:$PROTOCOL_SWIFT" | sed -nE 's/.*static let version = ([0-9]+).*/\1/p'
+  git grep -h 'static let version' "$1" -- '*/HostProtocol.swift' | sed -nE 's/.*static let version = ([0-9]+).*/\1/p'
 }
 
 # Prints "<version> <build>" for the iPhone app live on the App Store.

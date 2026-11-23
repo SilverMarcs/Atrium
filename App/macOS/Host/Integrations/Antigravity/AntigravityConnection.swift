@@ -1,5 +1,4 @@
 import AppKit
-import AtriumProtocol
 import Foundation
 import OSLog
 
