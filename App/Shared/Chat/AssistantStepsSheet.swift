@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Every step behind a reply, in order: the agent's notes as plain text, each
-/// run of tool calls as its count, and each agent that reported back by name,
-/// using the default system font.
+/// Every step behind a reply, in order: the agent's notes as Markdown like
+/// replies, then in the default system font each run of tool calls as its
+/// count and each agent that reported back by name.
 struct AssistantStepsSheet: View {
     let steps: [TranscriptBlock]
     @Environment(\.dismiss) private var dismiss
