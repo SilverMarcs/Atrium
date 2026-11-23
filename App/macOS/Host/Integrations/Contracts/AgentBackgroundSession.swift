@@ -20,7 +20,6 @@ nonisolated struct AgentBackgroundSession: Identifiable, Sendable, Equatable, Ha
     let itemID: String?
 
     var taskID: String { "\(provider.rawValue):\(sessionID)" }
-    var hasOutput: Bool { outputFilePath != nil || itemID != nil }
 
     /// A concise display name when an agent didn't supply a label of its own.
     static func fallbackTitle(forCommand command: String) -> String {

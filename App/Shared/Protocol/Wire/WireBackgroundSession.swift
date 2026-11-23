@@ -16,8 +16,6 @@ nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifia
     var directory: String
     /// When the background session started, if known.
     var startedAt: Date?
-    /// Whether live output can be streamed for this session.
-    var hasOutput: Bool
 
     /// What lists show it as: the title of the chat that started it, else its own.
     var chatTitle: String { taskTitle.isEmpty ? title : taskTitle }
@@ -30,8 +28,7 @@ nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifia
         title: String,
         command: String,
         directory: String,
-        startedAt: Date? = nil,
-        hasOutput: Bool = false
+        startedAt: Date? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -41,7 +38,6 @@ nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifia
         self.command = command
         self.directory = directory
         self.startedAt = startedAt
-        self.hasOutput = hasOutput
     }
 
     init(from decoder: any Decoder) throws {
@@ -54,6 +50,5 @@ nonisolated struct WireBackgroundSession: Codable, Sendable, Hashable, Identifia
         command = container.lenient(.command, or: "")
         directory = container.lenient(.directory, or: "")
         startedAt = container.lenient(.startedAt, or: nil)
-        hasOutput = container.lenient(.hasOutput, or: false)
     }
 }

@@ -226,8 +226,7 @@ final class TasksFeed: TopicFeed {
                 title: session.title,
                 command: session.command,
                 directory: session.directory,
-                startedAt: session.startedAt,
-                hasOutput: session.hasOutput
+                startedAt: session.startedAt
             ))
         }
         return byProject
