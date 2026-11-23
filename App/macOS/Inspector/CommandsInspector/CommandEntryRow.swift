@@ -8,6 +8,10 @@ struct CommandEntryRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            Image(systemName: command.isDefault ? "play.circle" : "apple.terminal")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(command.title)

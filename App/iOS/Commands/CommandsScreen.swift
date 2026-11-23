@@ -53,19 +53,18 @@ private struct BackgroundSessionRowiOS: View {
     let session: WireBackgroundSession
 
     var body: some View {
-        LabeledContent {
-            ProgressView()
-        } label: {
-            Label {
+        Label {
+            HStack(spacing: 6) {
                 Text(session.title)
                     .lineLimit(1)
-                if let subtitle {
-                    Text(subtitle)
-                        .lineLimit(1)
-                }
-            } icon: {
-                ProviderIcon(provider: session.provider)
+                ProgressView()
             }
+            if let subtitle {
+                Text(subtitle)
+                    .lineLimit(1)
+            }
+        } icon: {
+            ProviderIcon(provider: session.provider)
         }
     }
 

@@ -16,18 +16,19 @@ struct CommandRow: View {
             .disabled(!command.canRun && !command.isRunning)
         } label: {
             Label {
-                Text(command.title)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(command.title)
+                        .lineLimit(1)
+                    if command.isRunning {
+                        ProgressView()
+                    }
+                }
                 if let script = command.script, !script.isEmpty {
                     Text(script)
                         .lineLimit(1)
                 }
             } icon: {
-                if command.isRunning {
-                    ProgressView()
-                } else {
-                    Image(systemName: command.isDefault ? "play.circle" : "apple.terminal")
-                }
+                Image(systemName: command.isDefault ? "play.circle" : "apple.terminal")
             }
         }
     }

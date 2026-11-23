@@ -7,6 +7,9 @@ struct BackgroundSessionRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            ProviderIcon(provider: session.provider)
+                .font(.callout)
+                .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(session.title)
