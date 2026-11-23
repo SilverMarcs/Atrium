@@ -118,7 +118,6 @@ final class HostServer {
     @ObservationIgnored private let tasksFeed: TasksFeed
     @ObservationIgnored private var feeds: [HostTopic: any TopicFeed] = [:]
     @ObservationIgnored private var connections: [UUID: ServerConnection] = [:]
-    @ObservationIgnored private var latestTasks: WireTasksSnapshot?
     @ObservationIgnored private var listener: RelayListener?
     /// Phones pushed an alert since Atrium last came to the front anywhere.
     @ObservationIgnored private var alertedDevices: Set<UUID> = []
@@ -170,14 +169,14 @@ final class HostServer {
         }
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
-        tasksFeed.start { [weak self] event in self?.publishTasks(event) }
+        tasksFeed.start { [weak self] event in self?.publish(event, to: .tasks) }
         integrations.onStatusChange = { [orchestrator, queue] thread in
             orchestrator.observe(thread)
             queue.observe(thread)
         }
         queue.onSend = { [weak self] in
             guard let self else { return }
-            publishTasks(.tasks(tasksFeed.snapshot()))
+            publishTasks()
         }
         queue.deliver = { [weak self] entry, thread in
             guard let self else { return }
@@ -185,14 +184,12 @@ final class HostServer {
             if case .failed(let message) = reply { throw IntegrationError(message: message) }
             feeds[.transcript(taskID: thread.id)]?.refresh()
         }
-        integrations.onAttention = { [weak self] thread in
-            guard let self, let target = orchestrator.attentionTarget(for: thread) else { return }
-            alertMac(about: target)
-        }
+        integrations.onAttention = { [orchestrator] thread in orchestrator.attention(thread) }
+        orchestrator.onAlert = { [weak self] thread in self?.alert(about: thread) }
         orchestrator.onSettleItself = { [weak self] thread in
             guard let self else { return }
             sessions.settle(thread)
-            publishTasks(.tasks(tasksFeed.snapshot()))
+            publishTasks()
         }
         integrations.onThreadRemoved = { [orchestrator, queue] id in
             orchestrator.sessionRemoved(id)
@@ -467,7 +464,7 @@ final class HostServer {
             }
             let reply = await tasks.perform(action, onTask: id)
             // Reconcile optimistic client actions before acknowledging them.
-            publishTasks(.tasks(tasksFeed.snapshot()))
+            publishTasks()
             if case .rewind = action { feeds[.transcript(taskID: id)]?.refresh() }
             return reply
         case .compose(let provider, let workspaceID, let settings, let standalone):
@@ -480,7 +477,7 @@ final class HostServer {
             // Anyone else's prompt takes the session back up, as it would once settled.
             orchestrator.cancelSettling(taskID)
             let reply = await tasks.prompt(text, images: images, toTask: taskID, queueID: queueID, from: connection.caller)
-            publishTasks(.tasks(tasksFeed.snapshot()))
+            publishTasks()
             feeds[.transcript(taskID: taskID)]?.refresh()
             return reply
         case .skills(let taskID, let provider, let workspaceID):
@@ -491,14 +488,14 @@ final class HostServer {
             guard connection.isLocal else { return .hostOnly }
             let reply = WorkspaceService(workspaces: workspaces).add(paths: paths)
             // Clients list the project before the reply, so they open it.
-            publishTasks(.tasks(tasksFeed.snapshot()))
+            publishTasks()
             return reply
         case .workspace(let id, let action):
             guard let workspace = workspace(id) else { return .missingProject }
             let reply = WorkspaceService(workspaces: workspaces).perform(action, on: workspace, isLocal: connection.isLocal)
             if case .setFolders = action {
                 // Clients see the folders and their status before the reply.
-                publishTasks(.tasks(tasksFeed.snapshot()))
+                publishTasks()
                 await refreshGit(of: id)
             }
             return reply
@@ -586,16 +583,8 @@ final class HostServer {
         }
     }
 
-    private func publishTasks(_ event: HostEvent) {
-        if case .tasks(let snapshot) = event {
-            if let latestTasks {
-                for task in snapshot.tasksNeedingAttention(since: latestTasks) {
-                    if let target = Self.attentionTarget(for: task, in: snapshot) { alertPhones(about: target) }
-                }
-            }
-            latestTasks = snapshot
-        }
-        publish(event, to: .tasks)
+    private func publishTasks() {
+        publish(.tasks(tasksFeed.snapshot()), to: .tasks)
     }
 
     /// Stops feeds nobody follows anymore.
@@ -662,48 +651,30 @@ final class HostServer {
         status = .stopped
     }
 
-    /// What a phone is alerted about, by the same rule as the Mac: sessions
-    /// working for another alert as the session they're listed under, and they
-    /// and sessions a paired agent started only when they need an
-    /// answer. Side chats never alert.
-    private static func attentionTarget(for task: WireTask, in snapshot: WireTasksSnapshot) -> WireTask? {
-        guard task.origin != nil else { return task }
-        guard task.status == .waiting, !task.isSideChat else { return nil }
-        guard var ancestor = snapshot.listedAncestor(of: task) else { return task }
-        ancestor.status = .waiting
-        return ancestor
-    }
-
-    /// Alerts this Mac unless Atrium is showing the task already.
-    private func alertMac(about thread: AgentThread) {
-        guard NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) else { return }
+    /// Alerts this Mac unless Atrium is showing the task already, and the
+    /// active device, or every phone when none is active.
+    private func alert(about thread: AgentThread) {
         // Alerts name a task's project, which a task relocated into a
         // linked worktree keeps, rather than the worktree folder.
         let workspace = workspaces.workspace(for: thread)
-        NotificationRouting.shared.mac?.alert(
-            taskID: thread.id,
-            title: thread.title,
-            projectName: workspace?.name ?? thread.projectName,
-            needsInput: thread.status == .waiting,
-            projectIcon: ProjectNotificationIcon.pngData(at: workspace?.customIconURL)
-        )
-    }
-
-    /// Routes alerts to the active device, or all devices when none is active.
-    private func alertPhones(about task: WireTask) {
-        guard let listener else { return }
-        let workspace = workspaces.workspaces.first { $0.id == task.workspaceID }
+        let projectName = workspace?.name ?? thread.projectName
         let icon = ProjectNotificationIcon.pngData(at: workspace?.customIconURL)
+        let needsInput = thread.status == .waiting
+        if NotificationRouting.shared.shouldNotifyMac(taskID: thread.id) {
+            NotificationRouting.shared.mac?.alert(
+                taskID: thread.id, title: thread.title, projectName: projectName, needsInput: needsInput, projectIcon: icon)
+        }
+        guard let listener else { return }
         for device in pairing.devices {
             guard let push = device.push,
-                  NotificationRouting.shared.shouldNotify(device.id, taskID: task.id) else { continue }
+                  NotificationRouting.shared.shouldNotify(device.id, taskID: thread.id) else { continue }
             listener.push(RelayPushAlert(
                 token: push.token,
                 environment: push.environment,
-                title: task.projectName,
-                subtitle: task.title,
-                body: task.status == .waiting ? "Needs your input" : "Done",
-                taskID: task.id,
+                title: projectName,
+                subtitle: thread.title,
+                body: needsInput ? "Needs your input" : "Done",
+                taskID: thread.id,
                 projectIcon: icon
             ))
             alertedDevices.insert(device.id)

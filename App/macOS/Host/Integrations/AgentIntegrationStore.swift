@@ -436,9 +436,13 @@ final class AgentIntegrationStore {
         saveRetainedThreads()
     }
 
+    /// Whether the user is alerted about the thread: it isn't settled, snoozed or being deleted.
+    func alertsAbout(_ id: String) -> Bool {
+        !settledThreadIDs.contains(id) && snoozedUntil[id] == nil && !deletingThreadIDs.contains(id) && !deletedThreadIDs.contains(id)
+    }
+
     func canSnooze(_ thread: AgentThread) -> Bool {
-        !settledThreadIDs.contains(thread.id) && snoozedUntil[thread.id] == nil
-            && !deletingThreadIDs.contains(thread.id) && !deletedThreadIDs.contains(thread.id)
+        alertsAbout(thread.id)
     }
 
     func snooze(_ thread: AgentThread, until date: Date) {
@@ -586,8 +590,7 @@ final class AgentIntegrationStore {
         if let previous,
            previous.status != .unknown, previous.status != result.status,
            result.status == .done || result.status == .waiting,
-           available.contains(thread.provider), !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil,
-           !deletingThreadIDs.contains(thread.id), !deletedThreadIDs.contains(thread.id) {
+           available.contains(thread.provider), alertsAbout(thread.id) {
             onAttention?(result)
         }
         return result
@@ -915,7 +918,7 @@ final class AgentIntegrationStore {
         hostResponders[request.id] = respond
         interactions.removeAll { $0.id == request.id }
         interactions.append(request)
-        if !settledThreadIDs.contains(thread.id), snoozedUntil[thread.id] == nil {
+        if alertsAbout(thread.id) {
             var waiting = thread
             waiting.status = .waiting
             onAttention?(waiting)

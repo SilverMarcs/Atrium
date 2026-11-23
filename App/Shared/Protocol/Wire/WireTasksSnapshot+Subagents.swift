@@ -17,17 +17,6 @@ nonisolated extension WireTasksSnapshot {
         return tasks.first { $0.id == id }
     }
 
-    /// The listed session a task belongs under, following subagents up to
-    /// the first session listed on its own, or nil when the task is listed itself.
-    func listedAncestor(of task: WireTask) -> WireTask? {
-        var visited: Set<String> = [task.id]
-        var ancestor = parent(of: task)
-        while let current = ancestor, let next = parent(of: current), visited.insert(current.id).inserted {
-            ancestor = next
-        }
-        return ancestor
-    }
-
     /// Every subagent below a task, at any depth.
     func descendants(of id: String) -> [WireTask] {
         var found: [WireTask] = []
