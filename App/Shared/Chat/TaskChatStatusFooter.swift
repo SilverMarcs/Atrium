@@ -25,14 +25,27 @@ struct TaskChatStatusFooter: View {
     }
 }
 
-/// A tool call's name and argument on one line.
+/// A tool call's name and argument on one line. In a wide chat it stops at
+/// `maxLength` characters with the name, so a long command doesn't span the
+/// chat; on iPhone it fills the line.
 private struct ToolCallLine: View {
     let call: TranscriptToolCall
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
+    private var maxLength: Int? {
+        #if os(iOS)
+        sizeClass == .compact ? nil : 75
+        #else
+        75
+        #endif
+    }
 
     var body: some View {
         Group {
-            if let argument = call.argument {
+            if let argument {
                 Text("\(call.name) \(Text(argument).foregroundStyle(.secondary))")
             } else {
                 Text(call.name)
@@ -40,8 +53,14 @@ private struct ToolCallLine: View {
         }
         .font(.callout)
         .lineLimit(1)
-        .truncationMode(.middle)
+        .truncationMode(.tail)
         .contentTransition(.numericText())
         .animation(reduceMotion ? nil : .snappy, value: call)
+    }
+
+    private var argument: String? {
+        guard let argument = call.argument, let maxLength else { return call.argument }
+        let room = max(maxLength - call.name.count - 1, 1)
+        return argument.count > room ? String(argument.prefix(room - 1)) + "…" : argument
     }
 }
