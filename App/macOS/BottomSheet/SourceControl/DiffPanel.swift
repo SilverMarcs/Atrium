@@ -24,41 +24,31 @@ struct DiffPanel: View {
     }
 
     var body: some View {
-        DiffBodyView(reference: reference, project: project, loader: loader, layout: layout, scrollAnchor: scrollAnchor)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .toolbar {
-                ToolbarItem {
-                    title
-                }
-                .sharedBackgroundVisibility(.hidden)
-                ToolbarSpacer(.flexible)
-                ToolbarItemGroup {
-                    if !isImageFile {
-                        DiffLayoutToggle(layout: layout) { project.editor.diffLayout = $0 }
-                    }
-                    Button("Open File", systemImage: "arrow.up.forward.square") {
-                        project.editor.openFile(reference.fileURL, scrollToLine: scrollAnchor.currentNewFileLine())
-                    }
-                    .help("Open File")
-                }
-            }
-    }
-
-    private var title: some View {
-        HStack(spacing: 6) {
+        PanelLayout {
             Image(nsImage: FileIcon.image(for: reference.fileURL))
                 .resizable()
                 .frame(width: 16, height: 16)
-            Text(reference.fileURL.lastPathComponent)
-                .font(.headline)
+            Text(reference.repositoryRelativePath)
+                .font(.subheadline.weight(.medium))
                 .lineLimit(1)
+                .truncationMode(.middle)
             GitStatusBadge(kind: reference.kind, staged: reference.stage != .unstaged)
             if !isImageFile, let stats = headerStats {
                 diffStats(stats)
             }
+        } actions: {
+            if !isImageFile {
+                DiffLayoutToggle(layout: layout) { project.editor.diffLayout = $0 }
+            }
+            Button("Open File", systemImage: "arrow.up.forward.square") {
+                project.editor.openFile(reference.fileURL, scrollToLine: scrollAnchor.currentNewFileLine())
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Open File")
+        } content: {
+            DiffBodyView(reference: reference, project: project, loader: loader, layout: layout, scrollAnchor: scrollAnchor)
         }
-        .padding(.horizontal, 4)
-        .help(reference.repositoryRelativePath)
     }
 
     @ViewBuilder
@@ -105,8 +95,6 @@ struct DiffBodyView: View {
                     }
                 } else if layout == .sideBySide {
                     sideBySide(presentation.sideBySide(), hunks: file?.hunks ?? [])
-                        // Scrolls on under the toolbar, which insets it.
-                        .ignoresSafeArea(.container, edges: .top)
                 } else {
                     CodeTextEditor(
                         presentation: presentation,
@@ -117,7 +105,6 @@ struct DiffBodyView: View {
                         scrollAnchor: scrollAnchor,
                         onReload: reload
                     )
-                    .ignoresSafeArea(.container, edges: .top)
                 }
             case .message(let text):
                 ContentUnavailableView {
@@ -164,7 +151,8 @@ struct DiffBodyView: View {
     }
 }
 
-/// Switches a diff between unified and side by side, lit while side by side.
+/// Switches a diff between unified and side by side, lit while side by side
+/// like the panel's other toggles.
 struct DiffLayoutToggle: View {
     let layout: DiffLayout
     let onChange: (DiffLayout) -> Void
@@ -175,7 +163,9 @@ struct DiffLayoutToggle: View {
         Button("Side by Side", systemImage: "rectangle.split.2x1") {
             onChange(layout.toggled)
         }
-        .foregroundStyle(isSideBySide ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .foregroundStyle(isSideBySide ? .accent : .secondary)
         .accessibilityAddTraits(isSideBySide ? .isSelected : [])
         .help(isSideBySide ? "Show Unified Diff" : "Show Side by Side")
     }

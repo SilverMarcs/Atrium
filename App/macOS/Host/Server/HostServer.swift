@@ -172,9 +172,10 @@ final class HostServer {
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publish(event, to: .tasks) }
-        integrations.onStatusChange = { [orchestrator, queue] thread in
+        integrations.onStatusChange = { [orchestrator, queue, browsers] thread in
             orchestrator.observe(thread)
             queue.observe(thread)
+            browsers.observe(thread)
         }
         queue.onSend = { [weak self] in
             guard let self else { return }

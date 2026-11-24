@@ -29,6 +29,15 @@ struct AtriumApp: App {
         .defaultSize(width: 1100, height: 700)
         .restorationBehavior(.disabled)
 
+        WindowGroup("Browser", for: BrowserWindowItem.self) { $item in
+            if let item {
+                BrowserWindow(item: item)
+                    .environment(app)
+            }
+        }
+        .defaultSize(width: 1200, height: 800)
+        .restorationBehavior(.disabled)
+
         Window("About Atrium", id: "about") {
             AboutView()
                 .containerBackground(.regularMaterial, for: .window)

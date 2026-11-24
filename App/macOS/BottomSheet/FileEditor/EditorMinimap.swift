@@ -32,9 +32,8 @@ final class EditorMinimap: NSView {
         guard let documentView = scrollView.documentView else { return }
         let totalHeight = documentView.frame.height
         guard totalHeight > 0 else { return }
-        // What's under the toolbar, inside the top inset, isn't in view.
-        let visible = scrollView.documentVisibleRect
-        viewportStart = max(visible.origin.y / totalHeight, 0)
+        let visible = scrollView.contentView.bounds
+        viewportStart = visible.origin.y / totalHeight
         viewportEnd = min((visible.origin.y + visible.height) / totalHeight, 1)
         needsDisplay = true
     }

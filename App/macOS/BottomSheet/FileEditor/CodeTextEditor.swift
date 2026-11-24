@@ -1,51 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The editor's scroll view, with its minimap over the right edge. The
-/// minimap runs from below whatever covers the top, such as the toolbar the
-/// text scrolls under, to the bottom, and follows the insets as they change.
-final class EditorScrollView: NSScrollView {
-    var minimap: NSView? {
-        didSet {
-            oldValue?.removeFromSuperview()
-            if let minimap { addSubview(minimap) }
-            placeMinimap()
-        }
-    }
-    var minimapWidth: CGFloat = 0 {
-        didSet { placeMinimap() }
-    }
-
-    override var contentInsets: NSEdgeInsets {
-        didSet { placeMinimap() }
-    }
-
-    override func tile() {
-        super.tile()
-        placeMinimap()
-    }
-
-    override func layout() {
-        super.layout()
-        placeMinimap()
-    }
-
-    private func placeMinimap() {
-        guard let minimap else { return }
-        let top = contentInsets.top
-        let height = max(bounds.height - top, 0)
-        minimap.frame = NSRect(
-            x: bounds.width - minimapWidth,
-            y: isFlipped ? top : 0,
-            width: minimapWidth,
-            height: height
-        )
-    }
-}
-
 /// NSView subclass that fires a callback whenever AppKit changes its frame
 /// size. SwiftUI's `updateNSView` is not reliably re-invoked when the
-/// container resizes (e.g. when the pane finishes its open animation
+/// container resizes (e.g. when the bottom sheet finishes its open animation
 /// or when the source-control inspector swaps in a new editor instance), so
 /// the editor used to be stuck rendering whatever broken state was cached at
 /// the bad initial size. This callback gives us a deterministic hook to
@@ -318,7 +276,7 @@ struct CodeTextEditor: NSViewRepresentable {
         let container = LayoutAwareContainer()
         container.autoresizesSubviews = true
 
-        let scrollView = EditorScrollView()
+        let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
@@ -343,13 +301,12 @@ struct CodeTextEditor: NSViewRepresentable {
         configureSharedTextView(textView, contentSize: contentSize)
 
         let minimap = EditorMinimap()
+        minimap.autoresizingMask = [.minXMargin, .height]
         minimap.onScrollToFraction = { [weak scrollView] fraction in
             guard let scrollView, let documentView = scrollView.documentView else { return }
             let totalHeight = documentView.frame.height
-            let inset = scrollView.contentInsets.top
-            let visibleHeight = scrollView.contentView.bounds.height - inset
-            // The clip view's origin sits the toolbar's inset above what's in view.
-            let targetY = max(0, min(fraction * totalHeight - visibleHeight / 2, totalHeight - visibleHeight)) - inset
+            let visibleHeight = scrollView.contentView.bounds.height
+            let targetY = max(0, min(fraction * totalHeight - visibleHeight / 2, totalHeight - visibleHeight))
             scrollView.contentView.setBoundsOrigin(
                 NSPoint(x: scrollView.contentView.bounds.origin.x, y: targetY)
             )
@@ -358,7 +315,7 @@ struct CodeTextEditor: NSViewRepresentable {
 
         scrollView.documentView = textView
         container.addSubview(scrollView)
-        scrollView.minimap = minimap
+        container.addSubview(minimap)
 
         context.coordinator.textView = textView
         context.coordinator.scrollView = scrollView
@@ -409,20 +366,19 @@ struct CodeTextEditor: NSViewRepresentable {
         guard let textView = coordinator.textView else { return }
         let bounds = container.bounds
 
-        // The scroll view spans the whole width, so text scrolls on under all
-        // of the toolbar; the text itself stops short of the minimap, which
-        // the scroll view lays over its right edge.
         let scrollViewFrame = NSRect(
             x: 0,
             y: 0,
             width: bounds.width - minimapWidth,
             height: bounds.height
         )
-        if let scrollView = coordinator.scrollView {
-            scrollView.minimapWidth = minimapWidth
-            scrollView.frame = bounds
-            scrollView.tile()
-        }
+        coordinator.scrollView?.frame = scrollViewFrame
+        coordinator.minimap?.frame = NSRect(
+            x: bounds.width - minimapWidth,
+            y: 0,
+            width: minimapWidth,
+            height: bounds.height
+        )
 
         updateSharedTextView(textView)
 
@@ -582,7 +538,7 @@ struct CodeTextEditor: NSViewRepresentable {
             width = textView.diffGutterWidth
         }
         if textView.textContainerInset.width != width {
-            textView.textContainerInset = NSSize(width: width, height: 0)
+            textView.textContainerInset = NSSize(width: width, height: 4)
         }
     }
 
@@ -717,7 +673,7 @@ struct CodeTextEditor: NSViewRepresentable {
         }
 
         if let scrollView = coordinator.scrollView {
-            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: -scrollView.contentInsets.top))
+            scrollView.contentView.setBoundsOrigin(.zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
             coordinator.minimap?.updateViewport(from: scrollView)
         }
@@ -787,7 +743,7 @@ struct CodeTextEditor: NSViewRepresentable {
                 Task { @MainActor in
                     textView.setSelectedRange(NSRange(location: 0, length: 0))
                     if let scrollView = coordinator.scrollView {
-                        scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: -scrollView.contentInsets.top))
+                        scrollView.contentView.setBoundsOrigin(.zero)
                         scrollView.reflectScrolledClipView(scrollView.contentView)
                         coordinator.minimap?.updateViewport(from: scrollView)
                     } else {
@@ -861,7 +817,7 @@ struct CodeTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeTextEditor
         weak var textView: EditorTextView?
-        weak var scrollView: EditorScrollView?
+        weak var scrollView: NSScrollView?
         weak var minimap: EditorMinimap?
         var isEditing = false
         var didConfigureMode = false

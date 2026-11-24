@@ -4,6 +4,7 @@ struct AppCommands: Commands {
     @Bindable var app: AppModel
     let updater: UpdaterManager
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @FocusedValue(\.latestPromptEdit) private var latestPromptEdit
     @FocusedValue(\.showScratchpad) private var showScratchpad
@@ -91,13 +92,13 @@ struct AppCommands: Commands {
                 Divider()
 
                 Button {
-                    guard let task = app.selection else { return }
-                    withAnimation { app.chatPanes.toggle(for: task) }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        editorPanel?.toggle()
+                    }
                 } label: {
-                    Label("Show or Hide Pane", systemImage: "square.split.2x1")
+                    Label("Toggle Bottom Panel", systemImage: "rectangle.bottomhalf.inset.filled")
                 }
                 .keyboardShortcut("j", modifiers: .command)
-                .disabled(app.selection.flatMap(app.chatPanes.current(for:)) == nil)
 
                 Button {
                     showScratchpad?()

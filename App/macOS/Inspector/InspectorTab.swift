@@ -9,8 +9,8 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
-    /// The tabs the inspector's picker offers. Search still works but
-    /// stays out of the picker and the menus for now.
+    /// The tabs the inspector's picker offers: the browser takes Search's
+    /// place, which still works but stays out of the picker and the menus for now.
     static let shown: [InspectorTab] = [.files, .git, .browser, .commands]
 
     #if DEBUG
@@ -46,8 +46,8 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
 /// switches (re-keying them with .id flickers the toolbar), so a plain
 /// `.onChange(of: model.selectedID)` also fires when the whole model is swapped
 /// for another project's. Handlers compare `owner` to tell an explicit
-/// selection change (same owner → open it in the pane) from a project switch
-/// (different owner → leave the pane as it is).
+/// selection change (same owner → open the bottom panel) from a project switch
+/// (different owner → leave the panel as that project left it).
 struct InspectorSelection<Value: Equatable>: Equatable {
     let owner: ObjectIdentifier
     let selection: Value

@@ -1,7 +1,7 @@
 import AppKit
 
 /// The tools that drive a chat's own browser, for the agents this Mac runs:
-/// each chat gets one tab, which the user watches in the pane beside it.
+/// each chat gets one tab, which the user watches in the inspector beside it.
 /// Agents read pages as text outlines with element refs and act with real
 /// clicks and keys; pictures come only when they ask.
 @MainActor
@@ -157,6 +157,7 @@ struct BrowserTools {
         let caller = try caller(of: call)
         guard let url = AgentBrowser.url(from: try call.required("url")) else { throw Failure("Give an http, https or file address.") }
         let browser = browsers.browserOpening(for: caller)
+        browsers.noteAgentUse(by: caller)
         if let device = try device(call) { await browser.setViewport(device.viewport()) }
         try await acting(browser, call) {
             try await browser.open(url)
@@ -374,9 +375,11 @@ struct BrowserTools {
     }
 
     private func browser(for call: ToolCall) throws -> AgentBrowser {
-        guard let browser = browsers.browser(for: try caller(of: call)) else {
+        let caller = try caller(of: call)
+        guard let browser = browsers.browser(for: caller) else {
             throw Failure("Your chat has no page open; open one with browser_open.")
         }
+        browsers.noteAgentUse(by: caller)
         return browser
     }
 }

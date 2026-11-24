@@ -163,12 +163,12 @@ struct HostTools {
             Tool(
                 name: ChatPages.toolName,
                 description: """
-                    Shows an HTML page you wrote to a file as a card in your chat, which opens beside it. Call it once \
+                    Shows an HTML page you wrote to a file inline in your reply, as tall as the page. Call it once \
                     the page is final, at most once per reply, and don't describe the page in your text. To revise it, \
-                    edit the file and show it again with exactly the same title: Atrium keeps a copy of each version.
+                    edit the file and show it again: Atrium keeps a copy of each version a reply showed.
                     """,
                 properties: [
-                    "title": ToolSchema.string("A short title, unique to this page in the chat."),
+                    "title": ToolSchema.string("A short title for the page."),
                     "file": ToolSchema.string("The absolute path of the page's .html file."),
                 ],
                 required: ["title", "file"], audience: .localAgents, isEnabled: { $0.isVisualizationsEnabled }, run: showPage

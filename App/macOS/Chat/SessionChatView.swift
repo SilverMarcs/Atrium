@@ -13,7 +13,6 @@ struct SessionChatView: View {
   @State private var scrollPolicy = ConversationScrollPolicy()
   @State private var flights = PromptFlights()
   @State private var links = ChatLinkOpener()
-  /// Opens the chat's pages in the pane beside it.
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let topID = "top"

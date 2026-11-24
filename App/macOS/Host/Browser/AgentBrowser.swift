@@ -2,9 +2,9 @@ import AppKit
 import WebKit
 
 /// One chat's browser: a single tab its agent drives through Atrium's
-/// browser tools while the user watches, and can use, in the pane beside the
-/// chat. Off screen it sits in a window that's never shown, so real clicks
-/// and keys still reach it. A page that opens a sized popup,
+/// browser tools while the user watches, and can use, in the inspector or a
+/// window of its own. Off screen it sits in a window that's never shown, so
+/// real clicks and keys still reach it. A page that opens a sized popup,
 /// such as a sign-in window, gets a window of its own.
 @MainActor
 @Observable
@@ -102,8 +102,35 @@ final class AgentBrowser {
     private(set) var isLoading = false
     private(set) var canGoBack = false
     private(set) var canGoForward = false
+    /// A window of its own shows the page, rather than the inspector.
+    var isInWindow = false
     /// The size pages lay out at; nil fills wherever the page shows.
     private(set) var viewport: Viewport?
+    /// The agent has used the browser in its current turn, for the address bar to show.
+    private(set) var isAgentUsing = false
+    /// When the agent last used the browser or anyone last saw it, for
+    /// `AgentBrowsers` to close it once idle.
+    @ObservationIgnored var lastUsed = ContinuousClock.now
+    /// Clears `isAgentUsing` shortly after the agent's turn ends.
+    @ObservationIgnored private var turnEnd: Task<Void, Never>?
+
+    /// The agent used the browser: it stays marked for the rest of its turn.
+    func noteAgentUse() {
+        turnEnd?.cancel()
+        isAgentUsing = true
+    }
+
+    /// The agent started or stopped working. Once it stops, the mark goes
+    /// after `grace`, unless it starts again first.
+    func agentWorkingChanged(_ isWorking: Bool, grace: Duration) {
+        turnEnd?.cancel()
+        guard !isWorking, isAgentUsing else { return }
+        turnEnd = Task { [weak self] in
+            guard (try? await Task.sleep(for: grace)) != nil, let self else { return }
+            isAgentUsing = false
+            lastUsed = .now
+        }
+    }
 
     @ObservationIgnored private(set) var console: [ConsoleEntry] = []
     @ObservationIgnored private(set) var network: [NetworkEntry] = []
@@ -175,8 +202,17 @@ final class AgentBrowser {
         park()
     }
 
+    /// A view shows the page: the inspector or a window of its own (even
+    /// minimized), rather than the hidden window it waits in.
+    var isOnScreen: Bool {
+        if isInWindow { return true }
+        guard let window = webView.window else { return false }
+        return window !== parking && window.isVisible
+    }
+
     /// Closes the page and any popups it opened.
     func close() {
+        turnEnd?.cancel()
         for popup in popups { popup.window.close() }
         popups = []
         webView.stopLoading()

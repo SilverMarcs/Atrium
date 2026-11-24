@@ -13,20 +13,33 @@ final class ChatPageModel {
         case unavailable
     }
 
+    let page: TranscriptPage
     let webPage: WebPage
     private(set) var phase = Phase.loading
     /// Where the page's own images come from; without a task, the page is unavailable.
     private let files: ChatPageFiles?
     private var html: String?
     /// The page's height, for a page that fits its content; nil until it reports it.
-    private(set) var contentHeight: CGFloat?
+    fileprivate(set) var contentHeight: CGFloat? {
+        didSet { if let key = page.key { Self.heights[key] = contentHeight } }
+    }
+    /// One store for every page, kept in memory only, now that a chat shows many at once.
+    private static let dataStore = WKWebsiteDataStore.nonPersistent()
+    /// Each page's last reported height, so a page shown again starts at it.
+    private static var heights: [String: CGFloat] = [:]
+
+    /// The height a page last reported, before it reports again.
+    static func lastHeight(of page: TranscriptPage) -> CGFloat? {
+        page.key.flatMap { heights[$0] }
+    }
 
     /// - Parameter fitsContent: Shown at its own height, so it never scrolls
     ///   and reports its height as `contentHeight`.
     init(page: TranscriptPage, media: ChatMedia?, openURL: OpenURLAction, fitsContent: Bool = false) {
+        self.page = page
         files = media.map { ChatPageFiles(media: $0, pageKey: page.key) }
         var configuration = WebPage.Configuration()
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = Self.dataStore
         if let files, let scheme = URLScheme(ChatPageFiles.scheme) {
             configuration.urlSchemeHandlers[scheme] = files
         }
@@ -35,14 +48,14 @@ final class ChatPageModel {
         }
         let scripts = WKUserContentController()
         scripts.addUserScript(WKUserScript(source: ChatPageScripts.theme, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        let heights = ChatPageHeights()
-        if fitsContent {
+        let heights = fitsContent ? ChatPageHeights() : nil
+        if let heights {
             scripts.addUserScript(WKUserScript(source: ChatPageScripts.fitContent, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
             scripts.add(heights, name: ChatPageScripts.heightMessage)
         }
         configuration.userContentController = scripts
         webPage = WebPage(configuration: configuration, navigationDecider: ChatPageNavigation(document: files?.baseURL, openURL: openURL))
-        heights.model = self
+        heights?.model = self
     }
 
     func load(_ page: TranscriptPage) async {
@@ -86,14 +99,9 @@ private final class ChatPageHeights: NSObject, WKScriptMessageHandler {
     weak var model: ChatPageModel?
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let height = message.body as? NSNumber, height.doubleValue > 0 else { return }
-        model?.setContentHeight(CGFloat(height.doubleValue))
-    }
-}
-
-extension ChatPageModel {
-    fileprivate func setContentHeight(_ height: CGFloat) {
-        if contentHeight != height { contentHeight = height }
+        guard let model, let height = message.body as? NSNumber, height.doubleValue > 0,
+              model.contentHeight != CGFloat(height.doubleValue) else { return }
+        model.contentHeight = CGFloat(height.doubleValue)
     }
 }
 

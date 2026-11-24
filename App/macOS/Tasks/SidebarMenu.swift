@@ -35,7 +35,7 @@ private struct SidebarMenuControl: View {
             Label("Sidebar", systemImage: "sidebar.leading")
         } primaryAction: {
             withAnimation {
-                app.sidebarVisibility = app.sidebarVisibility == .doubleColumn ? .all : .doubleColumn
+                app.sidebarVisibility = app.sidebarVisibility == .detailOnly ? .automatic : .detailOnly
             }
         }
         .help("Show or hide the sidebar")

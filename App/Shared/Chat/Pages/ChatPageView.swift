@@ -24,11 +24,14 @@ private struct ChatPageInline: View {
     @Environment(\.openURL) private var openURL
     @State private var model: ChatPageModel?
     @State private var isExpanded = false
+    #if os(macOS)
+    @State private var downloadError: String?
+    #endif
 
-    /// The page's own height, capped so a page sized to the view's height
-    /// can't keep growing it.
+    /// The page's own height, or the height it had when last shown, capped so
+    /// a page sized to the view's height can't keep growing it.
     private var height: CGFloat {
-        min(model?.contentHeight ?? 40, 2000)
+        min(model?.contentHeight ?? ChatPageModel.lastHeight(of: page) ?? 40, 2000)
     }
 
     var body: some View {
@@ -36,6 +39,8 @@ private struct ChatPageInline: View {
             if let model, model.phase == .loaded {
                 WebView(model.webPage)
                     .webViewContentBackground(.hidden)
+                    // A drag that starts on the page scrolls the chat rather than bouncing the page.
+                    .scrollBounceBehavior(.basedOnSize)
                     .chatPageMenu(model, expand: { isExpanded = true }, download: download)
                     #if os(macOS)
                     // A web view keeps the wheel even with nothing to scroll; the chat should get it.
@@ -66,9 +71,21 @@ private struct ChatPageInline: View {
         #endif
         .sheet(isPresented: $isExpanded) {
             ChatPageSheet(page: page)
-                .environment(\.chatMedia, media)
         }
+        #if os(macOS)
+        .alert("Couldn’t Save Page", isPresented: Binding {
+            downloadError != nil
+        } set: {
+            if !$0 { downloadError = nil }
+        }) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(downloadError ?? "")
+        }
+        #endif
         .task(id: page.key) {
+            // Scrolling back to a page already loaded keeps it, rather than loading it again.
+            guard model?.page != page else { return }
             let model = ChatPageModel(page: page, media: media, openURL: openURL, fitsContent: true)
             self.model = model
             await model.load(page)
@@ -76,11 +93,18 @@ private struct ChatPageInline: View {
     }
 
     #if os(macOS)
+    /// Saves the page into Downloads, as a browser would, saying when that fails.
     private var download: (@MainActor (ChatPageExport.Format) -> Void)? {
         guard let model else { return nil }
         let title = page.title
         return { format in
-            Task { _ = try? await model.export(format, title: title).saveToDownloads() }
+            Task {
+                do {
+                    _ = try await model.export(format, title: title).saveToDownloads()
+                } catch {
+                    downloadError = error.localizedDescription
+                }
+            }
         }
     }
     #else
@@ -96,8 +120,12 @@ private struct ScrollWheelPassthrough: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class WheelCatcher: NSView {
+        /// Takes up-and-down scrolls only: sideways ones still reach the page,
+        /// for a wide table or code block in it.
         override func hitTest(_ point: NSPoint) -> NSView? {
-            NSApp.currentEvent?.type == .scrollWheel ? super.hitTest(point) : nil
+            guard let event = NSApp.currentEvent, event.type == .scrollWheel,
+                  abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX) else { return nil }
+            return super.hitTest(point)
         }
 
         override func scrollWheel(with event: NSEvent) {

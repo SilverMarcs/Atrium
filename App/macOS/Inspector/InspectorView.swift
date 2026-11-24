@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// The window's trailing column: the selected task's project with its files,
+/// The column beside the chat: the selected task's project with its files,
 /// Git and commands, from whichever host it's on, and the chat's browser.
-/// What it opens shows in the pane beside the chat.
 struct InspectorView: View {
     let item: HostTask?
     let project: Project?
@@ -38,7 +37,8 @@ struct InspectorView: View {
                     InspectorTabPicker(project: project)
                 }
             }
-            .inspectorColumnWidth(min: 240, ideal: 240, max: 360)
+            // One width for every tab, which can be dragged wide for the browser.
+            .inspectorColumnWidth(min: 240, ideal: 280, max: 900)
     }
 
     @ViewBuilder
@@ -58,8 +58,8 @@ struct InspectorView: View {
                     BrowserInspectorView(item: item)
                 }
             }
-            // Every tab's foot switches branches, so what that asks to confirm
-            // shows whichever tab is open.
+            // The project tabs' feet switch branches, so what that asks to
+            // confirm shows whichever tab is open.
             .sourceControlAlerts(project.git.model)
         } else {
             ContentUnavailableView("No Inspector", systemImage: "sidebar.right")

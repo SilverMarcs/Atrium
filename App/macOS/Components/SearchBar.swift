@@ -1,30 +1,37 @@
 import SwiftUI
 
-struct SearchBar<Trailing: View>: View {
+/// The inspector's search field: a capsule with a magnifying glass, or other
+/// controls, before the field and optional buttons after it.
+struct SearchBar<Leading: View, Trailing: View>: View {
     @Binding var text: String
     var placeholder: String = "Search"
     var focusTrigger: Int = 0
     var isLoading: Bool = false
+    /// Whether a clear button shows once there's text.
+    var clears = true
+    /// Tells the owner whether the field is being edited.
+    var onEditingChange: ((Bool) -> Void)?
     var onSubmit: (() -> Void)?
+    @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
     @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+            leading
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.subheadline)
                 .focused($isFocused)
                 .onSubmit { onSubmit?() }
+                .onChange(of: isFocused) { onEditingChange?(isFocused) }
 
             if isLoading {
                 ProgressView()
                     .controlSize(.mini)
-            } else if !text.isEmpty {
+            } else if clears, !text.isEmpty {
                 Button {
                     text = ""
                     onSubmit?()
@@ -49,7 +56,29 @@ struct SearchBar<Trailing: View>: View {
     }
 }
 
-extension SearchBar where Trailing == EmptyView {
+/// The magnifying glass a search bar starts with, which also sets its height.
+struct SearchBarIcon: View {
+    var body: some View {
+        Image(systemName: "magnifyingglass")
+            .foregroundStyle(.secondary)
+    }
+}
+
+extension SearchBar where Leading == SearchBarIcon {
+    init(
+        text: Binding<String>,
+        placeholder: String = "Search",
+        focusTrigger: Int = 0,
+        isLoading: Bool = false,
+        onSubmit: (() -> Void)? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.init(text: text, placeholder: placeholder, focusTrigger: focusTrigger, isLoading: isLoading,
+                  onSubmit: onSubmit, leading: { SearchBarIcon() }, trailing: trailing)
+    }
+}
+
+extension SearchBar where Leading == SearchBarIcon, Trailing == EmptyView {
     init(
         text: Binding<String>,
         placeholder: String = "Search",
@@ -57,11 +86,7 @@ extension SearchBar where Trailing == EmptyView {
         isLoading: Bool = false,
         onSubmit: (() -> Void)? = nil
     ) {
-        self._text = text
-        self.placeholder = placeholder
-        self.focusTrigger = focusTrigger
-        self.isLoading = isLoading
-        self.onSubmit = onSubmit
-        self.trailing = EmptyView()
+        self.init(text: text, placeholder: placeholder, focusTrigger: focusTrigger, isLoading: isLoading,
+                  onSubmit: onSubmit, trailing: { EmptyView() })
     }
 }

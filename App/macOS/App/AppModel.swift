@@ -21,11 +21,9 @@ final class AppModel {
         set { selectedTasks = newValue.map { [$0] } ?? [] }
     }
     var showingProjects = false
-    var sidebarVisibility: NavigationSplitViewVisibility = .all
+    var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true
-    /// The page or browser each chat shows in the pane beside it.
-    let chatPanes = ChatPanes()
-    /// The browser each of this Mac's chats has open, shown in its pane.
+    /// The browser each of this Mac's chats has open, shown in the inspector.
     let browsers: AgentBrowsers
     /// Bumped to put the cursor in the sidebar's filter field.
     var sidebarSearchFocusRequest = 0
@@ -56,7 +54,6 @@ final class AppModel {
         hosts.start()
         Self.shared = self
         browsers.onOpen = { [weak self] taskID in self?.showBrowser(for: taskID) }
-        browsers.onClose = { [weak self] taskID in self?.forgetBrowser(of: taskID) }
     }
 
     /// A pairing link connects this Mac to another host; ChatGPT's request
@@ -100,8 +97,6 @@ final class AppModel {
         if let project = projects[ref] { return project }
         guard let host = hosts.host(ref.hostID) else { return nil }
         let project = Project(host: host, workspaceID: ref.workspaceID)
-        // The project's files and diffs open beside whichever of its chats is on screen.
-        project.editor.show = { [weak self] in self?.showInPane($0) }
         projects[ref] = project
         return project
     }

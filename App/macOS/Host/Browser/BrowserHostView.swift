@@ -1,8 +1,7 @@
 import AppKit
-import WebKit
 
-/// Holds a chat's web view wherever it shows: the chat's pane or the hidden
-/// window it waits in. When a showing view goes away, the page
+/// Holds a chat's web view wherever it shows: the inspector, its own window,
+/// or the hidden window it waits in. When a showing view goes away, the page
 /// goes back to its hidden window, so the agent can keep using it.
 final class BrowserHostView: NSView {
     private weak var browser: AgentBrowser?
@@ -30,12 +29,6 @@ final class BrowserHostView: NSView {
         super.layout()
         guard let browser, browser.webView.superview === self else { return }
         browser.layOut(in: bounds)
-        // A page filling the pane scrolls on under the toolbar, which it
-        // keeps clear of at rest, as a scroll view's content insets would.
-        let underToolbar = window.map { max(0, convert(bounds, to: nil).maxY - $0.contentLayoutRect.maxY) } ?? 0
-        if browser.webView.obscuredContentInsets.top != underToolbar {
-            browser.webView.obscuredContentInsets = NSEdgeInsets(top: underToolbar, left: 0, bottom: 0, right: 0)
-        }
     }
 
     override func viewDidMoveToWindow() {
