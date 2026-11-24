@@ -104,27 +104,24 @@ extension [PullRequest] {
     var mostPressing: PullRequest? { self.max { $0.urgency < $1.urgency } }
 }
 
-/// The state of a task's most pressing pull request, for its sidebar row,
-/// followed by how many it has when more than one.
+/// The state of a task's most pressing pull request, for its sidebar row.
 struct PullRequestIndicator: View {
     let pullRequests: [PullRequest]
+    #if os(iOS)
+    @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 14
+    #else
     @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 11
+    #endif
 
     var body: some View {
         if let pullRequest = pullRequests.mostPressing {
-            HStack(spacing: 2) {
-                Image(pullRequest.icon)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: iconSize, height: iconSize)
-                    .foregroundStyle(pullRequest.tint)
-                    .accessibilityLabel("\(pullRequest.numberText) \(pullRequest.detail)")
-                if pullRequests.count > 1 {
-                    Text(pullRequests.count, format: .number)
-                        .monospacedDigit()
-                }
-            }
-            .help("\(pullRequest.numberText) \(pullRequest.detail)")
+            Image(pullRequest.icon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: iconSize, height: iconSize)
+                .foregroundStyle(pullRequest.tint)
+                .accessibilityLabel("\(pullRequest.numberText) \(pullRequest.detail)")
+                .help("\(pullRequest.numberText) \(pullRequest.detail)")
         }
     }
 }
