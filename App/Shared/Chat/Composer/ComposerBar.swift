@@ -141,7 +141,13 @@ struct ComposerBar<Accessory: View>: View {
         @Bindable var composer = composer
 
         VStack(spacing: 0) {
-            accessory
+            // When a long draft leaves too little room, the accessory scrolls
+            // instead of pushing the composer behind the keyboard.
+            ViewThatFits(in: .vertical) {
+                accessory
+                ScrollView { accessory }
+                    .defaultScrollAnchor(.bottom)
+            }
             // What the prompt carries sits above the composer, as it did above
             // the bottom bar.
             if let edit = composer.messageEdit {
