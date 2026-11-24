@@ -4,10 +4,11 @@ import Foundation
 /// folders it committed, pushed or opened a pull request in, and the pull
 /// requests it opened. Quoted text, comments and heredoc bodies are text the
 /// command carries, not commands it runs, so `echo "gh pr create"` or a
-/// search for it opens nothing.
-nonisolated struct AgentShellCommand: Equatable, Sendable {
+/// search for it opens nothing. Claude's saved transcript scans hold the
+/// commands waiting for results: see `ClaudeSessionMetadata.Latest.savedVersion`.
+nonisolated struct AgentShellCommand: Codable, Equatable, Sendable {
     /// A command the script runs: its words, unquoted, and its text as written.
-    private struct Segment: Equatable, Sendable {
+    private struct Segment: Codable, Equatable, Sendable {
         var words: [String] = []
         var text = ""
         /// How many subshells and substitutions deep it runs.

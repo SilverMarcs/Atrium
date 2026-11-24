@@ -27,8 +27,13 @@ actor ClaudeSessionHistory {
     private let projects: URL
     private var cache: [URL: Cached] = [:]
     private var locations: [String: URL] = [:]
-    /// The newest records found in each transcript.
-    private var recordScans: [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] = [:]
+    /// The newest records found in each transcript, as saved by the last launch at first.
+    private lazy var recordScans = Self.savedScans(in: savedScansFile)
+    /// Where the record scans are saved across launches. Finding the records
+    /// reads each transcript through, gigabytes in all for a long history, so
+    /// a launch picks up from the saved scans and reads only what was appended.
+    private let savedScansFile: URL
+    private var savingScans: Task<Void, Never>?
     /// The edits and newest reply found in each subagent's transcript.
     private var subagentScans: [URL: JSONLines.Scan<SubagentScan>] = [:]
     /// Background Bash/Monitor tasks found in live sessions' transcripts (scanned on demand only).
@@ -39,9 +44,10 @@ actor ClaudeSessionHistory {
     /// in the chain, which only a rewind past it ends. Least recently used first.
     private var settled: [(url: URL, history: SettledHistory)] = []
 
-    init(configDirectory: URL) {
+    init(configDirectory: URL, savedScansFile: URL = HostStorage.directory.appending(path: "claude-history-scans.json")) {
         self.configDirectory = configDirectory
         projects = configDirectory.appending(path: "projects", directoryHint: .isDirectory)
+        self.savedScansFile = savedScansFile
     }
 
     func listThreads() throws -> [AgentThread] {
@@ -71,7 +77,9 @@ actor ClaudeSessionHistory {
         // A fixed 50-entry limit caused larger histories to be reparsed on every refresh.
         let existing = Set(files.map(\.url))
         cache = cache.filter { existing.contains($0.key) }
+        let scanCount = recordScans.count
         recordScans = recordScans.filter { existing.contains($0.key) }
+        if recordScans.count != scanCount { saveScansLater() }
         backgroundScans = backgroundScans.filter { existing.contains($0.key) }
         // A subagent's files sit in a folder named after its session's transcript.
         let transcripts = Set(files.map(\.url.path))
@@ -465,8 +473,8 @@ actor ClaudeSessionHistory {
         return metadata
     }
 
-    /// Brings a transcript's newest records up to date, reading only what was appended since the last scan.
-    /// Each is searched for from the end, so a long transcript's first scan seldom reads all of it.
+    /// Brings a transcript's newest records up to date, reading only what was appended since the last scan,
+    /// as saved from an earlier launch too. A transcript's first scan reads it through for its edits.
     private func latestRecords(of file: File) throws -> ClaudeSessionMetadata.Latest {
         var scan = recordScans[file.url] ?? JSONLines.Scan(ClaudeSessionMetadata.Latest())
         try scan.read(file.url, size: file.stamp.size) { data, range, latest in
@@ -501,7 +509,37 @@ actor ClaudeSessionHistory {
             latest.reply = ClaudeSessionMetadata.latestReply(after: latest.reply, appended: Self.linesNewestFirst(in: data, range))
         }
         recordScans[file.url] = scan
+        saveScansLater()
         return scan.state
+    }
+
+    // MARK: - Saved scans
+
+    /// The saved record scans by transcript path.
+    private struct SavedScans: Codable {
+        var version = ClaudeSessionMetadata.Latest.savedVersion
+        var scans: [String: JSONLines.Scan<ClaudeSessionMetadata.Latest>]
+    }
+
+    private static func savedScans(in file: URL) -> [URL: JSONLines.Scan<ClaudeSessionMetadata.Latest>] {
+        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(SavedScans.self, from: data),
+              saved.version == ClaudeSessionMetadata.Latest.savedVersion else { return [:] }
+        return Dictionary(uniqueKeysWithValues: saved.scans.map { (URL(fileURLWithPath: $0.key), $0.value) })
+    }
+
+    /// Saves the scans a while later, together with the changes that follow,
+    /// as running sessions append to their transcripts all the time. Scans
+    /// not saved by quit only mean the next launch reads a little more.
+    private func saveScansLater() {
+        guard savingScans == nil else { return }
+        savingScans = Task {
+            try? await Task.sleep(for: .seconds(10))
+            savingScans = nil
+            let saved = SavedScans(scans: Dictionary(uniqueKeysWithValues: recordScans.map { ($0.key.path, $0.value) }))
+            guard let data = try? JSONEncoder().encode(saved) else { return }
+            try? FileManager.default.createDirectory(at: savedScansFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: savedScansFile, options: .atomic)
+        }
     }
 
     // MARK: - Edits

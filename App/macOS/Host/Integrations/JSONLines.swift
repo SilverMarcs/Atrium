@@ -18,11 +18,13 @@ nonisolated enum JSONLines {
 
         /// Reads the whole lines appended since the last read into `state`.
         /// A line still being written waits for the next read; a file that
-        /// shrank, as one rewritten, is read again from its start.
+        /// shrank or no longer ends a line where the last read did, as one
+        /// rewritten, is read again from its start.
         mutating func read(_ url: URL, size: Int, _ body: (Data, Range<Int>, inout State) throws -> Void) throws {
             if size < scanned { self = Self(initial) }
             guard scanned < size else { return }
             let data = try Data(contentsOf: url, options: .alwaysMapped)
+            if scanned > 0, scanned <= data.count, data[scanned - 1] != 10 { self = Self(initial) }
             guard scanned < data.count, let end = data[scanned...].lastIndex(of: 10) else { return }
             try body(data, scanned..<end, &state)
             scanned = end + 1
@@ -99,3 +101,6 @@ nonisolated enum JSONLines {
         return nil
     }
 }
+
+/// A scan can be saved across launches, so a file is read again only from where it was left.
+nonisolated extension JSONLines.Scan: Codable where State: Codable {}

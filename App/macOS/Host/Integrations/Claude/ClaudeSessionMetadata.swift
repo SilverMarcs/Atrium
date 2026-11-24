@@ -30,7 +30,7 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     /// The model, reasoning effort and speed of a reply, and the tokens its
     /// request took in unless the conversation was compacted since: all of its
     /// input, cached or not, as Claude's `/context` counts it.
-    struct Reply: Equatable, Sendable {
+    struct Reply: Codable, Equatable, Sendable {
         let model: String
         let effort: String?
         let speed: String?
@@ -43,7 +43,11 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     /// Before each reply Claude appends a prompt's attachments and request
     /// records, often hundreds of kilobytes, which push the ones before them
     /// out of the tail window, so these are read from every line instead.
-    struct Latest: Equatable, Sendable {
+    /// Scans are saved across launches and pick up where they left off, so
+    /// bump `savedVersion` whenever what a scan finds changes, here or in the
+    /// types it holds, and transcripts are read through again.
+    struct Latest: Codable, Equatable, Sendable {
+        static let savedVersion = 1
         var customTitle: String?
         var firstAITitle: String?
         var aiTitle: String?
@@ -133,30 +137,9 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     private static let timestampKey = Data(#""timestamp""#.utf8)
 
     /// Reads a JSON string field, even in a nested record or one a read window cuts off.
-    /// Decode the string literal itself so quotes, backslashes and Unicode escapes remain intact.
     static func string(_ key: String, in text: String, last: Bool = false) -> String? {
-        var remaining = text.startIndex..<text.endIndex
-        while let match = text.range(of: "\"\(key)\"", options: last ? .backwards : [], range: remaining) {
-            if last { remaining = remaining.lowerBound..<match.lowerBound }
-            else { remaining = match.upperBound..<remaining.upperBound }
-            var suffix = text[match.upperBound...].drop(while: \.isWhitespace)
-            guard suffix.first == ":" else { continue }
-            suffix = suffix.dropFirst().drop(while: \.isWhitespace)
-            guard suffix.first == "\"" else { continue }
-            var escaped = false
-            for index in suffix.indices.dropFirst() {
-                let character = suffix[index]
-                if escaped { escaped = false; continue }
-                if character == "\\" { escaped = true; continue }
-                if character == "\"" {
-                    let data = Data(suffix[...index].utf8)
-                    if let value = try? JSONDecoder().decode(String.self, from: data),
-                       let value = nonempty(value) { return value }
-                    break
-                }
-            }
-        }
-        return nil
+        let data = Data(text.utf8)
+        return JSONLines.string(after: #""\#(key)":""#, in: data, 0..<data.count, last: last).flatMap(nonempty)
     }
 
     /// What a prompt reads as in a title: a delegated task is its request, and
@@ -193,7 +176,8 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
     }
 
     private static func continuation(in tail: String) -> String? {
-        guard tail.contains("\"continued-in\"") else { return nil }
+        let data = Data(tail.utf8)
+        guard JSONLines.position(of: #""continued-in""#, in: data, 0..<data.count) != nil else { return nil }
         for line in tail.split(separator: "\n").reversed() {
             guard let record = object(line), let type = record["type"] as? String else { continue }
             if type == "continued-in" { return record["continuedInSessionId"] as? String }
@@ -222,7 +206,8 @@ nonisolated struct ClaudeSessionMetadata: Sendable {
 
 /// What a transcript's edit tools and shell commands changed, as read so far,
 /// and the commands still waiting for the results that say what they opened.
-nonisolated struct EditScan: Equatable, Sendable {
+/// Saved with the scans that hold it: see `ClaudeSessionMetadata.Latest.savedVersion`.
+nonisolated struct EditScan: Codable, Equatable, Sendable {
     var edits = AgentEdits()
     var commands: [String: AgentShellCommand] = [:]
 }
