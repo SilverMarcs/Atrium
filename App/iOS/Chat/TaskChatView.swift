@@ -284,10 +284,6 @@ struct TaskChatView: View {
                 guard !pin.isReaderScrolling else { return }
                 flights.noteScroll(by: new - old)
             }
-            // Only the reader scrolling decides whether the timeline stays
-            // pinned. Checking the position as content grows would unpin it
-            // whenever growth lands mid-scroll, such as the working indicator
-            // appearing while a sent prompt is still sliding up.
             // The composer growing, as the keyboard comes up or the draft gains
             // a line, takes a timeline kept at its end along; the keyboard
             // follower draws the move in step with the composer.
@@ -309,13 +305,23 @@ struct TaskChatView: View {
             } action: { _, isNearEnd in
                 pin.isNearEnd = isNearEnd
             }
+            // Only the reader scrolling decides whether the timeline stays
+            // pinned. Checking the position as content grows would unpin it
+            // whenever growth lands mid-scroll, such as the working indicator
+            // appearing while a sent prompt is still sliding up.
             .onScrollPhaseChange { _, phase, context in
                 switch phase {
-                case .tracking, .interacting:
+                case .tracking:
                     pin.isReaderScrolling = true
+                case .interacting, .decelerating:
+                    pin.isReaderScrolling = true
+                    // A jump's layout corrections expire when the reader takes over.
+                    pin.endChecks = 0
                 case .idle where pin.isReaderScrolling:
                     pin.isReaderScrolling = false
-                    pin.isPinned = context.geometry.isAtBottom
+                    // The bottom target and offset rounding can leave a tiny
+                    // gap at rest. Any drag farther away unpins the timeline.
+                    pin.isPinned = context.geometry.distanceToEnd <= 2
                 default:
                     break
                 }
