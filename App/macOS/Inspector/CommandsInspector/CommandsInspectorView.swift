@@ -6,8 +6,6 @@ struct CommandsInspectorView: View {
     @Bindable var project: Project
     @Environment(AppModel.self) private var app
     @State private var editing: CommandEditing?
-    @AppStorage("commandsConsoleHeight") private var consoleHeight: Double = 390
-    @State private var dragStartHeight: Double?
 
     var body: some View {
         // Below the split, so the console sits above the footer rather than under it.
@@ -20,41 +18,14 @@ struct CommandsInspectorView: View {
         }
     }
 
-    private let minConsoleHeight: Double = 390
-    private let minListHeight: Double = 120
-
-    // A SwiftUI split rather than VSplitView: VSplitView hosts each pane in its own
-    // AppKit view, which drops the tab picker's safe area, so the list ran under it.
+    // The list and console split the height evenly. Not VSplitView: it hosts each pane
+    // in its own AppKit view, which drops the tab picker's safe area, so the list ran under it.
     private var commands: some View {
-        GeometryReader { proxy in
-            let maxConsoleHeight = max(proxy.size.height - minListHeight, 0)
-            let shownHeight = min(consoleHeight, maxConsoleHeight)
-            VStack(spacing: 0) {
-                list
-                Divider()
-                    .overlay {
-                        Color.clear
-                            .frame(height: 8)
-                            .contentShape(Rectangle())
-                            .pointerStyle(.rowResize)
-                            .gesture(resizeGesture(from: shownHeight, max: maxConsoleHeight))
-                    }
-                    // Above the console, so the handle's lower half isn't covered.
-                    .zIndex(1)
-                console
-                    .frame(height: shownHeight)
-            }
+        VStack(spacing: 0) {
+            list
+            Divider()
+            console
         }
-    }
-
-    private func resizeGesture(from shownHeight: Double, max maxHeight: Double) -> some Gesture {
-        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-            .onChanged { value in
-                let start = dragStartHeight ?? shownHeight
-                dragStartHeight = start
-                consoleHeight = max(min(start - value.translation.height, maxHeight), minConsoleHeight)
-            }
-            .onEnded { _ in dragStartHeight = nil }
     }
 
     private var list: some View {
@@ -123,7 +94,7 @@ struct CommandsInspectorView: View {
                 Color.clear
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
