@@ -12,7 +12,9 @@ final class ConversationStore {
   @ObservationIgnored private var deliveries: [UUID: Task<Void, Never>] = [:]
   /// Takes a prompt that couldn't be sent back to its task's composer, with why.
   @ObservationIgnored var onReturn: ((_ prompt: PendingPrompt, _ taskID: String, _ reason: String?) -> Void)?
-  private let confirmedRowIDs = KeyedState<[String: String]>()
+  /// Prompts sent from here that the transcript shows, by their transcript
+  /// message ID, so their rows keep the IDs they were drawn with.
+  private let confirmedRows = KeyedState<[String: ConfirmedRow]>()
   private let acknowledgementTimeout: Duration
 
   init(acknowledgementTimeout: Duration = .seconds(20)) {
@@ -156,7 +158,9 @@ final class ConversationStore {
       guard let message = messages.prompt(prompt.expectedUserMessagesAfterAnchor, after: prompt.anchorUserMessageID)
       else { continue }
       confirmations.append(PromptConfirmation(promptID: prompt.id, messageID: message.id))
-      confirmedRowIDs[taskID, default: [:]][message.id] = prompt.timelineID
+      confirmedRows[taskID, default: [:]][message.id] = ConfirmedRow(
+        timelineID: prompt.timelineID, anchorUserMessageID: prompt.anchorUserMessageID,
+        position: prompt.expectedUserMessagesAfterAnchor)
     }
     // Each write updates the chat showing this task, so only write what changed.
     if !confirmations.isEmpty {
@@ -164,19 +168,28 @@ final class ConversationStore {
       pendingPrompts[taskID]?.removeAll { confirmed.contains($0.id) }
     }
     if pendingPrompts[taskID]?.isEmpty == true { pendingPrompts[taskID] = nil }
-    if let rowIDs = confirmedRowIDs[taskID] {
+    if let rows = confirmedRows[taskID] {
       let currentIDs = Set(messages.map(\.id))
-      let kept = rowIDs.filter { currentIDs.contains($0.key) }
-      if kept.count != rowIDs.count { confirmedRowIDs[taskID] = kept }
+      var kept = rows.filter { currentIDs.contains($0.key) }
+      // A host can give a prompt it showed a new ID, as Claude does once it
+      // saves the turn. The prompt is where it was after its anchor, and its
+      // row keeps its ID rather than being drawn and held again.
+      for row in rows.values where !kept.values.contains(row) {
+        guard row.anchorUserMessageID.map(currentIDs.contains) != false,
+              let message = messages.prompt(row.position, after: row.anchorUserMessageID),
+              kept[message.id] == nil else { continue }
+        kept[message.id] = row
+      }
+      if kept != rows { confirmedRows[taskID] = kept }
     }
     return confirmations
   }
 
   func displayMessages(for taskID: String) -> [TranscriptMessage] {
-    let rowIDs = confirmedRowIDs[taskID] ?? [:]
+    let rows = confirmedRows[taskID] ?? [:]
     return (transcripts[taskID] ?? []).map { message in
       var message = message
-      message.id = rowIDs[message.id] ?? message.id
+      message.id = rows[message.id]?.timelineID ?? message.id
       return message
     }
   }
@@ -184,7 +197,7 @@ final class ConversationStore {
   func containsTimelineID(_ id: String, in taskID: String) -> Bool {
     pendingPrompts[taskID]?.contains { $0.timelineID == id } == true
       || transcripts[taskID]?.contains { $0.id == id } == true
-      || confirmedRowIDs[taskID]?.values.contains(id) == true
+      || confirmedRows[taskID]?.values.contains { $0.timelineID == id } == true
   }
 
   func reset() {
@@ -193,7 +206,7 @@ final class ConversationStore {
     transcripts.removeAll()
     pendingPrompts.removeAll()
     tasksAwaitingAgent.removeAll()
-    confirmedRowIDs.removeAll()
+    confirmedRows.removeAll()
   }
 
   func remove(_ taskID: String) {
@@ -203,7 +216,7 @@ final class ConversationStore {
     transcripts[taskID] = nil
     pendingPrompts[taskID] = nil
     tasksAwaitingAgent[taskID] = nil
-    confirmedRowIDs[taskID] = nil
+    confirmedRows[taskID] = nil
   }
 
   private func newestUserMessageID(in taskID: String) -> String? {
@@ -213,4 +226,12 @@ final class ConversationStore {
   private func nextExpectedUserMessageCount(for taskID: String) -> Int {
     (pendingPrompts[taskID]?.count ?? 0) + 1
   }
+}
+
+/// A prompt sent from here, as the transcript shows it: the row ID it was
+/// drawn with, and where the transcript holds it.
+private struct ConfirmedRow: Equatable {
+  let timelineID: String
+  let anchorUserMessageID: String?
+  let position: Int
 }
