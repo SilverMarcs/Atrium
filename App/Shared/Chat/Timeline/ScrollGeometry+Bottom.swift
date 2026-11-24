@@ -1,8 +1,10 @@
 import SwiftUI
 
 extension ScrollGeometry {
-    /// How far above the end still counts as being at it.
-    private static let bottomTolerance: CGFloat = 40
+    /// How far above the end still counts as being at it. The bottom target
+    /// and offset rounding can leave a tiny gap at rest; any scroll farther
+    /// away is the reader leaving the end.
+    private static let bottomTolerance: CGFloat = 2
 
     /// The offsets the scroll view can rest at, from its top to its end.
     /// `containerSize` leaves out the content insets, so the end is where the

@@ -128,7 +128,7 @@ struct SessionChatView: View {
       // lands mid-scroll.
       .onScrollPhaseChange { _, phase, context in
         switch phase {
-        case .tracking, .interacting:
+        case .tracking, .interacting, .decelerating:
           pin.isReaderScrolling = true
         case .idle where pin.isReaderScrolling:
           pin.isReaderScrolling = false

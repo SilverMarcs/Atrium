@@ -319,9 +319,7 @@ struct TaskChatView: View {
                     pin.endChecks = 0
                 case .idle where pin.isReaderScrolling:
                     pin.isReaderScrolling = false
-                    // The bottom target and offset rounding can leave a tiny
-                    // gap at rest. Any drag farther away unpins the timeline.
-                    pin.isPinned = context.geometry.distanceToEnd <= 2
+                    pin.isPinned = context.geometry.isAtBottom
                 default:
                     break
                 }
