@@ -7,7 +7,8 @@ struct PromptBubble: View {
     let text: String
     var questionAnswers: [TranscriptQuestionAnswer]?
     var isFromAgent = false
-    /// The app's accent, which an off-screen render doesn't pick up by itself.
+    /// The app's accent, which an off-screen render doesn't pick up by itself,
+    /// so it also tints the bubble's controls.
     var accent: Color = .accentColor
     @Environment(\.skillNames) private var skillNames
 
@@ -37,5 +38,6 @@ struct PromptBubble: View {
             #endif
             .background(isFromAgent ? AnyShapeStyle(.background.secondary) : AnyShapeStyle(accent.quinary))
             .clipShape(.rect(cornerRadius: 20))
+            .tint(accent)
     }
 }
