@@ -7,6 +7,15 @@ struct NewChatPicker: View {
     let draft: TaskDraft
 
     var body: some View {
+        // Only a new chat needs this scroll view. Around an empty composer
+        // accessory it would consume the detail pane's entire safe area.
+        ViewThatFits(in: .vertical) {
+            pickers
+            ScrollView { pickers }
+        }
+    }
+
+    private var pickers: some View {
         VStack(alignment: .leading, spacing: 0) {
             if host.availableProviders.isEmpty {
                 Text("Install Claude Code or Codex on \(host.name) to start a chat.")
