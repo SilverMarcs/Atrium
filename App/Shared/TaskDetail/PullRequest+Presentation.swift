@@ -11,6 +11,16 @@ extension PullRequest {
         }
     }
 
+    /// GitHub's color for its state, on its icon in the sidebar and toolbar.
+    var tint: Color {
+        switch state {
+        case .open: .green
+        case .draft: .secondary
+        case .merged: .purple
+        case .closed: .red
+        }
+    }
+
     /// Whether it's still in progress, as a draft or open for review.
     var isOpen: Bool { state == .open || state == .draft }
 
@@ -107,7 +117,7 @@ struct PullRequestIndicator: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: iconSize, height: iconSize)
-                    .foregroundStyle(tint(for: pullRequest.state))
+                    .foregroundStyle(pullRequest.tint)
                     .accessibilityLabel("\(pullRequest.numberText) \(pullRequest.detail)")
                 if pullRequests.count > 1 {
                     Text(pullRequests.count, format: .number)
@@ -115,15 +125,6 @@ struct PullRequestIndicator: View {
                 }
             }
             .help("\(pullRequest.numberText) \(pullRequest.detail)")
-        }
-    }
-
-    private func tint(for state: PullRequest.State) -> Color {
-        switch state {
-        case .open: .green
-        case .draft: .secondary
-        case .merged: .purple
-        case .closed: .red
         }
     }
 }

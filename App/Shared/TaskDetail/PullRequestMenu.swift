@@ -13,6 +13,7 @@ struct PullRequestMenu: View {
             }
             // A zero badge is hidden.
             .badge(pullRequests.count > 1 ? pullRequests.count : 0)
+            .foregroundStyle(lead.tint)
             #if os(macOS)
             .menuIndicator(.hidden)
             .help("\(lead.numberText): \(lead.detail)")
