@@ -44,8 +44,8 @@ private struct ToolCallLine: View {
     }
 
     var body: some View {
-        Text(label)
-            .font(.callout)
+        Text("\(Text(call.name).bold())\(argument.map { " \($0)" } ?? "")")
+            .font(.body)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -53,9 +53,12 @@ private struct ToolCallLine: View {
             .animation(reduceMotion ? nil : .snappy, value: call)
     }
 
-    private var label: String {
-        let label = call.argument.map { "\(call.name) · \($0)" } ?? call.name
-        guard let maxLength, label.count > maxLength else { return label }
-        return String(label.prefix(maxLength - 1)) + "…"
+    /// The argument, cut so the whole line stays within `maxLength`.
+    private var argument: String? {
+        guard let argument = call.argument else { return nil }
+        guard let maxLength else { return argument }
+        let room = maxLength - call.name.count - 1
+        guard argument.count > room else { return argument }
+        return room > 1 ? String(argument.prefix(room - 1)) + "…" : nil
     }
 }
