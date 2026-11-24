@@ -61,11 +61,15 @@ struct BrowserTools {
                     drag the element onto `to_ref` or `to_selector`; upload absolute `files` through a file input or the \
                     button that opens one; back, forward, reload. Dialogs the action opens are accepted unless `dialog` \
                     is dismiss. Hover moves the pointer there and runs the page's hover events, but CSS :hover \
-                    styles may not show; drag runs page events.
+                    styles may not show; drag runs page events. `steps` runs several actions in order (each an object \
+                    with these fields, refs from the snapshot before), waiting for the page between them, and returns \
+                    one snapshot at the end; a step that fails stops the batch.
                     """,
                 properties: [
                     "action": ["type": "string", "enum": ["click", "double_click", "right_click", "hover", "type", "press", "select", "scroll",
                                                           "drag", "upload", "back", "forward", "reload"]],
+                    "steps": ["type": "array", "items": ["type": "object"], "maxItems": 30,
+                              "description": "Up to 30 actions to run in order instead of one, each with action and its fields."],
                     "ref": ToolSchema.string("The element's ref from the latest snapshot, such as e12."),
                     "selector": ToolSchema.string("A CSS selector for the element, instead of ref."),
                     "x": ToolSchema.number("A point to act at instead of an element: CSS pixels from the visible page's left."),
@@ -88,7 +92,7 @@ struct BrowserTools {
                     "snapshot": ["type": "string", "enum": ["viewport", "page", "none"],
                                  "description": "What to return after: what's on screen (default), the whole page, or only the URL and news."],
                 ],
-                required: ["action"], audience: .localAgents, reply: act
+                audience: .localAgents, reply: act
             ),
             Tool(
                 name: "browser_wait_for",
@@ -184,9 +188,29 @@ struct BrowserTools {
 
     private func act(_ call: ToolCall) async throws -> Reply {
         let browser = try browser(for: call)
-        let action = try call.required("action")
-        let note: String? = try await acting(browser, call) {
-            try await perform(action, call, on: browser)
+        var notes: [String] = []
+        if let steps = call.arguments["steps"] {
+            guard let steps = steps as? [[String: Any]], !steps.isEmpty else { throw Failure("Give steps as a list of actions, each an object with action and its fields.") }
+            guard steps.count <= 30 else { throw Failure("A batch takes at most 30 steps.") }
+            // Refs from the snapshot before the batch serve every step, as only a snapshot replaces them.
+            for (index, step) in steps.enumerated() {
+                // A step answers dialogs as the batch does, unless it says otherwise.
+                let stepCall = ToolCall(arguments: step.merging(call.arguments.filter { ["dialog", "prompt_text"].contains($0.key) }) { own, _ in own },
+                                        credential: call.credential, caller: call.caller)
+                do {
+                    if let note = try await acting(browser, stepCall, { try await perform(try stepCall.required("action"), stepCall, on: browser) }) {
+                        notes.append("Step \(index + 1): \(note)")
+                    }
+                } catch {
+                    let reason = (error as? Failure)?.message ?? error.localizedDescription
+                    let done = index == 0 ? "No step ran" : index == 1 ? "Step 1 ran" : "Steps 1–\(index) ran"
+                    let after = (try? await browser.snapshot(viewportOnly: true)) ?? browser.status()
+                    throw Failure((notes + ["\(done); step \(index + 1) stopped the batch: \(reason)", after]).joined(separator: "\n\n"))
+                }
+            }
+        } else {
+            let action = try call.required("action")
+            if let note = try await acting(browser, call, { try await perform(action, call, on: browser) }) { notes.append(note) }
         }
         let after: String
         switch call.string("snapshot") {
@@ -194,7 +218,7 @@ struct BrowserTools {
         case "none": after = browser.status()
         default: after = try await browser.snapshot(viewportOnly: true)
         }
-        return Reply(text: [note, after].compactMap(\.self).joined(separator: "\n\n"))
+        return Reply(text: (notes + [after]).joined(separator: "\n\n"))
     }
 
     private func waitFor(_ call: ToolCall) async throws -> Reply {
