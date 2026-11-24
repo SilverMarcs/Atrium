@@ -19,7 +19,7 @@ struct TaskMoreMenu: View {
                     Menu {
                         PullRequestButtons(item: item)
                     } label: {
-                        Label("Pull Requests", systemImage: lead.systemImage)
+                        Label("Pull Requests", image: lead.icon)
                         Text(pullRequestSummary(pullRequests))
                     }
                 }

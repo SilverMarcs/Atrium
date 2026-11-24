@@ -1,12 +1,13 @@
+import DeveloperToolsSupport
 import SwiftUI
 
 extension PullRequest {
-    var systemImage: String {
+    var icon: ImageResource {
         switch state {
-        case .open: checks == .failing ? "xmark.circle" : "arrow.triangle.pull"
-        case .draft: "circle.dashed"
-        case .merged: "arrow.triangle.merge"
-        case .closed: "xmark.circle"
+        case .open: .gitPullRequest
+        case .draft: .gitPullRequestDraft
+        case .merged: .gitMerge
+        case .closed: .gitPullRequestClosed
         }
     }
 
@@ -22,28 +23,15 @@ extension PullRequest {
         }
     }
 
-    /// What needs the user, for the toolbar and the sidebar.
-    var summary: String {
-        switch state {
-        case .merged, .closed: stateName
-        case .open, .draft:
-            switch checks {
-            case .failing: "Checks failing"
-            case .pending: "Checks running"
-            case .passing, nil: review == .approved ? "Approved" : stateName
-            }
-        }
-    }
-
-    /// The state, checks and review, for a menu item's subtitle.
+    /// The state, checks and review, for menu subtitles and tooltips.
     var detail: String {
         var parts = [stateName]
         if isOpen {
             switch checks {
             case .passing: parts.append("Checks passed")
             case .failing: parts.append("Checks failing")
-            case .pending: parts.append("Checks running")
-            case nil: break
+            case .pending: parts.append("Checks pending")
+            case nil: parts.append("No checks reported")
             }
             switch review {
             case .approved: parts.append("Approved")
@@ -108,29 +96,34 @@ extension [PullRequest] {
 
 /// The state of a task's most pressing pull request, for its sidebar row,
 /// followed by how many it has when more than one.
-/// Only failing checks and merges are tinted; they're what call for action.
 struct PullRequestIndicator: View {
     let pullRequests: [PullRequest]
+    @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 11
 
     var body: some View {
         if let pullRequest = pullRequests.mostPressing {
             HStack(spacing: 2) {
-                Image(systemName: pullRequest.systemImage)
-                    .foregroundStyle(tint(pullRequest))
+                Image(pullRequest.icon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: iconSize, height: iconSize)
+                    .foregroundStyle(tint(for: pullRequest.state))
+                    .accessibilityLabel("\(pullRequest.numberText) \(pullRequest.detail)")
                 if pullRequests.count > 1 {
                     Text(pullRequests.count, format: .number)
                         .monospacedDigit()
                 }
             }
-            .help("\(pullRequest.numberText) \(pullRequest.summary)")
+            .help("\(pullRequest.numberText) \(pullRequest.detail)")
         }
     }
 
-    private func tint(_ pullRequest: PullRequest) -> Color {
-        switch (pullRequest.state, pullRequest.checks) {
-        case (.merged, _): .purple
-        case (.open, .failing), (.draft, .failing): .red
-        default: .secondary
+    private func tint(for state: PullRequest.State) -> Color {
+        switch state {
+        case .open: .green
+        case .draft: .secondary
+        case .merged: .purple
+        case .closed: .red
         }
     }
 }

@@ -1,21 +1,21 @@
 import SwiftUI
 
-/// The pull requests linked to a task, in the Mac toolbar. Its icon shows
-/// the most pressing one's state, badged with how many there are when more than one.
+/// The pull requests linked to a task, in the Mac toolbar, with a count when
+/// there are several and a tooltip for the most pressing one.
 struct PullRequestMenu: View {
     let item: HostTask
     private var pullRequests: [PullRequest] { item.task.pullRequests }
 
     var body: some View {
         if let lead = pullRequests.mostPressing {
-            Menu("Pull Requests", systemImage: lead.systemImage) {
+            Menu("Pull Requests", image: lead.icon) {
                 PullRequestButtons(item: item)
             }
-            // A zero badge is hidden, so a lone pull request shows just its state.
+            // A zero badge is hidden.
             .badge(pullRequests.count > 1 ? pullRequests.count : 0)
             #if os(macOS)
             .menuIndicator(.hidden)
-            .help("\(lead.numberText): \(lead.summary)")
+            .help("\(lead.numberText): \(lead.detail)")
             #endif
         }
     }
@@ -37,10 +37,13 @@ struct PullRequestButtons: View {
                 reportPullRequestOpened()
                 openURL(pullRequest.url)
             } label: {
-                Label(pullRequest.menuTitle, systemImage: pullRequest.systemImage)
+                Label(pullRequest.menuTitle, image: pullRequest.icon)
                 Text(namesRepository ? "\(pullRequest.repositoryName) · \(pullRequest.detail)" : pullRequest.detail)
             }
         }
+        // Mac menus leave out item icons unless asked for.
+        .labelStyle(.titleAndIcon)
+
         #if os(macOS)
         // iOS opens just the first: the app goes to the background as Safari
         // comes up, and the rest are dropped.
@@ -50,7 +53,6 @@ struct PullRequestButtons: View {
                 reportPullRequestOpened()
                 for pullRequest in pullRequests { openURL(pullRequest.url) }
             }
-            // Mac menus leave out item icons unless asked for.
             .labelStyle(.titleAndIcon)
         }
         #endif
