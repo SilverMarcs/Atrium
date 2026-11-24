@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// Layout contract for bottom-sheet content.
+/// Layout contract for bottom-sheet panel content.
 ///
-/// Each kind of content (the file editor, a diff, a page) wraps itself in
-/// `PanelLayout`, supplying a title and trailing actions of its own. The
-/// layout supplies the shared chrome: back and forward, the separator,
-/// focus mode and the panel toggle, and dragging the header resizes the sheet.
+/// Each panel type (file editor, diff viewer, etc.) wraps its content in
+/// `PanelLayout`, supplying a title and trailing actions specific to that
+/// content type. The layout is responsible for the shared chrome: navigation
+/// buttons, the separator, and the trailing toggle button.
 struct PanelLayout<Title: View, Actions: View, Content: View>: View {
     @Environment(EditorPanel.self) private var panel
     @Environment(AppModel.self) private var app
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
 
     @ViewBuilder let title: Title
     @ViewBuilder let actions: Actions
@@ -56,24 +57,26 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
 
             Spacer()
 
-            actions
+            if panel.isOpen {
+                actions
 
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isFocusMode {
-                        app.sidebarVisibility = .automatic
-                        app.showingInspector = true
-                    } else {
-                        app.sidebarVisibility = .detailOnly
-                        app.showingInspector = false
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if isFocusMode {
+                            app.sidebarVisibility = .automatic
+                            app.showingInspector = true
+                        } else {
+                            app.sidebarVisibility = .detailOnly
+                            app.showingInspector = false
+                        }
                     }
+                } label: {
+                    Image(systemName: "rectangle.center.inset.filled")
+                        .foregroundStyle(isFocusMode ? .accent : .secondary)
                 }
-            } label: {
-                Image(systemName: "rectangle.center.inset.filled")
-                    .foregroundStyle(isFocusMode ? .accent : .secondary)
+                .buttonStyle(.borderless)
+                .help(isFocusMode ? "Show Sidebar & Inspector" : "Hide Sidebar & Inspector")
             }
-            .buttonStyle(.borderless)
-            .help(isFocusMode ? "Show Sidebar & Inspector" : "Hide Sidebar & Inspector")
 
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -89,10 +92,44 @@ struct PanelLayout<Title: View, Actions: View, Content: View>: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(.background.secondary)
-        .modifier(SheetResizing(panel: panel))
+        .pointerStyle(.rowResize)
+        .gesture(resizeGesture)
     }
 
     private var isFocusMode: Bool {
         app.sidebarVisibility == .detailOnly && !app.showingInspector
+    }
+
+    @State private var dragStartHeight: Double?
+    @State private var dragStartY: CGFloat?
+
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .onChanged { value in
+                if dragStartHeight == nil {
+                    // When collapsed, anchor the drag at the minimum expanded height
+                    // so any upward motion immediately expands the panel.
+                    dragStartHeight = panel.isOpen ? panelHeight : 100
+                    dragStartY = value.startLocation.y
+                }
+                guard let startHeight = dragStartHeight, let startY = dragStartY else { return }
+                let delta = startY - value.location.y
+                let target = startHeight + delta
+                let collapseThreshold: Double = 40
+                if target >= 100 {
+                    if !panel.isOpen { panel.expand() }
+                    panelHeight = min(target, 800)
+                } else if target < collapseThreshold {
+                    if panel.isOpen { panel.collapse() }
+                } else {
+                    // Between collapseThreshold and 100: keep panel open, clamped at min.
+                    if !panel.isOpen { panel.expand() }
+                    panelHeight = 100
+                }
+            }
+            .onEnded { _ in
+                dragStartHeight = nil
+                dragStartY = nil
+            }
     }
 }

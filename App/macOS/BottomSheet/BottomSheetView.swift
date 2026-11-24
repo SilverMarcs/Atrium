@@ -1,27 +1,25 @@
 import SwiftUI
 
-/// The sheet under a chat: a file, a diff or a page an agent showed, with
-/// back and forward through them.
 struct BottomSheetView: View {
-    let panel: EditorPanel
-    let project: Project?
-    @Environment(AppModel.self) private var app
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(SheetResizing.heightKey) private var height = SheetResizing.defaultHeight
+    let project: Project
+    @Environment(\.colorScheme) var colorScheme
+    @AppStorage("editorPanelHeight") private var panelHeight: Double = 250
     @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
+
+    private var panel: EditorPanel { project.editor }
 
     var body: some View {
         VStack(spacing: 0) {
             dragBorder
             content
         }
-        .frame(maxHeight: panel.isOpen ? height : 0, alignment: .top)
+        .frame(maxHeight: panel.isOpen ? panelHeight : 0, alignment: .top)
         .clipped()
         .allowsHitTesting(panel.isOpen)
         .accessibilityHidden(!panel.isOpen)
         .background(colorScheme == .dark ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.bar))
         .environment(\.editorFontSize, EditorFontSize.matching(chat: chatFontSize))
-        .environment(panel)
+        .environment(project.editor)
     }
 
     private var borderColor: Color {
@@ -37,7 +35,8 @@ struct BottomSheetView: View {
                     .fill(.clear)
                     .frame(height: 8)
                     .contentShape(Rectangle())
-                    .modifier(SheetResizing(panel: panel))
+                    .pointerStyle(.rowResize)
+                    .gesture(resizeGesture)
             }
     }
 
@@ -45,19 +44,9 @@ struct BottomSheetView: View {
     private var content: some View {
         switch panel.content {
         case .file(let url):
-            if let project { FileEditorPanel(fileURL: url, project: project) }
+            FileEditorPanel(fileURL: url, project: project)
         case .diff(let ref):
-            if let project { DiffPanel(reference: ref, project: project) }
-        case .page(let block, let task):
-            // A page from another of the project's chats keeps that chat's pages and versions.
-            if let item = app.hosts.task(task) {
-                PageSheetPanel(item: item, shown: block)
-            } else {
-                PanelLayout {} actions: {} content: {
-                    ContentUnavailableView("Page Unavailable", systemImage: "exclamationmark.triangle",
-                                           description: Text("The chat that showed it is gone."))
-                }
-            }
+            DiffPanel(reference: ref, project: project)
         case .none:
             PanelLayout {
                 // no title
@@ -68,33 +57,25 @@ struct BottomSheetView: View {
             }
         }
     }
-}
 
-/// Drags the sheet taller or shorter; dragging it nearly shut closes it.
-struct SheetResizing: ViewModifier {
-    static let heightKey = "editorPanelHeight"
-    static let defaultHeight: Double = 250
-
-    let panel: EditorPanel
-    @AppStorage(Self.heightKey) private var height = Self.defaultHeight
     @State private var dragStartHeight: Double?
 
-    func body(content: Content) -> some View {
-        content
-            .pointerStyle(.rowResize)
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        let start = dragStartHeight ?? height
-                        dragStartHeight = start
-                        let target = start + value.startLocation.y - value.location.y
-                        if target < 40 {
-                            withAnimation(.easeInOut(duration: 0.2)) { panel.collapse() }
-                        } else {
-                            height = min(max(100, target), 800)
-                        }
-                    }
-                    .onEnded { _ in dragStartHeight = nil }
-            )
+    @State private var dragStartY: CGFloat?
+
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            .onChanged { value in
+                if dragStartHeight == nil {
+                    dragStartHeight = panelHeight
+                    dragStartY = value.startLocation.y
+                }
+                guard let startHeight = dragStartHeight, let startY = dragStartY else { return }
+                let delta = startY - value.location.y
+                panelHeight = min(max(100, startHeight + delta), 800)
+            }
+            .onEnded { _ in
+                dragStartHeight = nil
+                dragStartY = nil
+            }
     }
 }

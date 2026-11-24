@@ -23,8 +23,8 @@ final class AppModel {
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
     var showingInspector = true
-    /// What each chat's bottom sheet shows.
-    let bottomSheets = BottomSheets()
+    /// The page each chat has open in the inspector.
+    let inspectorPages = InspectorPages()
     /// Bumped to put the cursor in the sidebar's filter field.
     var sidebarSearchFocusRequest = 0
     /// A running command the user asked to run again, awaiting confirmation.
@@ -87,7 +87,8 @@ final class AppModel {
 
     /// The project of the task on screen, with its inspector and editor.
     var selectedProject: Project? {
-        selectedTask.flatMap(project(for:))
+        guard let task = selectedTask, let workspaceID = task.task.workspaceID else { return nil }
+        return project(WorkspaceRef(hostID: task.host.id, workspaceID: workspaceID))
     }
 
     func project(_ ref: WorkspaceRef) -> Project? {

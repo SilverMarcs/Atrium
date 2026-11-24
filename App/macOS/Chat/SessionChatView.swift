@@ -248,13 +248,11 @@ struct SessionChatView: View {
         // new-row check above to hold its prompt.
         hold("pending-" + id.uuidString, proxy)
       }
-      // A page an agent just showed opens under the chat.
+      // A page an agent just showed opens beside the chat.
       .onChange(of: NewestPage(taskID: task.id, isLoaded: transcript != nil, page: turns.newestPage), initial: true) { _, newest in
         guard newest.isLoaded, !TaskDraft.isDraftID(newest.taskID) else { return }
         let ref = TaskRef(hostID: host.id, taskID: newest.taskID)
-        // Opening it over unsaved edits would ask about them unprompted; its card stays in the chat.
-        if app.bottomSheets.noteNewestPage(newest.page, in: ref), let page = newest.page,
-           app.sheet(for: item)?.isDirty != true {
+        if app.inspectorPages.noteNewestPage(newest.page, in: ref), let page = newest.page {
           app.showPage(page, for: ref)
         }
       }

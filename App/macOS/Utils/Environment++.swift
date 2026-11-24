@@ -12,6 +12,7 @@ extension EnvironmentValues {
 }
 
 extension FocusedValues {
+    @Entry var editorPanel: EditorPanel?
     @Entry var isMainWindow: Bool?
     @Entry var latestPromptEdit: LatestPromptEdit?
     /// Opens the scratchpad sheet of the chat on screen's project.

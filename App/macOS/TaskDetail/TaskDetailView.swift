@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// A task's chat, on this Mac or a paired host, above its pages and editor.
+/// A task's chat, on this Mac or a paired host, above its editor.
 struct TaskDetailView: View {
     let item: HostTask
     @Environment(AppModel.self) private var app
 
     private var task: WireTask { item.task }
-    private var project: Project? { app.project(for: item) }
+    private var project: Project? {
+        task.workspaceID.flatMap { app.project(WorkspaceRef(hostID: item.host.id, workspaceID: $0)) }
+    }
 
     var body: some View {
         SessionChatView(item: item, project: project)
@@ -14,8 +16,8 @@ struct TaskDetailView: View {
             .id(app.hosts.screenID(for: item.id))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let sheet = app.sheet(for: item) {
-                    BottomSheetView(panel: sheet, project: project)
+                if let project {
+                    BottomSheetView(project: project)
                 }
             }
             .task(id: task.hasUnreadResult) {
@@ -30,5 +32,6 @@ struct TaskDetailView: View {
                 hosts: [item.host],
                 subtitle: app.hosts.navigationSubtitle(for: item)
             ))
+            .focusedSceneValue(\.editorPanel, project?.editor)
     }
 }
