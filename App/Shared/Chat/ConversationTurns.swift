@@ -99,7 +99,7 @@ struct ConversationTurns {
 }
 
 /// A page an agent showed, with the block that shows it.
-struct ChatPageBlock: Equatable {
+struct ChatPageBlock: Hashable {
     let page: TranscriptPage
     let id: String
 }

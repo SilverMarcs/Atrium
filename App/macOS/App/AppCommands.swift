@@ -4,7 +4,6 @@ struct AppCommands: Commands {
     @Bindable var app: AppModel
     let updater: UpdaterManager
     @Environment(\.openWindow) private var openWindow
-    @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @FocusedValue(\.latestPromptEdit) private var latestPromptEdit
     @FocusedValue(\.showScratchpad) private var showScratchpad
@@ -93,12 +92,13 @@ struct AppCommands: Commands {
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        editorPanel?.toggle()
+                        app.toggleBottomSheet()
                     }
                 } label: {
                     Label("Toggle Bottom Panel", systemImage: "rectangle.bottomhalf.inset.filled")
                 }
                 .keyboardShortcut("j", modifiers: .command)
+                .disabled(app.selectedTask.flatMap(app.sheet(for:)) == nil)
 
                 Button {
                     showScratchpad?()

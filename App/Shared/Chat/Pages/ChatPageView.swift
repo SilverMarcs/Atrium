@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A page an agent showed in its reply, as a card that opens it where it has
-/// room: beside the chat on Mac, and in a sheet on iPhone and iPad. A version
+/// room: under the chat on Mac, and in a sheet on iPhone and iPad. A version
 /// a later turn revised shrinks to a row. While the agent is still writing
 /// it, a placeholder stands in.
 struct ChatPageView: View {

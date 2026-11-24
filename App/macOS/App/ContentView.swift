@@ -43,7 +43,7 @@ struct ContentView: View {
             isSearchFocused = true
         }
         .inspector(isPresented: $app.showingInspector) {
-            InspectorView(item: app.selectedTask, project: app.selectedProject)
+            InspectorView(project: app.selectedProject)
         }
         // The selected project's Git status and commands back the inspector,
         // the editor's change markers and the Run command alike.

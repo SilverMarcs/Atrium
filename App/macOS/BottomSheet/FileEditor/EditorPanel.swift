@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// What the bottom editor panel should display.
-enum EditorPanelContent: Hashable, Codable {
+/// What the bottom sheet shows: a file, a diff, or a page an agent showed.
+enum EditorPanelContent: Hashable {
     case file(URL)
     case diff(GitDiffReference)
+    /// A page an agent showed, in the chat that showed it.
+    case page(ChatPageBlock, in: TaskRef)
 }
 
 /// Request to scroll to and highlight a match in the editor.
@@ -12,7 +14,8 @@ struct HighlightRequest: Equatable {
     let columnRange: Range<Int>
 }
 
-/// Shared state for the bottom slide-up editor panel in the workspace.
+/// The bottom sheet under a project's chats: files, diffs and the pages
+/// agents showed, with back and forward through what it showed.
 @Observable
 final class EditorPanel {
     var content: EditorPanelContent?
@@ -68,6 +71,13 @@ final class EditorPanel {
         pendingScrollLine = nil
         navigate(to: .file(url))
         highlightRequest = request
+    }
+
+    /// Shows a page a chat's agent showed.
+    func openPage(_ block: ChatPageBlock, in task: TaskRef) {
+        highlightRequest = nil
+        pendingScrollLine = nil
+        navigate(to: .page(block, in: task))
     }
 
     func openDiff(_ fileURL: URL, in repositoryRoot: URL, stage: GitDiffStage = .unstaged, kind: GitChangeKind = .modified) {

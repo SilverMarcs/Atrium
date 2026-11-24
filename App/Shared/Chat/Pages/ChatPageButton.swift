@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Opens a page an agent showed beside the chat on Mac, or else in a sheet:
+/// Opens a page an agent showed under the chat on Mac, or else in a sheet:
 /// a card, or a compact row for a version a later turn revised.
 struct ChatPageButton: View {
     let page: TranscriptPage

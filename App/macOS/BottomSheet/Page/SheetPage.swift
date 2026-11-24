@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// The page the inspector shows, loaded once for its web view and for the
-/// controls under it.
+/// The page the bottom sheet shows, loaded once for its web view and for the
+/// controls above it.
 @MainActor
 @Observable
-final class InspectorPage {
+final class SheetPage {
     private(set) var model: ChatPageModel?
     private(set) var page: TranscriptPage?
     let downloader = ChatPageDownloader()
