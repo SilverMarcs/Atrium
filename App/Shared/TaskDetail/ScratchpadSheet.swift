@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// A project's scratchpad: drafts put aside, newest first, kept on its host
-/// and shared by every client. Choosing one opens it to edit.
+/// and shared by every client. Choosing one opens it to edit; New Draft
+/// opens the same editor empty.
 struct ScratchpadSheet: View {
     let item: HostTask
     let composer: TaskComposer
     @Environment(\.dismiss) private var dismiss
+    @State private var isAddingDraft = false
 
     var body: some View {
         NavigationStack {
@@ -39,10 +41,18 @@ struct ScratchpadSheet: View {
             .navigationTitle("Scratchpad")
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
-                Button(role: .close) { dismiss() }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close) { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("New Draft", systemImage: "plus") { isAddingDraft = true }
+                }
             }
             .navigationDestination(for: ScratchpadDraft.ID.self) { id in
                 ScratchpadDraftEditor(id: id, item: item, composer: composer) { dismiss() }
+            }
+            .navigationDestination(isPresented: $isAddingDraft) {
+                ScratchpadDraftEditor(id: nil, item: item, composer: composer) { dismiss() }
             }
         }
         #if os(macOS)
@@ -71,9 +81,11 @@ struct ScratchpadSheet: View {
 }
 
 /// One draft opened from the scratchpad: its text to change, its images to
-/// look at, and Move to Composer.
+/// look at, and Move to Composer. A new draft starts empty and joins the
+/// scratchpad when you leave it with something typed.
 private struct ScratchpadDraftEditor: View {
-    let id: ScratchpadDraft.ID
+    /// The draft to edit, or nil for a new one.
+    let id: ScratchpadDraft.ID?
     let item: HostTask
     let composer: TaskComposer
     let closeSheet: () -> Void
@@ -81,62 +93,89 @@ private struct ScratchpadDraftEditor: View {
     @State private var text = ""
     @State private var savedText: String?
     @State private var saveTask: Task<Void, Never>?
+    @FocusState private var isEditing: Bool
 
     var body: some View {
-        if let draft = item.scratchpad.first(where: { $0.id == id }) {
-            VStack(spacing: 0) {
-                TextEditor(text: $text)
-                    #if os(iOS)
-                    .contentMargins(.horizontal, 16, for: .scrollContent)
-                    #else
-                    .font(.body.monospaced())
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    #endif
-                if !draft.imageKeys.isEmpty {
-                    Divider()
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            ForEach(draft.imageKeys, id: \.self) { key in
-                                ScratchpadImage(host: item.host, key: key, size: 52)
-                            }
-                        }
-                        .padding(12)
+        if let id {
+            if let draft = item.scratchpad.first(where: { $0.id == id }) {
+                editor(imageKeys: draft.imageKeys)
+                    .navigationTitle("Draft")
+                    .task {
+                        text = draft.text
+                        savedText = draft.text
                     }
-                    .scrollIndicators(.hidden)
+                    .onChange(of: text) { scheduleSave() }
+            }
+        } else {
+            editor(imageKeys: [])
+                .navigationTitle("New Draft")
+                .task {
+                    savedText = ""
+                    isEditing = true
+                }
+        }
+    }
+
+    private func editor(imageKeys: [String]) -> some View {
+        VStack(spacing: 0) {
+            TextEditor(text: $text)
+                .focused($isEditing)
+                #if os(iOS)
+                .contentMargins(.horizontal, 16, for: .scrollContent)
+                #else
+                .font(.body.monospaced())
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                #endif
+            if !imageKeys.isEmpty {
+                Divider()
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(imageKeys, id: \.self) { key in
+                            ScratchpadImage(host: item.host, key: key, size: 52)
+                        }
+                    }
+                    .padding(12)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .toolbarTitleDisplayMode(.inline)
+        .onDisappear { Task { await save() } }
+        .toolbar {
+            ToolbarItem(placement: deletePlacement) {
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    saveTask?.cancel()
+                    savedText = text
+                    if let id { item.deleteScratchpadDraft(id) }
+                    pop()
                 }
             }
-            .navigationTitle("Draft")
-            .toolbarTitleDisplayMode(.inline)
-            .task {
-                text = draft.text
-                savedText = draft.text
-            }
-            .onChange(of: text) { scheduleSave() }
-            .onDisappear { Task { await save() } }
-            .toolbar {
-                ToolbarItem(placement: deletePlacement) {
-                    Button("Delete", systemImage: "trash", role: .destructive) {
-                        saveTask?.cancel()
-                        savedText = text
-                        item.deleteScratchpadDraft(id)
-                        pop()
-                    }
-                }
-                ToolbarItem(placement: movePlacement) {
-                    Button("Move to Composer", systemImage: "arrow.up.doc") {
-                        Task {
-                            await save()
-                            composer.restore(draft, from: item)
-                        }
-                        closeSheet()
-                    }
+            ToolbarItem(placement: movePlacement) {
+                Button("Move to Composer", systemImage: "arrow.up.doc", action: moveToComposer)
+                    .disabled(id == nil && !hasText)
                     #if os(iOS)
                     .labelStyle(.titleOnly)
                     #endif
-                }
             }
         }
+    }
+
+    private var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private func moveToComposer() {
+        if let id {
+            guard let draft = item.scratchpad.first(where: { $0.id == id }) else { return }
+            Task {
+                await save()
+                composer.restore(draft, from: item)
+            }
+        } else {
+            // A new draft never reached the host: its text goes straight over.
+            savedText = text
+            composer.restore((text: text, images: []))
+        }
+        closeSheet()
     }
 
     private var deletePlacement: ToolbarItemPlacement {
@@ -169,7 +208,11 @@ private struct ScratchpadDraftEditor: View {
         saveTask?.cancel()
         guard let savedText, text != savedText, let workspaceID = item.task.workspaceID else { return }
         self.savedText = text
-        await item.host.perform(.workspace(id: workspaceID, action: .editScratchpadDraft(id: id, text: text)))
+        if let id {
+            await item.host.perform(.workspace(id: workspaceID, action: .editScratchpadDraft(id: id, text: text)))
+        } else if hasText {
+            composer.addTextToScratchpad(text, of: item)
+        }
     }
 }
 

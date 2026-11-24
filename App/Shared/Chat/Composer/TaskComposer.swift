@@ -365,15 +365,17 @@ final class TaskComposer {
         }
     }
 
-    /// Puts text selected in a reply aside in the project's scratchpad as a
-    /// new draft, leaving the composer as it is.
-    func addSelectionToScratchpad(_ text: String, of item: HostTask) {
+    /// Puts text, such as a reply's selection or a draft written in the
+    /// scratchpad, aside as a new draft, leaving the composer as it is. Text
+    /// the host turns down comes to the composer instead, if it's empty.
+    func addTextToScratchpad(_ text: String, of item: HostTask) {
         guard let workspaceID = item.task.workspaceID else { return }
         provideFeedback(.scratchpad)
         Task {
             do {
                 _ = try await item.host.request(.workspace(id: workspaceID, action: .addToScratchpad(text: text, images: [])))
             } catch {
+                if !hasContent { draft = text }
                 item.host.actionError = error.localizedDescription
             }
         }
@@ -414,7 +416,7 @@ final class TaskComposer {
 
     /// Puts a prompt taken back from the queue or the scratchpad in the
     /// ordinary draft, ahead of anything already there.
-    private func restore(_ prompt: (text: String, images: [Data])) {
+    func restore(_ prompt: (text: String, images: [Data])) {
         if messageEdit?.isSubmitting != true { messageEdit = nil }
         takeBack(prompt.text, images: prompt.images)
         focusRequestID = UUID()

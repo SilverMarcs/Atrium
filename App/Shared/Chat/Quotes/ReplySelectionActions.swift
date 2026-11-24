@@ -26,7 +26,7 @@ struct ReplySelectionActions: ViewModifier {
                 systemImage: "note.text",
                 isEnabled: isEnabled && item?.task.workspaceID != nil
             ) { [composer, item] text in
-                if let item { composer.addSelectionToScratchpad(text, of: item) }
+                if let item { composer.addTextToScratchpad(text, of: item) }
             }
             .sheet(item: $composer.editedQuote) { quote in
                 ComposerQuoteSheet(quote: quote, isNew: !composer.quotes.contains { $0.id == quote.id }) {
