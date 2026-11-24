@@ -44,23 +44,18 @@ private struct ToolCallLine: View {
     }
 
     var body: some View {
-        Group {
-            if let argument {
-                Text("\(call.name) \(Text(argument).foregroundStyle(.secondary))")
-            } else {
-                Text(call.name)
-            }
-        }
-        .font(.callout)
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .contentTransition(.numericText())
-        .animation(reduceMotion ? nil : .snappy, value: call)
+        Text(label)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .contentTransition(.numericText())
+            .animation(reduceMotion ? nil : .snappy, value: call)
     }
 
-    private var argument: String? {
-        guard let argument = call.argument, let maxLength else { return call.argument }
-        let room = max(maxLength - call.name.count - 1, 1)
-        return argument.count > room ? String(argument.prefix(room - 1)) + "…" : argument
+    private var label: String {
+        let label = call.argument.map { "\(call.name) · \($0)" } ?? call.name
+        guard let maxLength, label.count > maxLength else { return label }
+        return String(label.prefix(maxLength - 1)) + "…"
     }
 }
