@@ -1,13 +1,19 @@
 import Observation
 
-/// The page each chat has open in the inspector, for the window's lifetime.
-/// Each chat keeps its own, so coming back to a chat shows what it showed.
+/// What each chat's inspector shows in front, for the window's lifetime: the
+/// page it has open, its agent's browser, or the project's tools. Each chat
+/// keeps its own, so coming back to a chat shows what it showed.
 @MainActor
 @Observable
 final class InspectorPages {
+    enum Front {
+        case page
+        case browser
+    }
+
     private var pages: [TaskRef: ChatPageBlock] = [:]
-    /// Chats with a page open whose inspector shows the project's tools instead.
-    private var showingTools: Set<TaskRef> = []
+    /// What's in front of the project's tools, for chats showing something else.
+    private var fronts: [TaskRef: Front] = [:]
     /// The newest page each chat had when last seen, by key; nil when it had none.
     @ObservationIgnored private var newestPageKeys: [TaskRef: String?] = [:]
 
@@ -16,24 +22,38 @@ final class InspectorPages {
         pages[task]
     }
 
-    /// The page the inspector shows for the chat; nil while its tools are in front.
+    /// The page the inspector shows for the chat; nil while something else is in front.
     func frontPage(for task: TaskRef) -> ChatPageBlock? {
-        showingTools.contains(task) ? nil : pages[task]
+        fronts[task] == .page ? pages[task] : nil
+    }
+
+    func showsBrowser(for task: TaskRef) -> Bool {
+        fronts[task] == .browser
     }
 
     func show(_ page: ChatPageBlock, for task: TaskRef) {
         pages[task] = page
-        showingTools.remove(task)
+        fronts[task] = .page
     }
 
-    /// Brings the chat's open page back in front of the project's tools.
+    /// Brings the chat's open page back in front.
     func bringToFront(for task: TaskRef) {
-        showingTools.remove(task)
+        if pages[task] != nil { fronts[task] = .page }
     }
 
-    /// Shows the project's tools, keeping the page a tab away.
+    func showBrowser(for task: TaskRef) {
+        fronts[task] = .browser
+    }
+
+    /// The chat's browser closed: its page, if it has one, comes back in front.
+    func browserClosed(for task: TaskRef) {
+        guard fronts[task] == .browser else { return }
+        fronts[task] = pages[task] == nil ? nil : .page
+    }
+
+    /// Shows the project's tools, keeping the page and browser a tab away.
     func showTools(for task: TaskRef) {
-        if pages[task] != nil { showingTools.insert(task) }
+        fronts[task] = nil
     }
 
     /// Notes the page a chat's newest reply ends with, and says whether an
@@ -54,10 +74,29 @@ extension AppModel {
     }
 
     /// Opens the inspector on one of a project's tools, the selected one's
-    /// unless another is given, in front of the selected chat's page.
+    /// unless another is given, in front of the selected chat's page or browser.
     func showInspector(_ tab: InspectorTab, in project: Project? = nil) {
         showingInspector = true
         (project ?? selectedProject)?.selectedTab = tab
         if let task = selectedTask { inspectorPages.showTools(for: task.id) }
+    }
+
+    /// The browser a chat on this Mac has open; chats on other hosts have none here.
+    func browser(for task: HostTask) -> AgentBrowser? {
+        task.host.isLocal ? browsers.browser(for: task.task.id) : nil
+    }
+
+    /// Brings a chat's new browser to the front of its inspector, opening the
+    /// inspector when the chat is on screen.
+    func showBrowser(for taskID: String) {
+        guard let hostID = localHost?.id else { return }
+        let task = TaskRef(hostID: hostID, taskID: taskID)
+        inspectorPages.showBrowser(for: task)
+        if selection == task { showingInspector = true }
+    }
+
+    func forgetBrowser(of taskID: String) {
+        guard let hostID = localHost?.id else { return }
+        inspectorPages.browserClosed(for: TaskRef(hostID: hostID, taskID: taskID))
     }
 }

@@ -25,6 +25,8 @@ final class AppModel {
     var showingInspector = true
     /// The page each chat has open in the inspector.
     let inspectorPages = InspectorPages()
+    /// The browser each of this Mac's chats has open, shown in the inspector.
+    let browsers: AgentBrowsers
     /// Bumped to put the cursor in the sidebar's filter field.
     var sidebarSearchFocusRequest = 0
     /// A running command the user asked to run again, awaiting confirmation.
@@ -45,6 +47,7 @@ final class AppModel {
         self.server = server
         integrationSettings = server.integrationSettings
         readUsage = server.usage(of:)
+        browsers = server.browsers
         let localHost = HostClient(localID: server.hello.hostID, name: server.hostName, icon: server.hostIcon) {
             LoopbackConnection(server: server)
         }
@@ -52,6 +55,8 @@ final class AppModel {
         self.hosts = hosts
         hosts.start()
         Self.shared = self
+        browsers.onOpen = { [weak self] taskID in self?.showBrowser(for: taskID) }
+        browsers.onClose = { [weak self] taskID in self?.forgetBrowser(of: taskID) }
     }
 
     /// A pairing link connects this Mac to another host; ChatGPT's request

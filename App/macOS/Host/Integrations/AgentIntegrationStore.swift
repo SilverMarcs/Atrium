@@ -35,6 +35,8 @@ final class AgentIntegrationStore {
     @ObservationIgnored var onStatusChange: ((AgentThread) -> Void)?
     /// A thread was deleted, by Atrium or its provider.
     @ObservationIgnored var onThreadRemoved: ((String) -> Void)?
+    /// A thread was settled, by its ID.
+    @ObservationIgnored var onThreadSettled: ((String) -> Void)?
     /// The feeds reloading tasks' conversations while someone follows them.
     @ObservationIgnored var transcriptFeeds: [String: TranscriptFeed] = [:]
     /// The pages and images each task's transcript showed, as last read.
@@ -366,6 +368,7 @@ final class AgentIntegrationStore {
               let adapter = adapters[thread.provider] else { return nil }
         settledThreadIDs.insert(thread.id)
         defaults.set(settledThreadIDs.sorted(), forKey: "integration.settledThreadIDs")
+        onThreadSettled?(thread.id)
         if snoozedUntil.removeValue(forKey: thread.id) != nil {
             saveSnoozes()
             scheduleSnoozeWake()

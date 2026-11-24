@@ -124,6 +124,8 @@ final class HostServer {
     @ObservationIgnored private let localListener = LocalListener()
     @ObservationIgnored private var awakeActivity: (any NSObjectProtocol)?
     @ObservationIgnored private let tools: ToolServer
+    /// The browser each of this Mac's chats has open, which the window shows beside it.
+    @ObservationIgnored let browsers = AgentBrowsers()
 
     @ObservationIgnored private let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
 
@@ -191,10 +193,12 @@ final class HostServer {
             sessions.settle(thread)
             publishTasks()
         }
-        integrations.onThreadRemoved = { [orchestrator, queue] id in
+        integrations.onThreadRemoved = { [orchestrator, queue, browsers] id in
             orchestrator.sessionRemoved(id)
             queue.remove(id)
+            browsers.close(id)
         }
+        integrations.onThreadSettled = { [browsers] id in browsers.close(id) }
         NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
         tools.register(HostTools(
             integrations: integrations, secrets: secrets, snapshot: { [tasksFeed] in tasksFeed.snapshot() },
@@ -204,6 +208,7 @@ final class HostServer {
             },
             refreshTranscript: { [weak self] id in self?.feeds[.transcript(taskID: id)]?.refresh() }
         ).tools)
+        tools.register(BrowserTools(browsers: browsers).tools)
         bridge.onMCP = { [tools] body in await tools.handle(body, as: .localAgent) }
         // Agents still running from before a relaunch call the tools at the saved endpoint.
         Task { _ = try? await bridge.start() }

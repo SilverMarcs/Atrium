@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The column beside the chat: a page an agent showed, or the selected task's
-/// project with its files, search, Git and commands, from whichever host it's on.
+/// The column beside the chat: a page an agent showed, its agent's browser,
+/// or the selected task's project with its files, search, Git and commands,
+/// from whichever host it's on.
 ///
 /// The page lives here rather than in a pane of its own because only real
 /// split columns get their own section of the window's toolbar, which keeps
@@ -15,6 +16,13 @@ struct InspectorView: View {
 
     private var openPage: ChatPageBlock? { item.flatMap { app.inspectorPages.page(for: $0.id) } }
     private var frontPage: ChatPageBlock? { item.flatMap { app.inspectorPages.frontPage(for: $0.id) } }
+    /// The chat's browser, when it's in front.
+    private var frontBrowser: AgentBrowser? {
+        guard let item, app.inspectorPages.showsBrowser(for: item.id) else { return nil }
+        return app.browser(for: item)
+    }
+    /// Pages and websites are laid out for 320 points and up.
+    private var showsWeb: Bool { frontPage != nil || frontBrowser != nil }
 
     var body: some View {
         // Toolbar must hang off a stable container, not the tabContent switch:
@@ -48,14 +56,14 @@ struct InspectorView: View {
                 guard let item, let block = openPage else { return }
                 await page.load(block.page, media: media(for: item), openURL: openURL)
             }
-            // Pages are laid out for 320 points and up.
-            .inspectorColumnWidth(min: frontPage != nil ? 320 : 240, ideal: frontPage != nil ? 480 : 240,
-                                  max: frontPage != nil ? 1200 : 360)
+            .inspectorColumnWidth(min: showsWeb ? 320 : 240, ideal: showsWeb ? 480 : 240, max: showsWeb ? 1200 : 360)
     }
 
     @ViewBuilder
     private var columnContent: some View {
-        if let item, let shown = frontPage {
+        if let item, let browser = frontBrowser {
+            InspectorBrowserView(browser: browser, taskID: item.task.id)
+        } else if let item, let shown = frontPage {
             InspectorPageView(page: page, media: media(for: item))
                 .safeAreaBar(edge: .bottom) { PageControls(item: item, page: page, shown: shown) }
         } else if let project {
@@ -96,12 +104,16 @@ private struct InspectorTabPicker: View {
         let newestPage = item.flatMap { ConversationTurns.pageVersions(in: $0.host.conversations.displayMessages(for: $0.task.id)).first?.last }
         let showsPage = item.flatMap { app.inspectorPages.frontPage(for: $0.id) } != nil
         let showsPageSegment = newestPage != nil || showsPage
+        let hasBrowser = item.flatMap(app.browser(for:)) != nil
+        let showsBrowser = hasBrowser && item.map { app.inspectorPages.showsBrowser(for: $0.id) } == true
         let runningCount = project.runningCount
         Picker("Inspector", selection: Binding {
-            showsPage ? InspectorPane.page : .tab(project.selectedTab)
+            showsBrowser ? InspectorPane.browser : showsPage ? .page : .tab(project.selectedTab)
         } set: { pane in
             guard let item else { return }
             switch pane {
+            case .browser:
+                app.inspectorPages.showBrowser(for: item.id)
             case .page:
                 if app.inspectorPages.page(for: item.id) == nil, let newestPage {
                     app.inspectorPages.show(newestPage, for: item.id)
@@ -121,6 +133,11 @@ private struct InspectorTabPicker: View {
                 Image(systemName: "doc.richtext")
                     .help("Pages")
                     .tag(InspectorPane.page)
+            }
+            if hasBrowser {
+                Image(systemName: "globe")
+                    .help("Browser")
+                    .tag(InspectorPane.browser)
             }
         }
         .pickerStyle(.segmented)
@@ -145,9 +162,10 @@ private struct InspectorTabPicker: View {
     }
 }
 
-/// What the inspector's picker selects: the chat's page or one of the project's tools.
+/// What the inspector's picker selects: the chat's page, its browser or one of the project's tools.
 private enum InspectorPane: Hashable {
     case page
+    case browser
     case tab(InspectorTab)
 }
 

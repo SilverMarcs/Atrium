@@ -39,7 +39,13 @@ final class ToolServer {
         var alwaysLoads = false
         /// Changes nothing, so a paired agent that may only read can use it.
         var readsOnly = false
-        let run: (ToolCall) async throws -> String
+        let reply: (ToolCall) async throws -> Reply
+    }
+
+    /// What a tool answers: text, and a picture for one that shows the agent something.
+    struct Reply {
+        var text: String
+        var png: Data?
     }
 
     /// One call to a tool, with who made it.
@@ -135,8 +141,10 @@ final class ToolServer {
         }
         let call = ToolCall(arguments: params["arguments"] as? [String: Any] ?? [:], credential: credential, caller: caller)
         do {
-            let text = try await tool.run(call)
-            return ["result": ["content": [["type": "text", "text": text]]]]
+            let reply = try await tool.reply(call)
+            var content: [[String: Any]] = [["type": "text", "text": reply.text]]
+            if let png = reply.png { content.append(["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]) }
+            return ["result": ["content": content]]
         } catch {
             let message = (error as? Failure)?.message ?? error.localizedDescription
             return ["result": ["content": [["type": "text", "text": message]], "isError": true]]
@@ -164,6 +172,20 @@ final class ToolServer {
         """
 }
 
+extension ToolServer.Tool {
+    /// A tool that answers with text alone.
+    init(
+        name: String, description: String, properties: [String: Any], required: [String] = [], audience: ToolServer.Audience,
+        isEnabled: @escaping (IntegrationSettings) -> Bool = { _ in true }, alwaysLoads: Bool = false, readsOnly: Bool = false,
+        run: @escaping (ToolServer.ToolCall) async throws -> String
+    ) {
+        self.init(
+            name: name, description: description, properties: properties, required: required, audience: audience, isEnabled: isEnabled,
+            alwaysLoads: alwaysLoads, readsOnly: readsOnly, reply: { ToolServer.Reply(text: try await run($0)) }
+        )
+    }
+}
+
 // MARK: - Arguments
 
 extension ToolServer.ToolCall {
@@ -183,6 +205,14 @@ extension ToolServer.ToolCall {
     func int(_ key: String) -> Int? {
         (arguments[key] as? NSNumber)?.intValue
     }
+
+    func double(_ key: String) -> Double? {
+        (arguments[key] as? NSNumber)?.doubleValue
+    }
+
+    func strings(_ key: String) -> [String] {
+        (arguments[key] as? [String]) ?? (arguments[key] as? String).map { [$0] } ?? []
+    }
 }
 
 private extension String {
@@ -197,6 +227,10 @@ enum ToolSchema {
 
     static func integer(_ description: String) -> [String: Any] {
         ["type": "integer", "description": description]
+    }
+
+    static func number(_ description: String) -> [String: Any] {
+        ["type": "number", "description": description]
     }
 
     static func boolean(_ description: String) -> [String: Any] {

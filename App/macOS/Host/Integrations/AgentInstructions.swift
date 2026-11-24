@@ -14,6 +14,8 @@ nonisolated enum AgentInstructions {
         case orchestrator
         /// Asking the user for secrets with the `request_secret` tool.
         case secrets
+        /// Browsing with the chat's own browser and Atrium's `browser_*` tools.
+        case browser
     }
 
     /// The blocks, then the project's other folders when it has any, last so
@@ -21,7 +23,7 @@ nonisolated enum AgentInstructions {
     static func text(_ blocks: Set<Block>, directory: String? = nil, otherFolders: [String] = []) -> String {
         [
             base, blocks.contains(.pages) ? pages : nil, blocks.contains(.orchestrator) ? orchestrator : nil,
-            blocks.contains(.secrets) ? secrets : nil,
+            blocks.contains(.secrets) ? secrets : nil, blocks.contains(.browser) ? browser : nil,
             directory.flatMap { otherFolders.isEmpty ? nil : folders(working: $0, others: otherFolders) },
         ]
             .compactMap(\.self).joined(separator: "\n\n")
@@ -82,6 +84,12 @@ nonisolated enum AgentInstructions {
 
         When a step needs a secret only the user has, such as an API key, token or password, never ask for it in the chat or tell the user to paste it. Call Atrium's `request_secret` tool as soon as you need it, with what it is, what it's for and where to find it, and its sign-in or setup page when there is one; ask for values that go together, such as an email and password, in one call. The user answers in a private question, and the tool returns owner-only files holding the values. Read a file only inside the command that uses it, as in `"$(cat <file>)"`, and never print, log, commit or copy its contents. Don't ask again after the user declines.
         """
+
+    private static let browser = """
+        ## Browser
+
+        To test what you build for the web, and for any browsing a task needs, use Atrium's `browser_*` tools rather than computer use or another browser, unless the user names one. Your chat has one tab (WebKit), which the user sees beside the chat. Test like a person would: open the page, act with `browser_act` (real clicks and keys), and check the results in the snapshot it returns, `browser_logs` for console errors and failed requests, and `browser_viewport` for phone and tablet layouts. Work from snapshots and their refs; ask for a screenshot only when how the page looks matters.
+        """
 }
 
 /// The instruction blocks each chat Atrium runs was created with, by task ID.
@@ -107,7 +115,7 @@ final class ChatInstructions {
 
     /// The blocks a chat created now gets: those Settings turns on.
     var forNewChat: Set<AgentInstructions.Block> {
-        var blocks: Set<AgentInstructions.Block> = [.secrets]
+        var blocks: Set<AgentInstructions.Block> = [.secrets, .browser]
         if settings.isVisualizationsEnabled { blocks.insert(.pages) }
         if settings.isOrchestratorEnabled { blocks.insert(.orchestrator) }
         return blocks
