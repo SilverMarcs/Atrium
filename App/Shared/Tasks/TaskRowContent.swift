@@ -26,6 +26,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
     var backgroundShells: [String] = []
     var isDictating = false
     @ViewBuilder let projectIcon: ProjectIcon
+    @ScaledMetric(relativeTo: .subheadline) private var shellIconScale: CGFloat = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -66,8 +67,11 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 PullRequestIndicator(pullRequests: pullRequests)
 
                 if !backgroundShells.isEmpty {
-                    Image(systemName: "terminal.fill")
+                    ShellPromptGlyph()
+                        .stroke(.foreground, style: StrokeStyle(lineWidth: 1.25 * shellIconScale, lineCap: .round, lineJoin: .round))
+                        .frame(width: 15 * shellIconScale, height: 12 * shellIconScale)
                         .accessibilityLabel("Background shell running")
+                        .accessibilityAddTraits(.isImage)
                         .help(backgroundShells.joined(separator: "\n"))
                 }
 
@@ -79,6 +83,20 @@ struct TaskRowContent<ProjectIcon: View>: View {
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 1)
+    }
+}
+
+private struct ShellPromptGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 2, y: 2.5))
+        path.addLine(to: CGPoint(x: 6.25, y: 6))
+        path.addLine(to: CGPoint(x: 2, y: 9.5))
+        path.move(to: CGPoint(x: 8.25, y: 9.5))
+        path.addLine(to: CGPoint(x: 13, y: 9.5))
+
+        let scale = rect.width / 15
+        return path.applying(CGAffineTransform(scaleX: scale, y: scale))
     }
 }
 
