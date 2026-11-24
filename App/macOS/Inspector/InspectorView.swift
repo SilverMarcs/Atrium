@@ -1,34 +1,20 @@
 import SwiftUI
 
-/// The column beside the chat: a page an agent showed, its agent's browser,
-/// or the selected task's project with its files, search, Git and commands,
-/// from whichever host it's on.
-///
-/// The page lives here rather than in a pane of its own because only real
-/// split columns get their own section of the window's toolbar, which keeps
-/// their buttons above them however the window is resized.
+/// The window's trailing column: the selected task's project with its files,
+/// Git and commands, from whichever host it's on, and the chat's browser.
+/// What it opens shows in the pane beside the chat.
 struct InspectorView: View {
     let item: HostTask?
     let project: Project?
     @Environment(AppModel.self) private var app
-    @Environment(\.openURL) private var openURL
-    @State private var page = InspectorPage()
-
-    private var openPage: ChatPageBlock? { item.flatMap { app.inspectorPages.page(for: $0.id) } }
-    private var frontPage: ChatPageBlock? { item.flatMap { app.inspectorPages.frontPage(for: $0.id) } }
-    /// The chat's browser, when it's in front.
-    private var frontBrowser: AgentBrowser? {
-        guard let item, app.inspectorPages.showsBrowser(for: item.id) else { return nil }
-        return app.browser(for: item)
-    }
-    /// Pages and websites are laid out for 320 points and up.
-    private var showsWeb: Bool { frontPage != nil || frontBrowser != nil }
 
     var body: some View {
         // Toolbar must hang off a stable container, not the tabContent switch:
         // attached to the conditional, its items are recreated (NSToolbar
         // remove+add, visible flicker) every time the selected tab branch changes.
         VStack(spacing: 0) { columnContent }
+            // Full height whatever the tab shows, so the tab picker stays on top.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
                 if let project {
                     // Present for every project: conditionally inserting/removing
@@ -49,24 +35,15 @@ struct InspectorView: View {
             }
             .safeAreaBar(edge: .top) {
                 if let project {
-                    InspectorTabPicker(item: item, project: project)
+                    InspectorTabPicker(project: project)
                 }
             }
-            .task(id: PageLoad(task: item?.id, page: openPage)) {
-                guard let item, let block = openPage else { return }
-                await page.load(block.page, media: media(for: item), openURL: openURL)
-            }
-            .inspectorColumnWidth(min: showsWeb ? 320 : 240, ideal: showsWeb ? 480 : 240, max: showsWeb ? 1200 : 360)
+            .inspectorColumnWidth(min: 240, ideal: 240, max: 360)
     }
 
     @ViewBuilder
     private var columnContent: some View {
-        if let item, let browser = frontBrowser {
-            InspectorBrowserView(browser: browser, taskID: item.task.id)
-        } else if let item, let shown = frontPage {
-            InspectorPageView(page: page, media: media(for: item))
-                .safeAreaBar(edge: .bottom) { PageControls(item: item, page: page, shown: shown) }
-        } else if let project {
+        if let project {
             Group {
                 switch project.selectedTab {
                 case .files:
@@ -77,6 +54,8 @@ struct InspectorView: View {
                     GitInspectorView(state: project.git)
                 case .commands:
                     CommandsInspectorView(project: project)
+                case .browser:
+                    BrowserInspectorView(item: item)
                 }
             }
             // Every tab's foot switches branches, so what that asks to confirm
@@ -86,58 +65,24 @@ struct InspectorView: View {
             ContentUnavailableView("No Inspector", systemImage: "sidebar.right")
         }
     }
-
-    private func media(for item: HostTask) -> ChatMedia {
-        ChatMedia(host: item.host, taskID: item.task.id, directory: item.task.path)
-    }
 }
 
-/// The inspector's tabs: the project's tools, then the chat's pages once it
-/// has any, opening on the one last shown or else the newest. It reads the
-/// chat for its pages, so only it follows the chat as replies arrive.
+/// The inspector's tabs: the project's tools and the chat's browser.
 private struct InspectorTabPicker: View {
-    let item: HostTask?
     let project: Project
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        let newestPage = item.flatMap { ConversationTurns.pageVersions(in: $0.host.conversations.displayMessages(for: $0.task.id)).first?.last }
-        let showsPage = item.flatMap { app.inspectorPages.frontPage(for: $0.id) } != nil
-        let showsPageSegment = newestPage != nil || showsPage
-        let hasBrowser = item.flatMap(app.browser(for:)) != nil
-        let showsBrowser = hasBrowser && item.map { app.inspectorPages.showsBrowser(for: $0.id) } == true
         let runningCount = project.runningCount
         Picker("Inspector", selection: Binding {
-            showsBrowser ? InspectorPane.browser : showsPage ? .page : .tab(project.selectedTab)
-        } set: { pane in
-            guard let item else { return }
-            switch pane {
-            case .browser:
-                app.inspectorPages.showBrowser(for: item.id)
-            case .page:
-                if app.inspectorPages.page(for: item.id) == nil, let newestPage {
-                    app.inspectorPages.show(newestPage, for: item.id)
-                } else {
-                    app.inspectorPages.bringToFront(for: item.id)
-                }
-            case .tab(let tab):
-                app.showInspector(tab, in: project)
-            }
+            project.selectedTab
+        } set: { tab in
+            app.showInspector(tab, in: project)
         }) {
-            ForEach(InspectorTab.allCases) { tab in
+            ForEach(InspectorTab.shown) { tab in
                 Image(systemName: iconName(for: tab, runningCount: runningCount))
                     .help(helpText(for: tab, runningCount: runningCount))
-                    .tag(InspectorPane.tab(tab))
-            }
-            if showsPageSegment {
-                Image(systemName: "doc.richtext")
-                    .help("Pages")
-                    .tag(InspectorPane.page)
-            }
-            if hasBrowser {
-                Image(systemName: "globe")
-                    .help("Browser")
-                    .tag(InspectorPane.browser)
+                    .tag(tab)
             }
         }
         .pickerStyle(.segmented)
@@ -160,19 +105,6 @@ private struct InspectorTabPicker: View {
         }
         return tab.label
     }
-}
-
-/// What the inspector's picker selects: the chat's page, its browser or one of the project's tools.
-private enum InspectorPane: Hashable {
-    case page
-    case browser
-    case tab(InspectorTab)
-}
-
-/// What the inspector loads: the page it shows, in the chat it's beside.
-private struct PageLoad: Equatable {
-    let task: TaskRef?
-    let page: ChatPageBlock?
 }
 
 /// Runs the project's default command, or picks another from its menu.

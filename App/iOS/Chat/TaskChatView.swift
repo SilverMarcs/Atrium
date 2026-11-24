@@ -186,7 +186,6 @@ struct TaskChatView: View {
             // Pages and images agents show in replies load from the task's host.
             .environment(\.chatMedia, ChatMedia(host: host, taskID: task.id, directory: task.path))
             .environment(\.skillNames, skillNames)
-            .environment(\.earlierPageIDs, turns.earlierPageIDs)
             // Opens at the end. Content shorter than the view rests at its
             // top: aligning it to the bottom gives the scroll view a top inset
             // that SwiftUI moves the offset by whenever it changes, as the

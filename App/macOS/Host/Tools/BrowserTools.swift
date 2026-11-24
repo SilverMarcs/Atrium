@@ -1,7 +1,7 @@
 import AppKit
 
 /// The tools that drive a chat's own browser, for the agents this Mac runs:
-/// each chat gets one tab, which the user watches in the inspector beside it.
+/// each chat gets one tab, which the user watches in the pane beside it.
 /// Agents read pages as text outlines with element refs and act with real
 /// clicks and keys; pictures come only when they ask.
 @MainActor

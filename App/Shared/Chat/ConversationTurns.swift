@@ -12,11 +12,6 @@ struct ConversationTurns {
     let messages: [TranscriptMessage]
     /// The running turn's replies.
     let liveIDs: Set<String>
-    /// Pages a later page with the same title revised, by block ID.
-    let earlierPageIDs: Set<String>
-    /// The last page in the newest turn's reply, so a page an agent just
-    /// showed can open somewhere bigger as it arrives.
-    let newestPage: ChatPageBlock?
     /// The call the running turn's reply ended with, while nothing came after
     /// it: no note since, and no prompt on its way.
     let latestToolCall: TranscriptToolCall?
@@ -30,43 +25,8 @@ struct ConversationTurns {
         let running = messages[start...]
         self.messages = Self.fold(messages[..<start]) + running
         liveIDs = Set(running.filter { $0.role == .assistant }.map(\.id))
-        earlierPageIDs = Set(Self.pageVersions(in: messages).flatMap { $0.dropLast() }.map(\.id))
-        newestPage = Self.newestPage(in: messages)
         latestToolCall = isRunning && pendingPrompts.isEmpty && running.last?.role == .assistant
             ? running.last?.blocks.last?.latestToolCall : nil
-    }
-
-    private static func newestPage(in messages: [TranscriptMessage]) -> ChatPageBlock? {
-        for message in messages.reversed() {
-            switch message.role {
-            case .user where message.isSteer:
-                continue
-            case .user:
-                return nil
-            case .assistant:
-                if let block = message.blocks.last(where: { $0.page != nil }), let page = block.page {
-                    return ChatPageBlock(page: page, id: block.id)
-                }
-            }
-        }
-        return nil
-    }
-
-    /// Each page the chat showed, most recently shown first, with its versions
-    /// oldest first. An agent revises a page by showing it again in full,
-    /// usually under the same title.
-    static func pageVersions(in messages: [TranscriptMessage]) -> [[ChatPageBlock]] {
-        var versions: [String: [ChatPageBlock]] = [:]
-        var order: [String] = []
-        for block in messages.lazy.filter({ $0.role == .assistant }).flatMap(\.blocks) {
-            // A page still being written has no key yet.
-            guard let page = block.page, page.key != nil else { continue }
-            let title = page.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            versions[title, default: []].append(ChatPageBlock(page: page, id: block.id))
-            order.removeAll { $0 == title }
-            order.append(title)
-        }
-        return order.reversed().compactMap { versions[$0] }
     }
 
     private static func fold(_ messages: ArraySlice<TranscriptMessage>) -> [TranscriptMessage] {
@@ -96,10 +56,4 @@ struct ConversationTurns {
         }
         return folded
     }
-}
-
-/// A page an agent showed, with the block that shows it.
-struct ChatPageBlock: Equatable {
-    let page: TranscriptPage
-    let id: String
 }

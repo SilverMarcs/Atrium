@@ -6,14 +6,13 @@ struct ShortcutsSettingsView: View {
             Section("General") {
                 LabeledContent("New Chat", value: "⌘ N")
                 LabeledContent("Go to File", value: "⌘ P")
-                LabeledContent("Find in Files", value: "⇧⌘ F")
             }
 
             Section("View") {
                 LabeledContent("Zoom In", value: "⌘ +")
                 LabeledContent("Zoom Out", value: "⌘ -")
                 LabeledContent("Actual Size", value: "⌘ 0")
-                LabeledContent("Toggle Editor Panel", value: "⌘ J")
+                LabeledContent("Show or Hide Pane", value: "⌘ J")
                 LabeledContent("Filter Sidebar", value: "⌥⌘ J")
                 LabeledContent("Show/Hide Hidden Files", value: "⇧⌘ .")
             }
@@ -21,7 +20,7 @@ struct ShortcutsSettingsView: View {
             Section("Inspector") {
                 LabeledContent("Files Navigator", value: "⌘ 1")
                 LabeledContent("Git Navigator", value: "⌘ 2")
-                LabeledContent("Search Navigator", value: "⌘ 3")
+                LabeledContent("Browser", value: "⌘ 3")
                 LabeledContent("Command Runner", value: "⌘ 4")
             }
 

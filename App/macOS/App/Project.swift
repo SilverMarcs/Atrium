@@ -16,7 +16,7 @@ final class Project: Identifiable {
     let workspaceID: UUID
     var selectedTab: InspectorTab = .files
     var selectedCommand: CommandSelection?
-    let editor = EditorPanel()
+    let editor = ProjectEditor()
     @ObservationIgnored private(set) lazy var fileTree = FileTreeModel(project: self)
     @ObservationIgnored private(set) lazy var search = SearchInspectorModel(project: self)
     @ObservationIgnored private(set) lazy var git = GitInspectorState(project: self)

@@ -40,6 +40,15 @@ struct TaskDetailToolbar: ToolbarContent {
                 SideChatButton(item: item) { app.selection = $0 }
             }
         }
+        // Last, at the pane's edge, once the chat has a page or browser to show there.
+        if app.chatPanes.current(for: item.id) != nil {
+            if hasSideChatButton || !item.task.pullRequests.isEmpty || item.hasSubagents {
+                ToolbarSpacer(.fixed)
+            }
+            ToolbarItem {
+                ChatPaneToggle(item: item)
+            }
+        }
     }
 
     private var hasSideChatButton: Bool {

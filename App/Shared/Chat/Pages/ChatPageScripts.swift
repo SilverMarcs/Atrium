@@ -82,4 +82,18 @@ enum ChatPageScripts {
         var s=document.createElement("style");s.textContent=\(String(reflecting: variables + components));\
         document.documentElement.append(v,s);\(behaviors)})();
         """
+
+    /// Name of the message a page shown at its own height posts its height in.
+    static let heightMessage = "atriumHeight"
+
+    /// For a page shown at its own height in the chat: it never scrolls,
+    /// and it reports its height whenever its content changes size.
+    static let fitContent = """
+        (function(){\
+        var s=document.createElement("style");s.textContent="html,body{overflow:hidden!important}";\
+        document.documentElement.append(s);\
+        function post(){var b=document.body;if(!b)return;var c=getComputedStyle(b);\
+        window.webkit.messageHandlers.\(heightMessage).postMessage(Math.ceil(b.scrollHeight+parseFloat(c.marginTop)+parseFloat(c.marginBottom)));}\
+        new ResizeObserver(post).observe(document.body);post();})();
+        """
 }

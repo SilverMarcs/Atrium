@@ -15,19 +15,32 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 300)
                 .searchable(text: $searchText, placement: .sidebar, prompt: "Filter tasks or projects")
                 .searchFocused($isSearchFocused)
-        } detail: {
-            if app.selectedTasks.count > 1 {
-                MultipleTasksSelectedView()
-            } else if let task = app.selectedTask {
-                TaskDetailView(item: task)
-            } else {
-                NewChatUnavailableView { app.selection = $0 }
+        } content: {
+            Group {
+                if app.selectedTasks.count > 1 {
+                    MultipleTasksSelectedView()
+                } else if let task = app.selectedTask {
+                    TaskDetailView(item: task)
+                } else {
+                    NewChatUnavailableView { app.selection = $0 }
+                }
             }
+            .navigationSplitViewColumnWidth(min: 360, ideal: 640, max: .infinity)
+            .background {
+                PaneColumnCollapse(isCollapsed: !(app.selection.map(app.chatPanes.isOpen) ?? false)) { isCollapsed in
+                    guard let task = app.selection else { return false }
+                    return app.chatPanes.setOpen(!isCollapsed, for: task)
+                } onMoving: { app.chatPanes.isColumnMoving = $0 }
+            }
+        } detail: {
+            // The chat's page, browser, files and diffs, in a column of its
+            // own so their controls get a part of the toolbar apart from the chat's.
+            ChatPaneView(item: app.selectedTask)
         }
         .toolbar {
             // The sidebar's own control goes with it, so a hidden sidebar
             // leaves the same control at the window's leading edge.
-            if app.sidebarVisibility == .detailOnly {
+            if app.sidebarVisibility == .doubleColumn {
                 ToolbarItem(placement: .navigation) {
                     SidebarMenu()
                 }
@@ -35,8 +48,8 @@ struct ContentView: View {
         }
         .task(id: app.sidebarSearchFocusRequest) {
             guard app.sidebarSearchFocusRequest > 0 else { return }
-            if app.sidebarVisibility == .detailOnly {
-                withAnimation { app.sidebarVisibility = .automatic }
+            if app.sidebarVisibility == .doubleColumn {
+                withAnimation { app.sidebarVisibility = .all }
                 // The field exists once the sidebar has slid in.
                 guard (try? await Task.sleep(for: .milliseconds(250))) != nil else { return }
             }

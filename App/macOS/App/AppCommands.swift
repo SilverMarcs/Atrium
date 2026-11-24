@@ -4,7 +4,6 @@ struct AppCommands: Commands {
     @Bindable var app: AppModel
     let updater: UpdaterManager
     @Environment(\.openWindow) private var openWindow
-    @FocusedValue(\.editorPanel) private var editorPanel
     @FocusedValue(\.isMainWindow) private var isMainWindow
     @FocusedValue(\.latestPromptEdit) private var latestPromptEdit
     @FocusedValue(\.showScratchpad) private var showScratchpad
@@ -92,13 +91,13 @@ struct AppCommands: Commands {
                 Divider()
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        editorPanel?.toggle()
-                    }
+                    guard let task = app.selection else { return }
+                    withAnimation { app.chatPanes.toggle(for: task) }
                 } label: {
-                    Label("Toggle Bottom Panel", systemImage: "rectangle.bottomhalf.inset.filled")
+                    Label("Show or Hide Pane", systemImage: "square.split.2x1")
                 }
                 .keyboardShortcut("j", modifiers: .command)
+                .disabled(app.selection.flatMap(app.chatPanes.current(for:)) == nil)
 
                 Button {
                     showScratchpad?()
@@ -136,10 +135,11 @@ struct AppCommands: Commands {
                 }
                 .keyboardShortcut("2", modifiers: .command)
 
+                // The browser takes Search's place, which is hidden for now (InspectorTab.shown).
                 Button {
-                    app.showInspector(.search)
+                    app.showInspector(.browser)
                 } label: {
-                    Label("Search Navigator", systemImage: "magnifyingglass")
+                    Label("Browser", systemImage: "globe")
                 }
                 .keyboardShortcut("3", modifiers: .command)
 
@@ -176,14 +176,6 @@ struct AppCommands: Commands {
                 .disabled(app.selectedProject?.defaultCommand?.isRunning != true)
 
                 Divider()
-
-                Button {
-                    app.showInspector(.search)
-                    app.selectedProject?.search.searchFocusTrigger += 1
-                } label: {
-                    Label("Find in Files", systemImage: "doc.text.magnifyingglass")
-                }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
 
                 Button {
                     app.showInspector(.files)

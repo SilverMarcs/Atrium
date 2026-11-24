@@ -2,9 +2,9 @@ import AppKit
 import WebKit
 
 /// One chat's browser: a single tab its agent drives through Atrium's
-/// browser tools while the user watches, and can use, in the inspector or a
-/// window of its own. Off screen it sits in a window that's never shown, so
-/// real clicks and keys still reach it. A page that opens a sized popup,
+/// browser tools while the user watches, and can use, in the pane beside the
+/// chat. Off screen it sits in a window that's never shown, so real clicks
+/// and keys still reach it. A page that opens a sized popup,
 /// such as a sign-in window, gets a window of its own.
 @MainActor
 @Observable
@@ -102,8 +102,6 @@ final class AgentBrowser {
     private(set) var isLoading = false
     private(set) var canGoBack = false
     private(set) var canGoForward = false
-    /// A window of its own shows the page, rather than the inspector.
-    var isInWindow = false
     /// The size pages lay out at; nil fills wherever the page shows.
     private(set) var viewport: Viewport?
 

@@ -14,7 +14,6 @@ struct SessionChatView: View {
   @State private var flights = PromptFlights()
   @State private var links = ChatLinkOpener()
   /// Opens the chat's pages in the pane beside it.
-  @State private var pagePresenter = ChatPagePresenter()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private static let topID = "top"
@@ -116,8 +115,6 @@ struct SessionChatView: View {
       .environment(\.skillNames, skillNames)
       .onChange(of: skillNames, initial: true) { flights.skillNames = skillNames }
       .environment(\.promptActions, actions)
-      .environment(\.earlierPageIDs, turns.earlierPageIDs)
-      .environment(\.chatPagePresenter, pagePresenter)
       .environment(flights)
       .scrollEdgeEffectHidden(true, for: .bottom)
       .scrollEdgeEffectHidden(TaskDraft.isDraftID(task.id), for: .top)
@@ -248,14 +245,6 @@ struct SessionChatView: View {
         // new-row check above to hold its prompt.
         hold("pending-" + id.uuidString, proxy)
       }
-      // A page an agent just showed opens beside the chat.
-      .onChange(of: NewestPage(taskID: task.id, isLoaded: transcript != nil, page: turns.newestPage), initial: true) { _, newest in
-        guard newest.isLoaded, !TaskDraft.isDraftID(newest.taskID) else { return }
-        let ref = TaskRef(hostID: host.id, taskID: newest.taskID)
-        if app.inspectorPages.noteNewestPage(newest.page, in: ref), let page = newest.page {
-          app.showPage(page, for: ref)
-        }
-      }
       .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }
       .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
       .task(id: task.id) {
@@ -291,9 +280,6 @@ struct SessionChatView: View {
     // update every reply's Markdown view.
     .environment(\.openURL, links.action)
     .onChange(of: project?.id, initial: true) { links.project = project }
-    .onChange(of: item.id, initial: true) { _, ref in
-      pagePresenter.present = { [app] in app.showPage($0, for: ref) }
-    }
   }
 
   /// Reads the task's state when a bubble's menu asks, rather than handing
@@ -374,13 +360,6 @@ struct SessionChatView: View {
       }
     }
   }
-}
-
-/// The page a chat's newest reply ends with, once its transcript is here.
-private struct NewestPage: Equatable {
-  let taskID: String
-  let isLoaded: Bool
-  let page: ChatPageBlock?
 }
 
 /// Opens links in replies: files in the project in its editor, files elsewhere

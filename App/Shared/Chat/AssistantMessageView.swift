@@ -11,7 +11,6 @@ struct AssistantMessageView: View {
     let isStreaming: Bool
     /// Forks the chat through this reply; nil where it can't be forked.
     var fork: (() -> Void)?
-    @Environment(\.earlierPageIDs) private var earlierPageIDs
     #if os(macOS)
     /// Written here, read only by the actions, so hovering doesn't redraw the reply.
     @State private var hover = ReplyHover()
@@ -28,7 +27,7 @@ struct AssistantMessageView: View {
             }
             ForEach(reply.pages) { block in
                 if let page = block.page {
-                    ChatPageView(page: page, id: block.id, isEarlierVersion: earlierPageIDs.contains(block.id))
+                    ChatPageView(page: page)
                 }
             }
             // The shown notes read as one document, so they select together.
