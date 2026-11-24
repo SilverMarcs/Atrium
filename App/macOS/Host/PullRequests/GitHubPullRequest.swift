@@ -3,7 +3,7 @@ import Foundation
 /// A pull request as `gh pr list --json` or GitHub's GraphQL API describes it.
 nonisolated struct GitHubPullRequest: Decodable, Sendable {
     /// The fields asked for, which are all `gh` returns.
-    static let fields = "number,title,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closedAt"
+    static let fields = "number,title,url,state,isDraft,headRefName,baseRefName,reviewDecision,statusCheckRollup,closedAt"
 
     struct Check: Decodable, Sendable {
         /// A check run's progress and result.
@@ -31,6 +31,7 @@ nonisolated struct GitHubPullRequest: Decodable, Sendable {
     var state: String
     var isDraft: Bool
     var headRefName: String
+    var baseRefName: String
     var reviewDecision: String?
     var statusCheckRollup: [Check]?
     var commits: Commits?
@@ -53,7 +54,7 @@ nonisolated struct GitHubPullRequest: Decodable, Sendable {
         let path = url.pathComponents.dropFirst()
         return PullRequest(
             url: url, number: number, title: title, repository: path.prefix(2).joined(separator: "/"),
-            branch: headRefName, state: pullRequestState, checks: checks, review: review)
+            branch: headRefName, base: baseRefName, state: pullRequestState, checks: checks, review: review)
     }
 
     private var pullRequestState: PullRequest.State {
@@ -109,7 +110,7 @@ nonisolated extension GitHubPullRequest {
             aliases[alias] = url
             reads.append(#"\#(alias):repository(owner:"\#(path[0])",name:"\#(path[1])"){pullRequest(number:\#(number)){...f}}"#)
         }
-        let fragment = "fragment f on PullRequest{number title url state isDraft headRefName reviewDecision closedAt "
+        let fragment = "fragment f on PullRequest{number title url state isDraft headRefName baseRefName reviewDecision closedAt "
             + "commits(last:1){nodes{commit{statusCheckRollup{state}}}}}"
         return ("query{\(reads.joined(separator: " "))}\(fragment)", aliases)
     }

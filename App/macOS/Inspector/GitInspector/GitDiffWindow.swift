@@ -1,13 +1,16 @@
 import SwiftUI
 
 /// What a diff window shows, in a project on one of the hosts: one commit's
-/// changes, or a branch's since it left its base, as a pull request would.
+/// changes, or a branch's since it left its base, as a pull request would,
+/// or a pull request's own branch against the branch it merges into.
 struct GitDiffWindowItem: Identifiable, Hashable, Codable {
     enum Subject: Hashable, Codable {
         case commit(hash: String, message: String)
         /// `head` is a branch, or nil for the checkout itself with its
         /// uncommitted changes; `name` is what the window calls it.
         case review(head: String?, name: String)
+        /// One of a task's pull requests, which the window reads as it changes.
+        case pullRequest(task: TaskRef, url: URL)
     }
 
     let project: WorkspaceRef
@@ -18,6 +21,7 @@ struct GitDiffWindowItem: Identifiable, Hashable, Codable {
         switch subject {
         case .commit(let hash, _): hash
         case .review(let head, _): "review:\(repositoryRootURL.path):\(head ?? "")"
+        case .pullRequest(_, let url): "pullRequest:\(url.absoluteString)"
         }
     }
 }
@@ -37,15 +41,18 @@ struct GitDiffWindow: View {
     @State private var selectedID: GitComparedFile.ID?
     @State private var loadError: String?
     @AppStorage(DiffLayout.key) private var defaultLayout = DiffLayout.unified
+    @Environment(\.openURL) private var openURL
     /// This window's layout once switched in its toolbar; nil follows Settings.
     @State private var chosenLayout: DiffLayout?
 
     private var layout: DiffLayout { chosenLayout ?? defaultLayout }
 
-    private var title: String {
+    /// What the sidebar's top says; a pull request's tab names it instead.
+    private var title: String? {
         switch item.subject {
         case .commit(let hash, _): "Changes in \(hash.prefix(7))"
         case .review(_, let name): name
+        case .pullRequest: nil
         }
     }
 
@@ -54,7 +61,14 @@ struct GitDiffWindow: View {
         case .commit(_, let message): message
         case .review:
             comparison.map { "\($0.commitCount) \($0.commitCount == 1 ? "commit" : "commits")" } ?? ""
+        case .pullRequest: ""
         }
+    }
+
+    /// The pull request as its task has it now.
+    private var pullRequest: PullRequest? {
+        guard case .pullRequest(let task, let url) = item.subject else { return nil }
+        return app.hosts.task(task)?.task.pullRequests.first { $0.url == url }
     }
 
     private var selectedFile: GitChangedFile? {
@@ -93,49 +107,82 @@ struct GitDiffWindow: View {
             // What the files are, at the top of the sidebar; the diff's own
             // title is the file's.
             .toolbar {
-                ToolbarItem {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(title)
-                            .font(.headline)
-                        if !subtitle.isEmpty {
-                            Text(subtitle)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                if let title {
+                    ToolbarItem {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(title)
+                                .font(.headline)
+                            if !subtitle.isEmpty {
+                                Text(subtitle)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .lineLimit(1)
+                        .padding(.leading, 8)
                     }
-                    .lineLimit(1)
-                    .padding(.leading, 8)
+                    .sharedBackgroundVisibility(.hidden)
                 }
-                .sharedBackgroundVisibility(.hidden)
                 ToolbarSpacer(.flexible)
+                if pullRequest != nil {
+                    ToolbarItem {
+                        Button("Refresh", systemImage: "arrow.clockwise") {
+                            Task { await load(fetching: true) }
+                        }
+                        .disabled(isLoading)
+                        .help("Refresh")
+                    }
+                }
             }
             .safeAreaBar(edge: .bottom) {
-                if let comparison { reviewFooter(comparison) }
+                if let pullRequest {
+                    pullRequestFooter(pullRequest)
+                } else if let comparison {
+                    reviewFooter(comparison)
+                }
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 3000, max: 420)
         } detail: {
-            if let selection = selectedFile, let project = app.project(item.project), let reference = reference(for: selection) {
-                DiffBodyView(reference: reference, project: project, loader: diffLoader, layout: layout)
-                    .navigationTitle(selection.fileURL.lastPathComponent)
-                    .navigationSubtitle(selection.repositoryRelativePath)
-                    .toolbar {
-                        if !selection.fileURL.isPreviewableImage {
-                            ToolbarItem(placement: .primaryAction) {
-                                Toggle("Side by Side", systemImage: "rectangle.split.2x1", isOn: Binding(
-                                    get: { layout == .sideBySide },
-                                    set: { chosenLayout = $0 ? .sideBySide : .unified }
-                                ))
-                                .help(layout == .sideBySide ? "Show Unified Diff" : "Show Side by Side")
+            Group {
+                if let selection = selectedFile, let project = app.project(item.project), let reference = reference(for: selection) {
+                    DiffBodyView(reference: reference, project: project, loader: diffLoader, layout: layout)
+                        .navigationTitle(selection.fileURL.lastPathComponent)
+                        .navigationSubtitle(selection.repositoryRelativePath)
+                        .toolbar {
+                            if !selection.fileURL.isPreviewableImage {
+                                ToolbarItem(placement: .primaryAction) {
+                                    Toggle("Side by Side", systemImage: "rectangle.split.2x1", isOn: Binding(
+                                        get: { layout == .sideBySide },
+                                        set: { chosenLayout = $0 ? .sideBySide : .unified }
+                                    ))
+                                    .help(layout == .sideBySide ? "Show Unified Diff" : "Show Side by Side")
+                                }
                             }
                         }
-                    }
-            } else if !files.isEmpty {
-                ContentUnavailableView(
-                    "Select a File",
-                    systemImage: "sidebar.left",
-                    description: Text("Pick a file from the sidebar to see its diff.")
-                )
+                } else if !files.isEmpty {
+                    ContentUnavailableView(
+                        "Select a File",
+                        systemImage: "sidebar.left",
+                        description: Text("Pick a file from the sidebar to see its diff.")
+                    )
+                }
             }
+            .toolbar {
+                if let pullRequest {
+                    ToolbarItem(placement: .navigation) {
+                        Button {
+                            openURL(pullRequest.url)
+                        } label: {
+                            Label("Open on GitHub", image: pullRequest.icon)
+                        }
+                        .foregroundStyle(pullRequest.tint)
+                        .help("Open \(pullRequest.numberText) on GitHub")
+                    }
+                }
+            }
+        }
+        .background {
+            if let pullRequest { PullRequestTabbing(title: "\(pullRequest.numberText) \(pullRequest.title)") }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 900, minHeight: 560)
@@ -157,6 +204,25 @@ struct GitDiffWindow: View {
             }
         }
         .padding()
+    }
+
+    /// The branch and what it merges into, at the foot of the sidebar where a
+    /// review's base menu sits; a pull request's base can't change.
+    private func pullRequestFooter(_ pullRequest: PullRequest) -> some View {
+        HStack(spacing: 8) {
+            Image(pullRequest.icon)
+                .foregroundStyle(pullRequest.tint)
+            Text("\(pullRequest.branch) \(Text("into").foregroundStyle(.secondary)) \(pullRequest.base ?? comparison?.base ?? "")")
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            if let comparison {
+                LineCounts(added: comparison.added, removed: comparison.removed)
+                    .monospacedDigit()
+            }
+        }
+        .padding()
+        .help(comparison.map { "Compared with \($0.baseRef) from where they split, \($0.mergeBase.prefix(7))" } ?? "")
     }
 
     private func baseMenu(_ comparison: GitComparison) -> some View {
@@ -242,7 +308,9 @@ struct GitDiffWindow: View {
         )
     }
 
-    private func load() async {
+    /// Loads the files; a pull request's are fetched first, always when
+    /// `fetching`, else unless they were a few minutes ago.
+    private func load(fetching: Bool = false) async {
         loadError = nil
         guard let project = app.project(item.project) else {
             loadError = "This project’s host is no longer connected."
@@ -261,6 +329,25 @@ struct GitDiffWindow: View {
                 stage = .commit(hash: hash)
             case .review(let head, _):
                 guard case .comparison(let compared) = try await project.git(.compare(base: chosenBase, head: head), in: item.repositoryRootURL) else {
+                    throw HostClientError.unexpectedReply
+                }
+                comparison = compared
+                files = compared.files
+                stage = .comparison(mergeBase: compared.mergeBase, head: head)
+            case .pullRequest:
+                guard let pullRequest, let remote = pullRequest.local?.remote else { throw UnlinkedPullRequest() }
+                // Offline, the remote's branches as last fetched.
+                _ = try? await project.git(fetching ? .fetch : .fetchIfStale, in: item.repositoryRootURL)
+                guard case .branches(let listing) = try await project.git(.branches, in: item.repositoryRootURL) else {
+                    throw HostClientError.unexpectedReply
+                }
+                // What GitHub shows: its copies of both branches, however far
+                // the local ones are behind; the local branch only once the
+                // remote one is gone, as after merging.
+                let base = pullRequest.base.map { "\(remote)/\($0)" }
+                let remoteHead = "\(remote)/\(pullRequest.branch)"
+                let head = listing.remoteBranches.contains { $0.name == remoteHead } ? remoteHead : pullRequest.branch
+                guard case .comparison(let compared) = try await project.git(.compare(base: base, head: head), in: item.repositoryRootURL) else {
                     throw HostClientError.unexpectedReply
                 }
                 comparison = compared
@@ -285,5 +372,45 @@ struct GitDiffWindow: View {
         guard isReview, let project = app.project(item.project),
               case .branches(let listing) = try? await project.git(.branches, in: item.repositoryRootURL) else { return }
         baseChoices = listing
+    }
+}
+
+private struct UnlinkedPullRequest: LocalizedError {
+    var errorDescription: String? { "This pull request is no longer linked to its chat, or its repository isn’t on this Mac." }
+}
+
+/// Gathers pull request review windows as tabs of one window, each tab
+/// named for its pull request while the window's title names the file.
+private struct PullRequestTabbing: NSViewRepresentable {
+    let title: String
+
+    func makeNSView(context: Context) -> TabbingView { TabbingView() }
+
+    func updateNSView(_ view: TabbingView, context: Context) {
+        view.title = title
+        view.apply()
+    }
+
+    final class TabbingView: NSView {
+        static let identifier = "pullRequestReview"
+        var title = ""
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        func apply() {
+            guard let window else { return }
+            if window.tab.title != title { window.tab.title = title }
+            guard window.tabbingIdentifier != Self.identifier else { return }
+            window.tabbingIdentifier = Self.identifier
+            window.tabbingMode = .preferred
+            // In front of the others: they're opened last first, so the first ends up first.
+            guard let other = NSApp.windows.first(where: {
+                $0 !== window && $0.isVisible && $0.tabbingIdentifier == Self.identifier
+            }) else { return }
+            (other.tabbedWindows?.first ?? other).addTabbedWindow(window, ordered: .below)
+        }
     }
 }

@@ -15,6 +15,9 @@ import OSLog
 final class PullRequestTracker {
     /// The pull requests linked to each task, as last read.
     private(set) var linked: [String: [PullRequest]] = [:]
+    /// The remote each repository has for each GitHub repository, by
+    /// lowercased `owner/name`.
+    private var remotes: [URL: [String: String]] = [:]
 
     private struct Interest {
         var checkouts: Set<URL> = []
@@ -33,6 +36,7 @@ final class PullRequestTracker {
     /// Pull requests opened by commands, awaiting metadata for these tasks.
     @ObservationIgnored private var opened: [URL: Set<String>] = [:]
     @ObservationIgnored private var canonicalURLs: [URL: URL] = [:]
+    @ObservationIgnored private var remotesRead: Set<URL> = []
     @ObservationIgnored private var pendingReads: Set<URL> = []
     @ObservationIgnored private var reading: Set<URL> = []
     @ObservationIgnored private var readTask: Task<Void, Never>?
@@ -66,6 +70,7 @@ final class PullRequestTracker {
         }
         for checkout in checkouts {
             let repository = checkout.repository
+            readRemotes(of: repository)
             let folder = checkout.worktree ?? repository
             let existing = interests[repository]?[taskID]
             var interest = existing ?? Interest(
@@ -86,7 +91,14 @@ final class PullRequestTracker {
                 noteBranches(of: taskID, in: repository, checkouts: interest.checkouts)
             }
         }
-        return current
+        return current.map { pullRequest in
+            var pullRequest = pullRequest
+            let name = pullRequest.repository.lowercased()
+            pullRequest.local = checkouts.lazy.compactMap { checkout in
+                self.remotes[checkout.repository]?[name].map { PullRequest.Local(repository: checkout.repository, remote: $0) }
+            }.first
+            return pullRequest
+        }
     }
 
     /// Refreshes one opened task, or the visible tasks of a connected client.
@@ -126,6 +138,31 @@ final class PullRequestTracker {
                 }
             }
         }
+    }
+
+    /// Notes which GitHub repositories a repository's remotes are, once, so
+    /// its pull requests can be reviewed there.
+    private func readRemotes(of repository: URL) {
+        guard remotesRead.insert(repository).inserted else { return }
+        Task {
+            guard let output = try? await GitExecutor().runRawData(arguments: ["remote", "-v"], at: repository) else { return }
+            var found: [String: String] = [:]
+            for line in String(decoding: output, as: UTF8.self).split(separator: "\n") {
+                let fields = line.split(whereSeparator: \.isWhitespace)
+                guard fields.count >= 2, let name = Self.gitHubRepository(remoteURL: String(fields[1])) else { continue }
+                let remote = String(fields[0])
+                // origin when several remotes are the same repository.
+                if found[name] == nil || remote == "origin" { found[name] = remote }
+            }
+            if !found.isEmpty { remotes[repository] = found }
+        }
+    }
+
+    /// `owner/name`, lowercased, of a GitHub remote's URL in any form Git
+    /// takes: `git@github.com:owner/name.git`, `https://github.com/owner/name`, `ssh://…`.
+    nonisolated static func gitHubRepository(remoteURL: String) -> String? {
+        guard let match = remoteURL.firstMatch(of: #/github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$/#) else { return nil }
+        return "\(match.1)/\(match.2)".lowercased()
     }
 
     // MARK: - Discovery
