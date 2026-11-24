@@ -83,6 +83,14 @@ struct ComposerBar<Accessory: View>: View {
         true
         #endif
     }
+    private var isModelMenuCompact: Bool {
+        #if os(macOS)
+        !isExpanded
+        #else
+        // Keep the context ring laid out with the model picker while both are hidden.
+        false
+        #endif
+    }
     /// The Mac's smaller resting circle takes a smaller plus.
     private var attachFont: Font {
         #if os(macOS)
@@ -256,7 +264,7 @@ struct ComposerBar<Accessory: View>: View {
                     .composerBarPart(.editor)
 
                     if let item, item.offersComposerMenus {
-                        ComposerModelMenu(item: item, isCompact: !isExpanded)
+                        ComposerModelMenu(item: item, isCompact: isModelMenuCompact)
                             .opacity(isModelMenuVisible ? 1 : 0)
                             .allowsHitTesting(isModelMenuVisible)
                             .accessibilityHidden(!isModelMenuVisible)
