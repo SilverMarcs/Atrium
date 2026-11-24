@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The pull requests linked to a task, in the Mac toolbar, with a count when
-/// there are several and a tooltip for the most pressing one.
+/// The pull requests linked to a task, in the Mac toolbar, with a tooltip for
+/// the most pressing one.
 struct PullRequestMenu: View {
     let item: HostTask
     private var pullRequests: [PullRequest] { item.task.pullRequests }
@@ -11,8 +11,6 @@ struct PullRequestMenu: View {
             Menu("Pull Requests", image: lead.icon) {
                 PullRequestButtons(item: item)
             }
-            // A zero badge is hidden.
-            .badge(pullRequests.count > 1 ? pullRequests.count : 0)
             .foregroundStyle(lead.tint)
             #if os(macOS)
             .menuIndicator(.hidden)
