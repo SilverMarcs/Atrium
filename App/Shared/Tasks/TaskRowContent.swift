@@ -69,7 +69,7 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 if !backgroundShells.isEmpty {
                     ShellPromptGlyph()
                         .stroke(.foreground, style: StrokeStyle(lineWidth: 1.25 * shellIconScale, lineCap: .round, lineJoin: .round))
-                        .frame(width: 15 * shellIconScale, height: 12 * shellIconScale)
+                        .frame(width: 14 * shellIconScale, height: 11 * shellIconScale)
                         .accessibilityLabel("Background shell running")
                         .accessibilityAddTraits(.isImage)
                         .help(backgroundShells.joined(separator: "\n"))
@@ -95,8 +95,7 @@ private struct ShellPromptGlyph: Shape {
         path.move(to: CGPoint(x: 8.25, y: 9.5))
         path.addLine(to: CGPoint(x: 13, y: 9.5))
 
-        let scale = rect.width / 15
-        return path.applying(CGAffineTransform(scaleX: scale, y: scale))
+        return path.applying(CGAffineTransform(scaleX: rect.width / 15, y: rect.height / 12))
     }
 }
 
