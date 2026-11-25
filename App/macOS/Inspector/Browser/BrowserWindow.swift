@@ -59,6 +59,14 @@ struct BrowserWindow: View {
             Button("Forward", systemImage: "chevron.right") { Task { try? await browser.goForward() } }
                 .disabled(!browser.canGoForward)
         }
+        // Shown apart from the buttons, as the inspector's bar shows it, with no glass behind it.
+        if browser.isAgentUsing {
+            ToolbarItem(placement: .primaryAction) {
+                AgentUsingBadge(help: "The agent is using the browser")
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+        }
         ToolbarItem(placement: .primaryAction) {
             BrowserReloadButton(browser: browser)
         }
