@@ -271,13 +271,13 @@ private struct SimulatorBar: View {
             Menu {
                 moreMenu
             } label: {
-                BrowserBarSymbol(symbol: "ellipsis")
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .fixedSize()
-            .frame(height: 12)
             .help("More")
             .disabled(session == nil)
         }
