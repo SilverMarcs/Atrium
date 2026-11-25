@@ -4,8 +4,7 @@ import Observation
 /// What Settings → Integrations turns on for the agents this Mac runs, the
 /// permission mode Settings → Agents starts new chats in, and how long
 /// Settings → General snoozes a swiped task. Each integration decides which
-/// of Atrium's tools the agents this Mac runs get, at once, and which
-/// instruction blocks new chats get.
+/// of Atrium's tools the agents this Mac runs get, at once.
 @MainActor
 @Observable
 final class IntegrationSettings {

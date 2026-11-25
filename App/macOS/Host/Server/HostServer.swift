@@ -147,8 +147,7 @@ final class HostServer {
         let store = WorkspaceStore()
         workspaces = store
         let bridge = AgentBridgeServer()
-        let instructions = ChatInstructions(settings: integrationSettings)
-        instructions.projectFolders = { directory in store.folders(forDirectory: directory) }
+        let instructions = AgentInstructions(projectFolders: { directory in store.folders(forDirectory: directory) })
         let antigravity = AntigravityAgentAdapter(bridge: bridge, instructions: instructions)
         self.antigravity = antigravity
         integrations = AgentIntegrationStore(adapters: [
@@ -230,7 +229,7 @@ final class HostServer {
         case .codex:
             // A separate, short-lived connection keeps Settings independent of
             // enabled integrations and can't interrupt an active conversation.
-            let reader = CodexAgentAdapter(bridge: AgentBridgeServer(), instructions: ChatInstructions())
+            let reader = CodexAgentAdapter(bridge: AgentBridgeServer(), instructions: AgentInstructions())
             defer { reader.setEnabled(false) }
             return try await reader.usageSnapshot()
         case .claude:

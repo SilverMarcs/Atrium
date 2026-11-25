@@ -28,150 +28,161 @@ struct HostTools {
     private static let maximumWait = 60
     private static let maximumTurns = 20
 
+    /// Each tool says how to use it, and only what its name and schema don't;
+    /// failures explain themselves. Agents get no other instructions about them.
     var tools: [Tool] {
         let orchestrating: (IntegrationSettings) -> Bool = { $0.isOrchestratorEnabled }
+        let session = ToolSchema.string("ID, or a prefix only it has.")
+        let project = ToolSchema.string("ID or name.")
         return [
             Tool(
                 name: "list_projects",
-                description: "Lists the projects on the user's Mac that sessions start in, and the agents and models that can run them.",
+                description: "Lists the projects sessions start in, and the agents and models that can run them.",
                 properties: [:], audience: [.localAgents, .paired], isEnabled: orchestrating, readsOnly: true, run: listProjects
             ),
             Tool(
                 name: "list_sessions",
-                description: "Lists sessions newest first, with their status (processing, waiting for an answer, done, idle, failed, stopped or offline) and any questions or approvals waiting.",
+                description: "Lists sessions newest first, with what each waits on.",
                 properties: [
-                    "project": ToolSchema.string("Only sessions in this project, by ID or name."),
-                    "status": ToolSchema.strings("Only sessions with one of these statuses."),
-                    "include_settled": ToolSchema.boolean("Include settled sessions."),
-                    "limit": ToolSchema.integer("At most this many (default 30)."),
+                    "project": project,
+                    "status": ["type": "array", "items": ToolSchema.choice(AgentThreadStatus.allCases.map(\.toolName))],
+                    "include_settled": ToolSchema.boolean(),
+                    "limit": ToolSchema.integer("Default 30."),
                 ],
                 audience: [.localAgents, .paired], isEnabled: orchestrating, readsOnly: true, run: listSessions
             ),
             Tool(
                 name: "read_session",
-                description: """
-                    Reads a session: its status, the questions and approvals it waits on, and its latest turns. \
-                    Reading never marks it read. wait_seconds waits for the turn under way to end or need an answer; \
-                    agents on the Mac don't wait, as Atrium sends them the result.
-                    """,
+                description: "Reads a session's status, the questions and approvals it waits on, and its latest turns.",
                 properties: [
-                    "session": ToolSchema.string("The session's ID, or a prefix only it has."),
-                    "turns": ToolSchema.integer("How many of the latest turns to include (default 1)."),
-                    "after": ToolSchema.string("Only messages after the one with this ID, instead of turns."),
-                    "wait_seconds": ToolSchema.integer("Wait up to this many seconds (at most \(Self.maximumWait)) for the turn to end."),
+                    "session": session,
+                    "turns": ToolSchema.integer("Default 1."),
+                    "after": ToolSchema.string("A message ID: return the messages after it instead of turns."),
+                    "wait_seconds": ToolSchema.integer("Wait up to this long (at most \(Self.maximumWait)) for the turn to end or need an answer."),
                 ],
                 required: ["session"], audience: [.localAgents, .paired], isEnabled: orchestrating, readsOnly: true, run: readSession
             ),
             Tool(
                 name: "start_session",
                 description: """
-                    Starts a session in a project with its first prompt, which must carry everything the agent needs to \
-                    know. It runs with no broader permissions than yours. For an agent on the Mac, the session is listed \
-                    under yours and stops with it: end your turn, and Atrium sends you its questions as they come and every \
-                    result once all the sessions you handed work to are done. Set standalone only when the user asks for a \
-                    separate session they'll continue themselves.
+                    Starts a session in a project; its agent sees only your prompt, so make it self-contained. Hand work \
+                    to other providers' agents only this way, not through their CLIs: when it helps, to a few sessions \
+                    at most, and never work handed to you. An agent on this Mac then ends its turn: Atrium sends it the \
+                    session's questions as they come (answer with respond) and, once all its sessions are done, their \
+                    results in one message; others follow it with read_session. To consult several models, give each the same brief asking for an approach \
+                    without editing files, then combine the best ideas and say whose they were.
                     """,
                 properties: [
-                    "project": ToolSchema.string("The project, by ID or name, as list_projects gives them."),
-                    "prompt": ToolSchema.string("The task."),
-                    "provider": ["type": "string", "enum": AgentProvider.allCases.map(\.rawValue), "description": "The agent. Defaults to the first one available."],
-                    "model": ToolSchema.string("A model the agent lists. Defaults to the agent's own."),
-                    "effort": ToolSchema.string("The model's reasoning effort."),
-                    "standalone": ToolSchema.boolean("List it as the user's own session, reporting to no one."),
+                    "project": project,
+                    "prompt": ToolSchema.string(),
+                    "provider": ToolSchema.choice(AgentProvider.allCases.map(\.rawValue), "Defaults to the first available."),
+                    "model": ToolSchema.string(),
+                    "effort": ToolSchema.string(),
+                    "standalone": ToolSchema.boolean("The user's own session, reporting to no one. Only when the user asks for one."),
                 ],
-                required: ["project", "prompt"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: startSession
+                required: ["project", "prompt"], audience: [.localAgents, .paired], isEnabled: orchestrating, alwaysLoads: true, run: startSession
             ),
             Tool(
                 name: "send_prompt",
                 description: """
-                    Sends a prompt to a session that runs with no broader permissions than yours. One sent while its agent \
-                    works waits for the current turn to end, then \
-                    starts the next; steer joins the turn under way instead, for a correction it must take in now. An \
-                    agent on the Mac gets that turn's result and questions as a message, as with start_session.
+                    Sends a prompt to a session. While it works, the prompt waits for the turn to end. An agent on this \
+                    Mac then ends its turn, as with start_session.
                     """,
                 properties: [
-                    "session": ToolSchema.string("The session's ID, or a prefix only it has."),
-                    "prompt": ToolSchema.string("The prompt."),
-                    "steer": ToolSchema.boolean("Join the turn under way rather than waiting for it."),
+                    "session": session,
+                    "prompt": ToolSchema.string(),
+                    "steer": ToolSchema.boolean("Join the turn under way instead, for a correction it must take in now."),
                 ],
                 required: ["session", "prompt"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: sendPrompt
             ),
             Tool(
                 name: "respond",
-                description: """
-                    Answers a question, or allows or declines a tool run, that a session waits on, as read_session lists \
-                    them. Give answers by question ID, each one of the question's options or your own text. Only a caller \
-                    with full access can allow a tool run; anyone can decline one.
-                    """,
+                description: "Answers the questions, or allows or declines the tool run, a session waits on.",
                 properties: [
-                    "session": ToolSchema.string("The session's ID, or a prefix only it has."),
-                    "interaction": ToolSchema.string("The interaction's ID; optional when only one waits."),
-                    "allow": ToolSchema.boolean("Allow, or submit the answers (default true). False declines."),
+                    "session": session,
+                    "interaction": ToolSchema.string("Optional when only one waits."),
+                    "allow": ToolSchema.boolean("False declines. Default true."),
                     "answers": ["type": "object", "additionalProperties": ["type": "array", "items": ["type": "string"]],
-                                "description": "Answers by question ID."],
+                                "description": "By question ID: options, or your own text."],
                 ],
                 required: ["session"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: respond
             ),
             Tool(
                 name: "stop_session",
                 description: "Stops a session's turn and every session working for it. Nothing reports back from what's stopped.",
-                properties: ["session": ToolSchema.string("The session's ID, or a prefix only it has.")],
+                properties: ["session": session],
                 required: ["session"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: stopSession
             ),
             Tool(
                 name: "settle_session",
-                description: "Settles a session: moves it out of the active list and stops its agent. Your own settles once your turn ends.",
-                properties: ["session": ToolSchema.string("The session's ID, or a prefix only it has.")],
+                description: "Moves a session out of the active list and stops its agent.",
+                properties: ["session": session],
                 required: ["session"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: settleSession
             ),
             Tool(
                 name: "request_secret",
                 description: """
-                    Ask the user for secrets only they have, such as an API key, token or password, in a private \
-                    question in your chat; never ask in chat. Call it as soon as one is needed, rather than offering to. \
-                    One value per field: never combine values in one, and ask for values that go together, such as an \
-                    email and password, in one call with `fields`. Returns {"status":"saved","file"}, or "files" by field \
-                    name: owner-only files, deleted after a day. Read a file only inside the command that uses it, as in \
-                    `tool login --token "$(cat <file>)"`, and never print, log or copy it. A secret the user already \
-                    pasted in this chat goes in `value`: it's saved to a file with no question. declined: don't ask \
-                    again; say what's blocked and go on. cancelled or timed_out: ask again, with a new \
-                    client_request_id, only if it's still needed.
+                    Asks the user for secrets, such as API keys or passwords, in a private question, as soon as one is \
+                    needed; never ask in chat. Returns owner-only files, deleted after a day: read one only inside the \
+                    command that uses it, as in `--token "$(cat <file>)"`, and never print, log or copy it.
                     """,
                 properties: [
-                    "label": ToolSchema.string("The question's title, such as \"Stripe test secret key\"."),
-                    "reason": ToolSchema.string("What it's for and where the user finds it. A link goes in url."),
-                    "url": ToolSchema.string("The http or https sign-in or setup page for the value, shown as a link."),
+                    "label": ToolSchema.string("Such as \"Stripe test secret key\"."),
+                    "reason": ToolSchema.string("What it's for and where the user finds it."),
+                    "url": ToolSchema.string("Its sign-in or setup page."),
                     "fields": [
                         "type": "array", "minItems": 1, "maxItems": 8,
-                        "description": "Several values in one question, each saved to its own file.",
+                        "description": "Values that go together, such as an email and password, each saved to its own file.",
                         "items": [
                             "type": "object", "required": ["name", "label"], "additionalProperties": false,
                             "properties": [
                                 "name": ToolSchema.string("Its key in files: a letter, then letters, digits or _, up to 32."),
-                                "label": ToolSchema.string("What the user enters, such as \"Email\"."),
-                                "secret": ToolSchema.boolean("False shows the value as it's typed, as for an email. Default true."),
+                                "label": ToolSchema.string(),
+                                "secret": ToolSchema.boolean("False shows typing, as for an email. Default true."),
                             ],
                         ],
                     ],
-                    "value": ToolSchema.string("A secret the user already pasted in this chat, to save to a file with no question."),
+                    "value": ToolSchema.string("A secret the user already pasted in chat: saved to a file without asking."),
                     "timeout_seconds": ToolSchema.integer(
-                        "How long to wait for the user, from 1 to \(SecretRequests.longestWait.components.seconds) (default \(SecretRequests.defaultWait.components.seconds))."),
-                    "client_request_id": ToolSchema.string("A retry key: repeating the call with it returns the first call's answer."),
+                        "1 to \(SecretRequests.longestWait.components.seconds), default \(SecretRequests.defaultWait.components.seconds)."),
+                    "client_request_id": ToolSchema.string("Repeating a call with it returns the first call's answer."),
                 ],
                 required: ["label", "reason"], audience: .localAgents, alwaysLoads: true, run: requestSecret
             ),
             Tool(
                 name: ChatPages.toolName,
                 description: """
-                    Shows an HTML page you wrote to a file inline in your reply, as tall as the page. Call it once \
-                    the page is final, at most once per reply, and don't describe the page in your text. To revise it, \
-                    edit the file and show it again: Atrium keeps a copy of each version a reply showed.
+                    Shows an HTML page file, such as a chart, diagram or mockup, inline in your reply. Use it only when a \
+                    visual says more than text or an image, or the user asks to see something; tables and lists stay in \
+                    Markdown. Use it instead of a hosted page or artifact unless the user asks for one, and never start a \
+                    server or open a browser for it. Show a page when it's final, at most one per reply, without \
+                    describing it in your text; to revise it, edit the file and show it again.
+
+                    One point per page, under about 600px tall; put more behind tabs or toggles. Inline styles and \
+                    scripts. Images load by absolute path or relative to the task folder; for a folder of them outside the task folder, write its path \
+                    as a quoted string ending in `/`, as in `const base='/path/to/images/';`, and the page may load from it.
+                    Layout: the page is as wide as the reply, 320px on iPhone to about 900px on Mac, so let it reflow \
+                    (SVGs with a viewBox and width:100%) and fix no width over 320px. No outer card, border, banner \
+                    title, side padding or page background. Charts get fixed pixel heights.
+                    Classes, never restyled: .card (the only boxed surface, never nested), .grid (equal columns that \
+                    stack when narrow), .row (wrapping inline group), .stat-label and .stat-value in a .card, .btn, \
+                    .btn-primary, .muted, .small, .num (right-aligned). Tables are styled. Tabs: a .tabs role=tablist of \
+                    role=tab buttons whose aria-controls name role=tabpanel elements, one aria-selected=true and the \
+                    other panels hidden; Atrium switches them. data-tooltip on any element or SVG mark shows a tooltip. \
+                    <i data-symbol="chart.bar.fill"></i> draws any SF Symbol in the text's size and color.
+                    Style: font weights 400 and 500; no custom font sizes (.small for secondary text, 12px SVG labels); \
+                    at most one short heading. Series colors only on chart marks; text and axes in --foreground or \
+                    --muted-foreground. Thin neutral gridlines, values labeled directly, a legend only for 2+ series.
+                    Colors, for light and dark, never fixed ones: --foreground, --muted-foreground, --background (only \
+                    for marks cutting through others), --card, --muted, --border, --popover, --primary (Atrium's green) \
+                    and --primary-foreground, --accent (soft green wash) and --accent-foreground, --success, --warning, \
+                    --destructive, --viz-series-1 to 6. Also --font-sans, --font-mono, --radius.
                     """,
                 properties: [
-                    "title": ToolSchema.string("A short title for the page."),
-                    "file": ToolSchema.string("The absolute path of the page's .html file."),
+                    "title": ToolSchema.string(),
+                    "file": ToolSchema.string("Absolute path."),
                 ],
-                required: ["title", "file"], audience: .localAgents, isEnabled: { $0.isVisualizationsEnabled }, run: showPage
+                required: ["title", "file"], audience: .localAgents, isEnabled: { $0.isVisualizationsEnabled }, alwaysLoads: true, run: showPage
             ),
         ]
     }

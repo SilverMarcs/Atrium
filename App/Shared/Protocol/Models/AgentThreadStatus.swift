@@ -1,7 +1,7 @@
 import Foundation
 
 /// Raw values are persisted with retained threads and shown to the user.
-nonisolated enum AgentThreadStatus: String, Codable, Sendable {
+nonisolated enum AgentThreadStatus: String, Codable, Sendable, CaseIterable {
     case processing = "Processing"
     case waiting = "Needs input"
     case done = "Done"

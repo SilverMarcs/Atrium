@@ -1,7 +1,7 @@
 import Foundation
 
 /// What every page an agent shows runs before its own content: the theme and
-/// classes Atrium's instructions describe to agents, what makes its tabs and
+/// classes show_page describes to agents, what makes its tabs and
 /// tooltips work.
 enum ChatPageScripts {
     /// Atrium's green leads; the other series hues sit beside it without competing.

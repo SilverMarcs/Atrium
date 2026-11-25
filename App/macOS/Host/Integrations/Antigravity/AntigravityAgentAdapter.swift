@@ -16,7 +16,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     private(set) var defaultSettings: TaskStartSettings?
 
     private let connection = AntigravityConnection()
-    private let instructions: ChatInstructions
+    private let instructions: AgentInstructions
     private let bridge: AgentBridgeServer
     private let fullAccess = AntigravityFullAccess()
     private let history = AntigravityHistory()
@@ -87,7 +87,7 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         let sessionID: String
     }
 
-    init(bridge: AgentBridgeServer, instructions: ChatInstructions) {
+    init(bridge: AgentBridgeServer, instructions: AgentInstructions) {
         self.bridge = bridge
         self.instructions = instructions
         connection.onNotification = { [weak self] method, params in self?.receive(method, params) }
@@ -368,18 +368,16 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
     func createThread(directory: String, settings: TaskStartSettings?, title: String?) async throws -> AgentThread {
         try await start()
         watchBrain()
-        let blocks = instructions.forNewChat
         // Antigravity keeps the appended prompt with the conversation, for every later load.
         let reply = try await connection.request("session/new", [
             "cwd": directory, "mcpServers": try await toolServers(),
             "additionalDirectories": instructions.otherFolders(for: directory),
-            "_meta": ["antigravity": ["systemPrompt": ["append": instructions.text(blocks, directory: directory)]]],
+            "_meta": ["antigravity": ["systemPrompt": ["append": instructions.text(directory: directory)]]],
         ])
         guard let id = reply["sessionId"] as? String else { throw IntegrationError(message: "Antigravity didn’t start a session.") }
         let session = Session(id: id, directory: directory)
         session.settings = AntigravitySettings(configOptions: reply["configOptions"] as? [[String: Any]] ?? [])
         sessions[id] = session
-        instructions.record(blocks, for: "\(provider.rawValue):\(id)")
         if let model = settings?.model {
             try await apply(.model(model, reasoningEffort: settings?.reasoningEffort), to: id, in: session)
         }
@@ -450,7 +448,6 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         }
         let id = try await copy(thread, through: last)
         try await name(id, thread.forkTitle)
-        instructions.record(instructions.blocks(for: thread.id), for: "\(provider.rawValue):\(id)")
         let base = AgentThread(
             sessionID: id, provider: .antigravity, title: thread.forkTitle, directory: thread.directory, updatedAt: .now,
             status: .unknown, isMainTask: true, hasProviderTitle: true, projectDirectory: thread.projectDirectory)
@@ -482,7 +479,6 @@ final class AntigravityAgentAdapter: AgentProviderAdapter {
         ])
         sideChats[id] = (thread.sessionID, 0)
         unmarkedSideChats.insert(id)
-        instructions.record(instructions.blocks(for: thread.id), for: "\(provider.rawValue):\(id)")
         let sideChat = AgentThread(sessionID: id, provider: .antigravity, title: "Side Chat", directory: thread.directory,
                                    updatedAt: .now, status: .unknown, projectDirectory: thread.projectDirectory)
         let session = try await session(of: sideChat)

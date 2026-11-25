@@ -165,11 +165,7 @@ final class ToolServer {
         (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
     }
 
-    private static let instructions = """
-        Atrium runs Claude, Codex and Antigravity sessions on the user's Mac. Hand work to a session with \
-        start_session or send_prompt, then check on it with read_session. Sessions you start are listed in Atrium \
-        under your name.
-        """
+    private static let instructions = "Atrium runs Claude, Codex and Antigravity sessions on the user's Mac."
 }
 
 extension ToolServer.Tool {
@@ -219,25 +215,25 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
-/// Schema fragments for tool properties.
+/// Schema fragments for tool properties. A property whose name and type say
+/// what it takes needs no description.
 enum ToolSchema {
-    static func string(_ description: String) -> [String: Any] {
-        ["type": "string", "description": description]
+    static func string(_ description: String? = nil) -> [String: Any] { property("string", description) }
+    static func integer(_ description: String? = nil) -> [String: Any] { property("integer", description) }
+    static func number(_ description: String? = nil) -> [String: Any] { property("number", description) }
+    static func boolean(_ description: String? = nil) -> [String: Any] { property("boolean", description) }
+
+    static func strings(_ description: String? = nil) -> [String: Any] {
+        property("array", description).merging(["items": ["type": "string"]]) { $1 }
     }
 
-    static func integer(_ description: String) -> [String: Any] {
-        ["type": "integer", "description": description]
+    static func choice(_ values: [String], _ description: String? = nil) -> [String: Any] {
+        property("string", description).merging(["enum": values]) { $1 }
     }
 
-    static func number(_ description: String) -> [String: Any] {
-        ["type": "number", "description": description]
-    }
-
-    static func boolean(_ description: String) -> [String: Any] {
-        ["type": "boolean", "description": description]
-    }
-
-    static func strings(_ description: String) -> [String: Any] {
-        ["type": "array", "items": ["type": "string"], "description": description]
+    private static func property(_ type: String, _ description: String?) -> [String: Any] {
+        var property: [String: Any] = ["type": type]
+        if let description { property["description"] = description }
+        return property
     }
 }

@@ -20,134 +20,105 @@ struct BrowserTools {
             Tool(
                 name: "browser_open",
                 description: """
-                    Opens a page in your chat's own browser (WebKit, like Safari), which the user watches, and can use, \
-                    beside the chat. Use it to build and test sites and to browse, rather than computer use or another \
-                    browser: http://localhost:<port> for a dev server, or a file path. Sign-ins stay across chats. Waits \
-                    for the load, then returns the page's snapshot, as browser_snapshot does.
+                    Opens a page in your chat's browser, which the user sees beside the chat, and returns its snapshot. \
+                    Use the browser_* tools for web work and browsing, not computer use or another browser, unless the user \
+                    names one.
                     """,
                 properties: [
-                    "url": ToolSchema.string("The address, such as https://example.com, localhost:3000 or /path/to/index.html."),
-                    "device": ["type": "string", "enum": Self.devices, "description": "Lay the page out as this device, as browser_viewport does."],
+                    "url": ToolSchema.string("Such as https://example.com, localhost:3000 or a file path."),
+                    "device": ToolSchema.choice(Self.devices),
                 ],
-                required: ["url"], audience: .localAgents, reply: open
+                required: ["url"], audience: .localAgents, alwaysLoads: true, reply: open
             ),
             Tool(
                 name: "browser_snapshot",
                 description: """
-                    Reads your chat's browser page as text: its URL, viewport, the console errors, failed requests and \
-                    downloads since you last looked, then an outline with one element per line (role, name, state) and a \
-                    ref such as e12 for each one you can act on. Refs last until the next snapshot or action. Work from \
-                    this text; add a screenshot only when how the page looks matters, such as checking a design.
+                    Reads the page as a text outline: one element per line with a ref, such as e12, for each you can act \
+                    on, after the console errors, failed requests and downloads since you last looked. Refs last until \
+                    the next snapshot or action.
                     """,
                 properties: [
-                    "scope": ["type": "string", "enum": ["page", "viewport"], "description": "The whole page (default), or only what's on screen."],
-                    "screenshot": ["type": "string", "enum": ["viewport", "page", "element"],
-                                   "description": "Also return a PNG of what's on screen, the whole page, or the element `ref` names. It's saved too, for showing in your reply."],
-                    "ref": ToolSchema.string("For an element screenshot: the element's ref."),
+                    "scope": ToolSchema.choice(["page", "viewport"], "Default page."),
+                    "screenshot": ToolSchema.choice(["viewport", "page", "element"],
+                                                    "Also return a PNG, saved to a file too. Only when how it looks matters."),
+                    "ref": ToolSchema.string("For an element screenshot."),
                 ],
                 audience: .localAgents, reply: snapshot
             ),
             Tool(
                 name: "browser_act",
                 description: """
-                    Acts on your chat's browser page with real mouse and keyboard events, waits for what it sets off \
-                    (loads, requests, the page settling), then returns the new snapshot of what's on screen. Target an \
-                    element by `ref` from the latest snapshot or a CSS `selector`, or a point with x and y in CSS pixels \
-                    of the visible page (for canvases). click (click_count 2 or 3), double_click, right_click; hover; \
-                    type `text` into the element, or what has focus, with `clear` to replace its text and `submit` to \
-                    press Enter after; press one `key` (Enter, Tab, Escape, Backspace, ArrowDown, a letter…) with \
-                    `modifiers`, such as Meta+a; select `values` of a <select> by value or label; scroll by delta_y and \
-                    delta_x at the element or the middle of the page, or with no delta scroll the element into view; \
-                    drag the element onto `to_ref` or `to_selector`; upload absolute `files` through a file input or the \
-                    button that opens one; back, forward, reload. Dialogs the action opens are accepted unless `dialog` \
-                    is dismiss. Hover moves the pointer there and runs the page's hover events, but CSS :hover \
-                    styles may not show; drag runs page events. `steps` runs several actions in order (each an object \
-                    with these fields, refs from the snapshot before), waiting for the page between them, and returns \
-                    one snapshot at the end; a step that fails stops the batch.
+                    Acts on the page with real mouse and keyboard events, waits for it to settle, and returns a snapshot. \
+                    Target an element by ref or selector, or a point by x and y. scroll with no delta scrolls the element \
+                    into view. hover runs the page's events but may not show CSS :hover. `steps` runs several actions, \
+                    all using refs from the snapshot before, and stops at the first that fails.
                     """,
                 properties: [
-                    "action": ["type": "string", "enum": ["click", "double_click", "right_click", "hover", "type", "press", "select", "scroll",
-                                                          "drag", "upload", "back", "forward", "reload"]],
+                    "action": ToolSchema.choice(["click", "double_click", "right_click", "hover", "type", "press", "select", "scroll",
+                                                 "drag", "upload", "back", "forward", "reload"]),
                     "steps": ["type": "array", "items": ["type": "object"], "maxItems": 30,
-                              "description": "Up to 30 actions to run in order instead of one, each with action and its fields."],
-                    "ref": ToolSchema.string("The element's ref from the latest snapshot, such as e12."),
-                    "selector": ToolSchema.string("A CSS selector for the element, instead of ref."),
-                    "x": ToolSchema.number("A point to act at instead of an element: CSS pixels from the visible page's left."),
-                    "y": ToolSchema.number("CSS pixels from the visible page's top."),
-                    "to_ref": ToolSchema.string("For drag: the element to drop on."),
-                    "to_selector": ToolSchema.string("For drag: a CSS selector for the element to drop on."),
-                    "text": ToolSchema.string("For type: the text to enter."),
-                    "clear": ToolSchema.boolean("For type: replace the field's text rather than add to it."),
+                              "description": "Actions to run in order instead of one, each an object with action and its fields."],
+                    "ref": ToolSchema.string(),
+                    "selector": ToolSchema.string("CSS."),
+                    "x": ToolSchema.number("CSS pixels in the visible page."),
+                    "y": ToolSchema.number(),
+                    "to_ref": ToolSchema.string("For drag."),
+                    "to_selector": ToolSchema.string("For drag."),
+                    "text": ToolSchema.string("For type."),
+                    "clear": ToolSchema.boolean("For type: replace the field's text."),
                     "submit": ToolSchema.boolean("For type: press Enter after."),
-                    "key": ToolSchema.string("For press: a key name, such as Enter, or one character."),
-                    "modifiers": ["type": "array", "items": ["type": "string", "enum": ["Alt", "Control", "Meta", "Shift"]],
-                                  "description": "For click and press: keys held down. Meta is Command."],
-                    "values": ToolSchema.strings("For select: the options to select, by value or label."),
-                    "files": ToolSchema.strings("For upload: absolute paths of the files to choose."),
-                    "click_count": ToolSchema.integer("For click: 1 to 3 (default 1)."),
-                    "delta_x": ToolSchema.number("For scroll: CSS pixels to the right."),
-                    "delta_y": ToolSchema.number("For scroll: CSS pixels down."),
-                    "dialog": ["type": "string", "enum": ["accept", "dismiss"], "description": "How to answer an alert, confirm or prompt the action opens (default accept)."],
-                    "prompt_text": ToolSchema.string("For a prompt the action opens: the text to answer with."),
-                    "snapshot": ["type": "string", "enum": ["viewport", "page", "none"],
-                                 "description": "What to return after: what's on screen (default), the whole page, or only the URL and news."],
+                    "key": ToolSchema.string("For press: such as Enter, ArrowDown or a character."),
+                    "modifiers": ["type": "array", "items": ToolSchema.choice(["Alt", "Control", "Meta", "Shift"]),
+                                  "description": "For click and press. Meta is Command."],
+                    "values": ToolSchema.strings("For select: by value or label."),
+                    "files": ToolSchema.strings("For upload: absolute paths, through a file input or the button that opens one."),
+                    "click_count": ToolSchema.integer("1 to 3."),
+                    "delta_x": ToolSchema.number(),
+                    "delta_y": ToolSchema.number(),
+                    "dialog": ToolSchema.choice(["accept", "dismiss"], "For dialogs the action opens. Default accept."),
+                    "prompt_text": ToolSchema.string(),
+                    "snapshot": ToolSchema.choice(["viewport", "page", "none"], "Default viewport; none: only the URL and new logs."),
                 ],
                 audience: .localAgents, reply: act
             ),
             Tool(
                 name: "browser_wait_for",
-                description: """
-                    Waits until your chat's browser page shows `text`, no longer shows `text_gone`, has a visible element \
-                    for `selector` or none for `selector_gone`, and its URL contains `url_contains`: all you give. Then \
-                    returns the snapshot of what's on screen. Use it after starting something slow, rather than sleeping.
-                    """,
+                description: "Waits until the page meets every condition given, then returns a snapshot.",
                 properties: [
-                    "text": ToolSchema.string("Text the page should show."),
-                    "text_gone": ToolSchema.string("Text the page should no longer show."),
-                    "selector": ToolSchema.string("A CSS selector for an element that should be visible."),
-                    "selector_gone": ToolSchema.string("A CSS selector for an element that should be gone or hidden."),
-                    "url_contains": ToolSchema.string("Part of the URL to wait for."),
-                    "timeout_seconds": ToolSchema.number("How long to wait (default 10, at most 60)."),
+                    "text": ToolSchema.string(),
+                    "text_gone": ToolSchema.string(),
+                    "selector": ToolSchema.string("Visible."),
+                    "selector_gone": ToolSchema.string("Gone or hidden."),
+                    "url_contains": ToolSchema.string(),
+                    "timeout_seconds": ToolSchema.number("Default 10, at most 60."),
                 ],
                 audience: .localAgents, reply: waitFor
             ),
             Tool(
                 name: "browser_logs",
-                description: """
-                    Reads your chat's browser console (every level) or its network requests (the page's own loads, \
-                    fetch and XHR calls with status and timing, failed loads, downloads), new since you last read them \
-                    here unless `all`. Pass a request's id to see it in full with its request and response bodies.
-                    """,
+                description: "Reads the page's console or network log, new since you last read it.",
                 properties: [
-                    "kind": ["type": "string", "enum": ["console", "network"], "description": "Which log (default console)."],
-                    "all": ToolSchema.boolean("Everything kept (the latest 300), not only what's new."),
-                    "problems_only": ToolSchema.boolean("Only errors and warnings, or failed requests."),
-                    "request": ToolSchema.string("A request's id, from the network log, to read in full."),
+                    "kind": ToolSchema.choice(["console", "network"], "Default console."),
+                    "all": ToolSchema.boolean("Everything kept (the latest 300)."),
+                    "problems_only": ToolSchema.boolean(),
+                    "request": ToolSchema.string("A request ID, to read it in full with its bodies."),
                 ],
                 audience: .localAgents, reply: logs
             ),
             Tool(
                 name: "browser_evaluate",
-                description: """
-                    Runs JavaScript in your chat's browser page as the body of an async function; `return` a JSON value \
-                    to read it, up to 64 KB. Use it to read what the snapshot leaves out or check the page's state, such \
-                    as storage or computed styles; use browser_act for input a person would make.
-                    """,
-                properties: ["script": ToolSchema.string("The function body, such as `return localStorage.getItem('token')`.")],
+                description: "Runs JavaScript in the page as an async function body; `return` a JSON value (up to 64 KB) to read it.",
+                properties: ["script": ToolSchema.string()],
                 required: ["script"], audience: .localAgents, reply: evaluate
             ),
             Tool(
                 name: "browser_viewport",
-                description: """
-                    Sets the size your chat's browser lays pages out at, to test a layout: a `device` (phones and \
-                    tablets also get that device's user agent, and the page reloads), or `width` and `height` in CSS \
-                    pixels. reset fills wherever the page shows again. The user sees it scaled to fit.
-                    """,
+                description: "Sets the size the browser lays pages out at. A phone or tablet also gets its user agent, and the page reloads.",
                 properties: [
-                    "device": ["type": "string", "enum": Self.devices],
-                    "landscape": ToolSchema.boolean("Turn the device sideways."),
-                    "width": ToolSchema.number("CSS pixels wide, instead of a device."),
-                    "height": ToolSchema.number("CSS pixels tall."),
+                    "device": ToolSchema.choice(Self.devices),
+                    "landscape": ToolSchema.boolean(),
+                    "width": ToolSchema.number("CSS pixels, instead of a device."),
+                    "height": ToolSchema.number(),
                     "reset": ToolSchema.boolean("Fill the view again."),
                 ],
                 audience: .localAgents, reply: setViewport
