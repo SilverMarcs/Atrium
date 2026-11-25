@@ -6,6 +6,24 @@
         <description>Diffs updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.82</title>
+            <pubDate>Wed, 25 Nov 2026 13:38:14 +0000</pubDate>
+            <sparkle:version>147</sparkle:version>
+            <sparkle:shortVersionString>1.3.82</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul>
+<li>Add Browser, Simulator and Secret Requests switches to Integrations</li>
+<li>Show the agent&#x27;s sparkles in the browser window&#x27;s toolbar</li>
+<li>Reduce task row terminal glyph size</li>
+<li>Open web links and HTML files in the chat&#x27;s browser</li>
+</ul>]]></description>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.82/Diffs.dmg"
+                length="13771996"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="TvVBdUNOJzSNJsnhqiEfz2gk1e2OkVZfsf1xnH+b7KP74oPq/+yVq9Z5iNpaTOgBRT34EBevYgePRgVgqJsRAg==" />
+        </item>
+        <item>
             <title>Version 1.3.81</title>
             <pubDate>Wed, 25 Nov 2026 07:35:57 +0000</pubDate>
             <sparkle:version>146</sparkle:version>
