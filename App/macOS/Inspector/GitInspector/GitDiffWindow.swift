@@ -41,6 +41,7 @@ struct GitDiffWindow: View {
     @State private var selectedID: GitComparedFile.ID?
     @State private var loadError: String?
     @AppStorage(DiffLayout.key) private var defaultLayout = DiffLayout.unified
+    @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
     @Environment(\.openURL) private var openURL
     /// This window's layout once switched in its toolbar; nil follows Settings.
     @State private var chosenLayout: DiffLayout?
@@ -186,6 +187,8 @@ struct GitDiffWindow: View {
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .frame(minWidth: 900, minHeight: 560)
+        // Diffs here use the bottom sheet's size, which follows the chat's.
+        .environment(\.editorFontSize, EditorFontSize.matching(chat: chatFontSize))
         .task(id: item.id) {
             await load()
             await loadBaseChoices()
