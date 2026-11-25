@@ -147,7 +147,8 @@ struct HostTools {
                         "1 to \(SecretRequests.longestWait.components.seconds), default \(SecretRequests.defaultWait.components.seconds)."),
                     "client_request_id": ToolSchema.string("Repeating a call with it returns the first call's answer."),
                 ],
-                required: ["label", "reason"], audience: .localAgents, alwaysLoads: true, run: requestSecret
+                required: ["label", "reason"], audience: .localAgents, isEnabled: { $0.isSecretRequestsEnabled }, alwaysLoads: true,
+                run: requestSecret
             ),
             Tool(
                 name: ChatPages.toolName,

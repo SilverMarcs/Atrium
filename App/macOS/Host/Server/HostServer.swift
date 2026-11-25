@@ -218,8 +218,11 @@ final class HostServer {
             },
             refreshTranscript: { [weak self] id in self?.feeds[.transcript(taskID: id)]?.refresh() }
         ).tools)
-        tools.register(BrowserTools(browsers: browsers).tools)
-        tools.register(SimulatorTools(simulators: simulators).tools)
+        tools.register(BrowserTools(browsers: browsers).tools, isEnabled: { $0.isBrowserEnabled })
+        // Once simulators are listed, a Mac without Xcode stops offering their tools.
+        tools.register(SimulatorTools(simulators: simulators).tools, isEnabled: { [simulators] in
+            $0.isSimulatorEnabled && simulators.isAvailable
+        })
         bridge.onMCP = { [tools] body in await tools.handle(body, as: .localAgent) }
         // Agents still running from before a relaunch call the tools at the saved endpoint.
         Task { _ = try? await bridge.start() }

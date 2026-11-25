@@ -119,11 +119,7 @@ struct SettingsView: View {
 
     private func sidebarRow(for pane: SettingsPane) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: pane.symbolName)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 20, height: 20)
-                .background(pane.badgeColor.gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            SettingsSymbolBadge(symbolName: pane.symbolName, color: pane.badgeColor)
 
             Text(pane.title)
                 .lineLimit(1)
@@ -131,6 +127,20 @@ struct SettingsView: View {
         .padding(.vertical, 1)
         .badge(pane == .agents ? globalAgents.unlinkedTargetCount : 0)
         .tag(pane)
+    }
+}
+
+/// A white symbol on a rounded color square, as System Settings marks its panes and rows.
+struct SettingsSymbolBadge: View {
+    let symbolName: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 20, height: 20)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
     }
 }
 

@@ -84,6 +84,15 @@ final class ToolServer {
         self.tools += tools
     }
 
+    /// Registers a group of tools that one Settings switch turns on or off together.
+    func register(_ tools: [Tool], isEnabled: @escaping (IntegrationSettings) -> Bool) {
+        register(tools.map { tool in
+            var tool = tool
+            tool.isEnabled = isEnabled
+            return tool
+        })
+    }
+
     /// The tools a credential may use now.
     func tools(for credential: Credential) -> [Tool] {
         tools.filter { allows($0, for: credential) }
