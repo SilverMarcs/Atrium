@@ -239,8 +239,8 @@ private struct SimulatorBar: View {
             if let taskID {
                 SimulatorPicker(taskID: taskID, current: session?.device) {
                     HStack(spacing: 5) {
-                        Image(systemName: session?.device.family.symbol ?? "iphone")
-                            .foregroundStyle(.secondary)
+                        // Boxed like the browser bar's symbols, so both bars' icons line up.
+                        BrowserBarSymbol(symbol: session?.device.family.symbol ?? "iphone")
                         Text(session?.device.name ?? "Choose Simulator")
                             .lineLimit(1)
                         if let runtime = session?.device.runtime {
@@ -281,9 +281,8 @@ private struct SimulatorBar: View {
             .help("More")
             .disabled(session == nil)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .frame(minHeight: 26)
+        .padding(.horizontal, 7)
+        .frame(height: InspectorBar.height)
         .background(.quaternary, in: Capsule())
         .animation(.easeOut(duration: 0.2), value: taskID.map { app.simulators.agentUsing.contains($0) })
         .task(id: session?.udid) {

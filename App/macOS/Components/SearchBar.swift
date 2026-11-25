@@ -46,7 +46,7 @@ struct SearchBar<Leading: View, Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, 7)
-        .padding(.vertical, 5)
+        .frame(height: InspectorBar.height)
         .background(.quaternary, in: Capsule())
         .task(id: focusTrigger) {
             guard focusTrigger > 0 else { return }
@@ -54,6 +54,13 @@ struct SearchBar<Leading: View, Trailing: View>: View {
             isFocused = true
         }
     }
+}
+
+/// The capsule bars along the top of the inspector's tabs, such as the
+/// search bars and the Simulator tab's picker, all take one height, so
+/// switching tabs never moves what's below them.
+enum InspectorBar {
+    static let height: CGFloat = 25
 }
 
 /// The magnifying glass a search bar starts with, which also sets its height.
