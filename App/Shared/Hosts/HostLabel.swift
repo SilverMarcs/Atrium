@@ -16,7 +16,7 @@ struct HostLabel: View {
 
     private var status: String {
         if host.isLocal { return "This Mac" }
-        if host.needsAppUpdate { return "Update Atrium to use this host" }
+        if host.needsAppUpdate { return "Update Diffs to use this host" }
         switch host.state {
         case .connected: return host.route == .localNetwork ? "Connected on this network" : "Connected through the relay"
         case .connecting: return "Connecting…"

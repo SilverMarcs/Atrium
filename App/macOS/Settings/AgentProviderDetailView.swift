@@ -72,7 +72,7 @@ struct AgentProviderDetailView: View {
                 Text("Installation")
             } footer: {
                 HStack {
-                    Text("Atrium finds \(provider.name) on its own once it’s installed.")
+                    Text("Diffs finds \(provider.name) on its own once it’s installed.")
                     Spacer()
                     Link("Installation Guide", destination: provider.installationGuide)
                 }

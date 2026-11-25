@@ -357,7 +357,7 @@ struct BrowserTools {
     /// Saves a screenshot where the agent can show it in its reply, beside
     /// the agent's downloads in the system's temporary folder.
     private func save(_ png: Data) throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Atrium Browser Screenshots", directoryHint: .isDirectory)
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Diffs Browser Screenshots", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appending(path: "\(UUID().uuidString.prefix(8)).png")
         try png.write(to: file)
@@ -365,7 +365,7 @@ struct BrowserTools {
     }
 
     private func caller(of call: ToolCall) throws -> String {
-        guard let caller = call.caller else { throw Failure("Atrium couldn't tell which of its chats this call comes from.") }
+        guard let caller = call.caller else { throw Failure("Diffs couldn't tell which of its chats this call comes from.") }
         return caller
     }
 

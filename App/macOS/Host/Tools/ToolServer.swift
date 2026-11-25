@@ -165,7 +165,7 @@ final class ToolServer {
         (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
     }
 
-    private static let instructions = "Atrium runs Claude, Codex and Antigravity sessions on the user's Mac."
+    private static let instructions = "Diffs runs Claude, Codex and Antigravity sessions on the user's Mac."
 }
 
 extension ToolServer.Tool {

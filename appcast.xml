@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
-        <title>Atrium</title>
+        <title>Diffs</title>
         <link>https://github.com/SilverMarcs/Atrium/releases</link>
-        <description>Atrium updates</description>
+        <description>Diffs updates</description>
         <language>en</language>
         <item>
             <title>Version 1.3.80</title>

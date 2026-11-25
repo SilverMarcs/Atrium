@@ -39,9 +39,9 @@ struct AgentInstructions {
     }
 
     private static let base = """
-        # Atrium
+        # Diffs
 
-        Atrium shows this chat to the user on Mac, iPad and iPhone.
+        Diffs shows this chat to the user on Mac, iPad and iPhone.
 
         To show an image, such as a screenshot, plot or generated picture, put it in your reply as Markdown: `![short caption](/absolute/path.png)`. It loads from this Mac on every device whenever the chat is viewed, so give each image its own file name and leave it in place: overwriting or deleting the file changes or breaks earlier messages.
         """

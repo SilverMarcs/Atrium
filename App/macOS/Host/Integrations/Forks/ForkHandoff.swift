@@ -67,7 +67,7 @@ nonisolated enum ForkHandoff {
 
     private static func preamble(from provider: AgentProvider, isPartial: Bool) -> String {
         let name = provider.name
-        return "This chat is a fork, made in Atrium, of the user's conversation with \(name). "
+        return "This chat is a fork, made in Diffs, of the user's conversation with \(name). "
             + "Its most recent part follows, oldest first and as the user saw it: what they and \(name) wrote, with tool calls counted but not shown. "
             + (isPartial ? "Earlier messages were left out to fit. " : "")
             + "Continue the conversation from there with the user's message that comes after it, checking the workspace for what earlier tool calls did. "

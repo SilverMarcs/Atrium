@@ -8,7 +8,7 @@ struct AtriumApp: App {
     @State private var dictationSettings = DictationSettings()
 
     var body: some Scene {
-        Window("Atrium", id: "atrium") {
+        Window("Diffs", id: "atrium") {
             ContentView()
                 .environment(app)
                 .environment(app.hosts)
@@ -38,7 +38,7 @@ struct AtriumApp: App {
         .defaultSize(width: 1200, height: 800)
         .restorationBehavior(.disabled)
 
-        Window("About Atrium", id: "about") {
+        Window("About Diffs", id: "about") {
             AboutView()
                 .containerBackground(.regularMaterial, for: .window)
                 .toolbar(removing: .title)

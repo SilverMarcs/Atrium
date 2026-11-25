@@ -12,7 +12,7 @@ struct PairingScreen: View {
         Form {
             Section {
                 Label {
-                    Text("Open Atrium → Settings → Remote on your Mac and turn on remote access.")
+                    Text("Open Diffs → Settings → Remote on your Mac and turn on remote access.")
                 } icon: {
                     Image(systemName: "macbook")
                 }
@@ -30,7 +30,7 @@ struct PairingScreen: View {
             Section {
                 if let url = URL(string: "https://github.com/SilverMarcs/Atrium/releases/latest") {
                     Link(destination: url) {
-                        Label("Download Atrium for Mac", systemImage: "arrow.down.circle")
+                        Label("Download Diffs for Mac", systemImage: "arrow.down.circle")
                     }
                 }
             }
@@ -47,7 +47,7 @@ struct PairingScreen: View {
 
             PairingStatusSection()
         }
-        .navigationTitle("Atrium")
+        .navigationTitle("Diffs")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

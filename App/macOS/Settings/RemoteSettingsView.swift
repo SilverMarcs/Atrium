@@ -23,7 +23,7 @@ struct RemoteSettingsView: View {
                 } label: {
                     Label("Pair Host…", systemImage: "plus")
                 }
-                .help("Pair with another Mac running Atrium")
+                .help("Pair with another Mac running Diffs")
 
                 if let url = URL(string: "https://apps.apple.com/app/id6765783787") {
                     Button {
@@ -31,7 +31,7 @@ struct RemoteSettingsView: View {
                     } label: {
                         Label("Get iOS App", systemImage: "iphone")
                     }
-                    .help("Get the Atrium iOS Companion App")
+                    .help("Get the Diffs iOS Companion App")
                 }
             }
         }
@@ -94,7 +94,7 @@ private struct ThisMacSections: View {
         } header: {
             Text("This Mac")
         } footer: {
-            Text("Your iPhone and other Macs running Atrium connect to this Mac with end-to-end encryption and show its name and icon.")
+            Text("Your iPhone and other Macs running Diffs connect to this Mac with end-to-end encryption and show its name and icon.")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sectionActions {
@@ -127,7 +127,7 @@ private struct ThisMacSections: View {
             } header: {
                 Text("Pair a Device")
             } footer: {
-                Text("Scan this with your iPhone’s Camera, or paste the link into Atrium on another Mac. Each link works once.")
+                Text("Scan this with your iPhone’s Camera, or paste the link into Diffs on another Mac. Each link works once.")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -174,7 +174,7 @@ private struct HostsSection: View {
         } header: {
             Text("Other Hosts")
         } footer: {
-            Text("Use + in the toolbar to paste a pairing link from another Mac’s Atrium Settings.")
+            Text("Use + in the toolbar to paste a pairing link from another Mac’s Diffs Settings.")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -191,7 +191,7 @@ private struct PairHostSheet: View {
             Text("Pair a Host")
                 .font(.headline)
 
-            Text("Copy the pairing link from Settings → Remote on another Mac running Atrium and paste it below.")
+            Text("Copy the pairing link from Settings → Remote on another Mac running Diffs and paste it below.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -226,7 +226,7 @@ private struct PairHostSheet: View {
     private func pair() {
         guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
               let parsed = PairingLink(url: url) else {
-            hosts.pairingFailed(message: "That isn’t an Atrium pairing link.")
+            hosts.pairingFailed(message: "That isn’t a Diffs pairing link.")
             return
         }
         hosts.pair(with: parsed)

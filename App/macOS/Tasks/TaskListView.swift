@@ -128,7 +128,7 @@ struct TaskListView: View {
                 ContentUnavailableView {
                     Label("No Agents Found", systemImage: "puzzlepiece.extension")
                 } description: {
-                    Text("Install Claude Code or Codex. Atrium finds them on its own.")
+                    Text("Install Claude Code or Codex. Diffs finds them on its own.")
                 } actions: {
                     Button("Check Again") {
                         for host in hosts.visibleHosts { host.send(.refreshTasks) }

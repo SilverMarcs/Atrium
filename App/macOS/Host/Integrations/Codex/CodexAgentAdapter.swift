@@ -106,7 +106,7 @@ final class CodexAgentAdapter: AgentProviderAdapter {
         try await socket.connect(path: path)
         socketPath = path
         do {
-            _ = try await request("initialize", params: ["clientInfo": ["name": "atrium", "title": "Atrium", "version": "1.0"], "capabilities": ["experimentalApi": true]])
+            _ = try await request("initialize", params: ["clientInfo": ["name": "atrium", "title": "Diffs", "version": "1.0"], "capabilities": ["experimentalApi": true]])
             socket.send(try JSONSerialization.data(withJSONObject: ["method": "initialized"]))
             connected = true
             await readDefaults()

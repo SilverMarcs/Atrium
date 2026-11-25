@@ -79,7 +79,7 @@ struct ContentView: View {
         // and ChatGPT's request to connect asks first.
         .onOpenURL { url in app.handle(url) }
         .alert(
-            "Connect ChatGPT to Atrium?",
+            "Connect ChatGPT to Diffs?",
             isPresented: Binding(get: { app.pendingAgentConnection != nil }, set: { if !$0 { app.pendingAgentConnection = nil } }),
             presenting: app.pendingAgentConnection
         ) { request in

@@ -53,7 +53,7 @@ struct ProjectsSheet: View {
                     ContentUnavailableView(
                         "No Projects",
                         systemImage: "folder",
-                        description: Text(host.isLocal ? "Add a folder to start tasks in it." : "Add projects in Atrium on \(host.name).")
+                        description: Text(host.isLocal ? "Add a folder to start tasks in it." : "Add projects in Diffs on \(host.name).")
                     )
                 }
             }

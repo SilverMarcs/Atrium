@@ -83,7 +83,7 @@ struct ProjectFoldersSheet: View {
     private var note: Text {
         Text(host.isLocal
             ? "Agents start in the primary folder and commands run there. Drag a folder to the top to make it primary."
-            : "Agents start in the primary folder and commands run there. Change folders in Atrium on \(host.name).")
+            : "Agents start in the primary folder and commands run there. Change folders in Diffs on \(host.name).")
     }
 
     private func send(_ folders: [String]) {

@@ -1,6 +1,6 @@
-# Atrium relay
+# Diffs relay
 
-The Cloudflare Worker that joins the Atrium iPhone app (or another Mac) to a
+The Cloudflare Worker that joins the Diffs iPhone app (or another Mac) to a
 Mac, sends the Mac's task alerts to phones through APNs, and serves the MCP
 gateway ChatGPT connects to. It runs at `wss://atrium-relay.lynksphere.com`,
 which the apps have built in (`HostProtocol.relayURL`). See `src/index.ts` for

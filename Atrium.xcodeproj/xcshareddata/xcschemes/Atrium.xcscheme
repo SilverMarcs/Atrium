@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "08D10C492F64897100754649"
-               BuildableName = "Atrium.app"
+               BuildableName = "Diffs.app"
                BlueprintName = "Atrium"
                ReferencedContainer = "container:Atrium.xcodeproj">
             </BuildableReference>
@@ -38,7 +38,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "08D10C492F64897100754649"
-            BuildableName = "Atrium.app"
+            BuildableName = "Diffs.app"
             BlueprintName = "Atrium"
             ReferencedContainer = "container:Atrium.xcodeproj">
          </BuildableReference>
@@ -55,7 +55,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "08D10C492F64897100754649"
-            BuildableName = "Atrium.app"
+            BuildableName = "Diffs.app"
             BlueprintName = "Atrium"
             ReferencedContainer = "container:Atrium.xcodeproj">
          </BuildableReference>

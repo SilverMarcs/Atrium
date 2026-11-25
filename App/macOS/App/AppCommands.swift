@@ -23,7 +23,7 @@ struct AppCommands: Commands {
         // Replace the default "About Atrium" item with one that opens our
         // custom About window scene.
         CommandGroup(replacing: .appInfo) {
-            Button("About Atrium") {
+            Button("About Diffs") {
                 openWindow(id: "about")
             }
         }

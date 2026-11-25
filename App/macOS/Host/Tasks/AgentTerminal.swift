@@ -10,7 +10,7 @@ import AppKit
 @MainActor
 enum AgentTerminal {
     static func open(_ launch: AgentLaunch, in directory: String) async throws {
-        let script = FileManager.default.temporaryDirectory.appending(path: "Atrium-\(UUID().uuidString).command")
+        let script = FileManager.default.temporaryDirectory.appending(path: "Diffs-\(UUID().uuidString).command")
         let command = ([launch.executable] + launch.arguments).map(quoted).joined(separator: " ")
         // The script removes itself as it starts, and finds the agent where Atrium does.
         let contents = """

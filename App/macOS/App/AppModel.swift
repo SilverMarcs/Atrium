@@ -72,7 +72,7 @@ final class AppModel {
             let access = PermissionMode(rawValue: level).map(AgentAccess.upTo) ?? .readOnly
             Task {
                 let redirect = try? await AgentGateway.approve(request, access: access, on: server)
-                FileHandle.standardError.write(Data("Atrium agent redirect: \(redirect?.absoluteString ?? "failed")\n".utf8))
+                FileHandle.standardError.write(Data("Diffs agent redirect: \(redirect?.absoluteString ?? "failed")\n".utf8))
             }
             return
         }

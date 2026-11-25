@@ -87,7 +87,7 @@ final class AntigravityConnection {
             _ = try await request("initialize", [
                 "protocolVersion": 1,
                 "clientCapabilities": ["elicitation": ["form": [String: Any]()]],
-                "clientInfo": ["name": "Atrium", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1"],
+                "clientInfo": ["name": "Diffs", "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1"],
             ], timeout: .seconds(30))
         } catch {
             stop()
@@ -142,7 +142,7 @@ final class AntigravityConnection {
 
     /// Answers a request Atrium doesn't take, such as reading a file for the agent.
     func refuse(_ request: AntigravityRequest) {
-        reply(to: request, ["error": ["code": -32601, "message": "Atrium doesn’t handle \(request.method)."]])
+        reply(to: request, ["error": ["code": -32601, "message": "Diffs doesn’t handle \(request.method)."]])
     }
 
     private func reply(to request: AntigravityRequest, _ body: [String: Any]) {

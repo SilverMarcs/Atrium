@@ -358,13 +358,13 @@ final class HostServer {
         switch request {
         case .pair(let secret, let device):
             guard let token = pairing.pair(secret: secret, device: device) else {
-                return .failed(message: "That pairing link has expired. Use the current one from Atrium Settings on \(hostName).")
+                return .failed(message: "That pairing link has expired. Use the current one from Diffs Settings on \(hostName).")
             }
             authenticate(connection, as: device)
             return .paired(token: token)
         case .authenticate(let token, let deviceID):
             guard let paired = pairing.authenticate(token: token, deviceID: deviceID) else {
-                return .failed(message: "This device is no longer paired with \(hostName). Pair it again from Atrium Settings there.")
+                return .failed(message: "This device is no longer paired with \(hostName). Pair it again from Diffs Settings there.")
             }
             authenticate(connection, as: ClientDevice(id: paired.id, name: paired.name, kind: paired.kind ?? .app))
             return .done
@@ -643,11 +643,11 @@ final class HostServer {
         localListener.onChannel = { [weak self] channel in self?.accept(channel) }
         localListener.start(name: hostName)
         #if DEBUG
-        FileHandle.standardError.write(Data("Atrium pairing link: \(pairingLink.url?.absoluteString ?? "")\n".utf8))
+        FileHandle.standardError.write(Data("Diffs pairing link: \(pairingLink.url?.absoluteString ?? "")\n".utf8))
         #endif
         // A sleeping Mac can't answer the relay.
         awakeActivity = ProcessInfo.processInfo.beginActivity(
-            options: .idleSystemSleepDisabled, reason: "Atrium remote access is on"
+            options: .idleSystemSleepDisabled, reason: "Diffs remote access is on"
         )
     }
 

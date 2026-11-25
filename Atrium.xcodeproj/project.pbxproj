@@ -46,8 +46,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		08D10C4A2F64897100754649 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		0A7C00000000000000000001 /* Atrium.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atrium.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		08D10C4A2F64897100754649 /* Diffs.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Diffs.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A7C00000000000000000001 /* Diffs.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Diffs.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A7C00000000000000000201 /* AtriumNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AtriumNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A7C00000000000000000210 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		0A7C00000000000000000211 /* NotificationDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelivery.swift; sourceTree = "<group>"; };
@@ -153,8 +153,8 @@
 		08D10C4B2F64897100754649 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				08D10C4A2F64897100754649 /* Atrium.app */,
-				0A7C00000000000000000001 /* Atrium.app */,
+				08D10C4A2F64897100754649 /* Diffs.app */,
+				0A7C00000000000000000001 /* Diffs.app */,
 				0A7C00000000000000000201 /* AtriumNotificationService.appex */,
 			);
 			name = Products;
@@ -200,7 +200,7 @@
 				08BEFC312F74722D009C3710 /* Highlightr */,
 			);
 			productName = Atrium;
-			productReference = 08D10C4A2F64897100754649 /* Atrium.app */;
+			productReference = 08D10C4A2F64897100754649 /* Diffs.app */;
 			productType = "com.apple.product-type.application";
 		};
 		0A7C00000000000000000005 /* AtriumiOS */ = {
@@ -228,7 +228,7 @@
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
 			);
 			productName = AtriumiOS;
-			productReference = 0A7C00000000000000000001 /* Atrium.app */;
+			productReference = 0A7C00000000000000000001 /* Diffs.app */;
 			productType = "com.apple.product-type.application";
 		};
 		0A7C00000000000000000200 /* AtriumNotificationService */ = {

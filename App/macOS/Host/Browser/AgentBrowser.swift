@@ -446,7 +446,7 @@ final class AgentBrowser {
     fileprivate func destination(for filename: String) -> URL {
         let folder = agentDialogs == nil
             ? URL.downloadsDirectory
-            : FileManager.default.temporaryDirectory.appending(path: "Atrium Browser Downloads", directoryHint: .isDirectory)
+            : FileManager.default.temporaryDirectory.appending(path: "Diffs Browser Downloads", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let base = (filename as NSString).deletingPathExtension, ext = (filename as NSString).pathExtension
         var url = folder.appending(path: filename)

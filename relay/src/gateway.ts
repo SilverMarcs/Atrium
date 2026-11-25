@@ -1,23 +1,23 @@
 /**
- * The MCP gateway: ChatGPT's way to a Mac's Atrium tools, over HTTPS with OAuth.
+ * The MCP gateway: ChatGPT's way to a Mac's Diffs tools, over HTTPS with OAuth.
  *
  *   GET  /.well-known/oauth-protected-resource   What protects /mcp, for ChatGPT to find the server below.
  *   GET  /.well-known/oauth-authorization-server The OAuth server: dynamic registration, PKCE codes, refresh.
  *   POST /oauth/register                         Registers ChatGPT as a client.
- *   GET  /oauth/authorize                        A page that opens Atrium on the Mac to approve the connection.
- *   POST /oauth/approve                          Atrium, once the user approved, hands over the device it paired.
+ *   GET  /oauth/authorize                        A page that opens Diffs on the Mac to approve the connection.
+ *   POST /oauth/approve                          Diffs, once the user approved, hands over the device it paired.
  *   POST /oauth/token                            Codes and refresh tokens for access tokens.
  *   POST /mcp                                    One MCP message, answered by the Mac.
  *
  * The gateway keeps nothing. What it issues (client IDs, codes and tokens) is
  * sealed with its own key and carries what it stands for: the Mac's ID and
- * public key, and the device and token Atrium paired for ChatGPT. Each MCP
+ * public key, and the device and token Diffs paired for ChatGPT. Each MCP
  * message opens a connection to the Mac's relay room as that device, the way
  * an iPhone does, encrypted against the Mac's key from here on; the Mac
  * decides what the device may call and answers, and the connection closes.
  * The gateway itself reads ChatGPT's messages and acts as the device, which
  * is why the Mac bounds the device by the access the user approved. Removing
- * the device in Atrium's Settings revokes every token for it.
+ * the device in Diffs’ Settings revokes every token for it.
  */
 
 import { NoiseInitiator, type CipherState } from "./noise";
@@ -30,7 +30,7 @@ export interface GatewayEnv {
   REDIRECT_HOSTS: string;
 }
 
-/** What a token stands for: a device Atrium paired, on one Mac. */
+/** What a token stands for: a device Diffs paired, on one Mac. */
 interface Grant {
   hostID: string;
   publicKey: string;
@@ -113,7 +113,7 @@ async function register(request: Request, env: GatewayEnv): Promise<Response> {
   const body = await request.json<{ redirect_uris?: unknown; client_name?: unknown }>().catch(() => ({}) as Record<string, unknown>);
   const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris.filter((uri): uri is string => typeof uri === "string") : [];
   if (!uris.length || !uris.every(uri => allowedRedirect(uri, env))) {
-    throw new OAuthError("invalid_redirect_uri", "Only ChatGPT can connect to Atrium.");
+    throw new OAuthError("invalid_redirect_uri", "Only ChatGPT can connect to Diffs.");
   }
   const name = typeof body.client_name === "string" ? body.client_name.slice(0, 100) : "ChatGPT";
   const clientID = await seal(env, { kind: "client", uris, name });
@@ -129,7 +129,7 @@ async function client(env: GatewayEnv, clientID: string | null): Promise<{ uris:
   return sealed as { uris: string[]; name: string };
 }
 
-/** The page ChatGPT opens to connect: it hands the request to Atrium on the Mac. */
+/** The page ChatGPT opens to connect: it hands the request to Diffs on the Mac. */
 async function authorize(url: URL, env: GatewayEnv): Promise<Response> {
   const params = url.searchParams;
   const registered = await client(env, params.get("client_id"));
@@ -144,17 +144,17 @@ async function authorize(url: URL, env: GatewayEnv): Promise<Response> {
   });
   const link = `atrium://agent?request=${encodeURIComponent(sealed)}`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect ${escapeHTML(registered.name)} to Atrium</title>
+<title>Connect ${escapeHTML(registered.name)} to Diffs</title>
 <style>body{font:16px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#222}
 @media(prefers-color-scheme:dark){body{background:#1c1c1e;color:#eee}}a.button{display:inline-block;padding:.6rem 1.2rem;border-radius:.6rem;background:#2f7d4f;color:#fff;text-decoration:none}</style>
-</head><body><h1>Connect ${escapeHTML(registered.name)} to Atrium</h1>
-<p>Open Atrium on your Mac, choose what ${escapeHTML(registered.name)} may do there, from reading sessions to handing them work, and approve. You can remove it any time in Atrium Settings → Remote.</p>
-<p><a class="button" href="${escapeHTML(link)}">Open Atrium</a></p>
-<p><small>Open this page on the Mac where Atrium runs. The request expires in 15 minutes.</small></p></body></html>`;
+</head><body><h1>Connect ${escapeHTML(registered.name)} to Diffs</h1>
+<p>Open Diffs on your Mac, choose what ${escapeHTML(registered.name)} may do there, from reading sessions to handing them work, and approve. You can remove it any time in Diffs Settings → Remote.</p>
+<p><a class="button" href="${escapeHTML(link)}">Open Diffs</a></p>
+<p><small>Open this page on the Mac where Diffs runs. The request expires in 15 minutes.</small></p></body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
-/** Atrium approved: it sends the device it paired for the request, and opens the redirect it gets back. */
+/** Diffs approved: it sends the device it paired for the request, and opens the redirect it gets back. */
 async function approve(request: Request, env: GatewayEnv): Promise<Response> {
   const body = await request.json<{ request?: string; grant?: Partial<Grant> }>().catch(() => ({}) as { request?: string; grant?: Partial<Grant> });
   const pending = body.request ? await unseal(env, body.request, "request") : undefined;
@@ -229,7 +229,7 @@ async function mcp(request: Request, env: GatewayEnv, origin: string): Promise<R
   } catch (error) {
     if (error instanceof MacError && error.revoked) return unauthorized();
     if (!(error instanceof MacError)) console.error("Reaching the Mac failed", error instanceof Error ? error.message : "unknown");
-    return rpcError(message.id, -32000, error instanceof MacError ? error.message : "Atrium on the Mac didn't answer.");
+    return rpcError(message.id, -32000, error instanceof MacError ? error.message : "Diffs on the Mac didn't answer.");
   }
 }
 
@@ -237,7 +237,7 @@ class MacError extends Error {
   constructor(message: string, readonly revoked = false) { super(message); }
 }
 
-const offline = "Atrium on the Mac isn't reachable. Make sure the Mac is awake, with Atrium running and remote access on.";
+const offline = "Diffs on the Mac isn't reachable. Make sure the Mac is awake, with Diffs running and remote access on.";
 
 /** Sends one MCP message to the Mac as the paired device, and returns its answer. */
 async function callMac(env: GatewayEnv, grant: Grant, message: Uint8Array): Promise<Uint8Array> {
@@ -263,8 +263,8 @@ async function callMac(env: GatewayEnv, grant: Grant, message: Uint8Array): Prom
     const authentication = await frames.request({ authenticate: { token: grant.token, deviceID: grant.deviceID } });
     if (authentication.failed) throw new MacError(String(authentication.failed.message ?? "Revoked"), true);
     const reply = await frames.request({ mcp: { message: base64(message) } });
-    if (reply.failed) throw new MacError(String(reply.failed.message ?? "Atrium couldn't answer."));
-    if (typeof reply.mcp?.message !== "string") throw new MacError("Atrium on the Mac needs an update to answer ChatGPT.");
+    if (reply.failed) throw new MacError(String(reply.failed.message ?? "Diffs couldn't answer."));
+    if (typeof reply.mcp?.message !== "string") throw new MacError("Diffs on the Mac needs an update to answer ChatGPT.");
     return decodeBase64(reply.mcp.message);
   } finally {
     clearTimeout(timer);
@@ -317,7 +317,7 @@ class Inbox {
 // deno-lint-ignore no-explicit-any
 type Reply = Record<string, any>;
 
-/** Requests and replies as Atrium frames them: JSON, one per sealed message. */
+/** Requests and replies as Diffs frames them: JSON, one per sealed message. */
 class Frames {
   private nextID = 0;
 

@@ -15,7 +15,7 @@ final class RelayClientChannel: HostChannel {
     var onHostOffline: (() -> Void)?
 
     /// Why pairing failed, which unlike a paired host's status has room to explain.
-    private static let offlineReason = "The host isn’t connected to the relay. Make sure it’s awake with remote access turned on in Atrium."
+    private static let offlineReason = "The host isn’t connected to the relay. Make sure it’s awake with remote access turned on in Diffs."
 
     private let socket: WebSocketChannel
     private let waitsForHost: Bool

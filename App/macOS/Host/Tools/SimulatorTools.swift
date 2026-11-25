@@ -225,7 +225,7 @@ struct SimulatorTools {
             try await session.type(text, submit: call.bool("submit") == true)
         case "key":
             let key = try call.required("key")
-            guard let stroke = SimulatorKeys.usage(named: key) else { throw Failure("Atrium doesn't know the key \(key).") }
+            guard let stroke = SimulatorKeys.usage(named: key) else { throw Failure("Diffs doesn't know the key \(key).") }
             let modifiers = call.strings("modifiers").compactMap(SimulatorKeys.modifierUsage)
             await SimulatorKeys.press(stroke.usage, modifiers: modifiers + (stroke.shift ? [SimulatorKeys.shift] : []), on: session.input)
         case "button":
@@ -307,7 +307,7 @@ struct SimulatorTools {
     }
 
     private func save(_ png: Data) throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Atrium Simulator Screenshots", directoryHint: .isDirectory)
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Diffs Simulator Screenshots", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appending(path: "\(UUID().uuidString.prefix(8)).png")
         try png.write(to: file)
@@ -318,7 +318,7 @@ struct SimulatorTools {
 private extension ToolServer.ToolCall {
     /// The chat a local agent calls from.
     func requiredCaller() throws -> String {
-        guard let caller else { throw ToolServer.Failure("Atrium couldn't tell which of its chats this call comes from.") }
+        guard let caller else { throw ToolServer.Failure("Diffs couldn't tell which of its chats this call comes from.") }
         return caller
     }
 }

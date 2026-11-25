@@ -67,7 +67,7 @@ struct HostTools {
                 description: """
                     Starts a session in a project; its agent sees only your prompt, so make it self-contained. Hand work \
                     to other providers' agents only this way, not through their CLIs: when it helps, to a few sessions \
-                    at most, and never work handed to you. An agent on this Mac then ends its turn: Atrium sends it the \
+                    at most, and never work handed to you. An agent on this Mac then ends its turn: Diffs sends it the \
                     session's questions as they come (answer with respond) and, once all its sessions are done, their \
                     results in one message; others follow it with read_session. To consult several models, give each the same brief asking for an approach \
                     without editing files, then combine the best ideas and say whose they were.
@@ -168,13 +168,13 @@ struct HostTools {
                     stack when narrow), .row (wrapping inline group), .stat-label and .stat-value in a .card, .btn, \
                     .btn-primary, .muted, .small, .num (right-aligned). Tables are styled. Tabs: a .tabs role=tablist of \
                     role=tab buttons whose aria-controls name role=tabpanel elements, one aria-selected=true and the \
-                    other panels hidden; Atrium switches them. data-tooltip on any element or SVG mark shows a tooltip. \
+                    other panels hidden; Diffs switches them. data-tooltip on any element or SVG mark shows a tooltip. \
                     <i data-symbol="chart.bar.fill"></i> draws any SF Symbol in the text's size and color.
                     Style: font weights 400 and 500; no custom font sizes (.small for secondary text, 12px SVG labels); \
                     at most one short heading. Series colors only on chart marks; text and axes in --foreground or \
                     --muted-foreground. Thin neutral gridlines, values labeled directly, a legend only for 2+ series.
                     Colors, for light and dark, never fixed ones: --foreground, --muted-foreground, --background (only \
-                    for marks cutting through others), --card, --muted, --border, --popover, --primary (Atrium's green) \
+                    for marks cutting through others), --card, --muted, --border, --popover, --primary (Diffs’ green) \
                     and --primary-foreground, --accent (soft green wash) and --accent-foreground, --success, --warning, \
                     --destructive, --viz-series-1 to 6. Also --font-sans, --font-mono, --radius.
                     """,
@@ -212,7 +212,7 @@ struct HostTools {
         var task = try session(try call.required("session"))
         if let seconds = call.int("wait_seconds"), seconds > 0 {
             if call.isLocal, call.caller != nil {
-                throw Failure("Don't wait on a session you handed work to: end your turn, and Atrium sends you its result as a new message.")
+                throw Failure("Don't wait on a session you handed work to: end your turn, and Diffs sends you its result as a new message.")
             }
             task = await waitForTurn(task.id, seconds: min(seconds, Self.maximumWait)) ?? task
         }
@@ -330,7 +330,7 @@ struct HostTools {
     // MARK: - The caller's own chat
 
     private func requestSecret(_ call: ToolCall) async throws -> String {
-        guard let caller = call.caller else { throw Failure("Atrium couldn't tell which of its chats this call comes from.") }
+        guard let caller = call.caller else { throw Failure("Diffs couldn't tell which of its chats this call comes from.") }
         let label = try call.required("label"), reason = try call.required("reason")
         let link = try call.string("url").map { text in
             guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil else {
@@ -409,7 +409,7 @@ struct HostTools {
         switch call.credential {
         case .localAgent:
             guard !linksCaller || call.caller != nil else {
-                throw Failure("Atrium couldn't tell which of its chats this call comes from, so it can't report back to it.")
+                throw Failure("Diffs couldn't tell which of its chats this call comes from, so it can't report back to it.")
             }
             return Actor(device: .localAgents, caller: linksCaller ? call.caller : nil)
         case .paired(let device, _):
@@ -478,7 +478,7 @@ struct HostTools {
 
     private func failure(_ reply: HostReply) -> Failure {
         if case .failed(let message) = reply { return Failure(message) }
-        return Failure("Atrium couldn't do that.")
+        return Failure("Diffs couldn't do that.")
     }
 
     private func json(_ value: some Encodable) throws -> String {

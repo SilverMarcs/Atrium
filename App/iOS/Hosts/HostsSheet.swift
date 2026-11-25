@@ -50,7 +50,7 @@ struct HostsSheet: View {
             Button("Forget", role: .destructive) { hosts.forget(host) }
             Button("Cancel", role: .cancel) {}
         } message: { host in
-            Text("To use “\(host.name)” again, scan a new QR code from its Atrium Settings.")
+            Text("To use “\(host.name)” again, scan a new QR code from its Diffs Settings.")
         }
     }
 }

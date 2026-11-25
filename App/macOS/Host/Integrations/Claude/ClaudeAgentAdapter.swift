@@ -1080,7 +1080,7 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
                 output["updatedInput"] = input
             } else { output["permissionDecisionReason"] = "The user declined to answer." }
         } else {
-            output["decision"] = ["behavior": decision.allowed ? "allow" : "deny", "message": "Decision from Atrium"]
+            output["decision"] = ["behavior": decision.allowed ? "allow" : "deny", "message": "Decision from Diffs"]
         }
         let result = try JSONSerialization.data(withJSONObject: ["hookSpecificOutput": output])
         pending.continuation.resume(returning: result)

@@ -1,5 +1,5 @@
 /**
- * Atrium relay: joins an iPhone to a Mac when neither can reach the other directly,
+ * Diffs relay: joins an iPhone to a Mac when neither can reach the other directly,
  * and sends the Mac's task alerts to its phones through APNs.
  *
  * Both ends connect out over WebSockets, so the Mac needs no open ports. Each Mac
@@ -44,7 +44,7 @@ interface PushRequest {
 }
 
 /**
- * Clears a phone's badge and wakes it to drop its alerts, once Atrium came to
+ * Clears a phone's badge and wakes it to drop its alerts, once Diffs came to
  * the front on another device.
  */
 interface ClearRequest {
@@ -122,7 +122,7 @@ export default {
     }
     const match = pathname.match(route);
     if (!match || (match[1] === "phone" && match[3])) {
-      return new Response("Atrium relay", { status: 404 });
+      return new Response("Diffs relay", { status: 404 });
     }
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected a WebSocket", { status: 426 });

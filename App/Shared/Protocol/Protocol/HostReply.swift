@@ -29,6 +29,6 @@ nonisolated enum HostReply: Codable, Sendable {
     /// A reply this client doesn't know, from a newer host.
     case unknown
 
-    static let unsupported = HostReply.failed(message: "Your host doesn’t support this. Update Atrium on it.")
+    static let unsupported = HostReply.failed(message: "Your host doesn’t support this. Update Diffs on it.")
     static let hostOnly = HostReply.failed(message: "This can only be done on the host itself.")
 }

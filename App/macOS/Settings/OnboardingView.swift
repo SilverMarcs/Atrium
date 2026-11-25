@@ -13,7 +13,7 @@ struct OnboardingView: View {
                     .padding(.top, 24)
 
                 VStack(spacing: 4) {
-                    Text("Welcome to Atrium")
+                    Text("Welcome to Diffs")
                         .font(.title)
                         .fontWeight(.semibold)
 
@@ -29,7 +29,7 @@ struct OnboardingView: View {
                 FeatureRow(
                     icon: "sparkles",
                     title: "Your Agents, Ready",
-                    description: "Atrium finds Claude Code and Codex on this Mac by itself. Every chat, even ones started in the terminal, shows up in the sidebar."
+                    description: "Diffs finds Claude Code and Codex on this Mac by itself. Every chat, even ones started in the terminal, shows up in the sidebar."
                 )
                 FeatureRow(
                     icon: "folder.badge.plus",

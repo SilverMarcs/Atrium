@@ -44,7 +44,7 @@ struct UpdatesSettingsView: View {
                 ContentUnavailableView(
                     "Automatic Updates Unavailable",
                     systemImage: "arrow.down.circle",
-                    description: Text("This build of Atrium does not support automatic updates.")
+                    description: Text("This build of Diffs does not support automatic updates.")
                 )
             }
         }
@@ -58,7 +58,7 @@ struct UpdatesSettingsView: View {
                         Label("Check for Updates…", systemImage: "arrow.clockwise")
                     }
                     .disabled(!updater.canCheckForUpdates)
-                    .help("Check for Atrium updates now")
+                    .help("Check for Diffs updates now")
                 }
             } else {
                 ToolbarHeightPlaceholder()

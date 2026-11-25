@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Atrium release pipeline.
+# Diffs release pipeline.
 # Usage:
 #   ./release.sh                  bump patch (1.2.0 -> 1.2.1)
 #   ./release.sh --minor          bump minor (1.2.0 -> 1.3.0)
@@ -30,8 +30,8 @@ set -euo pipefail
 SCHEME="Atrium"
 PROJECT="Atrium.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
-APP_NAME="Atrium"
-DMG_NAME="Atrium.dmg"
+APP_NAME="Diffs"
+DMG_NAME="Diffs.dmg"
 TEAM_ID="J52QUTREBS"
 REPO="SilverMarcs/Atrium"
 GH_ACCOUNT="${GH_ACCOUNT:-SilverMarcs}"
@@ -247,7 +247,7 @@ fi
 GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
 PUBLIC_KEY="$("$GENERATE_KEYS" --account "$SPARKLE_ACCOUNT" -p)"
 APP_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' App/macOS/Info.plist)
-[[ "$PUBLIC_KEY" == "$APP_KEY" ]] || fatal "Atrium Sparkle Keychain account does not match SUPublicEDKey."
+[[ "$PUBLIC_KEY" == "$APP_KEY" ]] || fatal "Diffs Sparkle Keychain account does not match SUPublicEDKey."
 
 if [[ "$CHECK_ONLY" == true ]]; then
   log "Release prerequisites passed for $(git log -1 --format='%h %s'). No version, build, feed, or release changed."
@@ -458,11 +458,11 @@ log "Creating GitHub release $TAG"
 NOTES="$OUT_DIR/notes.md"
 : > "$NOTES"
 RELEASE_FLAGS=(--latest)
-TITLE="Atrium $NEW_VER"
+TITLE="Diffs $NEW_VER"
 if [[ "$NIGHTLY" == true ]]; then
   # A pre-release, until --promote makes it the latest release.
   RELEASE_FLAGS=(--prerelease --latest=false)
-  TITLE="Atrium $NEW_VER (Nightly)"
+  TITLE="Diffs $NEW_VER (Nightly)"
 fi
 gh release create "$TAG" "$DMG_PATH" \
   --repo "$REPO" \

@@ -126,7 +126,7 @@ final class Orchestrator {
     ) async -> HostReply {
         guard self.thread(id) != nil, let caller = self.thread(callerID) else { return .failed(message: "That session no longer exists.") }
         guard id != callerID, !requesters(of: callerID).contains(id) else {
-            return .failed(message: "That session handed you this work. End your turn with your result instead: Atrium sends it back.")
+            return .failed(message: "That session handed you this work. End your turn with your result instead: Diffs sends it back.")
         }
         // A prompt joins a turn still under way; a finished one not yet sent back is superseded by the next.
         // Another session's turn is left to finish and reach it first.

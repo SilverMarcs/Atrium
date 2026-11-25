@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return .terminateNow
         #else
         let alert = NSAlert()
-        alert.messageText = "Quit Atrium?"
+        alert.messageText = "Quit Diffs?"
         alert.informativeText = "Are you sure you want to quit?"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Quit")

@@ -20,7 +20,7 @@ struct AboutView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 80)
-            Text("Atrium")
+            Text("Diffs")
                 .font(.title)
             VStack(spacing: 6) {
                 Text(appVersionAndBuild)
