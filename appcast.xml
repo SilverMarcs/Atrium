@@ -6,6 +6,24 @@
         <description>Atrium updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.80</title>
+            <pubDate>Wed, 25 Nov 2026 05:22:17 +0000</pubDate>
+            <sparkle:version>145</sparkle:version>
+            <sparkle:shortVersionString>1.3.80</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul>
+<li>Match the Simulator menu to Source Control</li>
+<li>Keep each chat&#x27;s checkouts and branches as host state</li>
+<li>Show release notes in Sparkle updates</li>
+<li>Give the inspector&#x27;s Browser and Simulator bars one height</li>
+</ul>]]></description>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.80/Atrium.dmg"
+                length="13752510"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="8T8I7iYlAN+HayeClplT7pFn6QJh8HSDYwtE1tRjOsqGsS39PNkpnEyMaV/xvt31pDKOb2jk4VPC0zHijCQXBQ==" />
+        </item>
+        <item>
             <title>Version 1.3.79</title>
             <pubDate>Wed, 25 Nov 2026 03:21:38 +0000</pubDate>
             <sparkle:version>144</sparkle:version>
