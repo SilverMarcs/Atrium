@@ -8,10 +8,10 @@ extension AppModel {
         (project ?? selectedProject)?.selectedTab = tab
     }
 
-    /// A chat's new browser shows in the inspector's Browser tab, opened when
-    /// the chat is on screen.
-    func showBrowser(for taskID: String) {
+    /// Opens a tab that shows something of a chat's, such as its browser or
+    /// simulator, when that chat is on screen.
+    func showInspector(_ tab: InspectorTab, for taskID: String) {
         guard let hostID = localHost?.id, selection == TaskRef(hostID: hostID, taskID: taskID) else { return }
-        showInspector(.browser)
+        showInspector(tab)
     }
 }

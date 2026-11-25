@@ -6,12 +6,13 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
     case search
     case commands
     case browser
+    case simulator
 
     var id: Int { rawValue }
 
     /// The tabs the inspector's picker offers: the browser takes Search's
     /// place, which still works but stays out of the picker and the menus for now.
-    static let shown: [InspectorTab] = [.files, .git, .browser, .commands]
+    static let shown: [InspectorTab] = [.files, .git, .browser, .simulator, .commands]
 
     #if DEBUG
     init?(debugName: String) {
@@ -27,6 +28,7 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
         case .git: "Git"
         case .commands: "Commands"
         case .browser: "Browser"
+        case .simulator: "Simulator"
         }
     }
 
@@ -37,6 +39,7 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
         case .git: "point.topleft.down.curvedto.point.bottomright.up"
         case .commands: "terminal"
         case .browser: "globe"
+        case .simulator: "iphone"
         }
     }
 }

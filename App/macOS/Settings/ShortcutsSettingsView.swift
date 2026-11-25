@@ -21,7 +21,8 @@ struct ShortcutsSettingsView: View {
                 LabeledContent("Files Navigator", value: "⌘ 1")
                 LabeledContent("Git Navigator", value: "⌘ 2")
                 LabeledContent("Browser", value: "⌘ 3")
-                LabeledContent("Command Runner", value: "⌘ 4")
+                LabeledContent("Simulator", value: "⌘ 4")
+                LabeledContent("Command Runner", value: "⌘ 5")
             }
 
             Section("Commands") {

@@ -64,13 +64,7 @@ private struct BrowserAddressBar: View {
             navigation
         } trailing: {
             if browser?.isAgentUsing == true {
-                Image(systemName: "sparkles")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 13, height: 13)
-                    .foregroundStyle(.yellow)
-                    .help("The agent is using the browser")
-                    .transition(.opacity)
+                AgentUsingBadge(help: "The agent is using the browser")
             }
             Group {
                 // Reload becomes Stop while the page loads.
@@ -116,6 +110,21 @@ private struct BrowserAddressBar: View {
     }
 }
 
+/// The yellow sparkles an inspector bar shows while the chat's agent uses what's below it.
+struct AgentUsingBadge: View {
+    let help: String
+
+    var body: some View {
+        Image(systemName: "sparkles")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 13, height: 13)
+            .foregroundStyle(.yellow)
+            .help(help)
+            .transition(.opacity)
+    }
+}
+
 /// One of the address bar's buttons: a symbol held to one small size, so
 /// whichever symbol it shows, the bar keeps the search bars' height.
 private struct BrowserBarButton: View {
@@ -132,7 +141,7 @@ private struct BrowserBarButton: View {
     }
 }
 
-private struct BrowserBarSymbol: View {
+struct BrowserBarSymbol: View {
     let symbol: String
 
     var body: some View {

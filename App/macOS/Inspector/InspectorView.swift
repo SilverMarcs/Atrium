@@ -56,6 +56,8 @@ struct InspectorView: View {
                     CommandsInspectorView(project: project)
                 case .browser:
                     BrowserInspectorView(item: item)
+                case .simulator:
+                    SimulatorInspectorView(item: item)
                 }
             }
             // The project tabs' feet switch branches, so what that asks to

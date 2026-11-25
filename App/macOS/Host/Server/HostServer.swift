@@ -126,6 +126,8 @@ final class HostServer {
     @ObservationIgnored private let tools: ToolServer
     /// The browser each of this Mac's chats has open, which the window shows beside it.
     @ObservationIgnored let browsers = AgentBrowsers()
+    /// The simulator each of this Mac's chats shows beside it.
+    @ObservationIgnored let simulators = AgentSimulators()
 
     @ObservationIgnored private let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
 
@@ -171,10 +173,11 @@ final class HostServer {
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publish(event, to: .tasks) }
-        integrations.onStatusChange = { [orchestrator, queue, browsers] thread in
+        integrations.onStatusChange = { [orchestrator, queue, browsers, simulators] thread in
             orchestrator.observe(thread)
             queue.observe(thread)
             browsers.observe(thread)
+            simulators.observe(thread)
         }
         queue.onSend = { [weak self] in
             guard let self else { return }
@@ -193,12 +196,16 @@ final class HostServer {
             sessions.settle(thread)
             publishTasks()
         }
-        integrations.onThreadRemoved = { [orchestrator, queue, browsers] id in
+        integrations.onThreadRemoved = { [orchestrator, queue, browsers, simulators] id in
             orchestrator.sessionRemoved(id)
             queue.remove(id)
             browsers.close(id)
+            simulators.close(id)
         }
-        integrations.onThreadSettled = { [browsers] id in browsers.close(id) }
+        integrations.onThreadSettled = { [browsers, simulators] id in
+            browsers.close(id)
+            simulators.close(id)
+        }
         NotificationRouting.shared.onCameToFront = { [weak self] device in self?.clearAlerts(except: device) }
         tools.register(HostTools(
             integrations: integrations, secrets: secrets, snapshot: { [tasksFeed] in tasksFeed.snapshot() },
@@ -209,6 +216,7 @@ final class HostServer {
             refreshTranscript: { [weak self] id in self?.feeds[.transcript(taskID: id)]?.refresh() }
         ).tools)
         tools.register(BrowserTools(browsers: browsers).tools)
+        tools.register(SimulatorTools(simulators: simulators).tools)
         bridge.onMCP = { [tools] body in await tools.handle(body, as: .localAgent) }
         // Agents still running from before a relaunch call the tools at the saved endpoint.
         Task { _ = try? await bridge.start() }

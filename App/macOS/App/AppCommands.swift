@@ -145,11 +145,18 @@ struct AppCommands: Commands {
                 .keyboardShortcut("3", modifiers: .command)
 
                 Button {
+                    app.showInspector(.simulator)
+                } label: {
+                    Label("Simulator", systemImage: "iphone")
+                }
+                .keyboardShortcut("4", modifiers: .command)
+
+                Button {
                     app.showInspector(.commands)
                 } label: {
                     Label("Command Runner", systemImage: "apple.terminal")
                 }
-                .keyboardShortcut("4", modifiers: .command)
+                .keyboardShortcut("5", modifiers: .command)
 
                 Divider()
 
