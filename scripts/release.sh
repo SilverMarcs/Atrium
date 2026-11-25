@@ -404,11 +404,37 @@ NEW_ITEM=$(cat <<EOF
 EOF
 )
 
-python3 - "$APPCAST" "$NEW_ITEM" <<'PY'
-import sys, pathlib
-path = pathlib.Path(sys.argv[1])
-new_item = sys.argv[2]
+python3 - "$APPCAST" "$NEW_ITEM" "$BASE" <<'PY'
+from html import escape
+from pathlib import Path
+from subprocess import check_output
+import sys
+from xml.etree import ElementTree
+
+appcast, new_item, base = sys.argv[1:]
+path = Path(appcast)
 text = path.read_text()
+sparkle = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+items = ElementTree.fromstring(text).findall("channel/item")
+
+# Both channels use the stable baseline so a promoted nightly has complete notes.
+previous_version = next(
+    (item.findtext(sparkle + "shortVersionString") for item in items
+     if item.find(sparkle + "channel") is None),
+    None,
+)
+if previous_version:
+    subjects = check_output(
+        ["git", "log", "--no-merges", "--format=%s", "--extended-regexp", "--invert-grep",
+         "--grep=^(Release (v[0-9]|iOS )|Promote v[0-9])",
+         f"refs/tags/v{previous_version}..{base}", "--"],
+        encoding="utf-8",
+    ).splitlines()
+    bullets = "\n".join(f"<li>{escape(subject)}</li>" for subject in subjects if subject)
+    if bullets:
+        description = f"            <description><![CDATA[<ul>\n{bullets}\n</ul>]]></description>\n"
+        new_item = new_item.replace("            <enclosure", description + "            <enclosure", 1)
+
 marker = "<item>"
 i = text.find(marker)
 if i < 0:
