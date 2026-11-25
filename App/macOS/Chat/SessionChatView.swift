@@ -5,6 +5,7 @@ struct SessionChatView: View {
   let item: HostTask
   let project: Project?
   @Environment(AppModel.self) private var app
+  @Environment(\.openWindow) private var openWindow
   @AppStorage(ChatFontSize.key) private var chatFontSize = ChatFontSize.default
   @AppStorage(SendMode.key) private var sendMode = SendMode.steer
   @State private var pin = TimelinePin()
@@ -279,6 +280,8 @@ struct SessionChatView: View {
     // update every reply's Markdown view.
     .environment(\.openURL, links.action)
     .onChange(of: project?.id, initial: true) { links.project = project }
+    // A draft's chat keeps this view once its task has an ID on the host.
+    .onChange(of: task.id, initial: true) { links.browse = app.browse(in: item, openWindow: openWindow) }
   }
 
   /// Reads the task's state when a bubble's menu asks, rather than handing
@@ -361,20 +364,27 @@ struct SessionChatView: View {
   }
 }
 
-/// Opens links in replies: files in the project in its editor, files elsewhere
-/// on this Mac in Finder, and anything else with the system.
+/// Opens links in replies: web pages and HTML files in the chat's browser,
+/// other files in the project in its editor, files elsewhere on this Mac in
+/// Finder, and anything else with the system.
 @MainActor
 final class ChatLinkOpener {
   var project: Project?
+  /// Opens a page in the chat's browser, for a chat that has one.
+  var browse: ((URL) -> Void)?
 
   private(set) lazy var action = OpenURLAction { [weak self] url in
     self?.open(url) ?? .systemAction
   }
 
   private func open(_ url: URL) -> OpenURLAction.Result {
+    if url.isWebPage, let browse {
+      browse(url)
+      return .handled
+    }
     guard let project, url.isFileURL || url.scheme == nil else { return .systemAction }
     let link = url.isFileURL ? url.absoluteString : (url.relativeString.removingPercentEncoding ?? url.relativeString)
-    project.openLink(link)
+    project.openLink(link, browse: browse)
     return .handled
   }
 }

@@ -106,7 +106,7 @@ private final class ChatPageHeights: NSObject, WKScriptMessageHandler {
 }
 
 /// Lets the page itself load and move between its own anchors, and sends
-/// every link it follows to the system.
+/// every link it follows to the chat's link handler.
 private struct ChatPageNavigation: WebPage.NavigationDeciding {
     /// The page's own URL, which it loads at.
     let document: URL?
@@ -120,7 +120,7 @@ private struct ChatPageNavigation: WebPage.NavigationDeciding {
             // The page loading, or a link to an anchor in it; reloading it would ask the host for an image.
             return action.navigationType == .other || url.fragment() != nil ? .allow : .cancel
         }
-        if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") { openURL(url) }
+        if ["http", "https", "mailto", "file"].contains(url.scheme?.lowercased() ?? "") { openURL(url) }
         return .cancel
     }
 }

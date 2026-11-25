@@ -224,17 +224,6 @@ enum FileService {
         return nil
     }
 
-    /// Opens a link that isn't a file in a project: a file or folder elsewhere
-    /// on this Mac shows in Finder, and anything else, such as a web address,
-    /// goes to its default app.
-    static func openOutsideProject(_ link: String, relativeTo directory: String?) {
-        if let location = resolve(link, relativeTo: directory.map { [$0] } ?? [], access: nil) {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: location.path)])
-        } else if let url = URL(string: link), url.scheme != nil {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     private static func availableURL(named name: String, in folder: URL) -> URL {
         var url = folder.appending(path: name)
         var suffix = 2

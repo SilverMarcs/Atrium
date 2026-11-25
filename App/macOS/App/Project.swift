@@ -91,21 +91,46 @@ final class Project: Identifiable {
         fileTree.reveal(url)
     }
 
-    /// Opens a link from chat or command output: a web page in the browser, a
-    /// file in the project in its editor, a file elsewhere on this Mac in Finder.
-    /// Relative paths resolve from `directory`, or the project folder.
-    func openLink(_ link: String, from directory: String? = nil) {
-        if let url = URL(string: link), url.scheme == "http" || url.scheme == "https" {
-            NSWorkspace.shared.open(url)
+    /// Opens a link from chat or command output: a web page or HTML file in
+    /// `browse`, the chat's browser, when there is one, and otherwise web pages
+    /// in the system's browser; other files in the project in its editor, and
+    /// elsewhere on this Mac in Finder. Relative paths resolve from
+    /// `directory`, or the project folder.
+    func openLink(_ link: String, from directory: String? = nil, browse: ((URL) -> Void)? = nil) {
+        if let url = URL(string: link), url.isWebPage {
+            if let browse { browse(url) } else { NSWorkspace.shared.open(url) }
             return
         }
         let directory = directory.flatMap { $0.isEmpty ? nil : $0 } ?? root.filePath
         Task {
+            let location: (path: String, line: Int?)?
+            let isInProject: Bool
             if case .location(let path, let line) = try? await files(.resolveLink(link, directory: directory)) {
-                editor.openFile(URL(filePath: path), scrollToLine: line)
-            } else if isLocal {
-                FileService.openOutsideProject(link, relativeTo: directory)
+                (location, isInProject) = ((path, line), true)
+            } else {
+                (location, isInProject) = (isLocal ? FileService.resolve(link, relativeTo: [directory], access: nil) : nil, false)
+            }
+            guard let location else {
+                // Not a file, such as a mail address, which goes to its default app.
+                if isLocal, let url = URL(string: link), url.scheme != nil { NSWorkspace.shared.open(url) }
+                return
+            }
+            let file = URL(filePath: location.path)
+            // A link to a line in a page is to its source.
+            if let browse, location.line == nil, file.isHTMLFile {
+                browse(file)
+            } else if isInProject {
+                editor.openFile(file, scrollToLine: location.line)
+            } else {
+                NSWorkspace.shared.activateFileViewerSelecting([file])
             }
         }
     }
+}
+
+extension URL {
+    /// A page the chat's browser opens rather than the system's.
+    var isWebPage: Bool { ["http", "https"].contains(scheme?.lowercased() ?? "") }
+
+    var isHTMLFile: Bool { ["html", "htm", "xhtml"].contains(pathExtension.lowercased()) }
 }

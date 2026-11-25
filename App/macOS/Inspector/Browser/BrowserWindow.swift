@@ -15,6 +15,9 @@ struct BrowserWindow: View {
     @FocusState private var isEditing: Bool
 
     private var browser: AgentBrowser? { app.browsers.browser(for: item.taskID) }
+    private var chat: HostTask? {
+        app.localHost.flatMap { app.hosts.task(TaskRef(hostID: $0.id, taskID: item.taskID)) }
+    }
 
     var body: some View {
         Group {
@@ -28,15 +31,16 @@ struct BrowserWindow: View {
                         browser.open(typed: address)
                     }
                     .showsAddress(of: browser.url, in: $address, isEditing: isEditing)
-                    .navigationTitle(browser.title.isEmpty ? "Browser" : browser.title)
                     .onAppear { browser.isInWindow = true }
                     .onDisappear { browser.isInWindow = false }
             } else {
                 ContentUnavailableView("Browser Closed", systemImage: "globe",
                                        description: Text("The chat’s browser closed when the chat was settled or deleted, or after it went unused."))
-                    .navigationTitle("Browser")
             }
         }
+        // Named for its chat, as the chat's own window is, rather than the page.
+        .navigationTitle(chat.map(app.hosts.navigationTitle(for:)) ?? "Browser")
+        .navigationSubtitle(chat.map(app.hosts.navigationSubtitle(for:)) ?? "")
         .frame(minWidth: 480, minHeight: 400)
     }
 

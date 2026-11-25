@@ -4,11 +4,13 @@ import SwiftUI
 struct BackgroundSessionOutputView: View {
     let session: WireBackgroundSession
     let project: Project
+    @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
 
     private var output: WireCommandOutput? { project.host.backgroundSessionOutputs[session.id] }
 
     var body: some View {
-        CommandOutputTextView(output: output) { project.openLink($0, from: session.directory) }
+        CommandOutputTextView(output: output) { project.openLink($0, from: session.directory, browse: app.browse(in: app.selectedTask, openWindow: openWindow)) }
             .overlay {
                 if output?.lines.isEmpty == true {
                     Text("No Output")

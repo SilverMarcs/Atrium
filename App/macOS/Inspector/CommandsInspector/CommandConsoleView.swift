@@ -5,13 +5,15 @@ struct CommandConsoleView: View {
     let command: WireCommand
     let console: CommandConsole
     let project: Project
+    @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
     private let fontSize = CommandOutputTextView.fontSize
 
     var body: some View {
         VStack(spacing: 0) {
             CommandConsoleHeader(command: command, console: console, project: project)
             CommandOutputTextView(output: console.output, fontSize: fontSize) {
-                project.openLink($0, from: command.directory)
+                project.openLink($0, from: command.directory, browse: app.browse(in: app.selectedTask, openWindow: openWindow))
             }
             Divider()
             CommandInputBar(command: command, console: console, fontSize: fontSize)
