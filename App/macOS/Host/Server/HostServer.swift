@@ -162,10 +162,11 @@ final class HostServer {
         tasks = TaskService(integrations: integrations, sessions: sessions, workspaces: workspaces, queue: queue, orchestrator: orchestrator)
         media = MediaService(integrations: integrations)
         let pullRequests = PullRequestTracker(file: bridge.storage.appending(path: "pull-requests.json"))
+        let taskWorkspaces = TaskWorkspaces(file: bridge.storage.appending(path: "task-workspaces.json"))
         secrets = SecretRequests(integrations: integrations)
         tasksFeed = TasksFeed(
             integrations: integrations, sessions: sessions, workspaces: workspaces, orchestrator: orchestrator, queue: queue,
-            pullRequests: pullRequests)
+            pullRequests: pullRequests, taskWorkspaces: taskWorkspaces)
         tools = ToolServer(settings: integrationSettings) { [integrations, orchestrator] meta in
             guard let id = integrations.toolCaller(meta: meta) else { return nil }
             return await orchestrator.caller(for: id)
@@ -173,8 +174,9 @@ final class HostServer {
         isRemoteAccessEnabled = UserDefaults.standard.bool(forKey: Self.remoteAccessKey)
         feeds[.tasks] = tasksFeed
         tasksFeed.start { [weak self] event in self?.publish(event, to: .tasks) }
-        integrations.onStatusChange = { [orchestrator, queue, browsers, simulators] thread in
+        integrations.onStatusChange = { [orchestrator, queue, browsers, simulators, tasksFeed] thread in
             orchestrator.observe(thread)
+            tasksFeed.observe(thread)
             queue.observe(thread)
             browsers.observe(thread)
             simulators.observe(thread)
@@ -196,9 +198,10 @@ final class HostServer {
             sessions.settle(thread)
             publishTasks()
         }
-        integrations.onThreadRemoved = { [orchestrator, queue, browsers, simulators] id in
+        integrations.onThreadRemoved = { [orchestrator, queue, browsers, simulators, taskWorkspaces] id in
             orchestrator.sessionRemoved(id)
             queue.remove(id)
+            taskWorkspaces.remove(id)
             browsers.close(id)
             simulators.close(id)
         }

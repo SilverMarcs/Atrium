@@ -107,6 +107,20 @@ nonisolated struct GitCheckout: Equatable, Sendable {
         return directoryURL(worktree.path)
     }
 
+    /// The branch checked out in the checkout rooted at a folder, read from
+    /// its `HEAD` without spawning Git; nil when HEAD is detached or unreadable.
+    static func branch(at root: URL) -> String? {
+        let dotGit = root.appending(path: ".git")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dotGit.path, isDirectory: &isDirectory),
+              let gitDirectory = isDirectory.boolValue ? dotGit : adminDirectory(ofWorktree: root),
+              let head = try? String(contentsOf: gitDirectory.appending(path: "HEAD"), encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              head.hasPrefix("ref: refs/heads/") else { return nil }
+        let branch = String(head.dropFirst("ref: refs/heads/".count))
+        return branch.isEmpty ? nil : branch
+    }
+
     /// The admin directory a linked worktree's `.git` file names.
     private static func adminDirectory(ofWorktree worktree: URL) -> URL? {
         guard let contents = try? String(contentsOf: worktree.appending(path: ".git"), encoding: .utf8),

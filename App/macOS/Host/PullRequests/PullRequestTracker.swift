@@ -4,9 +4,10 @@ import OSLog
 
 /// The pull requests of each task, read with `gh`. A pull request is linked
 /// to a task when one of its commands opened it, or when its branch is one
-/// the task worked on: checked out, other than the default branch, where it
-/// changed files or committed, as of when it was last active there. Once
-/// linked, it stays linked after the branch is merged or gone.
+/// the task worked on in a checkout (as `TaskWorkspaces` keeps them), other
+/// than the default branch, and it's open or closed since the task first
+/// worked there. Once linked, it stays linked after the branch is
+/// merged or gone.
 ///
 /// Client activity triggers discovery and status reads. Commands that open
 /// pull requests trigger a read immediately.
@@ -19,20 +20,12 @@ final class PullRequestTracker {
     /// lowercased `owner/name`.
     private var remotes: [URL: [String: String]] = [:]
 
-    private struct Interest {
-        var checkouts: Set<URL> = []
-        var since: Date
-        var updatedAt: Date
-        var isActive: Bool
-    }
-
     @ObservationIgnored private let file: URL
-    @ObservationIgnored private var interests: [URL: [String: Interest]] = [:]
-    /// The branches each task worked on in each repository.
-    @ObservationIgnored private var branches: [String: [URL: Set<String>]] = [:]
-    @ObservationIgnored private var pendingBranches: [URL: [String: Set<URL>]] = [:]
-    @ObservationIgnored private var notingBranches: [URL: Task<Void, Never>] = [:]
-    @ObservationIgnored private var discoveryTasks: [URL: Set<String>] = [:]
+    /// Repository → the tasks whose branches the listing in flight looks for.
+    @ObservationIgnored private var discovery: [URL: [String: [TaskWorkspaces.Workspace]]] = [:]
+    @ObservationIgnored private var defaultBranches: [URL: String] = [:]
+    /// When each repository's pull requests were last listed.
+    @ObservationIgnored private var listedAt: [URL: Date] = [:]
     /// Pull requests opened by commands, awaiting metadata for these tasks.
     @ObservationIgnored private var opened: [URL: Set<String>] = [:]
     @ObservationIgnored private var canonicalURLs: [URL: URL] = [:]
@@ -45,53 +38,19 @@ final class PullRequestTracker {
 
     private struct Saved: Codable {
         var linked: [String: [PullRequest]]
-        var branches: [String: [URL: Set<String>]]?
     }
 
     init(file: URL) {
         self.file = file
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(Saved.self, from: data) {
             linked = saved.linked
-            branches = saved.branches ?? [:]
         }
     }
 
-    /// Records branch history as the task changes and immediately looks up
-    /// URLs emitted by its commands. Branch discovery runs on refresh.
-    func pullRequests(
-        for taskID: String, opened: Set<URL>, checkouts: [TaskCheckout], firstChanges: [URL: Date], updatedAt: Date, isActive: Bool
-    ) -> [PullRequest] {
-        let current = linked[taskID] ?? []
-        let knownURLs = Set(current.map(\.url))
-        for url in opened where !knownURLs.contains(canonicalURLs[url] ?? url) {
-            if self.opened[url, default: []].insert(taskID).inserted {
-                enqueueReads([url])
-            }
-        }
-        for checkout in checkouts {
-            let repository = checkout.repository
-            readRemotes(of: repository)
-            let folder = checkout.worktree ?? repository
-            let existing = interests[repository]?[taskID]
-            var interest = existing ?? Interest(
-                since: firstChanges[repository] ?? updatedAt, updatedAt: updatedAt, isActive: isActive)
-            let isNewCheckout = interest.checkouts.insert(folder).inserted
-            interest.since = min(interest.since, firstChanges[repository] ?? interest.since)
-            interest.updatedAt = updatedAt
-            interest.isActive = isActive
-            interests[repository, default: [:]][taskID] = interest
-            // The current checkout may have moved on since a persisted task last used it.
-            let needsBranch = if let existing {
-                existing.updatedAt != updatedAt || isNewCheckout
-                    || (!existing.isActive && branches[taskID]?[repository] == nil)
-            } else {
-                branches[taskID]?[repository] == nil
-            }
-            if isActive && needsBranch {
-                noteBranches(of: taskID, in: repository, checkouts: interest.checkouts)
-            }
-        }
-        return current.map { pullRequest in
+    /// A task's linked pull requests, each with the remote of one of these
+    /// checkouts that's its repository, when one is known.
+    func pullRequests(for taskID: String, checkouts: [TaskCheckout]) -> [PullRequest] {
+        (linked[taskID] ?? []).map { pullRequest in
             var pullRequest = pullRequest
             let name = pullRequest.repository.lowercased()
             pullRequest.local = checkouts.lazy.compactMap { checkout in
@@ -101,42 +60,36 @@ final class PullRequestTracker {
         }
     }
 
-    /// Refreshes one opened task, or the visible tasks of a connected client.
-    /// An individual open can also discover PRs on a settled task's recorded branches.
-    func refresh(taskIDs: Set<String>, includeSettled: Bool = false) {
+    /// Reads pull requests a task's commands opened, once each, right away.
+    func noteOpened(_ urls: Set<URL>, by taskID: String) {
+        let known = Set((linked[taskID] ?? []).map(\.url))
+        for url in urls where !known.contains(canonicalURLs[url] ?? url) {
+            if opened[url, default: []].insert(taskID).inserted { enqueueReads([url]) }
+        }
+    }
+
+    /// Reads the status of these tasks' pull requests, merged ones only with
+    /// `includeMerged`, and looks for pull requests opened from the branches
+    /// they worked on in these workspaces: with `recentListingsSuffice`, only
+    /// in repositories not listed in the last minute.
+    func refresh(_ tasks: [String: [TaskWorkspaces.Workspace]], includeMerged: Bool = false, recentListingsSuffice: Bool = false) {
+        let taskIDs = Set(tasks.keys)
         let urls = taskIDs.flatMap { taskID in
-            (linked[taskID] ?? []).filter { includeSettled || $0.state != .merged }.map(\.url)
+            (linked[taskID] ?? []).filter { includeMerged || $0.state != .merged }.map(\.url)
         }
         let unread = opened.keys.filter { opened[$0]?.isDisjoint(with: taskIDs) == false }
         enqueueReads(Set(urls).union(unread))
 
-        for (repository, tasks) in interests {
-            let candidates = Set(tasks.compactMap { taskID, interest in
-                taskIDs.contains(taskID) && (includeSettled || interest.isActive) ? taskID : nil
-            })
-            if !candidates.isEmpty { list(repository, for: candidates) }
-        }
-    }
-
-    private func noteBranches(of taskID: String, in repository: URL, checkouts: Set<URL>) {
-        pendingBranches[repository, default: [:]][taskID, default: []].formUnion(checkouts)
-        guard notingBranches[repository] == nil else { return }
-        notingBranches[repository] = Task {
-            defer { notingBranches[repository] = nil }
-            while let pending = pendingBranches.removeValue(forKey: repository) {
-                guard let defaultBranch = try? await GitExecutor().execute(GitDefaultBranchCommand(), at: repository)?.branch else { continue }
-                var checkedOut: [URL: String] = [:]
-                for folder in Set(pending.values.joined()) {
-                    checkedOut[folder] = await Self.branch(at: folder)
-                }
-                for (taskID, folders) in pending {
-                    let noted = Set(folders.compactMap { checkedOut[$0] }).subtracting([defaultBranch])
-                    let saved = branches[taskID]?[repository] ?? []
-                    guard !noted.isSubset(of: saved) else { continue }
-                    branches[taskID, default: [:]][repository] = saved.union(noted)
-                    save()
-                }
+        var byRepository: [URL: [String: [TaskWorkspaces.Workspace]]] = [:]
+        for (taskID, workspaces) in tasks {
+            for workspace in workspaces where workspace.branch != nil {
+                byRepository[workspace.checkout.repository, default: [:]][taskID, default: []].append(workspace)
             }
+        }
+        for (repository, candidates) in byRepository {
+            readRemotes(of: repository)
+            if recentListingsSuffice, let listed = listedAt[repository], listed > .now.addingTimeInterval(-60) { continue }
+            list(repository, for: candidates)
         }
     }
 
@@ -167,15 +120,16 @@ final class PullRequestTracker {
 
     // MARK: - Discovery
 
-    private func list(_ repository: URL, for taskIDs: Set<String>) {
-        let alreadyListing = discoveryTasks[repository] != nil
-        discoveryTasks[repository, default: []].formUnion(taskIDs)
+    /// Lists a repository's pull requests once for every task that worked on
+    /// one of its branches. Tasks asked for while a listing runs join it.
+    private func list(_ repository: URL, for candidates: [String: [TaskWorkspaces.Workspace]]) {
+        let alreadyListing = discovery[repository] != nil
+        discovery[repository, default: [:]].merge(candidates) { $1 }
         guard !alreadyListing else { return }
         Task {
-            defer { discoveryTasks[repository] = nil }
-            await notingBranches[repository]?.value
-            guard discoveryTasks[repository]?.contains(where: { branches[$0]?[repository]?.isEmpty == false }) == true
-            else { return }
+            defer { discovery[repository] = nil }
+            let defaultBranch = await defaultBranch(of: repository)
+            guard !branches(listedIn: repository, other: defaultBranch).isEmpty else { return }
 
             let beforeListing = linked
             let found: [GitHubPullRequest]
@@ -184,34 +138,44 @@ final class PullRequestTracker {
                     "gh", arguments: ["pr", "list", "--state", "all", "--limit", "100", "--json", GitHubPullRequest.fields],
                     directory: repository.path(percentEncoded: false), timeout: .seconds(30))
                 found = try GitHubPullRequest.decode(output)
+                listedAt[repository] = .now
             } catch {
                 log.info("Couldn't list pull requests in \(repository.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public)")
                 return
             }
-            await notingBranches[repository]?.value
             var updated = linked
             var discovered: [URL: PullRequest] = [:]
-            for taskID in discoveryTasks[repository] ?? [] {
-                guard let interest = interests[repository]?[taskID] else { continue }
-                let worked = branches[taskID]?[repository] ?? []
+            for (taskID, workspaces) in branches(listedIn: repository, other: defaultBranch) {
                 let known = Set((updated[taskID] ?? []).map(\.url))
-                for candidate in found where worked.contains(candidate.headRefName)
-                    && (candidate.isOpen || (candidate.closedAt ?? .distantPast) >= interest.since)
-                    && !known.contains(candidate.url) {
-                    if let pullRequest = discovered[candidate.url] {
-                        updated[taskID, default: []].append(pullRequest)
-                        continue
-                    }
-                    let before = beforeListing.values.lazy.flatMap { $0 }.first { $0.url == candidate.url }
-                    let current = linked.values.lazy.flatMap { $0 }.first { $0.url == candidate.url }
-                    // Preserve a badge that changed while the list request was in flight.
-                    let pullRequest = if let current, current != before { current } else { candidate.pullRequest }
-                    discovered[candidate.url] = pullRequest
-                    updated[taskID, default: []].append(pullRequest)
+                for pullRequest in found where !known.contains(pullRequest.url) && workspaces.contains(where: { workspace in
+                    workspace.branch == pullRequest.headRefName
+                        && (pullRequest.isOpen || (pullRequest.closedAt ?? .distantPast) >= workspace.firstUsed)
+                }) {
+                    let linkedNow = discovered[pullRequest.url] ?? {
+                        let before = beforeListing.values.lazy.flatMap { $0 }.first { $0.url == pullRequest.url }
+                        let current = linked.values.lazy.flatMap { $0 }.first { $0.url == pullRequest.url }
+                        // Preserve a badge that changed while the list request was in flight.
+                        return if let current, current != before { current } else { pullRequest.pullRequest }
+                    }()
+                    discovered[pullRequest.url] = linkedNow
+                    updated[taskID, default: []].append(linkedNow)
                 }
             }
             updateLinks(updated, with: discovered)
         }
+    }
+
+    /// The workspaces the listing of a repository looks for, by task: those on
+    /// a branch other than its default one.
+    private func branches(listedIn repository: URL, other defaultBranch: String?) -> [String: [TaskWorkspaces.Workspace]] {
+        (discovery[repository] ?? [:]).mapValues { $0.filter { $0.branch != defaultBranch } }.filter { !$0.value.isEmpty }
+    }
+
+    private func defaultBranch(of repository: URL) async -> String? {
+        if let known = defaultBranches[repository] { return known }
+        let branch = try? await GitExecutor().execute(GitDefaultBranchCommand(), at: repository)?.branch
+        defaultBranches[repository] = branch
+        return branch
     }
 
     // MARK: - Status
@@ -266,20 +230,10 @@ final class PullRequestTracker {
 
     private func updateLinks(_ updated: [String: [PullRequest]], with latest: [URL: PullRequest]) {
         guard !latest.isEmpty else { return }
-        apply(updated.mapValues { $0.map { latest[$0.url] ?? $0 } })
-    }
-
-    private func apply(_ updated: [String: [PullRequest]]) {
+        let updated = updated.mapValues { $0.map { latest[$0.url] ?? $0 } }
         guard updated != linked else { return }
         linked = updated
         save()
-    }
-
-    /// The branch checked out in a folder, or nil when its HEAD is detached.
-    private static func branch(at folder: URL) async -> String? {
-        guard let output = try? await GitExecutor().runRawData(arguments: ["symbolic-ref", "--quiet", "--short", "HEAD"], at: folder) else { return nil }
-        let branch = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return branch.isEmpty ? nil : branch
     }
 
     /// Writes once the current change is through.
@@ -288,7 +242,7 @@ final class PullRequestTracker {
         isSaveScheduled = true
         Task {
             isSaveScheduled = false
-            guard let data = try? JSONEncoder().encode(Saved(linked: linked, branches: branches)) else { return }
+            guard let data = try? JSONEncoder().encode(Saved(linked: linked)) else { return }
             try? data.write(to: file, options: .atomic)
         }
     }
