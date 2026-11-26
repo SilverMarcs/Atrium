@@ -67,9 +67,14 @@ struct TaskRowContent<ProjectIcon: View>: View {
                 PullRequestIndicator(pullRequests: pullRequests)
 
                 if !backgroundShells.isEmpty {
+                    #if os(macOS)
+                    let shellIconSize = CGSize(width: 14, height: 11)
+                    #else
+                    let shellIconSize = CGSize(width: 15, height: 12)
+                    #endif
                     ShellPromptGlyph()
                         .stroke(.foreground, style: StrokeStyle(lineWidth: 1.25 * shellIconScale, lineCap: .round, lineJoin: .round))
-                        .frame(width: 14 * shellIconScale, height: 11 * shellIconScale)
+                        .frame(width: shellIconSize.width * shellIconScale, height: shellIconSize.height * shellIconScale)
                         .accessibilityLabel("Background shell running")
                         .accessibilityAddTraits(.isImage)
                         .help(backgroundShells.joined(separator: "\n"))
