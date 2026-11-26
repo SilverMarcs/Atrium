@@ -12,7 +12,7 @@ final class PreviewCapture {
         case simulator(SimulatorSession)
     }
 
-    private let source: Source
+    let source: Source
 
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -22,6 +22,7 @@ final class PreviewCapture {
     private var dimensions: CGSize = .zero
     private var lastBrowserFrame: CVPixelBuffer?
     private var browserUpdates: Task<Void, Never>?
+    private var browserPause: Task<Void, Never>?
     private var simulatorViewer: UUID?
     private var nextSimulatorFrame: Task<Void, Never>?
     private var lastSimulatorFrame: ContinuousClock.Instant?
@@ -48,7 +49,11 @@ final class PreviewCapture {
                     let image = snapshot?.cgImage(forProposedRect: nil, context: nil, hints: nil)
                     let changed = image.map { self.send(CIImage(cgImage: $0), skipDuplicates: true) } ?? false
                     delay = changed ? .milliseconds(200) : min(delay * 2, .seconds(1))
-                    try? await Task.sleep(for: delay)
+                    let pause = Task<Void, Never> { [delay] in try? await Task.sleep(for: delay) }
+                    browserPause = pause
+                    _ = await pause.value
+                    if Task.isCancelled { return }
+                    browserPause = nil
                 }
             }
         case .simulator(let session):
@@ -60,7 +65,13 @@ final class PreviewCapture {
         }
     }
 
+    func refreshAfterInput() {
+        browserPause?.cancel()
+    }
+
     func stop() {
+        browserPause?.cancel()
+        browserPause = nil
         browserUpdates?.cancel()
         browserUpdates = nil
         lastBrowserFrame = nil

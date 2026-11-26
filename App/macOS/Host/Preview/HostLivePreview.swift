@@ -8,6 +8,7 @@ final class HostLivePreview {
     private var peer: PreviewPeer?
     private var capture: PreviewCapture?
     private var deadline: Task<Void, Never>?
+    private var input: Task<Void, any Error>?
     private var stopped = false
     private var answered = false
     private var isAvailable: (() -> Bool)?
@@ -49,11 +50,26 @@ final class HostLivePreview {
         try await peer.setRemote(sdp, offer: false)
     }
 
+    func control(_ action: LivePreviewInput) async throws {
+        guard let capture, peer?.isConnected == true, isAvailable?() == true else {
+            throw PreviewError("This preview isn’t connected.")
+        }
+        guard input == nil else { throw PreviewError("The Mac is still handling the previous input.") }
+        let task = Task { try await capture.source.perform(action) }
+        input = task
+        defer {
+            input = nil
+            capture.refreshAfterInput()
+        }
+        try await task.value
+    }
+
     func stop() {
         stopped = true
         isAvailable = nil
         deadline?.cancel()
         deadline = nil
+        input?.cancel()
         capture?.stop()
         capture = nil
         peer?.close()
@@ -75,6 +91,7 @@ final class HostLivePreview {
             deadline = nil
             capture?.start()
         case .disconnected:
+            input?.cancel()
             capture?.stop()
             stopAfter(.seconds(8))
         case .failed, .closed:

@@ -3,7 +3,6 @@ import SwiftUI
 /// A task's pull requests, project links, side chat and subagents in one menu.
 struct TaskMoreMenu: View {
     let item: HostTask
-    let openPreview: () -> Void
     @Environment(\.openSubagent) private var openSubagent
     @Environment(\.openSideChat) private var openSideChat
 
@@ -25,23 +24,21 @@ struct TaskMoreMenu: View {
                     }
                 }
             }
-            if let workspaceID = item.task.workspaceID {
+            let workspaceID = item.task.workspaceID
+            let hasPreviews = !TaskDraft.isDraftID(item.task.id)
+            if workspaceID != nil || hasPreviews {
                 Section {
-                    ProjectLinks(
-                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-                        hasRunningCommands: runningCommands > 0
-                    )
+                    if let workspaceID {
+                        ProjectLinks(
+                            workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
+                            hasRunningCommands: runningCommands > 0
+                        )
+                    }
+                    if hasPreviews { LivePreviewLinks(item: item) }
                 } header: {
-                    // The branch or worktree the project's pages show.
-                    if let title = item.host.scope(for: workspaceID).title {
+                    if let workspaceID, let title = item.host.scope(for: workspaceID).title {
                         Text(title)
                     }
-                }
-            }
-            if !TaskDraft.isDraftID(item.task.id) {
-                Section {
-                    Button("Live Preview", systemImage: "rectangle.on.rectangle", action: openPreview)
-                        .disabled(!item.host.isConnected)
                 }
             }
             if item.sideChat != nil || item.task.actions.contains(.sideChat) {
@@ -69,7 +66,6 @@ struct TaskMoreMenu: View {
             Label("More", systemImage: "ellipsis")
         }
         .badge(item.workingSubagents + runningCommands)
-
     }
 
     private var runningCommands: Int {
@@ -84,5 +80,20 @@ struct TaskMoreMenu: View {
     private func subagentSummary(count: Int) -> String {
         let working = item.workingSubagents
         return working > 0 ? "\(working) working · \(count) total" : "\(count) total"
+    }
+}
+
+/// Each source pushes its own screen alongside the other project destinations.
+struct LivePreviewLinks: View {
+    let item: HostTask
+
+    var body: some View {
+        let ref = TaskRef(hostID: item.host.id, taskID: item.task.id)
+        ForEach(LivePreviewSource.allCases) { source in
+            NavigationLink(value: Route.livePreview(ref, source: source)) {
+                Label(source.title, systemImage: source.symbol)
+            }
+            .disabled(!item.host.isConnected)
+        }
     }
 }

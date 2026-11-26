@@ -27,6 +27,8 @@ final class PreviewPeer: NSObject, RTCPeerConnectionDelegate {
         connection.delegate = self
     }
 
+    var isConnected: Bool { connection.connectionState == .connected }
+
     var videoTrack: RTCVideoTrack? {
         connection.transceivers.lazy.compactMap { $0.receiver.track as? RTCVideoTrack }.first
     }

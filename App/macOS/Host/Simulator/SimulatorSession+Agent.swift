@@ -79,9 +79,11 @@ extension SimulatorSession {
 
     func tap(at point: CGPoint, hold: Double = 0.06) async throws {
         let at = screenFraction(ofPoint: point)
-        input.touch(.began, at: at)
-        try await Task.sleep(for: .seconds(hold))
-        input.touch(.ended, at: at)
+        do {
+            input.touch(.began, at: at)
+            defer { input.touch(.ended, at: at) }
+            try await Task.sleep(for: .seconds(hold))
+        }
         await input.flush()
     }
 
@@ -118,13 +120,15 @@ extension SimulatorSession {
             return (screenFraction(ofPoint: first), second.map(screenFraction(ofPoint:)))
         }
         var current = fingers(0)
-        input.touch(.began, at: current.0, second: current.1)
-        for step in 1...steps {
-            try await Task.sleep(for: .seconds(duration / Double(steps)))
-            current = fingers(CGFloat(step) / CGFloat(steps))
-            input.touch(.moved, at: current.0, second: current.1)
+        do {
+            input.touch(.began, at: current.0, second: current.1)
+            defer { input.touch(.ended, at: current.0, second: current.1) }
+            for step in 1...steps {
+                try await Task.sleep(for: .seconds(duration / Double(steps)))
+                current = fingers(CGFloat(step) / CGFloat(steps))
+                input.touch(.moved, at: current.0, second: current.1)
+            }
         }
-        input.touch(.ended, at: current.0, second: current.1)
         await input.flush()
     }
 
@@ -134,12 +138,15 @@ extension SimulatorSession {
     func type(_ text: String, submit: Bool) async throws {
         if let strokes = SimulatorKeys.strokes(for: text) {
             for stroke in strokes {
+                try Task.checkCancellation()
                 await SimulatorKeys.press(stroke.usage, modifiers: stroke.shift ? [SimulatorKeys.shift] : [], on: input)
             }
         } else {
             try await SimulatorKit.simctl(["pbcopy", udid], input: Data(text.utf8))
+            try Task.checkCancellation()
             await SimulatorKeys.press(SimulatorKeys.v, modifiers: [SimulatorKeys.command], on: input)
         }
+        try Task.checkCancellation()
         if submit { await SimulatorKeys.press(SimulatorKeys.returnKey, on: input) }
     }
 

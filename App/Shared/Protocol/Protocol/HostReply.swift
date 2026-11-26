@@ -23,6 +23,7 @@ nonisolated enum HostReply: Codable, Sendable {
     /// Encoded image data, in the file's own format when it's one clients show.
     case image(data: Data)
     case previewSources([LivePreviewSource])
+    case previewSimulators([LivePreviewSimulator], selectedID: String?)
     case previewOffer(sdp: String, iceServers: [PreviewICEServer])
     case git(GitReply)
     case files(FileReply)

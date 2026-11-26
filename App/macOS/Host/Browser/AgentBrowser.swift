@@ -296,33 +296,52 @@ final class AgentBrowser {
     }
 
     func open(_ url: URL) async throws {
-        try await navigate {
+        try await navigate(.open(url))
+    }
+
+    func goBack() async throws {
+        guard webView.canGoBack else { throw ToolServer.Failure("There's no page to go back to.") }
+        try await navigate(.back)
+    }
+
+    func goForward() async throws {
+        guard webView.canGoForward else { throw ToolServer.Failure("There's no page to go forward to.") }
+        try await navigate(.forward)
+    }
+
+    func reload() async throws {
+        try await navigate(.reload)
+    }
+
+    enum Navigation {
+        case open(URL)
+        case back
+        case forward
+        case reload
+    }
+
+    /// Lets interactive controls act while WebKit is still loading a page.
+    func startNavigation(_ navigation: Navigation) {
+        loadError = nil
+        switch navigation {
+        case .open(let url):
             if url.isFileURL {
                 webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
             } else {
                 webView.load(URLRequest(url: url))
             }
+        case .back:
+            webView.goBack()
+        case .forward:
+            webView.goForward()
+        case .reload:
+            webView.reload()
         }
     }
 
-    func goBack() async throws {
-        guard webView.canGoBack else { throw ToolServer.Failure("There's no page to go back to.") }
-        try await navigate { webView.goBack() }
-    }
-
-    func goForward() async throws {
-        guard webView.canGoForward else { throw ToolServer.Failure("There's no page to go forward to.") }
-        try await navigate { webView.goForward() }
-    }
-
-    func reload() async throws {
-        try await navigate { webView.reload() }
-    }
-
     /// Starts a navigation and waits for it to load, or gives up waiting while it still loads.
-    private func navigate(_ start: () -> WKNavigation?) async throws {
-        loadError = nil
-        _ = start()
+    private func navigate(_ navigation: Navigation) async throws {
+        startNavigation(navigation)
         try? await Task.sleep(for: .milliseconds(150))
         let deadline = ContinuousClock.now + Self.loadTimeout
         while webView.isLoading, ContinuousClock.now < deadline, !Task.isCancelled {

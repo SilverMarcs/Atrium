@@ -397,6 +397,10 @@ final class HostServer {
         return await handleAuthenticated(request, from: connection)
     }
 
+    func hasPreviewTask(_ taskID: String) -> Bool {
+        integrations.threads.contains { $0.id == taskID }
+    }
+
     private func handleAuthenticated(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
         switch request {
         case .pair, .authenticate:
