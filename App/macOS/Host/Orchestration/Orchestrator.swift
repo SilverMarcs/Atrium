@@ -141,7 +141,7 @@ final class Orchestrator {
         if let queueID, self.thread(id)?.status.isWorking == true {
             guard tasks.queue.add(text, images: images, to: id, as: queueID, from: callerID) else {
                 return .failed(message: """
-                    That session already has a message from someone else waiting for its turn to end. Add --steer to \
+                    That session already has a message from someone else waiting for its turn to end. Set `steer` to true to \
                     join its current turn instead, or send yours once that message has gone.
                     """)
             }
