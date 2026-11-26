@@ -65,7 +65,19 @@ remove_release_worktree() {
 
 # ----- Locate sign_update (Sparkle EdDSA signer) -----
 find_sign_update() {
-  local candidate
+  local candidate slot_dir
+  while IFS= read -r slot_dir; do
+    for candidate in \
+      "$slot_dir"/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
+      "$slot_dir"/DerivedData/SourcePackages/checkouts/Sparkle/bin/sign_update; do
+      [[ -x "$candidate" ]] && { echo "$candidate"; return; }
+    done
+  done < <(xcslot slots list --from "$REPO_ROOT" --json | python3 -c '
+import json, sys
+for slot in json.load(sys.stdin)["data"]["slots"]:
+    print(slot["path"])
+')
+  # Xcode itself may already have resolved Sparkle before the first slot build.
   for candidate in \
     "$HOME"/Library/Developer/Xcode/DerivedData/*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
     "$HOME"/Library/Developer/Xcode/DerivedData/*/SourcePackages/checkouts/Sparkle/bin/sign_update; do
@@ -313,8 +325,8 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # ----- Archive -----
-log "xcodebuild archive"
-xcodebuild \
+log "xcslot xcodebuild archive"
+xcslot xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration Release \

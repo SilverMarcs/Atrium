@@ -35,7 +35,6 @@ EOF
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # A project may keep its link to this script in a scripts folder.
 if [[ "$(basename "$ROOT_DIR")" == scripts ]]; then ROOT_DIR="$(dirname "$ROOT_DIR")"; fi
-DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData"
 DEVICE_ID_RE='([0-9A-Fa-f]{40}|[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}|[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})'
 
 PROJECT=$(ls -d "$ROOT_DIR"/*.xcodeproj 2>/dev/null | head -1)
@@ -44,13 +43,13 @@ if [[ -z "${PROJECT:-}" ]]; then
   exit 1
 fi
 APP_NAME=$(basename "$PROJECT" .xcodeproj)
-XCODEBUILD_COMMAND=(xcodebuild COMPILATION_CACHE_ENABLE_CACHING=YES)
+XCODEBUILD_COMMAND=(xcslot xcodebuild --from "$ROOT_DIR")
+PRODUCTS_DIR=$(git -C "$ROOT_DIR" rev-parse --path-format=absolute --git-path xcslot-products)
 PRODUCT_NAME=$(grep -m1 -E '^[[:space:]]*"?PRODUCT_NAME"?[[:space:]]*=' "$PROJECT/project.pbxproj" \
   | sed 's/.*= //;s/;.*//;s/"//g' | tr -d '[:space:]')
 if [[ -z "$PRODUCT_NAME" || "$PRODUCT_NAME" == *'$'* ]]; then
   PRODUCT_NAME="$APP_NAME"
 fi
-DERIVED_GLOB="${APP_NAME// /_}-*"
 
 DEFAULT_SDK=$(grep -m1 -E '^\s*SDKROOT' "$PROJECT/project.pbxproj" \
   | sed 's/.*= //;s/;.*//;s/"//g' | tr -d '[:space:]')
@@ -88,85 +87,11 @@ if [[ "$PLATFORM" == "ios" || "$PLATFORM" == "ipad" ]] \
   SCHEME="${APP_NAME}iOS"
 fi
 
-filter_xcodebuild() {
-  awk '
-    /: (warning|note):/ { skip = 1; next }
-    /: (error|fatal error):/ { skip = 0; print; next }
-    /^\*\* / { skip = 0; print; next }
-    skip { next }
-    { print }
-  '
-}
-
-# Xcode names a project's DerivedData folder "<Name>-<hash of its path>", so
-# every worktree gets its own folder, and nothing removes it with the worktree.
-derived_data_hashes() {
-  python3 -I -c '
-import hashlib, sys
-for path in sys.argv[1:]:
-    digest = hashlib.md5(path.encode()).digest()
-    name = ""
-    for half in (digest[:8], digest[8:]):
-        n = int.from_bytes(half, "big")
-        letters = ""
-        for _ in range(14):
-            letters = chr(97 + n % 26) + letters
-            n //= 26
-        name += letters
-    print(name)
-' "$@"
-}
-
-# Removes this project's DerivedData folders left behind by checkouts and
-# worktrees that no longer exist.
-prune_derived_data() {
-  local project_file live_hashes dir workspace removed=0
-  project_file=$(basename "$PROJECT")
-  live_hashes=$(
-    {
-      echo "$PROJECT"
-      git -C "$ROOT_DIR" worktree list --porcelain 2>/dev/null \
-        | sed -n 's/^worktree //p' | sed "s|\$|/$project_file|"
-    } | while read -r path; do derived_data_hashes "$path"; done
-  ) || return 0
-
-  for dir in "$DERIVED_DATA"/$DERIVED_GLOB; do
-    [[ -d "$dir" ]] || continue
-    if [[ -f "$dir/info.plist" ]]; then
-      workspace=$(/usr/libexec/PlistBuddy -c "Print :WorkspacePath" "$dir/info.plist" 2>/dev/null || true)
-      [[ -n "$workspace" && ! -e "$workspace" ]] || continue
-    else
-      # Only resolved packages, with no record of its project: keep it if it
-      # belongs to a live worktree or something touched it in the last hour.
-      grep -qx "${dir##*-}" <<<"$live_hashes" && continue
-      [[ -z "$(find "$dir" -maxdepth 0 -mmin -60)" ]] || continue
-    fi
-    rm -rf "$dir" && removed=$((removed + 1))
-  done
-  if (( removed > 0 )); then
-    echo "Removed $removed stale DerivedData folder(s) for $APP_NAME"
-  fi
-}
-
-resolve_dependencies() {
-  echo "Resolving Swift Package dependencies..."
-  "${XCODEBUILD_COMMAND[@]}" -project "$PROJECT" -resolvePackageDependencies -quiet || true
-}
-
 find_app_bundle() {
-  local subdir="$1"
-  local bundle="" dir
-  # Other checkouts and worktrees of the project build into their own folders
-  # here too, so take the one Xcode recorded for this project.
-  for dir in "$DERIVED_DATA"/$DERIVED_GLOB; do
-    if [[ "$(/usr/libexec/PlistBuddy -c "Print :WorkspacePath" "$dir/info.plist" 2>/dev/null)" == "$PROJECT" ]]; then
-      bundle="$dir/Build/Products/$subdir/$PRODUCT_NAME.app"
-      break
-    fi
-  done
-  if [[ -z "$bundle" || ! -d "$bundle" ]]; then
-    echo "error: built app not found at $DERIVED_DATA/$DERIVED_GLOB/Build/Products/$subdir/$PRODUCT_NAME.app" >&2
-    exit 1
+  local bundle="$PRODUCTS_DIR/$1/$PRODUCT_NAME.app"
+  if [[ ! -d "$bundle" ]]; then
+    echo "error: built app not found at $bundle" >&2
+    return 1
   fi
   echo "$bundle"
 }
@@ -189,7 +114,7 @@ build_macos() {
     -destination "generic/platform=macOS" \
     -configuration Release \
     -allowProvisioningUpdates \
-    archive -archivePath "$ARCHIVE" 2>&1 | filter_xcodebuild
+    archive -archivePath "$ARCHIVE"
 
   local SRC_APP DISPLAY_NAME DEST_NAME
   SRC_APP=$(ls -d "$ARCHIVE/Products/Applications/"*.app | head -1)
@@ -213,7 +138,7 @@ build_ios() {
     -destination "generic/platform=iOS" \
     -configuration Release \
     -allowProvisioningUpdates \
-    archive -archivePath "$ARCHIVE" 2>&1 | filter_xcodebuild
+    archive -archivePath "$ARCHIVE"
   mkdir -p /tmp/ipa_payload/Payload
   cp -R "$ARCHIVE/Products/Applications/"*.app /tmp/ipa_payload/Payload/
   cd /tmp/ipa_payload && zip -qr ~/Downloads/"$PRODUCT_NAME.ipa" Payload
@@ -222,13 +147,13 @@ build_ios() {
 }
 
 run_macos() {
-  "${XCODEBUILD_COMMAND[@]}" \
+  "${XCODEBUILD_COMMAND[@]}" --products-to "$PRODUCTS_DIR" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "platform=macOS,arch=$(uname -m)" \
     -allowProvisioningUpdates \
     -quiet \
-    build 2>&1 | filter_xcodebuild
+    build
 
   local APP_BUNDLE APP_BIN APP_PID=""
   APP_BUNDLE=$(find_app_bundle "Debug")
@@ -272,13 +197,13 @@ run_ios_device() {
   fi
   echo "Using device: $DEVICE_ID"
 
-  "${XCODEBUILD_COMMAND[@]}" \
+  "${XCODEBUILD_COMMAND[@]}" --products-to "$PRODUCTS_DIR" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "id=$DEVICE_ID" \
     -allowProvisioningUpdates \
     -quiet \
-    build 2>&1 | filter_xcodebuild
+    build
 
   local APP_BUNDLE BUNDLE_ID
   APP_BUNDLE=$(find_app_bundle "Debug-iphoneos")
@@ -311,13 +236,13 @@ run_ios_simulator() {
   xcrun simctl boot "$SIM_ID" 2>/dev/null || true
   open -g -a Simulator
 
-  "${XCODEBUILD_COMMAND[@]}" \
+  "${XCODEBUILD_COMMAND[@]}" --products-to "$PRODUCTS_DIR" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "platform=iOS Simulator,id=$SIM_ID" \
     -allowProvisioningUpdates \
     -quiet \
-    build 2>&1 | filter_xcodebuild
+    build
 
   local APP_BUNDLE BUNDLE_ID
   APP_BUNDLE=$(find_app_bundle "Debug-iphonesimulator")
@@ -341,7 +266,7 @@ build_tvos() {
     -destination "generic/platform=tvOS" \
     -configuration Release \
     -allowProvisioningUpdates \
-    archive -archivePath "$ARCHIVE" 2>&1 | filter_xcodebuild
+    archive -archivePath "$ARCHIVE"
   mkdir -p /tmp/ipa_payload/Payload
   cp -R "$ARCHIVE/Products/Applications/"*.app /tmp/ipa_payload/Payload/
   cd /tmp/ipa_payload && zip -qr ~/Downloads/"$PRODUCT_NAME-tvos.ipa" Payload
@@ -361,13 +286,13 @@ run_tvos_device() {
   fi
   echo "Using device: $DEVICE_ID"
 
-  "${XCODEBUILD_COMMAND[@]}" \
+  "${XCODEBUILD_COMMAND[@]}" --products-to "$PRODUCTS_DIR" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "id=$DEVICE_ID" \
     -allowProvisioningUpdates \
     -quiet \
-    build 2>&1 | filter_xcodebuild
+    build
 
   local APP_BUNDLE BUNDLE_ID
   APP_BUNDLE=$(find_app_bundle "Debug-appletvos")
@@ -405,13 +330,13 @@ run_tvos_simulator() {
   xcrun simctl boot "$SIM_ID" 2>/dev/null || true
   open -g -a Simulator
 
-  "${XCODEBUILD_COMMAND[@]}" \
+  "${XCODEBUILD_COMMAND[@]}" --products-to "$PRODUCTS_DIR" \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "platform=tvOS Simulator,id=$SIM_ID" \
     -allowProvisioningUpdates \
     -quiet \
-    build 2>&1 | filter_xcodebuild
+    build
 
   local APP_BUNDLE BUNDLE_ID
   APP_BUNDLE=$(find_app_bundle "Debug-appletvsimulator")
@@ -426,9 +351,6 @@ run_tvos_simulator() {
   wait $LAUNCH_PID
   trap - EXIT
 }
-
-prune_derived_data || true
-resolve_dependencies
 
 case "$PLATFORM" in
   macos)
