@@ -32,6 +32,7 @@ nonisolated enum HostRequest: Codable, Sendable {
     /// Fetches an image of a draft in a project's scratchpad by its key,
     /// scaled down to fit `maxPixelSize`.
     case scratchpadImage(key: String, maxPixelSize: Int)
+    case preview(LivePreviewRequest)
     case refreshTasks
     /// The client opened a linked pull request, so its task's PR badges need an update.
     case openedPullRequest(taskID: String)

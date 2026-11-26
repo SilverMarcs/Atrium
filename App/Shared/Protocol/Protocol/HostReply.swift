@@ -22,6 +22,8 @@ nonisolated enum HostReply: Codable, Sendable {
     case page(html: String)
     /// Encoded image data, in the file's own format when it's one clients show.
     case image(data: Data)
+    case previewSources([LivePreviewSource])
+    case previewOffer(sdp: String, iceServers: [PreviewICEServer])
     case git(GitReply)
     case files(FileReply)
     /// The host's MCP reply to a `.mcp` message, empty for a notification.

@@ -11,6 +11,7 @@ struct TaskDetailScreen: View {
     /// Shared by every task the screen shows, so the composer's field
     /// geometry it tracks survives switching tasks.
     @State private var sendAnimator = PromptFlights()
+    @State private var showsLivePreview = false
     @AppStorage(SendMode.key) private var sendMode = SendMode.steer
 
     private var host: HostClient? { hosts.host(ref.hostID) }
@@ -94,15 +95,21 @@ struct TaskDetailScreen: View {
                     ToolbarItem(placement: newChatPlacement) {
                         NewSideChatButton(sideChat: item, open: replaceSideChat)
                     }
+                    if !TaskDraft.isDraftID(task.id) {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Live Preview", systemImage: "rectangle.on.rectangle") { showsLivePreview = true }
+                                .disabled(!item.host.isConnected)
+                        }
+                    }
                 } else if task.workspaceID != nil, let item {
                     ToolbarItem(placement: newChatPlacement) {
                         Button("New Session", systemImage: "square.and.pencil") { hosts.openNewChat() }
                     }
                 }
-                if let item, !task.isSideChat, task.workspaceID != nil || item.hasSubagents
+                if let item, !task.isSideChat, !TaskDraft.isDraftID(task.id) || task.workspaceID != nil || item.hasSubagents
                     || item.sideChat != nil || task.actions.contains(.sideChat) || !task.pullRequests.isEmpty {
                     ToolbarItem(placement: .primaryAction) {
-                        TaskMoreMenu(item: item)
+                        TaskMoreMenu(item: item) { showsLivePreview = true }
                     }
                 }
             }
@@ -118,6 +125,12 @@ struct TaskDetailScreen: View {
             }
         }
         .composerAttachmentPickers(composer)
+        .sheet(isPresented: $showsLivePreview) {
+            if let item {
+                LivePreviewSheet(host: item.host, taskID: item.task.id)
+                    .id(resolvedRef)
+            }
+        }
         .replySelectionActions(composer, item: item)
         .composerDropHandler(composer, isEnabled: item?.task.actions.contains(.attachImages) == true)
         .composerDictationLifecycle(composer)

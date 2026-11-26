@@ -3,6 +3,7 @@ import SwiftUI
 /// A task's pull requests, project links, side chat and subagents in one menu.
 struct TaskMoreMenu: View {
     let item: HostTask
+    let openPreview: () -> Void
     @Environment(\.openSubagent) private var openSubagent
     @Environment(\.openSideChat) private var openSideChat
 
@@ -37,6 +38,12 @@ struct TaskMoreMenu: View {
                     }
                 }
             }
+            if !TaskDraft.isDraftID(item.task.id) {
+                Section {
+                    Button("Live Preview", systemImage: "rectangle.on.rectangle", action: openPreview)
+                        .disabled(!item.host.isConnected)
+                }
+            }
             if item.sideChat != nil || item.task.actions.contains(.sideChat) {
                 Section {
                     SideChatButton(item: item, open: openSideChat)
@@ -62,6 +69,7 @@ struct TaskMoreMenu: View {
             Label("More", systemImage: "ellipsis")
         }
         .badge(item.workingSubagents + runningCommands)
+
     }
 
     private var runningCommands: Int {

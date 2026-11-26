@@ -8,6 +8,10 @@ import Foundation
 final class ServerConnection {
     let id = UUID()
     let isLocal: Bool
+    let isRelayed: Bool
+    var livePreview: HostLivePreview? {
+        didSet { oldValue?.stop() }
+    }
     private(set) var device: ClientDevice?
     private(set) var topics: Set<HostTopic> = []
     /// Whether this client has said if it's in the foreground, which makes it
@@ -26,8 +30,9 @@ final class ServerConnection {
 
     var isAuthenticated: Bool { isLocal || device != nil }
 
-    init(isLocal: Bool, send: @escaping (HostEvent) -> Void, close: @escaping () -> Void = {}) {
+    init(isLocal: Bool, isRelayed: Bool = false, send: @escaping (HostEvent) -> Void, close: @escaping () -> Void = {}) {
         self.isLocal = isLocal
+        self.isRelayed = isRelayed
         self.send = send
         closeChannel = close
     }
