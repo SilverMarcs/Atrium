@@ -39,6 +39,7 @@ struct InspectorView: View {
             }
             // One width for every tab, which can be dragged wide for the browser.
             .inspectorColumnWidth(min: 240, ideal: 280, max: 900)
+            .remembersInspectorWidth(for: item?.id)
     }
 
     @ViewBuilder
