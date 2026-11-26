@@ -426,10 +426,26 @@ nonisolated enum BrowserScripts {
             try {
               const response = await originalFetch.apply(this, arguments);
               const type = response.headers.get('content-type') || '';
-              let responseBody = null;
-              if (textual(type)) { try { responseBody = (await response.clone().text()).slice(0, 8000); } catch {} }
-              post('\(networkHandler)', { phase: 'end', id, method, url, kind: 'fetch', status: response.status, type,
+              const end = (responseBody) => post('\(networkHandler)', { phase: 'end', id, method, url, kind: 'fetch', status: response.status, type,
                 duration: Math.round(performance.now() - started), responseBody });
+              // The page gets the response as soon as it answers, so streamed bodies
+              // reach it as they arrive. A copy of the start of a text body is read
+              // alongside it for the log, and let go once it has enough.
+              if (!textual(type) || !response.body) { end(null); return response; }
+              // Cloned before the page can read the body.
+              const reader = response.clone().body.pipeThrough(new TextDecoderStream()).getReader();
+              (async () => {
+                let text = '';
+                try {
+                  for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    text += value;
+                    if (text.length >= 8000) { reader.cancel().catch(() => {}); break; }
+                  }
+                } catch {}
+                end(text.slice(0, 8000));
+              })();
               return response;
             } catch (error) {
               post('\(networkHandler)', { phase: 'end', id, method, url, kind: 'fetch', status: 0, error: String(error), duration: Math.round(performance.now() - started) });
