@@ -91,7 +91,7 @@ struct HostTools {
                 properties: [
                     "session": session,
                     "prompt": ToolSchema.string(),
-                    "steer": ToolSchema.boolean("Join the turn under way instead, for a correction it must take in now."),
+                    "steer": ToolSchema.boolean("Join the turn under way instead; it arrives once the running tool call finishes."),
                 ],
                 required: ["session", "prompt"], audience: [.localAgents, .paired], isEnabled: orchestrating, run: sendPrompt
             ),

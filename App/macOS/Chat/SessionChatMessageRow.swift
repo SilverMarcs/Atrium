@@ -71,7 +71,7 @@ struct PromptActions: Equatable {
   var forkAfter: @MainActor (ReplyForkPoint) -> Void = { _ in }
   /// Takes the queued prompt back into the composer.
   var editQueued: @MainActor () -> Void = {}
-  /// Sends the queued prompt immediately as a steer.
+  /// Sends the queued prompt now, as a steer.
   var sendQueuedNow: @MainActor () -> Void = {}
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }

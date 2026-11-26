@@ -347,7 +347,6 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
         let prompt = (text.first == "/" ? [text] + references : references + (text.isEmpty ? [] : [text]))
             .joined(separator: "\n")
         let outgoingPrompt = ClaudeOutgoingPrompt(wireText: prompt, displayText: text, images: images.compactMap { TranscriptImage.thumbnail(at: $0) })
-        let isSteering = withStatus(thread).status == .processing
         if hasHooks { outgoing[thread.sessionID, default: []].append(outgoingPrompt) }
         // Never retry an acknowledged write: a failed acknowledgement can still mean
         // Claude queued the prompt. Let the user decide whether to resend.
@@ -356,13 +355,8 @@ final class ClaudeAgentAdapter: AgentProviderAdapter {
             outgoing[thread.sessionID]?.removeAll { $0.id == outgoingPrompt.id }
             throw error
         }
+        // A prompt sent mid-turn joins the turn once its running tools finish, without stopping them.
         if !hasHooks { awaitingHooks[thread.sessionID] = thread }
-        // Claude holds a prompt sent mid-turn until its running tools finish. Steer with it now;
-        // if that fails, the prompt is still queued and arrives when they do.
-        if isSteering {
-            do { try await daemon.sendQueuedNow(jobID: id) }
-            catch { Logger(subsystem: "Atrium", category: "Claude").debug("Steering failed: \(error.localizedDescription)") }
-        }
         onEvent?(.threadUpdated(sessionID: thread.sessionID, update: AgentThreadUpdate(status: .processing, updatedAt: .now)))
     }
 

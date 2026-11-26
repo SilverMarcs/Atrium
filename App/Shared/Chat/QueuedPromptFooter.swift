@@ -22,7 +22,7 @@ struct QueuedPromptFooter: View {
                     Button("Send Now", action: sendNow)
                     Button("Cancel", role: .cancel) { }
                 } message: {
-                    Text("This will steer the agent immediately instead of waiting for its turn to end.")
+                    Text("This will join the agent’s current turn instead of waiting for it to end.")
                 }
             } else {
                 Image(systemName: "clock")

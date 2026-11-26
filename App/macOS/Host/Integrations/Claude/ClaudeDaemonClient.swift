@@ -82,14 +82,6 @@ final class ClaudeDaemonClient {
         try await press([0x1b, 0x5b, 0x5a], jobID: jobID)
     }
 
-    /// Has the running turn take in the prompts queued behind it now, as the terminal's send-now
-    /// key does: Claude moves running tools to the background or stops the turn for them.
-    /// It does nothing when no prompt waits or no turn is running.
-    func sendQueuedNow(jobID: String) async throws {
-        // Ctrl+X Ctrl+S, Claude's default binding for sending now.
-        try await press([0x18, 0x13], jobID: jobID)
-    }
-
     private func press(_ keys: [UInt8], jobID: String) async throws {
         let connection = UnixJSONConnection()
         defer { connection.close() }
