@@ -86,6 +86,7 @@ struct TaskDetailScreen: View {
             showsStatus: isPhone
         ))
         .toolbarTitleDisplayMode(.inline)
+        .modifier(LeadingToolbarTitle())
         .toolbar {
             if let task {
                 // On iPhone the new-chat button sits just left of the More menu;
@@ -180,5 +181,17 @@ struct TaskDetailScreen: View {
     private func sendDraft(from sourceFrame: CGRect?) -> Bool {
         guard let item else { return false }
         return composer.submit(to: item, animator: sendAnimator, from: sourceFrame, mode: sendMode)
+    }
+}
+
+/// Puts the inline chat title at the leading edge where the system supports it
+/// (iOS 27.2+); earlier versions keep it centered.
+private struct LeadingToolbarTitle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 27.2, *) {
+            content.toolbarTitleAlignment(.leading)
+        } else {
+            content
+        }
     }
 }
