@@ -12,6 +12,9 @@ struct ReplySelectionActions: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            #if os(macOS)
+            .markdownSelectionPopover()
+            #endif
             // An edit doesn't take quotes.
             .markdownSelectionAction(
                 "Quote",
