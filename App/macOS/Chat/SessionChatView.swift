@@ -248,7 +248,7 @@ struct SessionChatView: View {
       // A "! " draft's command shows running in the project's terminal.
       .onChange(of: composer.terminalRun) { _, run in
         guard let run, let project, project.workspaceID == run.workspaceID else { return }
-        app.showInspector(.commands, in: project)
+        if app.selectedTask?.id == item.id { app.showInspector(.commands, in: project) }
         project.selectedCommand = .command(run.commandID)
       }
       .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }

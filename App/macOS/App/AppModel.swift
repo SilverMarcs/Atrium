@@ -22,7 +22,8 @@ final class AppModel {
     }
     var showingProjects = false
     var sidebarVisibility: NavigationSplitViewVisibility = .automatic
-    var showingInspector = true
+    var inspectorByChat = ChatInspectorState.loadSaved()
+    var inspectorWithoutChat = ChatInspectorState()
     /// The browser each of this Mac's chats has open, shown in the inspector.
     let browsers: AgentBrowsers
     /// The simulator each of this Mac's chats shows, in the inspector.
@@ -54,6 +55,7 @@ final class AppModel {
         }
         let hosts = HostDirectory(localHost: localHost)
         self.hosts = hosts
+        hosts.onDraftResolved = { [weak self] draft, task in self?.transferInspector(from: draft, to: task) }
         hosts.start()
         Self.shared = self
         browsers.onOpen = { [weak self] taskID in self?.showInspector(.browser, for: taskID) }

@@ -22,6 +22,8 @@ final class HostDirectory {
     }
     /// A task to navigate to, from a notification, a fork or a task just created.
     var pendingTask: TaskRef?
+    /// Lets the app carry settings from a draft into its new task.
+    @ObservationIgnored var onDraftResolved: ((_ draft: TaskRef, _ task: TaskRef) -> Void)?
     /// The task on screen, if any, which the host it's on treats as read.
     private(set) var visibleTask: TaskRef?
     /// The draft each task on screen started as, when it was the draft on
@@ -472,17 +474,20 @@ extension HostDirectory: HostConnectionsDelegate {
 
     func host(_ host: HostClient, didCreateTask taskID: String, from draft: TaskDraft) {
         host.rememberNewTask(draft)
+        let draftRef = TaskRef(hostID: host.id, taskID: draft.id)
+        let taskRef = TaskRef(hostID: host.id, taskID: taskID)
         // The new chat's composer carries on as the task's, and the next new
         // chat starts empty.
         if let composer = composers.removeValue(forKey: Self.newChatComposer) {
-            composers[TaskRef(hostID: host.id, taskID: taskID)] = composer
+            composers[taskRef] = composer
         }
+        onDraftResolved?(draftRef, taskRef)
         // A task started on a host the lists are narrowed away from shows them all.
         if let filter, filter != host.id { self.filter = nil }
         // A draft on screen carries on as its task.
-        if isShowing(TaskRef(hostID: host.id, taskID: draft.id)) {
-            startedAsDraft[TaskRef(hostID: host.id, taskID: taskID)] = TaskRef(hostID: host.id, taskID: draft.id)
-            open(TaskRef(hostID: host.id, taskID: taskID))
+        if isShowing(draftRef) {
+            startedAsDraft[taskRef] = draftRef
+            open(taskRef)
         }
     }
 

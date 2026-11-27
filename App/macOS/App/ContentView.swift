@@ -52,6 +52,11 @@ struct ContentView: View {
             guard let project = app.selectedProject else { return }
             await project.host.follow(.commands(workspaceID: project.workspaceID))
         }
+        .onChange(of: app.selectedProject?.id, initial: true) {
+            guard let project = app.selectedProject, project.opensCommandInspectorOnSelection else { return }
+            project.opensCommandInspectorOnSelection = false
+            app.showInspector(.commands, in: project)
+        }
         .onChange(of: app.selectedTask?.id, initial: true) { _, ref in
             app.hosts.setVisibleTask(ref)
         }

@@ -53,7 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if let workspaceID = (userInfo["workspaceID"] as? String).flatMap(UUID.init(uuidString:)),
                       let commandID = (userInfo["commandID"] as? String).flatMap(UUID.init(uuidString:)),
                       let project = app.project(WorkspaceRef(hostID: localHost.id, workspaceID: workspaceID)) {
-                app.showInspector(.commands, in: project)
+                if app.selectedProject === project {
+                    app.showInspector(.commands, in: project)
+                } else {
+                    project.opensCommandInspectorOnSelection = true
+                }
                 project.selectedCommand = .command(commandID)
             }
         }

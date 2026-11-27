@@ -46,7 +46,7 @@ struct InspectorView: View {
     private var columnContent: some View {
         if let project {
             Group {
-                switch project.selectedTab {
+                switch app.inspectorState.tab {
                 case .files:
                     FileTreeView(project: project)
                 case .search:
@@ -78,7 +78,7 @@ private struct InspectorTabPicker: View {
     var body: some View {
         let runningCount = project.runningCount
         Picker("Inspector", selection: Binding {
-            project.selectedTab
+            app.inspectorState.tab
         } set: { tab in
             app.showInspector(tab, in: project)
         }) {

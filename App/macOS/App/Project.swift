@@ -14,7 +14,7 @@ final class Project: Identifiable {
 
     let host: HostClient
     let workspaceID: UUID
-    var selectedTab: InspectorTab = .files
+    var opensCommandInspectorOnSelection = false
     var selectedCommand: CommandSelection?
     let editor = EditorPanel()
     @ObservationIgnored private(set) lazy var fileTree = FileTreeModel(project: self)

@@ -1,6 +1,6 @@
 import Foundation
 
-enum InspectorTab: Int, CaseIterable, Identifiable {
+enum InspectorTab: String, Codable, CaseIterable, Identifiable {
     case files
     case git
     case search
@@ -8,7 +8,7 @@ enum InspectorTab: Int, CaseIterable, Identifiable {
     case browser
     case simulator
 
-    var id: Int { rawValue }
+    var id: String { rawValue }
 
     /// The tabs the inspector's picker offers: the browser takes Search's
     /// place, which still works but stays out of the picker and the menus for now.

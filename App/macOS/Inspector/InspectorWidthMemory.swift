@@ -5,24 +5,37 @@ extension View {
     /// Keeps the inspector column at the width last dragged for each chat on
     /// this Mac. A chat that was never resized opens at the last width set.
     func remembersInspectorWidth(for chat: TaskRef?) -> some View {
-        background(InspectorWidthMemory(key: chat.map { "\($0.hostID)/\($0.taskID)" }))
+        background(InspectorWidthMemory(chat: chat))
     }
 }
 
 /// SwiftUI's inspector column has no width binding, so this finds the split
 /// view item it sits in, saves the item's width after a drag and moves the
 /// divider when the chat changes or anything but the user moves it.
-private struct InspectorWidthMemory: NSViewRepresentable {
-    let key: String?
+struct InspectorWidthMemory: NSViewRepresentable {
+    private static let widthsKey = "inspectorWidths"
+    let chat: TaskRef?
+
+    private static func key(for chat: TaskRef) -> String {
+        "\(chat.hostID)/\(chat.taskID)"
+    }
+
+    static func transfer(from draft: TaskRef, to task: TaskRef) {
+        let defaults = UserDefaults.standard
+        var widths = defaults.dictionary(forKey: widthsKey) as? [String: Double] ?? [:]
+        guard let width = widths.removeValue(forKey: key(for: draft)) else { return }
+        let taskKey = key(for: task)
+        widths[taskKey] = widths[taskKey] ?? width
+        defaults.set(widths, forKey: widthsKey)
+    }
 
     func makeNSView(context: Context) -> TrackerView { TrackerView() }
 
     func updateNSView(_ view: TrackerView, context: Context) {
-        view.key = key
+        view.key = chat.map(Self.key(for:))
     }
 
     final class TrackerView: NSView {
-        private static let widthsKey = "inspectorWidths"
         private static let lastWidthKey = "inspectorLastWidth"
 
         var key: String? {
@@ -99,10 +112,10 @@ private struct InspectorWidthMemory: NSViewRepresentable {
             let width = Double(pane.frame.width)
             guard width >= item.minimumThickness else { return }
             let defaults = UserDefaults.standard
-            var widths = defaults.dictionary(forKey: Self.widthsKey) as? [String: Double] ?? [:]
+            var widths = defaults.dictionary(forKey: InspectorWidthMemory.widthsKey) as? [String: Double] ?? [:]
             guard widths[key] != width else { return }
             widths[key] = width
-            defaults.set(widths, forKey: Self.widthsKey)
+            defaults.set(widths, forKey: InspectorWidthMemory.widthsKey)
             defaults.set(width, forKey: Self.lastWidthKey)
         }
 
@@ -110,7 +123,7 @@ private struct InspectorWidthMemory: NSViewRepresentable {
             guard let key, let splitView, let pane, let item, !item.isCollapsed,
                   let index = splitView.arrangedSubviews.firstIndex(of: pane), index > 0 else { return }
             let defaults = UserDefaults.standard
-            let widths = defaults.dictionary(forKey: Self.widthsKey) as? [String: Double] ?? [:]
+            let widths = defaults.dictionary(forKey: InspectorWidthMemory.widthsKey) as? [String: Double] ?? [:]
             guard let saved = widths[key] ?? (defaults.object(forKey: Self.lastWidthKey) as? Double) else { return }
             let width = CGFloat(saved)
             guard abs(pane.frame.width - width) >= 1 else { return }
