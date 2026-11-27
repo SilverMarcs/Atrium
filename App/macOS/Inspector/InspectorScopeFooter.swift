@@ -9,7 +9,7 @@ import SwiftUI
 /// screen changed files in come last, nearest the footer the menu opens up from.
 /// A task working in a linked worktree locks the repositories it works in:
 /// the menu lists only those, as plain folders without branches, and with
-/// just one the footer only names it. The lines a branch committed since it
+/// just one the footer only names it, with its folder in a project of several. The lines a branch committed since it
 /// left the default branch sit at its trailing edge.
 struct InspectorScopeFooter: View {
     let project: Project
@@ -18,7 +18,10 @@ struct InspectorScopeFooter: View {
         let scope = project.scope
         if scope.repositories != nil, let selected = scope.selected, scope.folders.count > 1 || selected.status != nil {
             let locked = selected.status.flatMap { scope.isLocked($0) ? $0 : nil }
+            // The menu offers folders when there's more than one to pick; the
+            // label names the folder whenever the project has several.
             let hasFolders = scope.pickableFolderCount > 1
+            let namesFolder = scope.folders.count > 1
             HStack {
                 Menu {
                     if hasFolders {
@@ -28,13 +31,13 @@ struct InspectorScopeFooter: View {
                     }
                 } label: {
                     HStack {
-                        if hasFolders, let status = selected.status {
+                        if namesFolder, let status = selected.status {
                             Label {
                                 Text("\(selected.name) · \(Text(status.shownBranch).foregroundStyle(.secondary))")
                             } icon: {
                                 Image(systemName: "arrow.triangle.branch")
                             }
-                        } else if hasFolders {
+                        } else if namesFolder {
                             Label(selected.name, systemImage: "folder")
                         } else if let status = selected.status {
                             Label(status.shownBranch, systemImage: "arrow.triangle.branch")
