@@ -7,28 +7,32 @@ import SwiftUI
 /// branch under it: a repository as a submenu of its branches, so one pick
 /// shows it on the branch picked, or a plain folder. The ones the task on
 /// screen changed files in come last, nearest the footer the menu opens up from.
+/// A task working in a linked worktree locks the repositories it works in:
+/// the menu lists only those, as plain folders without branches, and with
+/// just one the footer only names it.
 struct InspectorScopeFooter: View {
     let project: Project
 
     var body: some View {
         let scope = project.scope
-        let folders = scope.folders
-        if scope.repositories != nil, let selected = scope.selected, folders.count > 1 || selected.status != nil {
+        if scope.repositories != nil, let selected = scope.selected, scope.folders.count > 1 || selected.status != nil {
+            let locked = selected.status.flatMap { scope.isLocked($0) ? $0 : nil }
+            let hasFolders = scope.pickableFolderCount > 1
             HStack {
                 Menu {
-                    if folders.count > 1 {
+                    if hasFolders {
                         FolderMenus(project: project, selected: selected.key)
                     } else if let status = selected.status {
                         BranchItems(project: project, repository: status)
                     }
                 } label: {
-                    if folders.count > 1, let status = selected.status {
+                    if hasFolders, let status = selected.status {
                         Label {
                             Text("\(selected.name) · \(Text(status.shownBranch).foregroundStyle(.secondary))")
                         } icon: {
                             Image(systemName: "arrow.triangle.branch")
                         }
-                    } else if folders.count > 1 {
+                    } else if hasFolders {
                         Label(selected.name, systemImage: "folder")
                     } else if let status = selected.status {
                         Label(status.shownBranch, systemImage: "arrow.triangle.branch")
@@ -36,6 +40,8 @@ struct InspectorScopeFooter: View {
                 }
                 .controlSize(.large)
                 .buttonSizing(.flexible)
+                .disabled(locked != nil && !hasFolders)
+                .help(locked?.repositoryRootURL.filePath ?? "")
 
                 // Switching a branch here can take a moment, as can the Git tab's work.
                 if project.git.model.isBusy {
@@ -76,7 +82,8 @@ private struct FolderMenus: View {
     }
 }
 
-/// A repository and the branch it shows, opening to its branches, or a plain folder.
+/// A repository and the branch it shows, opening to its branches, or a plain
+/// folder: also a repository a task's worktree locks, under its branch.
 private struct FolderMenu: View {
     let project: Project
     let folder: ProjectFolder
@@ -85,7 +92,7 @@ private struct FolderMenu: View {
     // Loose texts become the menu item's title and subtitle; a stack would
     // leave only the first.
     var body: some View {
-        if let repository = folder.status {
+        if let repository = folder.status, !project.scope.isLocked(repository) {
             Menu {
                 BranchItems(project: project, repository: repository)
             } label: {
@@ -94,7 +101,10 @@ private struct FolderMenu: View {
                 Text(repository.shownBranch)
             }
         } else {
-            Toggle(folder.name, isOn: Binding(get: { isSelected }, set: { _ in project.scope.selectedFolder = folder.key }))
+            Toggle(isOn: Binding(get: { isSelected }, set: { _ in project.scope.selectedFolder = folder.key })) {
+                Text(folder.name)
+                if let repository = folder.status { Text(repository.shownBranch) }
+            }
         }
     }
 }

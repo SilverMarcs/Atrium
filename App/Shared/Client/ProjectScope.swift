@@ -79,17 +79,51 @@ final class ProjectScope {
 
     /// The project's folders as pickers list them: those the task this scope
     /// follows didn't change, in the project's order, then the repositories
-    /// it changed files in, the most recently changed first.
+    /// it changed files in, the most recently changed first. A task working
+    /// in a linked worktree offers only the repositories it locks, unsplit.
     var pickableFolders: (unchanged: [ProjectFolder], changed: [ProjectFolder]) {
         let folders = folders
+        let locked = lockedFolders(of: folders)
+        guard locked.isEmpty else { return (locked, []) }
         let changed = changedRepositoryURLs.compactMap { repository in folders.first { $0.status?.mainRepositoryURL == repository } }
         return (folders.filter { !changed.contains($0) }, changed)
+    }
+
+    /// How many folders pickers offer.
+    var pickableFolderCount: Int {
+        let (unchanged, changed) = pickableFolders
+        return unchanged.count + changed.count
     }
 
     /// Main checkouts of the repositories the followed task changed files in.
     private var changedRepositoryURLs: [URL] = []
     /// The task followed and the checkouts last shown for it.
     @ObservationIgnored private var followed: (taskID: String, checkouts: Set<TaskCheckout>)?
+
+    /// The repository whose linked worktree the followed task works in. Its
+    /// agent picked its checkouts, so the project's pages offer only the
+    /// repositories it works in, each without another branch or worktree to pick.
+    private var worktreeRepository: URL?
+
+    /// The folders of the repositories a task working in a linked worktree
+    /// keeps as its agent left them: the one it works in and those it
+    /// changed files in. Empty for any other task.
+    private func lockedFolders(of folders: [ProjectFolder]) -> [ProjectFolder] {
+        guard let worktreeRepository else { return [] }
+        let repositories = changedRepositoryURLs.contains(worktreeRepository) ? changedRepositoryURLs : [worktreeRepository] + changedRepositoryURLs
+        return repositories.compactMap { repository in folders.first { $0.status?.mainRepositoryURL == repository } }
+    }
+
+    /// Whether a repository's branch and worktree stay as the followed task's agent left them.
+    func isLocked(_ status: GitRepositoryStatus) -> Bool {
+        lockedFolders(of: folders).contains { $0.key == status.mainRepositoryURL }
+    }
+
+    /// Shows the task coming on screen unless it's the one followed, which
+    /// keeps the checkouts picked since, as after Source Control was open.
+    func follow(_ task: WireTask) {
+        if followed?.taskID != task.id { show(task) }
+    }
 
     /// Shows the checkouts a task works in as it opens: each repository it
     /// changed files in through the checkout it changed them in, every other
@@ -107,8 +141,10 @@ final class ProjectScope {
         let changed = task.changedCheckouts ?? []
         let repositories = changed.map(\.repository)
         if repositories != changedRepositoryURLs { changedRepositoryURLs = repositories }
+        let worktreeRepository = task.checkout?.worktree == nil ? nil : task.checkout?.repository
+        if worktreeRepository != self.worktreeRepository { self.worktreeRepository = worktreeRepository }
         guard let current = task.checkout else {
-            followed = nil
+            followed = (task.id, [])
             return
         }
         let checkouts = Set(changed + [current])
@@ -121,6 +157,13 @@ final class ProjectScope {
         selectedFolder = current.repository
     }
 
+    /// Stops following the task shown, once another project's or none is.
+    func release() {
+        followed = nil
+        if !changedRepositoryURLs.isEmpty { changedRepositoryURLs = [] }
+        if worktreeRepository != nil { worktreeRepository = nil }
+    }
+
     /// Shows a repository through one of its linked worktrees, or through its
     /// main checkout for nil, and picks it.
     func showWorktree(_ worktree: URL?, of repository: URL) {
@@ -128,10 +171,12 @@ final class ProjectScope {
         selectedFolder = repository
     }
 
-    /// Makes Files and Search show the folder holding `url` when they don't.
+    /// Makes Files and Search show the folder holding `url` when they don't
+    /// and pickers offer it.
     func include(_ url: URL) {
         guard !filesRoot.contains(url) else { return }
-        if let folder = folders.first(where: { $0.root.contains(url) }) { selectedFolder = folder.key }
+        let (unchanged, changed) = pickableFolders
+        if let folder = (unchanged + changed).first(where: { $0.root.contains(url) }) { selectedFolder = folder.key }
     }
 
     private static func branch(of status: GitRepositoryStatus) -> String {

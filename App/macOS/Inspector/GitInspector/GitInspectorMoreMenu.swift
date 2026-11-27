@@ -10,21 +10,24 @@ struct GitInspectorMoreMenu: View {
 
     var body: some View {
         Menu {
-            Button {
-                state.newBranchName = ""
-                state.showNewBranchSheet = true
-            } label: {
-                Label("New Branch", systemImage: "plus")
-            }
+            // A task's worktree keeps the branch its agent gave it.
+            if !(snapshot.map(state.project.scope.isLocked) ?? false) {
+                Button {
+                    state.newBranchName = ""
+                    state.showNewBranchSheet = true
+                } label: {
+                    Label("New Branch", systemImage: "plus")
+                }
 
-            Button {
-                state.branchListSnapshot = snapshot
-            } label: {
-                Label("Branches…", systemImage: "list.bullet.indent")
-            }
-            .disabled(snapshot == nil)
+                Button {
+                    state.branchListSnapshot = snapshot
+                } label: {
+                    Label("Branches…", systemImage: "list.bullet.indent")
+                }
+                .disabled(snapshot == nil)
 
-            Divider()
+                Divider()
+            }
 
             Button {
                 state.showCommitLogSheet = true

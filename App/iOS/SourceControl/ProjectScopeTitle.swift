@@ -31,9 +31,11 @@ private struct ProjectScopeTitle: ViewModifier {
                 await source.host.follow(.git(source.scope.gitScope))
             }
             .sourceControlAlerts(source)
-        if title == nil, selected != nil, BranchMenuItems.hasChoices(in: status, folders: folders) {
+        // A task's worktree offers no branches, leaving only the folders to pick.
+        let branching = status.flatMap { source.scope.isLocked($0) ? nil : $0 }
+        if title == nil, selected != nil, BranchMenuItems.hasChoices(in: branching, folderCount: source.scope.pickableFolderCount) {
             titled.toolbarTitleMenu {
-                BranchMenuItems(source: source, status: status, onNewBranch: onNewBranch)
+                BranchMenuItems(source: source, status: branching, onNewBranch: onNewBranch)
             }
         } else {
             titled

@@ -5,7 +5,7 @@ import SwiftUI
 /// it has more than one.
 struct BranchMenuItems: View {
     @Bindable var source: SourceControl
-    /// The repository shown, or nil for a plain folder.
+    /// The repository shown, or nil for a plain folder or one a task's worktree locks.
     let status: GitRepositoryStatus?
     var onNewBranch: (() -> Void)?
 
@@ -13,8 +13,8 @@ struct BranchMenuItems: View {
     private static let showsNewBranch = false
 
     /// Whether there's another branch, worktree or folder to pick.
-    static func hasChoices(in status: GitRepositoryStatus?, folders: [ProjectFolder]) -> Bool {
-        folders.count > 1 || status.map { status in status.localBranches.contains { $0 != status.branchName } } ?? false
+    static func hasChoices(in status: GitRepositoryStatus?, folderCount: Int) -> Bool {
+        folderCount > 1 || status.map { status in status.localBranches.contains { $0 != status.branchName } } ?? false
     }
 
     var body: some View {
@@ -44,8 +44,7 @@ struct BranchMenuItems: View {
             }
         }
 
-        let folders = source.scope.folders
-        if folders.count > 1 {
+        if source.scope.pickableFolderCount > 1 {
             if !branches.isEmpty || !worktrees.isEmpty || (status != nil && Self.showsNewBranch && onNewBranch != nil) {
                 Divider()
             }
