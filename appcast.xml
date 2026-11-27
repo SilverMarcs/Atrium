@@ -6,6 +6,26 @@
         <description>Diffs updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.84</title>
+            <pubDate>Fri, 27 Nov 2026 03:25:44 +0000</pubDate>
+            <sparkle:version>149</sparkle:version>
+            <sparkle:shortVersionString>1.3.84</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul>
+<li>Remember inspector presentation for each chat</li>
+<li>Show selection actions above selected chat text on macOS</li>
+<li>Name the folder in the footer of a multi-folder project&#x27;s locked task</li>
+<li>Show line counts in the Git inspector</li>
+<li>Keep a worktree task&#x27;s repositories as its agent left them</li>
+<li>Use the shared Xcode runner for local builds</li>
+</ul>]]></description>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.84/Diffs.dmg"
+                length="27853916"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="pQTKc3EAz9ZtJjSNjdADsj4jNCE25DP6uq1kpRdF9OjExtow+6cW7+gnYOqtLwoiSGExbFrzUXgzKAIQeD3CBQ==" />
+        </item>
+        <item>
             <title>Version 1.3.83</title>
             <pubDate>Fri, 27 Nov 2026 01:00:56 +0000</pubDate>
             <sparkle:version>148</sparkle:version>
@@ -1036,6 +1056,6 @@
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: uH0VO4JHNQSLPMnV6sIXGDBHvpyudMiA2V8okG+eSBAFPt2v2ZV/DGHWgiJH5EWs4jk4InWrNvSlb7dc+bN1CQ==
-length: 58222
+edSignature: Ifldgd+C8WTkx0p2K046blcvNr8B71KuUj/k/rNE0XGSwUUrnDkdVMeq8XHBDpHY2MvCOqpY5QUDkp7vh3oEAQ==
+length: 59340
 -->
