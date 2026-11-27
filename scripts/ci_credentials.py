@@ -56,7 +56,8 @@ def install(root):
         ["security", "cms", "-D", "-i", temporary], stderr=subprocess.DEVNULL))
     identifier = "com.SilverMarcs.Atrium"
     team = "J52QUTREBS"
-    profile_id = str(uuid.UUID(profile["UUID"])).upper()
+    profile_id = profile["UUID"]
+    uuid.UUID(profile_id)
     entitlements = profile["Entitlements"]
     if (entitlements.get("com.apple.application-identifier") != f"{team}.{identifier}"
             or not entitlements.get("com.apple.developer.usernotifications.communication")

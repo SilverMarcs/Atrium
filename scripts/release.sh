@@ -409,12 +409,36 @@ ARCHIVE_OPTIONS=(-allowProvisioningUpdates)
 EXPORT_OPTIONS=(-allowProvisioningUpdates)
 if [[ "$CI_RELEASE" == true ]]; then
   ARCHIVE_COMMAND=(xcodebuild)
-  ARCHIVE_OPTIONS=(-onlyUsePackageVersionsFromResolvedFile CODE_SIGN_STYLE=Manual
-                   "CODE_SIGN_IDENTITY=Developer ID Application"
-                   'PROVISIONING_PROFILE_SPECIFIER=$(DIFFS_PROFILE_$(TARGET_NAME))'
-                   "DIFFS_PROFILE_Atrium=$DIFFS_CI_PROFILE")
+  ARCHIVE_OPTIONS=(-onlyUsePackageVersionsFromResolvedFile)
   EXPORT_OPTIONS=()
   EXPORT_PLIST="$DIFFS_CI_EXPORT_OPTIONS"
+  # Apply manual signing to the app's Release target only. Overriding
+  # signing on the command line also changes Swift package resource targets.
+  cp "$PBXPROJ" "$OUT_DIR/versioned.pbxproj"
+  python3 - "$PBXPROJ" "$DIFFS_CI_PROFILE" <<'PYSIGNING'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+profile = sys.argv[2]
+pattern = r'(08D10C572F64897300754649 /\* Release \*/ = \{.*?\n\t\t\};)'
+
+def manual_signing(match):
+    config = match[0]
+    for setting, value in {
+        "CODE_SIGN_STYLE": "Manual",
+        "CODE_SIGN_IDENTITY": '"Developer ID Application: Zabir Raihan (J52QUTREBS)"',
+        "PROVISIONING_PROFILE_SPECIFIER": f'"{profile}"',
+    }.items():
+        config, count = re.subn(rf"({setting} = )[^;]*;", rf"\g<1>{value};", config)
+        assert count == 1, setting
+    return config
+
+text, count = re.subn(pattern, manual_signing, path.read_text(), flags=re.S)
+assert count == 1, "Expected one macOS Release build configuration"
+path.write_text(text)
+PYSIGNING
 fi
 log "Archiving $APP_NAME"
 "${ARCHIVE_COMMAND[@]}" \
@@ -428,6 +452,9 @@ log "Archiving $APP_NAME"
   "${ARCHIVE_OPTIONS[@]}" \
   -quiet \
   archive
+if [[ "$CI_RELEASE" == true ]]; then
+  mv "$OUT_DIR/versioned.pbxproj" "$PBXPROJ"
+fi
 
 # ----- Export -----
 log "xcodebuild -exportArchive"
