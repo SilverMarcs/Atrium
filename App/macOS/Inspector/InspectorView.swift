@@ -42,6 +42,11 @@ struct InspectorView: View {
             .remembersInspectorWidth(for: item?.id)
     }
 
+    /// A saved chat on another Mac, whose browser and simulator show as live video.
+    private var remotePreviewItem: HostTask? {
+        item.flatMap { !$0.host.isLocal && !TaskDraft.isDraftID($0.task.id) ? $0 : nil }
+    }
+
     @ViewBuilder
     private var columnContent: some View {
         if let project {
@@ -56,9 +61,17 @@ struct InspectorView: View {
                 case .commands:
                     CommandsInspectorView(project: project)
                 case .browser:
-                    BrowserInspectorView(item: item)
+                    if let remote = remotePreviewItem {
+                        RemotePreviewInspector(item: remote, source: .browser).id(remote.id)
+                    } else {
+                        BrowserInspectorView(item: item)
+                    }
                 case .simulator:
-                    SimulatorInspectorView(item: item)
+                    if let remote = remotePreviewItem {
+                        RemotePreviewInspector(item: remote, source: .simulator).id(remote.id)
+                    } else {
+                        SimulatorInspectorView(item: item)
+                    }
                 }
             }
             // The project tabs' feet switch branches, so what that asks to
