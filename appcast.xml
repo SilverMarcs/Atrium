@@ -6,6 +6,34 @@
         <description>Diffs updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.83</title>
+            <pubDate>Fri, 27 Nov 2026 01:00:56 +0000</pubDate>
+            <sparkle:version>148</sparkle:version>
+            <sparkle:shortVersionString>1.3.83</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul>
+<li>Verify universal release binaries using lipo architecture output</li>
+<li>Scope CI signing to the macOS release target</li>
+<li>Publish stable Diffs releases from GitHub Actions</li>
+<li>Run &quot;! command&quot; drafts in the project&#x27;s terminal</li>
+<li>Lead-align the chat title on iOS 27.2+</li>
+<li>Use xcslot for local builds and release archives</li>
+<li>Update SwiftMarkdownView for numbered lists after a paragraph</li>
+<li>Control the task browser and simulator from the companion</li>
+<li>Stream fetch bodies to pages in the agent browser</li>
+<li>Remember the inspector width per chat</li>
+<li>Add live browser and simulator previews to the companion</li>
+<li>Name the steer parameter in the queued-message refusal</li>
+<li>Steer Claude without interrupting running tools</li>
+<li>size change</li>
+</ul>]]></description>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.83/Diffs.dmg"
+                length="28303671"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="o5nvOpopVHuE0q4CUDiMAcV8xyuBzFdBli6xEmLmhidGzgch+wXdkaFc46wgrGX6Q7RaDanfan4XH2f4tvipAg==" />
+        </item>
+        <item>
             <title>Version 1.3.82</title>
             <pubDate>Wed, 25 Nov 2026 13:38:14 +0000</pubDate>
             <sparkle:version>147</sparkle:version>
@@ -1007,3 +1035,7 @@
         </item>
     </channel>
 </rss>
+<!-- sparkle-signatures:
+edSignature: uH0VO4JHNQSLPMnV6sIXGDBHvpyudMiA2V8okG+eSBAFPt2v2ZV/DGHWgiJH5EWs4jk4InWrNvSlb7dc+bN1CQ==
+length: 58222
+-->
