@@ -473,7 +473,9 @@ APP_PATH="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.app' | head -1)"
 
 if [[ "$CI_RELEASE" == true ]]; then
   codesign --verify --deep --strict "$APP_PATH"
-  lipo -verify_arch arm64 x86_64 "$APP_PATH/Contents/MacOS/$APP_NAME"
+  ARCHITECTURES="$(lipo -archs "$APP_PATH/Contents/MacOS/$APP_NAME")"
+  [[ " $ARCHITECTURES " == *" arm64 "* && " $ARCHITECTURES " == *" x86_64 "* ]] \
+    || fatal "The exported app is not universal: $ARCHITECTURES"
   python3 - "$APP_PATH" "$NEW_VER" "$NEW_BUILD" "$DIFFS_CI_PROFILE" <<'PYVERIFY'
 from pathlib import Path
 import plistlib
