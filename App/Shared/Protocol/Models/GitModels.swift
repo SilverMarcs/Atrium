@@ -8,6 +8,14 @@ nonisolated struct GitRepositoryStatus: Codable, Sendable, Equatable {
     var worktrees: [GitWorktreeInfo] = []
     var stagedFiles: [GitChangedFile]
     var unstagedFiles: [GitChangedFile]
+    /// Lines the staged files add and remove.
+    var stagedLines = GitLineCounts()
+    /// Lines the unstaged files add and remove, untracked files counted as added.
+    var unstagedLines = GitLineCounts()
+    /// Lines the branch's commits add and remove since it left the default
+    /// branch, as Review Changes shows them without the uncommitted work.
+    /// Nil on the default branch itself or without one.
+    var branchLines: GitLineCounts?
     var unpushedCommits: [GitUnpushedCommit]
     var remoteAheadCount: Int
     var hasTrackingBranch: Bool
@@ -26,6 +34,14 @@ nonisolated struct GitRepositoryStatus: Codable, Sendable, Equatable {
     }
 
     var name: String { mainRepositoryURL.lastPathComponent }
+}
+
+/// Lines added and removed across some files, binary files left out.
+nonisolated struct GitLineCounts: Codable, Equatable, Sendable {
+    var added = 0
+    var removed = 0
+
+    var isEmpty: Bool { added == 0 && removed == 0 }
 }
 
 nonisolated struct GitWorktreeInfo: Codable, Equatable, Hashable, Identifiable, Sendable {

@@ -76,6 +76,7 @@ struct GitInspectorChangesList: View {
                     sectionHeader(
                         title: "Staged Changes",
                         systemImage: "checkmark.circle",
+                        lines: snapshot.stagedLines,
                         isExpanded: $state.stagedExpanded
                     )
                     .contextMenu { GitRepoContextMenu(staged: true, snapshot: snapshot, onAction: handleAction) }
@@ -90,6 +91,7 @@ struct GitInspectorChangesList: View {
                     sectionHeader(
                         title: "Changes",
                         systemImage: "circle.dashed",
+                        lines: snapshot.unstagedLines,
                         isExpanded: $state.unstagedExpanded
                     )
                     .contextMenu { GitRepoContextMenu(staged: false, snapshot: snapshot, onAction: handleAction) }
@@ -124,7 +126,8 @@ struct GitInspectorChangesList: View {
 
     // MARK: - Section Header
 
-    private func sectionHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
+    /// - Parameter lines: What the section's files add and remove, shown at its trailing edge.
+    private func sectionHeader(title: String, systemImage: String, lines: GitLineCounts? = nil, isExpanded: Binding<Bool>) -> some View {
         Button {
             withAnimation { isExpanded.wrappedValue.toggle() }
         } label: {
@@ -138,6 +141,14 @@ struct GitInspectorChangesList: View {
                 }
                 .font(.subheadline)
                 .lineLimit(1)
+
+                if let lines, !lines.isEmpty {
+                    Spacer(minLength: 8)
+                    LineCounts(added: lines.added, removed: lines.removed)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
             .fillsInspectorRow()
         }

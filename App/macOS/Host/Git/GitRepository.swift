@@ -5,6 +5,9 @@ actor GitRepository {
 
     private let executor = GitExecutor()
     private var lastFetchAttempts: [URL: Date] = [:]
+    /// `GitRepositoryStatus.branchLines` by "merge base..head", so a status
+    /// refresh diffs the branch again only once either moves.
+    private var branchLineCache: [String: GitLineCounts] = [:]
 
     /// The status of each checkout, in the order given, leaving out any Git
     /// can't read, so one broken repository doesn't hide the rest.
@@ -38,6 +41,15 @@ actor GitRepository {
                         upstreamRef: unpushedStatus.upstreamBranch
                     )
 
+                    let hasStaged = status.entries.contains { $0.stagedKind != nil }
+                    let hasUnstaged = status.entries.contains { $0.unstagedKind != nil && $0.unstagedKind != .untracked }
+                    async let stagedLines = hasStaged
+                        ? (try? self.executor.execute(GitLineCountsCommand(cached: true), at: repositoryRootURL)) ?? GitLineCounts()
+                        : GitLineCounts()
+                    async let trackedLines = hasUnstaged
+                        ? (try? self.executor.execute(GitLineCountsCommand(cached: false), at: repositoryRootURL)) ?? GitLineCounts()
+                        : GitLineCounts()
+
                     var stagedFiles: [GitChangedFile] = []
                     var unstagedFiles: [GitChangedFile] = []
 
@@ -51,13 +63,23 @@ actor GitRepository {
                         }
                     }
 
+                    let branches = await localBranches
+                    async let branchLines = self.branchLines(at: repositoryRootURL, head: status.headOID, localBranches: branches)
+                    var unstagedLines = await trackedLines
+                    for file in unstagedFiles where file.kind == .untracked {
+                        unstagedLines.added += Self.lineCount(of: file.fileURL) ?? 0
+                    }
+
                     return GitRepositoryStatus(
                         repositoryRootURL: repositoryRootURL,
                         branchName: status.branchName,
-                        localBranches: await localBranches,
+                        localBranches: branches,
                         worktrees: await worktrees,
                         stagedFiles: stagedFiles,
                         unstagedFiles: unstagedFiles,
+                        stagedLines: await stagedLines,
+                        unstagedLines: unstagedLines,
+                        branchLines: await branchLines,
                         unpushedCommits: await unpushedCommits,
                         remoteAheadCount: status.behindCount,
                         hasTrackingBranch: status.hasUpstream
@@ -72,6 +94,32 @@ actor GitRepository {
             return snapshots
         }
         return repositoryRootURLs.compactMap { root in snapshots.first { $0.repositoryRootURL == root } }
+    }
+
+    /// What `head` committed since it left the default branch: nil on the
+    /// default branch, with nothing committed since, before the first commit,
+    /// or without a default branch.
+    private func branchLines(at root: URL, head: String?, localBranches: [String]) async -> GitLineCounts? {
+        guard let head,
+              let base = try? await self.defaultCompareBase(at: root, localBranches: localBranches),
+              let mergeBase = try? await self.executor.execute(GitMergeBaseCommand(base: base, tip: head), at: root),
+              !mergeBase.isEmpty, mergeBase != head else { return nil }
+        let key = "\(mergeBase)..\(head)"
+        if let cached = branchLineCache[key] { return cached }
+        guard let files = try? await self.executor.execute(GitComparisonNumstatCommand(mergeBase: mergeBase, head: head), at: root) else { return nil }
+        let counts = GitLineCounts(files.values)
+        if branchLineCache.count > 200 { branchLineCache.removeAll() }
+        branchLineCache[key] = counts
+        return counts
+    }
+
+    /// The lines of an untracked text file, as Git counts them added: nil for
+    /// a binary file or one too large to be worth reading on every status.
+    private nonisolated static func lineCount(of fileURL: URL) -> Int? {
+        guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 2_000_000,
+              let data = try? Data(contentsOf: fileURL), !data.contains(0) else { return nil }
+        let newlines = data.reduce(0) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
+        return data.isEmpty || data.last == UInt8(ascii: "\n") ? newlines : newlines + 1
     }
 
     func initializeRepository(at directoryURL: URL) async throws {
@@ -267,7 +315,7 @@ actor GitRepository {
     /// it. A nil `head` is the checkout itself, uncommitted and untracked
     /// files included; a nil `base` is the repository's default branch.
     func compare(base: String?, head: String?, at root: URL) async throws -> GitComparison {
-        let base = if let base { base } else { try await self.defaultCompareBase(at: root) }
+        let base = if let base { base } else { try await self.defaultCompareBase(at: root, localBranches: nil) }
         let tip = head ?? "HEAD"
         let mergeBase = try await self.executor.execute(GitMergeBaseCommand(base: base, tip: tip), at: root)
         async let baseRef = self.executor.execute(GitFullRefNameCommand(ref: base), at: root)
@@ -288,7 +336,7 @@ actor GitRepository {
         }
         for path in untracked {
             let fileURL = root.appending(path: path).standardizedFileURL
-            let lines = (try? Data(contentsOf: fileURL)).flatMap { String(data: $0, encoding: .utf8) }?.diffLines.count
+            let lines = Self.lineCount(of: fileURL)
             files.append(GitComparedFile(file: GitChangedFile(fileURL: fileURL, repositoryRelativePath: path, kind: .untracked),
                                          added: lines, removed: lines.map { _ in 0 }))
         }
@@ -300,10 +348,11 @@ actor GitRepository {
 
     /// The local default branch when there is one, else its remote: the
     /// Branches sheet's merge target.
-    private func defaultCompareBase(at root: URL) async throws -> String {
+    /// - Parameter localBranches: The repository's local branches, when already read.
+    private func defaultCompareBase(at root: URL, localBranches: [String]?) async throws -> String {
         async let target = self.executor.execute(GitDefaultBranchCommand(), at: root)
-        async let local = self.executor.execute(GitLocalBranchesCommand(), at: root)
-        let targets = Self.defaultTargets(try await target, localBranches: try await local)
+        let local = if let localBranches { localBranches } else { try await self.executor.execute(GitLocalBranchesCommand(), at: root) }
+        let targets = Self.defaultTargets(try await target, localBranches: local)
         guard let base = targets.local ?? targets.remote else {
             throw GitError.commandFailed(command: "git for-each-ref", message: "This repository has no default branch to compare with.")
         }
@@ -554,6 +603,8 @@ enum GitStatusCode: Character, Equatable {
 
 struct GitStatusResult: Equatable {
     var branchName: String?
+    /// The commit checked out, or nil before the first one.
+    var headOID: String?
     var upstreamBranch: String?
     var hasUpstream: Bool = false
     var aheadCount: Int = 0
@@ -934,6 +985,19 @@ private struct GitComparisonFilesCommand: GitCommand {
     }
 }
 
+/// Lines the staged changes, or the unstaged ones, add and remove in all.
+private struct GitLineCountsCommand: GitCommand {
+    let cached: Bool
+
+    var arguments: [String] {
+        ["diff", "--no-ext-diff", "--no-renames", "--numstat"] + (cached ? ["--cached"] : [])
+    }
+
+    func parse(output: String) throws -> GitLineCounts {
+        GitLineCounts(parseNumstat(output).values)
+    }
+}
+
 /// Lines added and removed per file, nil for binary files.
 private struct GitComparisonNumstatCommand: GitCommand {
     let mergeBase: String
@@ -944,13 +1008,29 @@ private struct GitComparisonNumstatCommand: GitCommand {
     }
 
     func parse(output: String) throws -> [String: (added: Int?, removed: Int?)] {
-        var counts: [String: (added: Int?, removed: Int?)] = [:]
-        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
-            let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
-            guard parts.count == 3 else { continue }
-            counts[String(parts[2])] = (Int(parts[0]), Int(parts[1]))
+        parseNumstat(output)
+    }
+}
+
+/// `git diff --numstat` lines by path, with nil counts for a binary file ("-\t-").
+private func parseNumstat(_ output: String) -> [String: (added: Int?, removed: Int?)] {
+    var counts: [String: (added: Int?, removed: Int?)] = [:]
+    for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+        let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { continue }
+        counts[String(parts[2])] = (Int(parts[0]), Int(parts[1]))
+    }
+    return counts
+}
+
+private extension GitLineCounts {
+    /// The sum of per-file counts, binary files left out.
+    init(_ files: some Sequence<(added: Int?, removed: Int?)>) {
+        self.init()
+        for file in files {
+            added += file.added ?? 0
+            removed += file.removed ?? 0
         }
-        return counts
     }
 }
 
@@ -1120,7 +1200,9 @@ enum GitStatusParser {
     }
 
     private static func parseHeader(_ body: String, into result: inout GitStatusResult) {
-        if let value = stripPrefix(body, "branch.head ") {
+        if let value = stripPrefix(body, "branch.oid ") {
+            result.headOID = value == "(initial)" ? nil : value
+        } else if let value = stripPrefix(body, "branch.head ") {
             result.branchName = value == "(detached)" ? nil : value
         } else if let value = stripPrefix(body, "branch.upstream ") {
             result.upstreamBranch = value

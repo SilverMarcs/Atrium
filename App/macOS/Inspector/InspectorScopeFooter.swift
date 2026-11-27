@@ -9,7 +9,8 @@ import SwiftUI
 /// screen changed files in come last, nearest the footer the menu opens up from.
 /// A task working in a linked worktree locks the repositories it works in:
 /// the menu lists only those, as plain folders without branches, and with
-/// just one the footer only names it.
+/// just one the footer only names it. The lines a branch committed since it
+/// left the default branch sit at its trailing edge.
 struct InspectorScopeFooter: View {
     let project: Project
 
@@ -26,17 +27,30 @@ struct InspectorScopeFooter: View {
                         BranchItems(project: project, repository: status)
                     }
                 } label: {
-                    if hasFolders, let status = selected.status {
-                        Label {
-                            Text("\(selected.name) · \(Text(status.shownBranch).foregroundStyle(.secondary))")
-                        } icon: {
-                            Image(systemName: "arrow.triangle.branch")
+                    HStack {
+                        if hasFolders, let status = selected.status {
+                            Label {
+                                Text("\(selected.name) · \(Text(status.shownBranch).foregroundStyle(.secondary))")
+                            } icon: {
+                                Image(systemName: "arrow.triangle.branch")
+                            }
+                        } else if hasFolders {
+                            Label(selected.name, systemImage: "folder")
+                        } else if let status = selected.status {
+                            Label(status.shownBranch, systemImage: "arrow.triangle.branch")
                         }
-                    } else if hasFolders {
-                        Label(selected.name, systemImage: "folder")
-                    } else if let status = selected.status {
-                        Label(status.shownBranch, systemImage: "arrow.triangle.branch")
+
+                        // What the branch committed since it left the default branch.
+                        if let lines = selected.status?.branchLines, !lines.isEmpty {
+                            Spacer()
+                            LineCounts(added: lines.added, removed: lines.removed)
+                                .monospacedDigit()
+                                .fixedSize()
+                                // Nearer the menu's chevron than its label's own trailing edge.
+                                .padding(.trailing, -10)
+                        }
                     }
+                    .lineLimit(1)
                 }
                 .controlSize(.large)
                 .buttonSizing(.flexible)
