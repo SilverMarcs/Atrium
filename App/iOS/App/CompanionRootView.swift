@@ -38,6 +38,7 @@ struct CompanionRootView: View {
                     // Subagents and side chats open over their session, so Back returns to it.
                     .environment(\.openSubagent) { ref in detailPath.append(.task(ref)) }
                     .environment(\.openSideChat) { ref in detailPath.append(.task(ref)) }
+                    .environment(\.openCommand) { ref, commandID in detailPath.append(.command(ref, commandID: commandID)) }
                     .environment(\.replaceSideChat) { ref in
                         if !detailPath.isEmpty { detailPath.removeLast() }
                         detailPath.append(.task(ref))

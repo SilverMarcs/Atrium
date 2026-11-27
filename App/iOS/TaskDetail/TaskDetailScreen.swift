@@ -5,6 +5,7 @@ struct TaskDetailScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HostDirectory.self) private var hosts
     @Environment(\.replaceSideChat) private var replaceSideChat
+    @Environment(\.openCommand) private var openCommand
     @Environment(\.isPresented) private var isPresented
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let ref: TaskRef
@@ -126,6 +127,12 @@ struct TaskDetailScreen: View {
                     }
                 }
             }
+        }
+        // A "! " draft's command opens running in the project's terminal,
+        // unless the chat has gone from the screen meanwhile.
+        .onChange(of: composer.terminalRun) { _, run in
+            guard let run, isOnScreen, hosts.visibleTask == resolvedRef else { return }
+            openCommand(WorkspaceRef(hostID: ref.hostID, workspaceID: run.workspaceID), run.commandID)
         }
         .composerAttachmentPickers(composer)
         .replySelectionActions(composer, item: item)

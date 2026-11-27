@@ -20,6 +20,8 @@ struct ComposerTextView: UIViewRepresentable {
     let pasteDelegate: ComposerPasteDelegate
     /// The skills to tint where the draft names them.
     let skillNames: Set<String>
+    /// Whether a "! " draft runs in the terminal, which tints its command.
+    let allowsShellCommand: Bool
     let onSkillReturn: () -> Bool
     let onReturn: () -> Void
 
@@ -58,6 +60,7 @@ struct ComposerTextView: UIViewRepresentable {
             context.coordinator.textViewDidChangeSelection(editor)
         }
         editor.skillNames = skillNames
+        editor.allowsShellCommand = allowsShellCommand
         editor.styleSkills()
         // Focus changes from outside UIKit land after this update, so they
         // don't run inside SwiftUI's view update.
@@ -238,13 +241,16 @@ final class ComposerEditor: UITextView, ComposerTextInserting {
     private var targetHeight: CGFloat = 0
 
     var skillNames: Set<String> = []
+    var allowsShellCommand = false
     private var skillStyling = SkillMentions.Styling()
 
-    /// Tints the skills the draft names. Text being composed waits until
-    /// it's done.
+    /// Tints the skills the draft names, or the command it runs in the
+    /// terminal. Text being composed waits until it's done.
     func styleSkills() {
         guard markedTextRange == nil else { return }
-        skillStyling = SkillMentions.style(textStorage, names: skillNames, previous: skillStyling, textColor: .label)
+        let shellCommand = allowsShellCommand ? ShellCommandDraft(text)?.range : nil
+        skillStyling = SkillMentions.style(
+            textStorage, names: skillNames, shellCommand: shellCommand, previous: skillStyling, textColor: .label)
         plainTypingColor()
     }
 

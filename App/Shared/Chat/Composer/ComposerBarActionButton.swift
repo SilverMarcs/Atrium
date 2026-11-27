@@ -8,6 +8,8 @@ struct ComposerBarActionButton: View {
     let action: Action
     let isExpanded: Bool
     let isEditing: Bool
+    /// Whether Send runs the draft's command in the project's terminal.
+    let runsInTerminal: Bool
     let isEnabled: Bool
     let isBusy: Bool
     let perform: () -> Void
@@ -66,14 +68,14 @@ struct ComposerBarActionButton: View {
 
     private var title: String {
         switch action {
-        case .send: isEditing ? "Save and Continue" : "Send"
+        case .send: isEditing ? "Save and Continue" : runsInTerminal ? "Run in Terminal" : "Send"
         case .stop: "Stop"
         }
     }
 
     private var symbol: String {
         switch action {
-        case .send: isEditing ? "checkmark" : "arrow.up"
+        case .send: isEditing ? "checkmark" : runsInTerminal ? "terminal" : "arrow.up"
         case .stop: "stop.fill"
         }
     }

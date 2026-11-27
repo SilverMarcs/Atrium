@@ -186,6 +186,25 @@ final class Workspace: Identifiable, Hashable, Codable {
         return command
     }
 
+    /// A terminal that isn't running anything, for a one-off script from a
+    /// chat: a command named Terminal, or Terminal 2 and so on, with no script
+    /// of its own. One is added when each is busy, so a script never stops
+    /// another that's still running, such as a server.
+    func idleTerminal() -> Command {
+        let terminals = commands.filter { $0.script == nil && Self.terminalNumber($0.title) != nil }
+        if let idle = terminals.first(where: { !$0.isRunning }) { return idle }
+        let taken = Set(terminals.compactMap { Self.terminalNumber($0.title) })
+        let number = (1...).first { !taken.contains($0) }!
+        return addCommand(title: number == 1 ? "Terminal" : "Terminal \(number)", script: nil)
+    }
+
+    /// 1 for "Terminal", N for "Terminal N", nil for any other name.
+    private static func terminalNumber(_ title: String) -> Int? {
+        if title == "Terminal" { return 1 }
+        guard title.hasPrefix("Terminal "), let number = Int(title.dropFirst("Terminal ".count)), number > 1 else { return nil }
+        return number
+    }
+
     func setDefaultCommand(_ entry: Command) {
         for cmd in commands {
             cmd.isDefault = cmd.id == entry.id

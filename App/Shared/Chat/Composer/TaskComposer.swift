@@ -66,6 +66,29 @@ final class TaskComposer {
     /// Whether quotes or images sit above the composer.
     var hasAttachments: Bool { !quotes.isEmpty || !images.isEmpty }
 
+    /// Whether a "! " draft runs in the project's terminal: only in a chat in
+    /// a project, and not while editing a message, or with quotes or images,
+    /// which only a prompt takes.
+    func allowsShellCommand(in item: HostTask?) -> Bool {
+        item?.task.workspaceID != nil && messageEdit == nil && !hasAttachments
+    }
+
+    /// The command the draft runs in the project's terminal instead of
+    /// sending it to the agent.
+    func shellCommand(for item: HostTask?) -> ShellCommandDraft? {
+        allowsShellCommand(in: item) ? ShellCommandDraft(draft) : nil
+    }
+
+    /// A command a "! " draft ran in one of the project's terminals.
+    struct TerminalRun: Equatable {
+        let id = UUID()
+        let workspaceID: UUID
+        let commandID: UUID
+    }
+
+    /// The terminal the latest "! " draft ran in, for the chat to show.
+    private(set) var terminalRun: TerminalRun?
+
     /// Starts a quote of `text`, to reply to in its sheet.
     func quote(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -279,6 +302,9 @@ final class TaskComposer {
             }
             return false
         }
+        if let shellCommand = shellCommand(for: item), let workspaceID = item.task.workspaceID {
+            return runInTerminal(shellCommand.command, in: workspaceID, for: item)
+        }
         guard hasContent else { return false }
         let text = ComposerQuote.prompt(quoting: quotes, draft: draft)
         let task = item.task
@@ -297,6 +323,26 @@ final class TaskComposer {
         draft = ""
         images = []
         ordinaryQuotes = []
+        return true
+    }
+
+    /// Runs a "! " draft's command in a terminal of the task's project, in
+    /// the checkout the task works in, whatever the agent is doing. One the
+    /// host turns down comes back to the composer, if it's still empty.
+    private func runInTerminal(_ command: String, in workspaceID: UUID, for item: HostTask) -> Bool {
+        let draft = draft
+        self.draft = ""
+        provideFeedback(.send)
+        Task {
+            do {
+                let commandID = try await item.host.runInTerminal(command, in: item.task.path, of: workspaceID)
+                CommandConsole.of(commandID, in: workspaceID, on: item.host).remember(command)
+                terminalRun = TerminalRun(workspaceID: workspaceID, commandID: commandID)
+            } catch {
+                if !hasContent { self.draft = draft }
+                item.host.actionError = error.localizedDescription
+            }
+        }
         return true
     }
 

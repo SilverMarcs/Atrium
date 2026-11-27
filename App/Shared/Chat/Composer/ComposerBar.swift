@@ -236,6 +236,7 @@ struct ComposerBar<Accessory: View>: View {
                         isEditable: !isSubmittingEdit,
                         pasteDelegate: composer.pasteDelegate,
                         skillNames: skillNames,
+                        allowsShellCommand: composer.allowsShellCommand(in: item),
                         onSkillReturn: {
                             guard composer.skillQuery != nil,
                                   let first = composer.matchingSkills(in: skills).first else { return false }
@@ -300,6 +301,7 @@ struct ComposerBar<Accessory: View>: View {
                         action: action,
                         isExpanded: isExpanded,
                         isEditing: composer.messageEdit != nil,
+                        runsInTerminal: composer.shellCommand(for: item) != nil,
                         isEnabled: action == .stop || (item != nil && composer.canSend),
                         isBusy: composer.sendState(for: item) == .sending
                     ) {

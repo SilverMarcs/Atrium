@@ -47,10 +47,15 @@ final class CommandConsole {
         }
         let script = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !script.isEmpty else { return }
-        if history.last != script { history.append(script) }
-        recalled = nil
+        remember(script)
         draft = ""
         host.run(commandID, in: workspaceID, script: script)
+    }
+
+    /// Keeps a one-off script that ran, typed here or in a chat, to recall.
+    func remember(_ script: String) {
+        if history.last != script { history.append(script) }
+        recalled = nil
     }
 
     func perform(_ action: CommandAction) {

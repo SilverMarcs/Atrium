@@ -137,6 +137,11 @@ nonisolated enum WorkspaceAction: Codable, Sendable {
     /// Removes the project from the host, leaving its folder alone. Only the host itself may.
     case remove
     case addCommand(title: String, script: String?)
+    /// Runs a one-off script in `directory`, a folder of the project or of a
+    /// linked worktree of it, in one of the project's terminals: a command
+    /// with no script of its own that isn't running, or a new one. Replies
+    /// `.command` with the terminal's ID.
+    case runInTerminal(directory: String, script: String)
     /// Replaces the project's folders, the first becoming its primary one.
     /// Only the host itself may.
     case setFolders([String])

@@ -70,17 +70,19 @@ enum SkillMentions {
         var ranges: [NSRange] = []
     }
 
-    /// Tints the skills `names` in `storage`, leaving the rest in `textColor`.
-    /// Only the colour changes, so the font, caret and undo stay as they are.
-    /// Returns what it tinted, for the next call's `previous`.
+    /// Tints the skills `names` in `storage`, leaving the rest in `textColor`,
+    /// or the whole of a shell command, which names no skills. Only the colour
+    /// changes, so the font, caret and undo stay as they are. Returns what it
+    /// tinted, for the next call's `previous`.
     static func style(
         _ storage: NSTextStorage,
         names: Set<String>,
+        shellCommand: NSRange?,
         previous: Styling,
         textColor: PlatformColor
     ) -> Styling {
         let text = storage.string
-        let ranges = ranges(in: text, names: names)
+        let ranges = shellCommand.map { [$0] } ?? ranges(in: text, names: names)
         let styling = Styling(text: text, ranges: ranges)
         guard !(ranges.isEmpty && previous.ranges.isEmpty), styling != previous else { return styling }
         storage.beginEditing()

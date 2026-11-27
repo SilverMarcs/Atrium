@@ -245,6 +245,12 @@ struct SessionChatView: View {
         // new-row check above to hold its prompt.
         hold("pending-" + id.uuidString, proxy)
       }
+      // A "! " draft's command shows running in the project's terminal.
+      .onChange(of: composer.terminalRun) { _, run in
+        guard let run, let project, project.workspaceID == run.workspaceID else { return }
+        app.showInspector(.commands, in: project)
+        project.selectedCommand = .command(run.commandID)
+      }
       .onChange(of: chatFontSize, initial: true) { flights.fontSize = chatFontSize }
       .onChange(of: reduceMotion, initial: true) { flights.reduceMotion = reduceMotion }
       .task(id: task.id) {

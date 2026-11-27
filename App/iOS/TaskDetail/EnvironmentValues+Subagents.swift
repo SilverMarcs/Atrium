@@ -7,4 +7,7 @@ extension EnvironmentValues {
     @Entry var openSideChat: (TaskRef) -> Void = { _ in }
     /// Opens a new side chat in place of the one on screen.
     @Entry var replaceSideChat: (TaskRef) -> Void = { _ in }
+    /// Opens one of a project's commands over the task on screen, as a
+    /// command a "! " draft ran.
+    @Entry var openCommand: (WorkspaceRef, UUID) -> Void = { _, _ in }
 }

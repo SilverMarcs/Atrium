@@ -73,6 +73,13 @@ struct WorkspaceService {
             workspaces.deleteWorkspace(workspace)
         case .addCommand(let title, let script):
             return .command(id: workspace.addCommand(title: title, script: script).id)
+        case .runInTerminal(let directory, let script):
+            guard workspace.access.allows(directory) else {
+                return .failed(message: "That folder isn’t part of this project.")
+            }
+            let terminal = workspace.idleTerminal()
+            terminal.run(in: directory, script: script)
+            return .command(id: terminal.id)
         case .setFolders(let paths):
             guard isLocal else { return .hostOnly }
             guard let folders = Self.folders(paths) else { return .failed(message: "That folder no longer exists.") }
