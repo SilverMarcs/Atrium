@@ -47,6 +47,7 @@ struct InspectorScopeFooter: View {
                         if let lines = selected.status?.branchLines, !lines.isEmpty {
                             Spacer()
                             LineCounts(added: lines.added, removed: lines.removed)
+                                .font(.callout)
                                 .monospacedDigit()
                                 .fixedSize()
                                 // Nearer the menu's chevron than its label's own trailing edge.
