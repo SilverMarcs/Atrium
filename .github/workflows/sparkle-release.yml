@@ -1,0 +1,54 @@
+name: Stable Sparkle release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diffs-stable-sparkle
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'SilverMarcs/Atrium' && github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve pinned Swift packages
+        run: >-
+          xcodebuild -resolvePackageDependencies -project Atrium.xcodeproj
+          -scheme Atrium -onlyUsePackageVersionsFromResolvedFile
+
+      - name: Install signing credentials
+        env:
+          DIFFS_CERTIFICATE_P12: ${{ secrets.DIFFS_CERTIFICATE_P12 }}
+          DIFFS_CERTIFICATE_PASSWORD: ${{ secrets.DIFFS_CERTIFICATE_PASSWORD }}
+          DIFFS_MAC_PROFILE: ${{ secrets.DIFFS_MAC_PROFILE }}
+          DIFFS_NOTARY_API_KEY: ${{ secrets.DIFFS_NOTARY_API_KEY }}
+          DIFFS_NOTARY_KEY_ID: ${{ secrets.DIFFS_NOTARY_KEY_ID }}
+          DIFFS_NOTARY_ISSUER_ID: ${{ secrets.DIFFS_NOTARY_ISSUER_ID }}
+          DIFFS_SPARKLE_PRIVATE_KEY: ${{ secrets.DIFFS_SPARKLE_PRIVATE_KEY }}
+        run: python3 scripts/ci_credentials.py install "$RUNNER_TEMP/diffs-signing"
+
+      - name: Build, notarize and publish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          ./scripts/release.sh --ci --force
+
+      - name: Remove signing credentials
+        if: always()
+        run: python3 scripts/ci_credentials.py cleanup "$RUNNER_TEMP/diffs-signing"

@@ -10,6 +10,7 @@
 #   ./release.sh --promote <tag>  make a nightly release (e.g. v1.3.70) stable
 #   add --force                   release or promote to stable even if the App Store
 #                                 iPhone app is behind
+#   ./release.sh --ci --force    publish the stable build from GitHub Actions
 #
 # Two channels share one app and one feed. Nightly releases carry
 # <sparkle:channel>nightly</sparkle:channel>, so only Macs set to Nightly in
@@ -24,6 +25,7 @@
 # uncommitted changes: it builds in its own worktree under .asc/release. A
 # release carries the notarized macOS app. The build number always increments
 # by 1; the version bump and the Sparkle feed are committed onto main.
+# GitHub Actions uses its job token for that push to avoid another release run.
 set -euo pipefail
 
 # ----- Config -----
@@ -66,23 +68,30 @@ remove_release_worktree() {
 # ----- Locate sign_update (Sparkle EdDSA signer) -----
 find_sign_update() {
   local candidate slot_dir
-  while IFS= read -r slot_dir; do
-    for candidate in \
-      "$slot_dir"/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
-      "$slot_dir"/DerivedData/SourcePackages/checkouts/Sparkle/bin/sign_update; do
-      [[ -x "$candidate" ]] && { echo "$candidate"; return; }
-    done
-  done < <(xcslot slots list --from "$REPO_ROOT" --json | python3 -c '
+  if [[ "$CI_RELEASE" == false ]]; then
+    while IFS= read -r slot_dir; do
+      for candidate in \
+        "$slot_dir"/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
+        "$slot_dir"/DerivedData/SourcePackages/checkouts/Sparkle/bin/sign_update; do
+        [[ -x "$candidate" ]] && { echo "$candidate"; return; }
+      done
+    done < <(xcslot slots list --from "$REPO_ROOT" --json | python3 -c '
 import json, sys
 for slot in json.load(sys.stdin)["data"]["slots"]:
     print(slot["path"])
 ')
+  fi
   # Xcode itself may already have resolved Sparkle before the first slot build.
   for candidate in \
     "$HOME"/Library/Developer/Xcode/DerivedData/*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update \
     "$HOME"/Library/Developer/Xcode/DerivedData/*/SourcePackages/checkouts/Sparkle/bin/sign_update; do
     [[ -x "$candidate" ]] && { echo "$candidate"; return; }
   done
+}
+
+sign_feed() {
+  "$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" "$APPCAST" --disable-signing-warning
+  "$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" --verify "$APPCAST"
 }
 
 # Pushes this checkout's HEAD to main, replaying it on top if main moved.
@@ -168,6 +177,7 @@ if "<sparkle:channel>nightly</sparkle:channel>" not in item[0]:
 promoted = re.sub(r"\n[ \t]*<sparkle:channel>nightly</sparkle:channel>", "", item[0])
 path.write_text(text[:item.start()] + promoted + text[item.end():])
 PYPROMOTE
+  sign_feed
 
   log "Committing the promotion"
   git add "$APPCAST"
@@ -185,6 +195,7 @@ PYPROMOTE
 # ----- Arguments -----
 NIGHTLY=false
 FORCE=false
+CI_RELEASE=false
 PROMOTE_TAG=""
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -192,6 +203,7 @@ while [[ $# -gt 0 ]]; do
     --help|-h) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     --nightly) NIGHTLY=true ;;
     --force) FORCE=true ;;
+    --ci) CI_RELEASE=true ;;
     --promote) [[ $# -ge 2 ]] || fatal "--promote needs a tag, e.g. --promote v1.3.70"
                PROMOTE_TAG="$2"; shift ;;
     *) ARGS+=("$1") ;;
@@ -203,6 +215,13 @@ CHECK_ONLY=false
 [[ "${1:-}" != "--check" ]] || CHECK_ONLY=true
 [[ -z "$PROMOTE_TAG" || $# -eq 0 ]] || fatal "--promote takes no other version arguments."
 [[ -z "$PROMOTE_TAG" || "$NIGHTLY" == false ]] || fatal "--promote and --nightly don't go together."
+if [[ "$CI_RELEASE" == true ]]; then
+  [[ "${GITHUB_ACTIONS:-}" == true && "${GITHUB_REPOSITORY:-}" == "$REPO" &&
+     "${GITHUB_REF:-}" == refs/heads/main && "$FORCE" == true && "$NIGHTLY" == false &&
+     -z "$PROMOTE_TAG" && $# -eq 0 ]] || fatal "--ci --force is only for the stable main workflow."
+  [[ -r "$SPARKLE_KEY_FILE" && -n "${DIFFS_CI_PROFILE:-}" && -r "${DIFFS_CI_EXPORT_OPTIONS:-}" ]] \
+    || fatal "Missing CI signing credentials."
+fi
 
 # ----- Pre-flight guards -----
 log "Pre-flight checks"
@@ -219,21 +238,31 @@ if [[ -z "$PROMOTE_TAG" ]]; then
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
     || fatal "Notary keychain profile '$NOTARY_PROFILE' missing. Create with: xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <id> --team-id $TEAM_ID --password <app-specific-password>"
 
-  SIGN_UPDATE="$(find_sign_update)"
-  [[ -x "$SIGN_UPDATE" ]] || fatal "Sparkle sign_update not found. Open the project in Xcode once to resolve packages."
+fi
+
+SIGN_UPDATE="$(find_sign_update)"
+[[ -x "$SIGN_UPDATE" ]] || fatal "Sparkle sign_update not found. Resolve the Xcode packages first."
+SPARKLE_SIGNING=(--account "$SPARKLE_ACCOUNT")
+if [[ -n "$SPARKLE_KEY_FILE" ]]; then
+  [[ -r "$SPARKLE_KEY_FILE" ]] || fatal "SPARKLE_KEY_FILE is not readable."
+  SPARKLE_SIGNING=(--ed-key-file "$SPARKLE_KEY_FILE")
 fi
 
 gh auth status >/dev/null 2>&1 || fatal "gh CLI not authenticated. Run: gh auth login"
 
-# Pin gh to the account that owns $REPO. Without this, gh uses whichever account
-# is globally active, which may only have read access and would 403 on release create.
-GH_TOKEN="$(gh auth token -u "$GH_ACCOUNT" 2>/dev/null)" \
-  || fatal "gh has no token for account '$GH_ACCOUNT'. Run: gh auth login -u $GH_ACCOUNT"
-[[ -n "$GH_TOKEN" ]] || fatal "gh returned an empty token for account '$GH_ACCOUNT'."
-export GH_TOKEN
+if [[ "$CI_RELEASE" == true ]]; then
+  [[ -n "${GH_TOKEN:-}" && "$(gh api "repos/$REPO" --jq .full_name)" == "$REPO" ]] \
+    || fatal "The workflow token cannot access $REPO."
+else
+  # Pin gh to the release account on a Mac with multiple authenticated users.
+  GH_TOKEN="$(gh auth token -u "$GH_ACCOUNT" 2>/dev/null)" \
+    || fatal "gh has no token for account '$GH_ACCOUNT'. Run: gh auth login -u $GH_ACCOUNT"
+  [[ -n "$GH_TOKEN" ]] || fatal "gh returned an empty token for account '$GH_ACCOUNT'."
+  export GH_TOKEN
 
-gh api "repos/$REPO" --jq '.permissions.push' 2>/dev/null | grep -qx true \
-  || fatal "Account '$GH_ACCOUNT' lacks push access to $REPO."
+  gh api "repos/$REPO" --jq '.permissions.push' 2>/dev/null | grep -qx true \
+    || fatal "Account '$GH_ACCOUNT' lacks push access to $REPO."
+fi
 
 # ----- Check out origin/main in the release worktree -----
 log "Checking out origin/main"
@@ -247,27 +276,58 @@ git -C "$WORKTREE" clean -fdxq
 BASE=$(git -C "$WORKTREE" rev-parse HEAD)
 cd "$WORKTREE"
 
+# Verify the exact signing key against the key embedded in the shipped app.
+if [[ -n "$SPARKLE_KEY_FILE" ]]; then
+  PUBLIC_KEY="$(swift -e '
+import CryptoKit
+import Foundation
+let seed = Data(base64Encoded: readLine()!)!
+let key = try Curve25519.Signing.PrivateKey(rawRepresentation: seed.prefix(32))
+print(key.publicKey.rawRepresentation.base64EncodedString())
+' < "$SPARKLE_KEY_FILE")"
+else
+  GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
+  PUBLIC_KEY="$("$GENERATE_KEYS" --account "$SPARKLE_ACCOUNT" -p)"
+fi
+APP_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' App/macOS/Info.plist)
+[[ "$PUBLIC_KEY" == "$APP_KEY" ]] || fatal "Diffs Sparkle signing key does not match SUPublicEDKey."
+
 if [[ -n "$PROMOTE_TAG" ]]; then
   promote "$PROMOTE_TAG"
   exit 0
 fi
 
-# A stable release goes to every Mac, so it must work with App Store iPhones.
-[[ "$NIGHTLY" == true || "$CHECK_ONLY" == true ]] || check_app_store_iphone "$BASE" "main"
+if [[ "$CI_RELEASE" == true ]]; then
+  git merge-base --is-ancestor "$GITHUB_SHA" "$BASE" || fatal "The triggering commit is no longer on main."
+  LATEST_TAG="$(gh release view --repo "$REPO" --json tagName --jq .tagName)"
+  if git log -1 --format=%B "refs/tags/$LATEST_TAG" | grep -q '^Diffs-CI-Source: '; then
+    # Publication happens before the feed lands. A retry can finish that push
+    # from the immutable release tag without rebuilding or publishing again.
+    if ! grep -Fq "<sparkle:shortVersionString>${LATEST_TAG#v}</sparkle:shortVersionString>" "$APPCAST"; then
+      git show "refs/tags/$LATEST_TAG:$APPCAST" > .recovery-appcast.xml
+      "$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" --verify .recovery-appcast.xml
+      unlink .recovery-appcast.xml
+      log "Restoring appcast and version from $LATEST_TAG"
+      git cherry-pick "refs/tags/$LATEST_TAG"
+      push_to_main
+      BASE="$(git rev-parse HEAD)"
+    fi
+  fi
+  if git diff --quiet "refs/tags/$LATEST_TAG" "$BASE"; then
+    log "Main is already published as $LATEST_TAG"
+    remove_release_worktree
+    exit 0
+  fi
+fi
 
-# Check that this app and the signing tool use the same dedicated key.
-GENERATE_KEYS="$(dirname "$SIGN_UPDATE")/generate_keys"
-PUBLIC_KEY="$("$GENERATE_KEYS" --account "$SPARKLE_ACCOUNT" -p)"
-APP_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' App/macOS/Info.plist)
-[[ "$PUBLIC_KEY" == "$APP_KEY" ]] || fatal "Diffs Sparkle Keychain account does not match SUPublicEDKey."
+# Manual stable releases retain the iPhone compatibility check.
+[[ "$NIGHTLY" == true || "$CHECK_ONLY" == true ]] || check_app_store_iphone "$BASE" "main"
 
 if [[ "$CHECK_ONLY" == true ]]; then
   log "Release prerequisites passed for $(git log -1 --format='%h %s'). No version, build, feed, or release changed."
   remove_release_worktree
   exit 0
 fi
-
-[[ -z "$SPARKLE_KEY_FILE" || -r "$SPARKLE_KEY_FILE" ]] || fatal "SPARKLE_KEY_FILE is not readable."
 
 # ----- Compute new version -----
 CUR_VER=$(awk -F'= ' '/MARKETING_VERSION = /{gsub(";",""); print $2; exit}' "$PBXPROJ" | tr -d ' ')
@@ -288,6 +348,25 @@ case "${1:-}" in
 esac
 NEW_BUILD=$((CUR_BUILD + 1))
 TAG="v${NEW_VER}"
+
+if [[ "$CI_RELEASE" == true ]]; then
+  RELEASES="$(gh api --paginate --slurp "repos/$REPO/releases?per_page=100")"
+  CI_MARKER="<!-- diffs-sparkle-ci: $BASE -->"
+  while :; do
+    CI_DRAFT="$(jq -c --arg tag "$TAG" '.[][] | select(.tag_name == $tag)' <<<"$RELEASES")"
+    if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+      [[ -n "$CI_DRAFT" ]] || break
+      if jq -e --arg base "$BASE" --arg marker "$CI_MARKER" \
+        '.draft and .target_commitish == $base and ((.body // "") | contains($marker))' <<<"$CI_DRAFT" >/dev/null; then
+        break
+      fi
+    fi
+    PAT=$((PAT + 1))
+    NEW_VER="${MAJ}.${MIN}.$((PAT + 1))"
+    NEW_BUILD=$((NEW_BUILD + 1))
+    TAG="v${NEW_VER}"
+  done
+fi
 
 CHANNEL="stable"
 [[ "$NIGHTLY" == false ]] || CHANNEL="nightly"
@@ -325,8 +404,20 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # ----- Archive -----
-log "xcslot xcodebuild archive"
-xcslot xcodebuild \
+ARCHIVE_COMMAND=(xcslot xcodebuild)
+ARCHIVE_OPTIONS=(-allowProvisioningUpdates)
+EXPORT_OPTIONS=(-allowProvisioningUpdates)
+if [[ "$CI_RELEASE" == true ]]; then
+  ARCHIVE_COMMAND=(xcodebuild)
+  ARCHIVE_OPTIONS=(-onlyUsePackageVersionsFromResolvedFile CODE_SIGN_STYLE=Manual
+                   "CODE_SIGN_IDENTITY=Developer ID Application"
+                   'PROVISIONING_PROFILE_SPECIFIER=$(DIFFS_PROFILE_$(TARGET_NAME))'
+                   "DIFFS_PROFILE_Atrium=$DIFFS_CI_PROFILE")
+  EXPORT_OPTIONS=()
+  EXPORT_PLIST="$DIFFS_CI_EXPORT_OPTIONS"
+fi
+log "Archiving $APP_NAME"
+"${ARCHIVE_COMMAND[@]}" \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration Release \
@@ -334,7 +425,7 @@ xcslot xcodebuild \
   -archivePath "$ARCHIVE_PATH" \
   COMPILATION_CACHE_ENABLE_CACHING=YES \
   COMPILER_INDEX_STORE_ENABLE=NO \
-  -allowProvisioningUpdates \
+  "${ARCHIVE_OPTIONS[@]}" \
   -quiet \
   archive
 
@@ -346,12 +437,41 @@ xcodebuild -exportArchive \
   -exportOptionsPlist "$EXPORT_PLIST" \
   COMPILATION_CACHE_ENABLE_CACHING=YES \
   COMPILER_INDEX_STORE_ENABLE=NO \
-  -allowProvisioningUpdates \
+  ${EXPORT_OPTIONS[@]+"${EXPORT_OPTIONS[@]}"} \
   -quiet
 
 # The bundle is named after PRODUCT_NAME (Diffs), not the scheme.
 APP_PATH="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.app' | head -1)"
 [[ -d "$APP_PATH" ]] || fatal "Exported app missing from $EXPORT_DIR"
+
+if [[ "$CI_RELEASE" == true ]]; then
+  codesign --verify --deep --strict "$APP_PATH"
+  lipo -verify_arch arm64 x86_64 "$APP_PATH/Contents/MacOS/$APP_NAME"
+  python3 - "$APP_PATH" "$NEW_VER" "$NEW_BUILD" "$DIFFS_CI_PROFILE" <<'PYVERIFY'
+from pathlib import Path
+import plistlib
+import subprocess
+import sys
+
+app, version, build, profile_id = sys.argv[1:]
+contents = Path(app) / "Contents"
+info = plistlib.loads((contents / "Info.plist").read_bytes())
+profile = plistlib.loads(subprocess.check_output(["security", "cms", "-D", "-i", contents / "embedded.provisionprofile"]))
+entitlements = plistlib.loads(subprocess.check_output(
+    ["codesign", "-d", "--entitlements", "-", "--xml", app], stderr=subprocess.DEVNULL))
+assert info["CFBundleShortVersionString"] == version and info["CFBundleVersion"] == build
+assert info["CFBundleIdentifier"] == "com.SilverMarcs.Atrium"
+assert info["SUFeedURL"] == "https://raw.githubusercontent.com/SilverMarcs/Atrium/main/appcast.xml"
+assert profile["UUID"] == profile_id and profile["ProvisionsAllDevices"] and not profile.get("ProvisionedDevices")
+assert entitlements["com.apple.developer.usernotifications.communication"]
+PYVERIFY
+  log "Notarizing the app"
+  ditto -c -k --keepParent "$APP_PATH" "$OUT_DIR/Diffs.zip"
+  xcrun notarytool submit "$OUT_DIR/Diffs.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP_PATH"
+  xcrun stapler validate "$APP_PATH"
+  spctl --assess --type execute "$APP_PATH"
+fi
 
 # ----- Build DMG (hdiutil; no create-dmg dependency) -----
 # LZFSE compresses smaller than zlib and mounts faster, for downloads and Sparkle updates alike.
@@ -382,15 +502,12 @@ log "Sparkle sign_update"
 # Found again, as the release build has resolved packages of its own by now.
 SIGN_UPDATE="$(find_sign_update)"
 [[ -x "$SIGN_UPDATE" ]] || fatal "Sparkle sign_update not found."
-if [[ -n "$SPARKLE_KEY_FILE" ]]; then
-  SIG_OUT="$("$SIGN_UPDATE" --ed-key-file "$SPARKLE_KEY_FILE" "$DMG_PATH")"
-else
-  SIG_OUT="$("$SIGN_UPDATE" --account "$SPARKLE_ACCOUNT" "$DMG_PATH")"
-fi
+SIG_OUT="$("$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" "$DMG_PATH")"
 # sign_update prints e.g.: sparkle:edSignature="…" length="123"
 ED_SIG=$(printf '%s\n' "$SIG_OUT" | sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')
 LEN=$(printf '%s\n' "$SIG_OUT" | sed -nE 's/.*length="([0-9]+)".*/\1/p')
 [[ -n "$ED_SIG" && -n "$LEN" ]] || fatal "Failed to parse sign_update output: $SIG_OUT"
+"$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" --verify "$DMG_PATH" "$ED_SIG"
 
 # ----- Insert appcast item -----
 log "Updating $APPCAST"
@@ -457,6 +574,53 @@ if i < 0:
 line_start = text.rfind("\n", 0, i) + 1
 path.write_text(text[:line_start] + new_item + "\n" + text[line_start:])
 PY
+sign_feed
+
+if [[ "$CI_RELEASE" == true ]]; then
+  # Never base a public release on a superseded feed or overwrite another draft.
+  git fetch --quiet origin main
+  git merge-base --is-ancestor "$BASE" origin/main
+  git diff --quiet "$BASE" origin/main -- "$APPCAST" "$PBXPROJ" \
+    || fatal "Release metadata changed during the build. Retry from current main."
+  git add "$PBXPROJ" "$APPCAST"
+  git commit --quiet -m "Release $TAG" -m "Diffs-CI-Source: $BASE"
+  RELEASE_COMMIT="$(git rev-parse HEAD)"
+
+  cp "$APPCAST" "$OUT_DIR/$APPCAST"
+  (cd "$OUT_DIR" && shasum -a 256 "$DMG_NAME" "$APPCAST" > SHA256SUMS.txt)
+  RELEASE_ASSETS=("$DMG_PATH" "$OUT_DIR/$APPCAST" "$OUT_DIR/SHA256SUMS.txt")
+  if [[ -n "$CI_DRAFT" ]]; then
+    gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish,body |
+      jq -e --arg base "$BASE" --arg marker "$CI_MARKER" \
+        '.isDraft and .targetCommitish == $base and ((.body // "") | contains($marker))' >/dev/null
+    gh release upload "$TAG" --repo "$REPO" --clobber "${RELEASE_ASSETS[@]}"
+  else
+    printf '%s\n' "$CI_MARKER" > "$OUT_DIR/notes.md"
+    gh release create "$TAG" --repo "$REPO" --draft --target "$BASE" \
+      --title "Diffs $NEW_VER" --notes-file "$OUT_DIR/notes.md" --generate-notes "${RELEASE_ASSETS[@]}"
+  fi
+
+  log "Verifying uploaded draft $TAG"
+  DOWNLOADED="$OUT_DIR/downloaded"
+  gh release download "$TAG" --repo "$REPO" --dir "$DOWNLOADED"
+  cmp "$OUT_DIR/SHA256SUMS.txt" "$DOWNLOADED/SHA256SUMS.txt"
+  (cd "$DOWNLOADED" && shasum -a 256 -c SHA256SUMS.txt)
+  xcrun stapler validate "$DOWNLOADED/$DMG_NAME"
+  spctl --assess --type open --context context:primary-signature "$DOWNLOADED/$DMG_NAME"
+  "$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" --verify "$DOWNLOADED/$DMG_NAME" "$ED_SIG"
+  "$SIGN_UPDATE" "${SPARKLE_SIGNING[@]}" --verify "$DOWNLOADED/$APPCAST"
+
+  git push --quiet origin "$RELEASE_COMMIT:refs/tags/$TAG"
+  gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+  push_to_main
+  FEED_COMMIT="$(git rev-parse HEAD)"
+  curl --fail --silent --show-error --retry 3 \
+    "https://raw.githubusercontent.com/$REPO/$FEED_COMMIT/$APPCAST" -o "$OUT_DIR/published-appcast.xml"
+  cmp "$OUT_DIR/$APPCAST" "$OUT_DIR/published-appcast.xml"
+  remove_release_worktree
+  log "Published stable $TAG: https://github.com/$REPO/releases/tag/$TAG"
+  exit 0
+fi
 
 # ----- Release commit, tagged before the feed reaches main -----
 log "Committing ${TAG}"
