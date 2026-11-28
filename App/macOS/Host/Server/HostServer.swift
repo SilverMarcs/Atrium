@@ -265,7 +265,6 @@ final class HostServer {
     }
 
     func disconnect(_ connection: ServerConnection) {
-        connection.livePreview = nil
         NotificationRouting.shared.remove(connectionID: connection.id)
         connections[connection.id] = nil
         pruneFeeds()
@@ -293,9 +292,9 @@ final class HostServer {
     }
 
     /// Takes a client's connection, which authenticates as a paired device.
-    private func accept(_ channel: any HostChannel, isRelayed: Bool = false) {
+    private func accept(_ channel: any HostChannel) {
         // The connection owns its channel; the channel only refers back weakly.
-        let connection = ServerConnection(isLocal: false, isRelayed: isRelayed, send: { event in
+        let connection = ServerConnection(isLocal: false, send: { event in
             guard let data = try? HostCodec.encode(ServerFrame.event(event)) else { return }
             channel.send(data)
         }, close: { channel.close() })
@@ -397,10 +396,6 @@ final class HostServer {
         return await handleAuthenticated(request, from: connection)
     }
 
-    func hasPreviewTask(_ taskID: String) -> Bool {
-        integrations.threads.contains { $0.id == taskID }
-    }
-
     private func handleAuthenticated(_ request: HostRequest, from connection: ServerConnection) async -> HostReply {
         switch request {
         case .pair, .authenticate:
@@ -411,10 +406,7 @@ final class HostServer {
             return .mcp(message: await tools.handle(message, as: .paired(device, access)) ?? Data())
         case .unsupported:
             return .unsupported
-        case .preview(let request):
-            return await handlePreview(request, from: connection)
         case .activity(let activity):
-            if !activity.isActive { connection.livePreview = nil }
             let wasInactive = connection.activity?.isActive == false
             connection.activity = activity
             if connection.isLocal {
@@ -647,7 +639,7 @@ final class HostServer {
             case .failed(let message): self?.status = .failed(message)
             }
         }
-        listener.onChannel = { [weak self] channel in self?.accept(channel, isRelayed: true) }
+        listener.onChannel = { [weak self] channel in self?.accept(channel) }
         listener.onPushTokenUnregistered = { [weak self] token in self?.pairing.removePushToken(token) }
         self.listener = listener
         listener.start()
@@ -669,7 +661,6 @@ final class HostServer {
         if let awakeActivity { ProcessInfo.processInfo.endActivity(awakeActivity) }
         awakeActivity = nil
         for connection in connections.values where !connection.isLocal {
-            connection.livePreview = nil
             NotificationRouting.shared.remove(connectionID: connection.id)
             connection.close()
             connections[connection.id] = nil

@@ -11,7 +11,6 @@ enum Route: Hashable {
     case files(WorkspaceRef, folder: String? = nil)
     case file(WorkspaceRef, path: String, line: Int? = nil)
     case search(WorkspaceRef)
-    case livePreview(TaskRef, source: LivePreviewSource)
     case task(TaskRef)
 }
 

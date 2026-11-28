@@ -10,7 +10,7 @@ struct SimulatorInspectorView: View {
     @AppStorage("simulator.showsBezel") private var showsBezel = true
     @State private var problem: SimulatorProblem?
 
-    /// Only chats on this Mac show a simulator here; others show `RemotePreviewInspector`.
+    /// Only chats on this Mac show a simulator.
     private var taskID: String? { item.flatMap { $0.host.isLocal ? $0.task.id : nil } }
     private var simulators: AgentSimulators { app.simulators }
     private var session: SimulatorSession? { taskID.flatMap(simulators.session(for:)) }
@@ -238,10 +238,24 @@ private struct SimulatorBar: View {
         HStack(spacing: 6) {
             if let taskID {
                 SimulatorPicker(taskID: taskID, current: session?.device) {
-                    SimulatorBarTitle(symbol: session?.device.family.symbol, name: session?.device.name,
-                                      runtime: session?.device.runtime)
+                    HStack(spacing: 5) {
+                        // Boxed like the browser bar's symbols, so both bars' icons line up.
+                        BrowserBarSymbol(symbol: session?.device.family.symbol ?? "iphone")
+                        Text(session?.device.name ?? "Choose Simulator")
+                            .lineLimit(1)
+                        if let runtime = session?.device.runtime {
+                            Text(runtime)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.subheadline)
                 }
-                .simulatorBarMenu()
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.visible)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(-1)
             } else {
                 Text("Simulator")
                     .font(.subheadline)
@@ -267,7 +281,9 @@ private struct SimulatorBar: View {
             .help("More")
             .disabled(session == nil)
         }
-        .simulatorBarCapsule()
+        .padding(.horizontal, 7)
+        .frame(height: InspectorBar.height)
+        .background(.quaternary, in: Capsule())
         .animation(.easeOut(duration: 0.2), value: taskID.map { app.simulators.agentUsing.contains($0) })
         .task(id: session?.udid) {
             appearance = booted ? await session?.appearance() : nil
@@ -327,46 +343,6 @@ private struct SimulatorBar: View {
         Task {
             do { try await work() } catch { report(title, error) }
         }
-    }
-}
-
-/// The simulator a bar's menu shows: its symbol, name and runtime.
-struct SimulatorBarTitle: View {
-    let symbol: String?
-    let name: String?
-    let runtime: String?
-
-    var body: some View {
-        HStack(spacing: 5) {
-            // Boxed like the browser bar's symbols, so both bars' icons line up.
-            BrowserBarSymbol(symbol: symbol ?? "iphone")
-            Text(name ?? "Choose Simulator")
-                .lineLimit(1)
-            if let runtime {
-                Text(runtime)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .font(.subheadline)
-    }
-}
-
-extension View {
-    /// Styles the simulator menu leading a simulator bar.
-    func simulatorBarMenu() -> some View {
-        menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.visible)
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(-1)
-    }
-
-    /// The capsule a simulator bar sits in, as tall as the other tabs' search bars.
-    func simulatorBarCapsule() -> some View {
-        padding(.horizontal, 7)
-            .frame(height: InspectorBar.height)
-            .background(.quaternary, in: Capsule())
     }
 }
 

@@ -24,19 +24,15 @@ struct TaskMoreMenu: View {
                     }
                 }
             }
-            let workspaceID = item.task.workspaceID
-            let hasPreviews = !TaskDraft.isDraftID(item.task.id)
-            if workspaceID != nil || hasPreviews {
+            if let workspaceID = item.task.workspaceID {
                 Section {
-                    if let workspaceID {
-                        ProjectLinks(
-                            workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
-                            hasRunningCommands: runningCommands > 0
-                        )
-                    }
-                    if hasPreviews { LivePreviewLinks(item: item) }
+                    ProjectLinks(
+                        workspace: WorkspaceRef(hostID: item.host.id, workspaceID: workspaceID),
+                        hasRunningCommands: runningCommands > 0
+                    )
                 } header: {
-                    if let workspaceID, let title = item.host.scope(for: workspaceID).title {
+                    // The branch or worktree the project's pages show.
+                    if let title = item.host.scope(for: workspaceID).title {
                         Text(title)
                     }
                 }
@@ -80,20 +76,5 @@ struct TaskMoreMenu: View {
     private func subagentSummary(count: Int) -> String {
         let working = item.workingSubagents
         return working > 0 ? "\(working) working · \(count) total" : "\(count) total"
-    }
-}
-
-/// Each source pushes its own screen alongside the other project destinations.
-struct LivePreviewLinks: View {
-    let item: HostTask
-
-    var body: some View {
-        let ref = TaskRef(hostID: item.host.id, taskID: item.task.id)
-        ForEach(LivePreviewSource.allCases) { source in
-            NavigationLink(value: Route.livePreview(ref, source: source)) {
-                Label(source.title, systemImage: source.symbol)
-            }
-            .disabled(!item.host.isConnected)
-        }
     }
 }

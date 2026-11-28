@@ -58,6 +58,13 @@ extension AppModel {
         inspectorState = ChatInspectorState(isPresented: true, tab: tab)
     }
 
+    /// The tab the inspector shows for a project: Files in place of the
+    /// browser or simulator for a chat on another host.
+    func inspectorTab(for project: Project) -> InspectorTab {
+        let tab = inspectorState.tab
+        return tab.isOnThisMac && !project.isLocal ? .files : tab
+    }
+
     /// Opens a tab that shows something of a chat's, such as its browser or
     /// simulator, when that chat is on screen.
     func showInspector(_ tab: InspectorTab, for taskID: String) {

@@ -143,6 +143,7 @@ struct AppCommands: Commands {
                     Label("Browser", systemImage: "globe")
                 }
                 .keyboardShortcut("3", modifiers: .command)
+                .disabled(app.selectedProject?.isLocal == false)
 
                 Button {
                     app.showInspector(.simulator)
@@ -150,6 +151,7 @@ struct AppCommands: Commands {
                     Label("Simulator", systemImage: "iphone")
                 }
                 .keyboardShortcut("4", modifiers: .command)
+                .disabled(app.selectedProject?.isLocal == false)
 
                 Button {
                     app.showInspector(.commands)

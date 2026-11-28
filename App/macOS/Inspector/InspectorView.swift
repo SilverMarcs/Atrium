@@ -42,16 +42,11 @@ struct InspectorView: View {
             .remembersInspectorWidth(for: item?.id)
     }
 
-    /// A saved chat on another Mac, whose browser and simulator show as live video.
-    private var remotePreviewItem: HostTask? {
-        item.flatMap { !$0.host.isLocal && !TaskDraft.isDraftID($0.task.id) ? $0 : nil }
-    }
-
     @ViewBuilder
     private var columnContent: some View {
         if let project {
             Group {
-                switch app.inspectorState.tab {
+                switch app.inspectorTab(for: project) {
                 case .files:
                     FileTreeView(project: project)
                 case .search:
@@ -61,17 +56,9 @@ struct InspectorView: View {
                 case .commands:
                     CommandsInspectorView(project: project)
                 case .browser:
-                    if let remote = remotePreviewItem {
-                        RemotePreviewInspector(item: remote, source: .browser).id(remote.id)
-                    } else {
-                        BrowserInspectorView(item: item)
-                    }
+                    BrowserInspectorView(item: item)
                 case .simulator:
-                    if let remote = remotePreviewItem {
-                        RemotePreviewInspector(item: remote, source: .simulator).id(remote.id)
-                    } else {
-                        SimulatorInspectorView(item: item)
-                    }
+                    SimulatorInspectorView(item: item)
                 }
             }
             // The project tabs' feet switch branches, so what that asks to
@@ -91,11 +78,11 @@ private struct InspectorTabPicker: View {
     var body: some View {
         let runningCount = project.runningCount
         Picker("Inspector", selection: Binding {
-            app.inspectorState.tab
+            app.inspectorTab(for: project)
         } set: { tab in
             app.showInspector(tab, in: project)
         }) {
-            ForEach(InspectorTab.shown) { tab in
+            ForEach(InspectorTab.shown(in: project)) { tab in
                 Image(systemName: iconName(for: tab, runningCount: runningCount))
                     .help(helpText(for: tab, runningCount: runningCount))
                     .tag(tab)

@@ -14,6 +14,15 @@ enum InspectorTab: String, Codable, CaseIterable, Identifiable {
     /// place, which still works but stays out of the picker and the menus for now.
     static let shown: [InspectorTab] = [.files, .git, .browser, .simulator, .commands]
 
+    /// The tabs the picker offers for a project. The browser and simulator
+    /// are this Mac's, so a project on another host doesn't get them.
+    static func shown(in project: Project) -> [InspectorTab] {
+        project.isLocal ? shown : shown.filter { !$0.isOnThisMac }
+    }
+
+    /// Whether the tab shows something only this Mac has.
+    var isOnThisMac: Bool { self == .browser || self == .simulator }
+
     #if DEBUG
     init?(debugName: String) {
         guard let tab = Self.allCases.first(where: { $0.label.lowercased() == debugName }) else { return nil }

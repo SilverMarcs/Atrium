@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		73F5A166AE01000000000001 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 73F5A166AE01000000000004 /* WebRTC */; };
-		73F5A166AE01000000000002 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 73F5A166AE01000000000004 /* WebRTC */; };
         AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */ = {isa = PBXBuildFile; productRef = 0A7C00000000000000000103 /* SwiftMarkdownView */; };
 		08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC292F74722D009C370E /* Sparkle */; };
 		08BEFC322F74722D009C3710 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = 08BEFC312F74722D009C3710 /* Highlightr */; };
@@ -107,7 +105,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				73F5A166AE01000000000001 /* WebRTC in Frameworks */,
                 AACC00000000000000000001 /* SwiftMarkdownView in Frameworks */,
 				0A7C00000000000000000501 /* SwiftMediaViewer in Frameworks */,
 				08BEFC2A2F74722D009C370E /* Sparkle in Frameworks */,
@@ -119,7 +116,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				73F5A166AE01000000000002 /* WebRTC in Frameworks */,
 				0A7C00000000000000000101 /* SwiftMarkdownView in Frameworks */,
 				0A7C00000000000000000106 /* Highlightr in Frameworks */,
 				0A7C00000000000000000502 /* SwiftMediaViewer in Frameworks */,
@@ -198,7 +194,6 @@
 			);
 			name = Atrium;
 			packageProductDependencies = (
-				73F5A166AE01000000000004 /* WebRTC */,
                 0A7C00000000000000000103 /* SwiftMarkdownView */,
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
 				08BEFC292F74722D009C370E /* Sparkle */,
@@ -228,7 +223,6 @@
 			);
 			name = AtriumiOS;
 			packageProductDependencies = (
-				73F5A166AE01000000000004 /* WebRTC */,
 				0A7C00000000000000000103 /* SwiftMarkdownView */,
 				08BEFC312F74722D009C3710 /* Highlightr */,
 				0A7C00000000000000000504 /* SwiftMediaViewer */,
@@ -292,7 +286,6 @@
 			mainGroup = 08D10C412F64897100754649;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				73F5A166AE01000000000003 /* XCRemoteSwiftPackageReference "WebRTC" */,
 				08BEFC2B2F74722D009C370E /* XCRemoteSwiftPackageReference "Sparkle" */,
 				08BEFC302F74722D009C3710 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				0A7C00000000000000000102 /* XCRemoteSwiftPackageReference "SwiftMarkdownView" */,
@@ -815,14 +808,6 @@
 				kind = branch;
 			};
 		};
-		73F5A166AE01000000000003 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/stasel/WebRTC";
-			requirement = {
-				kind = exactVersion;
-				version = 158.0.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -845,11 +830,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A7C00000000000000000503 /* XCRemoteSwiftPackageReference "SwiftMediaViewer" */;
 			productName = SwiftMediaViewer;
-		};
-		73F5A166AE01000000000004 /* WebRTC */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 73F5A166AE01000000000003 /* XCRemoteSwiftPackageReference "WebRTC" */;
-			productName = WebRTC;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

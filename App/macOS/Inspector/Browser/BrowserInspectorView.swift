@@ -11,7 +11,7 @@ struct BrowserInspectorView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
 
-    /// Only chats on this Mac have a browser here; others show `RemotePreviewInspector`.
+    /// Only chats on this Mac have a browser.
     private var taskID: String? { item.flatMap { $0.host.isLocal ? $0.task.id : nil } }
     private var browser: AgentBrowser? { taskID.flatMap(app.browsers.browser(for:)) }
 
@@ -61,11 +61,7 @@ private struct BrowserAddressBar: View {
     var body: some View {
         SearchBar(text: $address, placeholder: "Search or enter address", clears: false,
                   onEditingChange: { isEditing = $0 }, onSubmit: { open(address) }) {
-            BrowserNavigation(canGoBack: browser?.canGoBack == true, canGoForward: browser?.canGoForward == true) {
-                Task { try? await browser?.goBack() }
-            } forward: {
-                Task { try? await browser?.goForward() }
-            }
+            navigation
         } trailing: {
             if browser?.isAgentUsing == true {
                 AgentUsingBadge(help: "The agent is using the browser")
@@ -98,25 +94,16 @@ private struct BrowserAddressBar: View {
         .showsAddress(of: browser?.url, in: $address, isEditing: isEditing)
     }
 
-}
-
-/// Back and forward, leading a browser's address bar.
-struct BrowserNavigation: View {
-    let canGoBack: Bool
-    let canGoForward: Bool
-    let back: () -> Void
-    let forward: () -> Void
-
-    var body: some View {
+    private var navigation: some View {
         ZStack {
             // Holds the bar at the height the other search bars get from their magnifying glass.
             SearchBarIcon()
                 .hidden()
             HStack(spacing: 0) {
-                BrowserBarButton(title: "Back", symbol: "chevron.left", action: back)
-                    .disabled(!canGoBack)
-                BrowserBarButton(title: "Forward", symbol: "chevron.right", action: forward)
-                    .disabled(!canGoForward)
+                BrowserBarButton(title: "Back", symbol: "chevron.left") { Task { try? await browser?.goBack() } }
+                    .disabled(browser?.canGoBack != true)
+                BrowserBarButton(title: "Forward", symbol: "chevron.right") { Task { try? await browser?.goForward() } }
+                    .disabled(browser?.canGoForward != true)
             }
         }
         .padding(.trailing, 2)
@@ -140,7 +127,7 @@ struct AgentUsingBadge: View {
 
 /// One of the address bar's buttons: a symbol held to one small size, so
 /// whichever symbol it shows, the bar keeps the search bars' height.
-struct BrowserBarButton: View {
+private struct BrowserBarButton: View {
     let title: String
     let symbol: String
     let action: () -> Void

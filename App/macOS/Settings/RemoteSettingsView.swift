@@ -90,7 +90,6 @@ private struct ThisMacSections: View {
                 LabeledContent("Status") {
                     RemoteAccessStatus(status: access.status)
                 }
-                PreviewRelaySettings()
             }
         } header: {
             Text("This Mac")

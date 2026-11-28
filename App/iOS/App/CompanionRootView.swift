@@ -150,10 +150,6 @@ private struct RouteDestination: View {
             if let host = hosts.host(ref.hostID) { FilePreviewScreen(host: host, workspaceID: ref.workspaceID, path: path, line: line) }
         case .search(let ref):
             if let host = hosts.host(ref.hostID) { SearchScreen(host: host, workspaceID: ref.workspaceID) }
-        case .livePreview(let ref, let source):
-            if let host = hosts.host(ref.hostID) {
-                LivePreviewScreen(host: host, taskID: ref.taskID, source: source)
-            }
         case .task(let ref):
             TaskDetailScreen(ref: ref)
         }
