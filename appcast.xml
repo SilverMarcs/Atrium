@@ -6,6 +6,23 @@
         <description>Diffs updates</description>
         <language>en</language>
         <item>
+            <title>Version 1.3.85</title>
+            <pubDate>Sat, 28 Nov 2026 03:11:49 +0000</pubDate>
+            <sparkle:version>150</sparkle:version>
+            <sparkle:shortVersionString>1.3.85</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<ul>
+<li>Remove WebRTC previews; keep the browser and simulator on the host</li>
+<li>Show a remote chat&#x27;s browser and simulator on the Mac</li>
+<li>Shrink the line counts in the inspector footer</li>
+</ul>]]></description>
+            <enclosure
+                url="https://github.com/SilverMarcs/Atrium/releases/download/v1.3.85/Diffs.dmg"
+                length="13102732"
+                type="application/x-apple-diskimage"
+                sparkle:edSignature="mwyVRE5I6QCkYDohnvBBZNJPqNAhdwrpc6xuofz1w4yZ+GW5FicwnjV6eg/3WfqOwbLMfb30zej5RNhCgm0bBg==" />
+        </item>
+        <item>
             <title>Version 1.3.84</title>
             <pubDate>Fri, 27 Nov 2026 03:25:44 +0000</pubDate>
             <sparkle:version>149</sparkle:version>
@@ -1056,6 +1073,6 @@
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: Ifldgd+C8WTkx0p2K046blcvNr8B71KuUj/k/rNE0XGSwUUrnDkdVMeq8XHBDpHY2MvCOqpY5QUDkp7vh3oEAQ==
-length: 59340
+edSignature: QJfRQB88dqgyU4mxkhOZ6Jaz1KUBAtKqI5z1uhKSeOdwbA7BpEpiVXEwqsmc2hl3L2WMpjuGmcsBtxKWQisFDg==
+length: 60279
 -->
